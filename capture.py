@@ -549,6 +549,14 @@ async def capture_one(browser, url, out_dir):
                     break
                 await nxt.click(timeout=1500)
                 await page.wait_for_timeout(900)
+            # return the table to page 1 so the text layer and screenshot
+            # always reflect the same (first-page) state on every run
+            first_pg = await page.query_selector(
+                "#documents .pagination .page-numbers, "
+                ".documents_ifx .pagination .page-numbers")
+            if first_pg is not None:
+                await first_pg.click(timeout=1200)
+                await page.wait_for_timeout(700)
         except Exception:
             pass
 
