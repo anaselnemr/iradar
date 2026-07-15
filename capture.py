@@ -325,60 +325,51 @@ SECTIONS_JS = r"""
       ? (tabBtn.textContent || '').replace(/\s+/g, ' ').trim()
       : suffix.replace(/-/g, ' ');
     const cat = /training/i.test(suffix) ? 'trainings' : 'design_resources';
-    pane.querySelectorAll('a[href]').forEach(a => {
-      const li = a.closest('li, .boardlist');
-      const href = a.href || '';
-      if (href.startsWith('javascript:') || href.startsWith('mailto:')) return;
-      if (isTabStrip(a)) return;
-      let t = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
-      if (GENERIC_LINK.test(t)) {
-        // "Read more"-only cards: the card's first text line IS its title
-        // (skipping the category chip). Some cards are not li/.boardlist -
-        // climb to the nearest ancestor with more text than the link itself.
-        let root = li;
-        if (!root) {
-          root = a.parentElement;
-          for (let i = 0; i < 6 && root && root.parentElement; i++) {
-            if (tooBig(root.parentElement)) break;   // stop at the list level
-            if ((root.innerText || '').replace(/\s+/g, ' ').trim().length >
-                t.length + 20) break;
-            root = root.parentElement;
+
+    // ONE ITEM PER CARD - never per anchor. Each card carries several links
+    // (thumbnail, title, "Read more", download, partner), and each card is
+    // rendered twice (desktop + mobile). Iterating anchors produced the same
+    // card up to 8 times, sometimes titled by its category chip.
+    const cards = Array.from(pane.querySelectorAll('li'))
+      .filter(li => !li.parentElement.closest('li'));   // outermost li only
+    cards.forEach(card => {
+      // the chip above each card ("Wireless Modules", "Development Tools")
+      // is a label, not a title - identify it structurally, not by name
+      const chipEl = card.querySelector('.st-title-dsobject, .labelname');
+      const chip = chipEl ? (chipEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      const titleEl = card.querySelector(
+        '.anchor-title, .heading-dsobject a, .heading-dsobject, h3, h4');
+      let t = titleEl ? (titleEl.innerText || titleEl.textContent || '')
+                          .replace(/\s+/g, ' ').trim() : '';
+      if (!t || GENERIC_LINK.test(t)) {
+        for (const line of (card.innerText || '').split('\n')) {
+          const s = line.replace(/\s+/g, ' ').trim();
+          if (s && s !== chip && s.length > 3 && s.length < 130 &&
+              !GENERIC_LINK.test(s) &&
+              !/^(watch video|log ?in|clear all|sort by.*)$/i.test(s)) {
+            t = s;
+            break;
           }
         }
-        const ct = cardLine(root, true) || cardTitle(a, true);
-        if (!ct) return;
-        t = ct;
       }
-      push(cat, t, href, cardExtras(li || a.parentElement), group);
+      if (!t || t === chip || t.length < 3) return;
+      let href = '';
+      const a1 = card.querySelector('.anchor-title[href], .heading-dsobject a[href]');
+      if (a1) {
+        href = a1.href;
+      } else {
+        const a2 = Array.from(card.querySelectorAll('a[href]'))
+          .find(a => !isTabStrip(a) && a.href &&
+                     !a.href.startsWith('javascript:') &&
+                     !a.href.startsWith('mailto:'));
+        if (a2) href = a2.href;
+      }
+      if (!href) {          // training/video card: URL hides in the thumbnail
+        const img = card.querySelector('img[src*=".mp4/"]');
+        if (img) href = img.src.split('/jcr:content')[0];
+      }
+      push(cat, t, href, cardExtras(card), group);
     });
-    // href-less card/title anchors (trainings, CAD/IBIS file rows, gated
-    // downloads, and cards whose "Read more" has no href at all); a video
-    // URL hides in the thumbnail rendition path
-    pane.querySelectorAll('a:not([href])')
-      .forEach(a2 => {
-        let t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
-        const li = a2.closest('li, .boardlist');
-        if (GENERIC_LINK.test(t) || t.length < 9) {
-          // resolve the card's real title from its container
-          let root = li;
-          if (!root) {
-            root = a2.parentElement;
-            for (let i = 0; i < 6 && root && root.parentElement; i++) {
-              if (tooBig(root.parentElement)) break;  // stop at the list level
-              if ((root.innerText || '').replace(/\s+/g, ' ').trim().length >
-                  t.length + 20) break;
-              root = root.parentElement;
-            }
-          }
-          t = cardLine(root, true) || '';
-        }
-        if (t.length < 9 || t.length > 200 ||
-            /^(watch video|log ?in|clear all|sort by.*|download)$/i.test(t)) return;
-        const box = li || pane;
-        const img = box.querySelector('img[src*=".mp4/"]');
-        const vurl = img ? img.src.split('/jcr:content')[0] : '';
-        push(cat, t, vurl, cardExtras(box), group);
-      });
   });
 
   // Pass 1: known components (reliable IDs/classes on infineon.com).
@@ -1115,8 +1106,21 @@ async def capture_one(browser, url, out_dir):
                 re.I)
             _DL = re.compile(r"^download\s*-?\s*", re.I)
             _DESC = re.compile(r"(?i)\s*click on read more.*$|\s*read more\s*$")
+            _BLOB = re.compile(r"(?i)(watch video|read more|add to cart)\s*$")
             for cat in ("design_resources", "trainings"):
                 pool = list(sections.get(cat, [])) + panes_acc.get(cat, [])
+                # A card's own text glued together ("<title>EN,JA,CNWatch
+                # Video") is never a real item: drop these blobs, and drop any
+                # link-less entry whose title merely repeats a real one.
+                pool = [it for it in pool
+                        if not _BLOB.search(it.get("title", ""))]
+                linked = {re.sub(r"\W+", "", it.get("title", "").lower())
+                          for it in pool if it.get("url")}
+                pool = [it for it in pool
+                        if it.get("url") or
+                        not any(k and k in re.sub(r"\W+", "",
+                                                  it.get("title", "").lower())
+                                for k in linked)]
                 # tabbed pages: grouped (pane) items are authoritative - a
                 # single flaky pass can inject ungrouped page-wide junk
                 grouped_pool = [it for it in pool if it.get("group")]
