@@ -136,11 +136,12 @@ SECTIONS_JS = r"""
     ['trainings',        /^((support & )?trainings?( & webinars?)?|webinars?)$/i],
     ['videos',           /^videos?$/i],
   ];
-  const GENERIC_LINK = /^(explore more|learn more|read more|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all)|more|download|jump to|overview)$/i;
+  const GENERIC_LINK = /^(explore more|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all)|more|download|jump to|overview|add to cart.*|buy online.*|order now.*|boards? *& *designs?|development tools|embedded software|services)$/i;
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
   const out = {documents: [], design_resources: [], news: [],
-               trainings: [], videos: [], images: []};
+               trainings: [], videos: [], features: [], benefits: [],
+               images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -214,7 +215,8 @@ SECTIONS_JS = r"""
              a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
     if (GENERIC_LINK.test(t)) {
       const ct = cardTitle(a);                     // teaser card: use its title
-      if (ct) t = ct;
+      if (!ct) return;                             // no real title -> skip junk
+      t = ct;
     }
     let meta = '';
     const tr = a.closest('tr');
@@ -284,12 +286,62 @@ SECTIONS_JS = r"""
     }
     const pane = card.closest('[id^="ds-tabpane-"]');
     let cat = 'videos';
-    if (pane) cat = /training/i.test(pane.id) ? 'trainings' : 'design_resources';
-    else if (card.closest('[class*="event" i], [class*="news" i]')) cat = 'news';
+    if (pane) {
+      cat = /training/i.test(pane.id) ? 'trainings' : 'design_resources';
+    } else {
+      // categorize by the closest section heading ABOVE the card in document
+      // order (an ancestor can contain several h2s - nearest-preceding wins)
+      let secHead = '';
+      for (const h of document.querySelectorAll('h2')) {
+        if (h.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING) {
+          secHead = h.textContent || '';
+        }
+      }
+      if (/webinar|training/i.test(secHead)) cat = 'trainings';
+      else if (/news|highlight/i.test(secHead)) cat = 'news';
+      else if (/video/i.test(secHead)) cat = 'videos';
+      else if (card.closest('[class*="event" i], [class*="news" i]')) cat = 'news';
+    }
     const thumb = card.querySelector('img[src*=".mp4/"]');
     push(cat, title, thumb ? thumb.src.split('/jcr:content')[0] : '',
          meta.join(' | '));
   });
+
+  // Key features / Benefits: bullet or card lists without links
+  const FEAT_CATS = [
+    ['features', /^(key )?features?( (&|and) benefits?)?$/i],
+    ['benefits', /^benefits?$/i],
+  ];
+  const featContainer = (h) => {
+    let el = h;
+    for (let i = 0; i < 5 && el.parentElement; i++) {
+      el = el.parentElement;
+      if (el.textContent.length > bodyLen * 0.34) break;
+      if (el.querySelectorAll('li').length >= 2 ||
+          el.querySelectorAll('h3, h4, [class*="title" i]').length >= 2) return el;
+    }
+    return null;
+  };
+  for (const h of document.querySelectorAll('h1,h2,h3,h4')) {
+    if (isPageChrome(h)) continue;   // footer has a "Benefits" nav heading
+    const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!ht || ht.length > 40) continue;
+    for (const [cat, re] of FEAT_CATS) {
+      if (out[cat].length || !re.test(ht)) continue;
+      const c = featContainer(h);
+      if (!c) break;
+      let items = Array.from(c.querySelectorAll('li'))
+        .map(li => (li.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter(t => t.length > 4 && t.length < 250);
+      if (!items.length) {
+        items = Array.from(c.querySelectorAll('h3, h4, [class*="title" i]'))
+          .map(e => (e.textContent || '').replace(/\s+/g, ' ').trim())
+          .filter(t => t.length > 4 && t.length < 250 && t !== ht);
+      }
+      items.slice(0, 40).forEach(t => push(cat, t, '', ''));
+      break;
+    }
+  }
 
   // Pass 2: heading-based fallback, only for categories still empty
   const containerFor = (h) => {
@@ -588,16 +640,20 @@ async def capture_one(browser, url, out_dir):
             sections = await page.evaluate(SECTIONS_JS)
         except Exception:
             sections = {}
-        # merge documents collected across the table's pages + clean titles
+        # merge documents collected across the table's pages + clean titles;
+        # the same document can be collected via two different links (row link
+        # vs download icon) - dedupe by TITLE, keeping the richer entry
         try:
-            merged, seen_docs = [], set()
+            by_title = {}
             for d in list(sections.get("documents", [])) + docs_acc:
                 d["title"] = _clean_doc_title(d.get("title", ""))
-                key = (d["title"], d.get("url"))
-                if key not in seen_docs:
-                    merged.append(d)
-                    seen_docs.add(key)
-            sections["documents"] = merged
+                prev = by_title.get(d["title"])
+                if prev is None:
+                    by_title[d["title"]] = d
+                elif (len(d.get("meta", "")) + len(d.get("url", ""))) > \
+                        (len(prev.get("meta", "")) + len(prev.get("url", ""))):
+                    by_title[d["title"]] = d
+            sections["documents"] = list(by_title.values())
         except Exception:
             pass
 

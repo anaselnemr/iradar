@@ -24,5 +24,5 @@ call .venv\Scripts\activate.bat
 start "InfineonWatch server" cmd /k python app.py
 timeout /t 4 /nobreak >nul
 start "" https://loca.lt/mytunnelpassword
-npx --yes localtunnel --port 5000
-pause
+echo Your stable link: https://infineonwatch-anas.loca.lt
+call tunnel_keepalive.cmd
