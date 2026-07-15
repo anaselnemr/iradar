@@ -878,6 +878,13 @@ async def capture_one(browser, url, out_dir):
         text = await page.evaluate(TEXT_JS)
         images = await page.evaluate(IMAGES_JS)
         title = await page.title()
+        # Infineon intermittently serves blank shells (HTTP 200/202, empty
+        # body). Never store those as baselines - fail the capture instead
+        # so the page shows as an error and is retried on the next run.
+        if len(text.strip()) < 50 and not title.strip():
+            raise Exception(
+                f"blank render (text={len(text.strip())} chars, "
+                f"http={result['http_status']})")
         try:
             sections = await page.evaluate(SECTIONS_JS)
         except Exception:
