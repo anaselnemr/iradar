@@ -67,39 +67,58 @@
 
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
     <input class="grow" type="text" name="q" value="{{ q }}" placeholder="Search page URL or name…">
-    <select class="ctl" name="ptype" onchange="this.form.submit()">
-      <option value="all">All types</option>
-      {% for t in ptypes %}
-      <option value="{{ t.ptype }}" {% if ptype == t.ptype %}selected{% endif %}>{{ t.ptype }} ({{ t.n }})</option>
-      {% endfor %}
-    </select>
-    <select class="ctl" name="status" onchange="this.form.submit()">
-      {% for key, label in [('all','Any status'), ('changed','Changed'), ('rejected','Awaiting fix'),
-                            ('checked','Captured'), ('baseline','Baseline saved'), ('unchanged','Unchanged'),
-                            ('hasdocs','Has documents'), ('nodocs','No documents'), ('error','Errors'),
-                            ('notlive','Not live'), ('paused','Paused'), ('new','Not captured yet')] %}
-      <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <button>Search</button>
-    {% if q or status != 'all' or ptype != 'all' %}
+
+    <details class="dd">
+      <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
+      <div class="panel">
+        {% for t in ptypes %}
+        <label><input type="checkbox" name="ptype" value="{{ t.ptype }}"
+                 {% if t.ptype in sel_types %}checked{% endif %}> {{ t.ptype }}
+          <span class="cnt">{{ t.n }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
+
+    <details class="dd">
+      <summary>Status{% if sel_status %}<span class="fbadge">{{ sel_status|length }}</span>{% endif %}</summary>
+      <div class="panel">
+        {% for key, sf in status_filters.items() %}
+        <label><input type="checkbox" name="status" value="{{ key }}"
+                 {% if key in sel_status %}checked{% endif %}> {{ sf[0] }}
+          <span class="cnt">{{ status_counts.get(key, 0) }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
+
+    <details class="dd">
+      <summary>Content{% if sel_attrs %}<span class="fbadge">{{ sel_attrs|length }}</span>{% endif %}</summary>
+      <div class="panel">
+        {% for key, af in attr_filters.items() %}
+        <label><input type="checkbox" name="attr" value="{{ key }}"
+                 {% if key in sel_attrs %}checked{% endif %}> {{ af[0] }}
+          <span class="cnt">{{ attr_counts.get(key, 0) }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
+
+    <button>Apply</button>
+    {% if q or sel_status or sel_types or sel_attrs %}
       <a class="btn btn-ghost" href="{{ url_for('index') }}">Clear</a>
     {% endif %}
   </form>
 
   <div class="quickchips">
-    {% for key, label, n, tone in [
-        ('changed', 'Changed', counts.changed or 0, 'warn'),
-        ('rejected', 'Awaiting fix', counts.rejected or 0, 'warn'),
-        ('error', 'Errors', counts.errors or 0, 'bad'),
-        ('notlive', 'Not live', counts.notlive or 0, 'bad'),
-        ('new', 'Not captured yet', counts.fresh or 0, 'plain')] %}
-      {% if n or status == key %}
-      <a class="chip {{ 'chip-on' if status == key }}"
-         href="{{ url_for('index', status=key, q=q or None, ptype=ptype) }}">{{ label }} <b>{{ n }}</b></a>
+    {% for key, label, n in [
+        ('changed', 'Changed', counts.changed or 0),
+        ('rejected', 'Awaiting fix', counts.rejected or 0),
+        ('error', 'Errors', counts.errors or 0),
+        ('new', 'Not captured yet', counts.fresh or 0)] %}
+      {% if n or key in sel_status %}
+      <a class="chip {{ 'chip-on' if sel_status == [key] and not sel_types and not sel_attrs }}"
+         href="{{ url_for('index', status=key, q=q or None) }}">{{ label }} <b>{{ n }}</b></a>
       {% endif %}
     {% endfor %}
-    {% if status != 'all' or ptype != 'all' or q %}
+    {% if sel_status or sel_types or sel_attrs or q %}
       <a class="chip" href="{{ url_for('index') }}">✕ clear filters</a>
     {% endif %}
   </div>
@@ -112,8 +131,9 @@
     <input type="hidden" name="action" id="bulk-action" value="">
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <input type="hidden" name="q" value="{{ q }}">
-    <input type="hidden" name="status" value="{{ status }}">
-    <input type="hidden" name="ptype" value="{{ ptype }}">
+    {% for s in sel_status %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
+    {% for t in sel_types %}<input type="hidden" name="ptype" value="{{ t }}">{% endfor %}
+    {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
@@ -186,9 +206,9 @@
 
   {% if pages > 1 %}
   <div class="pager">
-    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=status, ptype=ptype) }}">← Prev</a>{% endif %}
+    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs) }}">← Prev</a>{% endif %}
     <span class="muted">Page {{ page }} of {{ pages }}</span>
-    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=status, ptype=ptype) }}">Next →</a>{% endif %}
+    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs) }}">Next →</a>{% endif %}
   </div>
   {% endif %}
   {% endif %}

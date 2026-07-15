@@ -112,6 +112,29 @@
   details.addbox[open] summary::before { content: "− "; }
   .exports { font-size: 12.5px; color: var(--muted); }
   .exports a { margin-left: 10px; }
+  /* multi-select filter dropdowns */
+  .dd { position: relative; }
+  .dd > summary { list-style: none; cursor: pointer; padding: 9px 14px;
+                  border: 1px solid var(--line); border-radius: 8px;
+                  background: #fff; font-size: 14px; user-select: none;
+                  white-space: nowrap; }
+  .dd > summary::-webkit-details-marker { display: none; }
+  .dd > summary::after { content: " ▾"; color: var(--muted); }
+  .dd[open] > summary { border-color: var(--muted); }
+  .dd .panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0;
+               min-width: 250px; max-height: 330px; overflow: auto;
+               background: #fff; border: 1px solid var(--line);
+               border-radius: 10px; padding: 7px;
+               box-shadow: 0 12px 32px rgba(15, 23, 42, .14); }
+  .dd .panel label { display: flex; gap: 9px; align-items: center;
+                     padding: 7px 9px; border-radius: 6px; font-size: 13.5px;
+                     cursor: pointer; white-space: nowrap; }
+  .dd .panel label:hover { background: var(--bg); }
+  .dd .cnt { color: var(--muted); margin-left: auto; font-size: 12px;
+             font-variant-numeric: tabular-nums; }
+  .fbadge { background: var(--accent); color: #fff; border-radius: 999px;
+            padding: 1px 7px; font-size: 11px; margin-left: 5px;
+            font-weight: 700; }
 
   /* --- modern search --- */
   .hero { background: linear-gradient(180deg, #ffffff, #f8fafc);

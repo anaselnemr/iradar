@@ -130,46 +130,77 @@ def parse_uploaded_file(file_storage):
 # --------------------------------------------------------------------------
 PER_PAGE = 100
 
+def _has(cat):
+    return ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
+            f" AND i.category='{cat}')")
+
+
+# real monitoring states - what the watcher says about the page (OR-combined)
 STATUS_FILTERS = {
-    "changed":   "u.last_status='changed' AND u.active=1",
-    "unchanged": "u.last_status='unchanged' AND u.active=1",
-    "baseline":  "u.last_status='baseline'",
-    "checked":   "u.last_checked IS NOT NULL",
-    "rejected":  "u.last_status='rejected'",
-    "error":     "u.last_status='error'",
-    "paused":    "u.active=0",
-    "new":       "u.last_checked IS NULL",
-    "notlive":   "u.last_http IS NOT NULL AND u.last_http >= 400",
-    "nodocs":    ("u.last_checked IS NOT NULL AND u.id NOT IN"
-                  " (SELECT url_id FROM items WHERE category='documents')"),
-    "hasdocs":   "u.id IN (SELECT url_id FROM items WHERE category='documents')",
+    "changed":   ("Changed", "u.last_status='changed' AND u.active=1"),
+    "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
+    "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
+    "baseline":  ("Baseline saved", "u.last_status='baseline'"),
+    "error":     ("Error", "u.last_status='error'"),
+    "paused":    ("Paused (not monitored)", "u.active=0"),
+    "new":       ("Not captured yet", "u.last_checked IS NULL"),
 }
 
+# properties of the page itself / what we captured from it (AND-combined)
+ATTR_FILTERS = {
+    "checked":      ("Captured", "u.last_checked IS NOT NULL"),
+    "live":         ("Live (HTTP OK)",
+                     "u.last_http IS NOT NULL AND u.last_http < 400"),
+    "notlive":      ("Not live (404/500)",
+                     "u.last_http IS NOT NULL AND u.last_http >= 400"),
+    "hasdocs":      ("Has documents", _has("documents")),
+    "nodocs":       ("No documents",
+                     "u.last_checked IS NOT NULL AND NOT " + _has("documents")),
+    "hasvideos":    ("Has videos (news & highlights)", _has("news")),
+    "hastrainings": ("Has trainings & webinars", _has("trainings")),
+    "hasdesign":    ("Has design resources", _has("design_resources")),
+    "hasfeatures":  ("Has key features", _has("features")),
+    "hasbenefits":  ("Has benefits", _has("benefits")),
+    "hasapps":      ("Has applications", _has("applications")),
+    "hascategories": ("Has browse-by-category", _has("categories")),
+}
+ATTR_CAT = {"hasdocs": "documents", "hasvideos": "news",
+            "hastrainings": "trainings", "hasdesign": "design_resources",
+            "hasfeatures": "features", "hasbenefits": "benefits",
+            "hasapps": "applications", "hascategories": "categories"}
 
-def _url_filter(q, status, ptype="all"):
+
+def _url_filter(q, statuses, ptypes, attrs):
+    """statuses OR'd, types OR'd, attributes AND'd - all multi-select."""
     where, params = [], []
     if q:
         where.append("(u.url LIKE ? OR u.label LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
-    if status in STATUS_FILTERS:
-        where.append(STATUS_FILTERS[status])
-    if ptype and ptype != "all":
-        where.append("u.ptype=?")
-        params.append(ptype)
+    picked = [STATUS_FILTERS[s][1] for s in statuses if s in STATUS_FILTERS]
+    if picked:
+        where.append("(" + " OR ".join(picked) + ")")
+    types = [t for t in ptypes if t]
+    if types:
+        where.append("u.ptype IN (" + ",".join("?" * len(types)) + ")")
+        params += types
+    for a in attrs:
+        if a in ATTR_FILTERS:
+            where.append(ATTR_FILTERS[a][1])
     return ("WHERE " + " AND ".join(where)) if where else "", params
 
 
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
-    status = request.args.get("status", "all")
-    ptype = request.args.get("ptype", "all")
+    statuses = [s for s in request.args.getlist("status") if s in STATUS_FILTERS]
+    sel_types = request.args.getlist("ptype")
+    attrs = [a for a in request.args.getlist("attr") if a in ATTR_FILTERS]
     try:
         page = max(1, int(request.args.get("page", "1")))
     except ValueError:
         page = 1
 
-    wsql, params = _url_filter(q, status, ptype)
+    wsql, params = _url_filter(q, statuses, sel_types, attrs)
 
     con = db.connect()
     total_match = con.execute(
@@ -211,13 +242,37 @@ def index():
     ptypes = con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
         " ORDER BY n DESC").fetchall()
+    # how many pages carry each kind of content (for the Content filter)
+    cat_pages = {r["category"]: r["n"] for r in con.execute(
+        "SELECT category, COUNT(DISTINCT url_id) n FROM items GROUP BY category")}
     con.close()
+
+    status_counts = {"changed": counts["changed"] or 0,
+                     "rejected": counts["rejected"] or 0,
+                     "unchanged": counts["unchanged"] or 0,
+                     "baseline": counts["baseline"] or 0,
+                     "error": counts["errors"] or 0,
+                     "paused": counts["paused"] or 0,
+                     "new": counts["fresh"] or 0}
+    attr_counts = {"checked": counts["checked"] or 0,
+                   "live": (counts["checked"] or 0) - (counts["notlive"] or 0)
+                           - (counts["errors"] or 0),
+                   "notlive": counts["notlive"] or 0,
+                   "nodocs": (counts["checked"] or 0)
+                             - cat_pages.get("documents", 0)}
+    for key, cat in ATTR_CAT.items():
+        attr_counts[key] = cat_pages.get(cat, 0)
+
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
-                           q=q, status=status, page=page, pages=pages,
+                           q=q, page=page, pages=pages,
                            total_match=total_match, counts=counts,
-                           per_page=PER_PAGE, ptype=ptype, ptypes=ptypes)
+                           per_page=PER_PAGE, ptypes=ptypes,
+                           sel_status=statuses, sel_types=sel_types,
+                           sel_attrs=attrs, status_filters=STATUS_FILTERS,
+                           attr_filters=ATTR_FILTERS,
+                           status_counts=status_counts, attr_counts=attr_counts)
 
 
 @app.route("/urls/bulk", methods=["POST"])
@@ -231,8 +286,9 @@ def urls_bulk():
         ids = []
     if request.form.get("all_matching") == "1":
         wsql, params = _url_filter(request.form.get("q", "").strip(),
-                                   request.form.get("status", "all"),
-                                   request.form.get("ptype", "all"))
+                                   request.form.getlist("status"),
+                                   request.form.getlist("ptype"),
+                                   request.form.getlist("attr"))
         con0 = db.connect()
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
