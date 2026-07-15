@@ -46,6 +46,20 @@ _DOC_BADGE_RE = re.compile(
     r"(Public|Confidential|Restricted).*$", re.I)
 
 
+# A video's authoring path (www.infineon.com/content/dam/infineon/...) is NOT
+# downloadable - it 404s. The delivery URL for the same asset lives on the
+# Scene7 host. Verified against training/webinar videos on several pages.
+_DAM_VIDEO_RE = re.compile(
+    r"^https?://(?:www\.)?infineon\.com/content/dam/infineon/(.+)$", re.I)
+
+
+def _delivery_url(u):
+    m = _DAM_VIDEO_RE.match(u or "")
+    if not m:
+        return u
+    return "https://assets.infineon.com/is/content/infineon/infineon/" + m.group(1)
+
+
 def _clean_doc_title(title):
     t = _ZERO_WIDTH_RE.sub("", title or "")
     cut = _DOC_BADGE_RE.sub("", t).strip()
@@ -113,13 +127,18 @@ IMAGES_JS = r"""
     const src = img.currentSrc || img.src;
     if (src && !src.startsWith('data:')) urls.add(src);
   });
-  document.querySelectorAll('source[srcset]').forEach(s => {
-    s.srcset.split(',').forEach(part => {
-      const u = part.trim().split(/\s+/)[0];
-      if (u && !u.startsWith('data:')) {
-        try { urls.add(new URL(u, location.href).href); } catch (e) {}
-      }
-    });
+  // srcset: split ONLY on commas that start a new candidate URL. Scene7 URLs
+  // carry commas inside their query ("?qlt=55,0&op_usm=1.75,0.3,2,0"), and a
+  // naive split shredded one real URL into four dead ones.
+  document.querySelectorAll('source[srcset], img[srcset]').forEach(s => {
+    (s.getAttribute('srcset') || '')
+      .split(/,(?=\s*(?:https?:)?\/\/|\s*\/[^\/]|\s*[\w.-]+\.[a-z]{2,6}\/)/i)
+      .forEach(part => {
+        const u = part.trim().split(/\s+/)[0];
+        if (u && !u.startsWith('data:')) {
+          try { urls.add(new URL(u, location.href).href); } catch (e) {}
+        }
+      });
   });
   document.querySelectorAll('video[poster]').forEach(v => {
     try { urls.add(new URL(v.getAttribute('poster'), location.href).href); } catch (e) {}
@@ -154,7 +173,7 @@ SECTIONS_JS = r"""
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
   const out = {documents: [], design_resources: [], news: [],
-               trainings: [], features: [], benefits: [],
+               trainings: [], videos: [], features: [], benefits: [],
                overview: [], applications: [], about: [], categories: [],
                images: []};
   const seen = new Set();
@@ -330,23 +349,38 @@ SECTIONS_JS = r"""
     // (thumbnail, title, "Read more", download, partner), and each card is
     // rendered twice (desktop + mobile). Iterating anchors produced the same
     // card up to 8 times, sometimes titled by its category chip.
-    const cards = Array.from(pane.querySelectorAll('li'))
-      .filter(li => !li.parentElement.closest('li'));   // outermost li only
+    // Cards are NOT always <li>: the Services pane has none, and its only
+    // outermost <li>s are partner badges + pagination - which got stored as
+    // "Ubiquitous AI CorporationPreferred" instead of the real cards.
+    let cards = Array.from(pane.querySelectorAll(
+      '.boardlist, .wholepcbdata, .tab-tools, li.style-none'));
+    if (!cards.length) cards = Array.from(pane.querySelectorAll('li'));
+    cards = cards.filter(c =>
+      // outermost card only, and never page furniture
+      !cards.some(o => o !== c && o.contains(c)) &&
+      !c.closest('.partner-ul-box, .pagination, .pagination-container, ' +
+                 '#filter-container, .headerNote') &&
+      !c.matches('li.box-style, li.partner-box, .pagination li'));
     cards.forEach(card => {
       // the chip above each card ("Wireless Modules", "Development Tools")
       // is a label, not a title - identify it structurally, not by name
       const chipEl = card.querySelector('.st-title-dsobject, .labelname');
       const chip = chipEl ? (chipEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      // never let the partner badge ("<vendor>Preferred") pose as the title
       const titleEl = card.querySelector(
-        '.anchor-title, .heading-dsobject a, .heading-dsobject, h3, h4');
+        '.anchor-title, .heading-dsobject a, .heading-dsobject, ' +
+        'h3:not(.heading-partnerobject), h4:not(.heading-partnerobject)');
       let t = titleEl ? (titleEl.innerText || titleEl.textContent || '')
                           .replace(/\s+/g, ' ').trim() : '';
       if (!t || GENERIC_LINK.test(t)) {
+        const partner = card.querySelector('.heading-partnerobject');
+        const partnerTxt = partner ?
+          (partner.textContent || '').replace(/\s+/g, ' ').trim() : '';
         for (const line of (card.innerText || '').split('\n')) {
           const s = line.replace(/\s+/g, ' ').trim();
-          if (s && s !== chip && s.length > 3 && s.length < 130 &&
-              !GENERIC_LINK.test(s) &&
-              !/^(watch video|log ?in|clear all|sort by.*)$/i.test(s)) {
+          if (s && s !== chip && s !== partnerTxt && s !== 'Preferred' &&
+              s.length > 3 && s.length < 130 && !GENERIC_LINK.test(s) &&
+              !/^(watch video|log ?in|clear all|sort by.*|preferred)$/i.test(s)) {
             t = s;
             break;
           }
@@ -568,6 +602,7 @@ SECTIONS_JS = r"""
       const cap = fig.querySelector('figcaption, h2, h3, h4, [class*="title" i]');
       if (cap) title = cap.textContent;
     }
+    // real media elements are Videos; the carousel cards stay under news
     push('videos', title || (src ? decodeURIComponent(src.split('/').pop()) : 'video'),
          src, v.poster ? 'has poster' : '');
   });
@@ -702,19 +737,15 @@ UNSTICK_JS = r"""
     }
     n++;
   });
-  // Clip anything wider than the viewport (the products table is ~2500px):
-  // otherwise the stitched screenshot is as wide as the widest element and
-  // the rest of the page sits in a sea of white.
-  const vw = document.documentElement.clientWidth;
-  for (let pass = 0; pass < 3; pass++) {
-    document.querySelectorAll('body *').forEach(el => {
-      const w = el.getBoundingClientRect().width;
-      if (w > vw + 4 && el.parentElement && el.parentElement !== document.body) {
-        el.parentElement.style.setProperty('overflow-x', 'hidden', 'important');
-        el.parentElement.style.setProperty('max-width', '100%', 'important');
-      }
-    });
-  }
+  // NB: no DOM-level width clipping here. Forcing max-width/overflow on the
+  // wide products table's container squeezed the layout and cut its heading
+  // down to "cts". The screenshot itself is clipped to the viewport width
+  // instead, which leaves the page exactly as the browser laid it out.
+  // Anything horizontally scrolled (the products table drifts right during
+  // the walks) must go home, or the clipped screenshot shows its tail.
+  document.querySelectorAll('*').forEach(el => {
+    if (el.scrollLeft) el.scrollLeft = 0;
+  });
   window.scrollTo(0, 0);
   return n;
 }
@@ -990,15 +1021,44 @@ async def capture_one(browser, url, out_dir):
         except Exception:
             pass
 
-        # A full-page screenshot is stitched while scrolling, so sticky/fixed
-        # bars (the page's own section nav) re-render over and over down the
-        # image. Pin them in place first - done last, so every click above
-        # still worked against the real layout.
+        # Put every widget back to its opening state so the screenshot is the
+        # same on every run (otherwise the documents table is frozen on
+        # whatever page the walk ended on, and diffs go off for no reason).
         try:
-            await page.evaluate(UNSTICK_JS)
-            await page.wait_for_timeout(250)
+            for sel in ("#documents .pagination .left-page:not(.inactive), "
+                        ".documents_ifx .pagination .left-page:not(.inactive)",
+                        ".designresource-component .pagination "
+                        ".left-page-ds:not(.inactive)"):
+                for _ in range(40):
+                    target = None
+                    for cand in await page.query_selector_all(sel):
+                        if await cand.is_visible():
+                            target = cand
+                            break
+                    if target is None:
+                        break
+                    await target.evaluate("el => el.click()")
+                    await page.wait_for_timeout(280)
+            first_tab = await page.query_selector('[id^="ds-tab-"]')
+            if first_tab is not None:
+                await first_tab.evaluate("el => el.click()")
+                await page.wait_for_timeout(400)
         except Exception:
             pass
+
+        # The section nav is position:fixed ONLY while scrolled down, so a
+        # screenshot taken mid-page paints it across the middle of the image.
+        # Scroll home, let the site's own scroll handler release it, and only
+        # then neutralise whatever is still sticky.
+        try:
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.wait_for_timeout(900)
+            n_unstuck = await page.evaluate(UNSTICK_JS)
+            await page.wait_for_timeout(300)
+            if INJECT_JS:
+                print(f"  [unstick] neutralised {n_unstuck} sticky/fixed")
+        except Exception as exc:
+            print(f"  [unstick] FAILED: {exc}")   # never swallow this again
 
         # Clip to the viewport width: a wide element (products table ~2500px)
         # otherwise makes the full-page image as wide as itself, leaving the
@@ -1165,6 +1225,20 @@ async def capture_one(browser, url, out_dir):
                     it for it in merged
                     if it.get("url") or
                     it.get("title", "").lower() not in titled_urls]
+        except Exception:
+            pass
+
+        # LAST step before writing: rewrite video authoring paths to the
+        # delivery host. Must be after every merge - the pane walk pools in
+        # its own copies of the items, so rewriting earlier gets overwritten.
+        try:
+            for cat, items in sections.items():
+                if not isinstance(items, list):
+                    continue
+                for it in items:
+                    if isinstance(it, dict) and it.get("url", "").lower().endswith(
+                            (".mp4", ".webm", ".mov")):
+                        it["url"] = _delivery_url(it["url"])
         except Exception:
             pass
 

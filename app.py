@@ -157,7 +157,8 @@ ATTR_FILTERS = {
     "hasdocs":      ("Has documents", _has("documents")),
     "nodocs":       ("No documents",
                      "u.last_checked IS NOT NULL AND NOT " + _has("documents")),
-    "hasvideos":    ("Has videos (news & highlights)", _has("news")),
+    "hasvideos":    ("Has videos", _has("videos")),
+    "hasnews":      ("Has news & highlights", _has("news")),
     "hastrainings": ("Has trainings & webinars", _has("trainings")),
     "hasdesign":    ("Has design resources", _has("design_resources")),
     "hasfeatures":  ("Has key features", _has("features")),
@@ -165,7 +166,7 @@ ATTR_FILTERS = {
     "hasapps":      ("Has applications", _has("applications")),
     "hascategories": ("Has browse-by-category", _has("categories")),
 }
-ATTR_CAT = {"hasdocs": "documents", "hasvideos": "news",
+ATTR_CAT = {"hasdocs": "documents", "hasvideos": "videos", "hasnews": "news",
             "hastrainings": "trainings", "hasdesign": "design_resources",
             "hasfeatures": "features", "hasbenefits": "benefits",
             "hasapps": "applications", "hascategories": "categories"}
@@ -388,6 +389,7 @@ SECTION_LABELS = [
     ("benefits", "Benefits"),
     ("applications", "Applications"),
     ("trainings", "Trainings & webinars"),
+    ("videos", "Videos"),
     ("news", "News & highlights"),
     ("images", "Images"),
 ]
