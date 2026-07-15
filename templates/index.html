@@ -115,7 +115,7 @@
       <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
       <td>{{ u.id }}</td>
       <td class="urlcell">
-        <a href="{{ url_for('url_detail', url_id=u.id) }}" title="Open the saved library for this page"><b>{{ u.page_title or u.label or u.url.rsplit('/', 1)[-1] }}</b></a><br>
+        <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ (u.page_title or u.label or u.url.rsplit('/', 1)[-1]) | clean_title }}</a><br>
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
       </td>
       <td>

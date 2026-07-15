@@ -23,6 +23,16 @@ app.secret_key = "infineonwatch-local-only"
 URL_RE = re.compile(r"https?://[^\s\"',;<>]+")
 
 
+@app.template_filter("clean_title")
+def clean_title_filter(s):
+    """Display titles: drop the site-name tail and Excel page-type codes."""
+    if not s:
+        return s
+    s = re.sub(r"\s*\|\s*Infineon\s*Technologies.*$", "", s, flags=re.I)
+    s = re.sub(r"\s*[—–-]+\s*[A-Z]{2,6}\s*$", "", s)
+    return s.strip()
+
+
 @app.template_filter("localtime")
 def localtime_filter(s):
     """DB timestamps are UTC; show them in the user's local time."""
