@@ -288,6 +288,7 @@ def urls_toggle(url_id):
 # text comparison only, never displayed as a library section.
 SECTION_LABELS = [
     ("overview", "Overview"),
+    ("categories", "Browse by category"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
     ("features", "Key features"),

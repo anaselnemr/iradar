@@ -141,7 +141,8 @@ SECTIONS_JS = r"""
 
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], features: [], benefits: [],
-               overview: [], applications: [], about: [], images: []};
+               overview: [], applications: [], about: [], categories: [],
+               images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -156,6 +157,7 @@ SECTIONS_JS = r"""
   const isPageChrome = (el) =>
     isTabStrip(el) || !!el.closest('header, footer, [role="navigation"], .nav');
 
+  const CHIP_LABEL = /^(development tools?|embedded software|boards? *& *designs?|services|training|simulation (tools|models)|pcb design data|documents|partners)$/i;
   const cardTitle = (a) => {
     let el = a;
     for (let i = 0; i < 3 && el.parentElement; i++) {
@@ -163,7 +165,8 @@ SECTIONS_JS = r"""
       const h = el.querySelector('h2,h3,h4,h5,strong,b,[class*="title" i],[class*="headline" i]');
       if (h) {
         const t = (h.textContent || '').replace(/\s+/g, ' ').trim();
-        if (t.length > 2 && t.length < 150 && !GENERIC_LINK.test(t)) return t;
+        if (t.length > 2 && t.length < 150 && !GENERIC_LINK.test(t) &&
+            !CHIP_LABEL.test(t)) return t;
       }
     }
     // no heading in the card: climb to the ancestor that holds more text
@@ -177,7 +180,8 @@ SECTIONS_JS = r"""
     if (card) {
       for (const line of (card.innerText || '').split('\n')) {
         const t = line.replace(/\s+/g, ' ').trim();
-        if (t.length > 2 && t.length < 120 && !GENERIC_LINK.test(t)) return t;
+        if (t.length > 2 && t.length < 120 && !GENERIC_LINK.test(t) &&
+            !CHIP_LABEL.test(t)) return t;
       }
     }
     return '';
@@ -395,6 +399,18 @@ SECTIONS_JS = r"""
     if (text.length > 40) {
       out.overview.push({title: text.slice(0, 700), url: '', meta: ''});
     }
+    break;
+  }
+
+  // Browse by category: the product-category links on hub/family pages
+  for (const h of document.querySelectorAll('h1,h2,h3')) {
+    if (out.categories.length) break;
+    if (isPageChrome(h)) continue;
+    const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!/^browse by categor(y|ies)$/i.test(ht)) continue;
+    const c = containerFor(h);
+    if (!c) break;
+    c.querySelectorAll('a[href]').forEach(a => collectAnchor('categories', a, true));
     break;
   }
 
@@ -680,10 +696,11 @@ async def _expand_interactive(page):
 
     # 2b. Design-resources tabs are <button>s (not role=tab): click each so
     # every pane hydrates (training items only load when their tab activates).
+    # DOM-level clicks - the sticky header intercepts coordinate clicks.
     try:
         for b in await page.query_selector_all('[id^="ds-tab-"]'):
             try:
-                await b.click(timeout=1200)
+                await b.evaluate("el => el.click()")
                 await page.wait_for_timeout(450)
             except Exception:
                 pass
@@ -797,7 +814,9 @@ async def capture_one(browser, url, out_dir):
         docs_acc = []
         panes_acc = {"design_resources": [], "trainings": []}
         try:
-            for _ in range(8):
+            # walk until the next-arrow goes inactive (high safety cap; some
+            # tables have 14+ pages - a hard low cap loses items)
+            for _ in range(40):
                 part = await page.evaluate(SECTIONS_JS)
                 docs_acc.extend(part.get("documents", []))
                 nxt = await page.query_selector(
@@ -805,7 +824,9 @@ async def capture_one(browser, url, out_dir):
                     ".documents_ifx .pagination .right-page:not(.inactive)")
                 if nxt is None:
                     break
-                await nxt.click(timeout=1500)
+                # DOM-level click: the sticky header can intercept
+                # coordinate clicks even with force=True
+                await nxt.evaluate("el => el.click()")
                 await page.wait_for_timeout(400)
                 await _settle_quiet(page, 700)
             # return the table to page 1 so the text layer and screenshot
@@ -814,7 +835,7 @@ async def capture_one(browser, url, out_dir):
                 "#documents .pagination .page-numbers, "
                 ".documents_ifx .pagination .page-numbers")
             if first_pg is not None:
-                await first_pg.click(timeout=1200)
+                await first_pg.evaluate("el => el.click()")
                 await page.wait_for_timeout(700)
         except Exception:
             pass
@@ -825,14 +846,15 @@ async def capture_one(browser, url, out_dir):
             for tb in await page.query_selector_all('[id^="ds-tab-"]'):
                 try:
                     await tb.scroll_into_view_if_needed(timeout=1500)
-                    # force: the sticky page header can cover the tab strip
-                    # after the documents-table walk scrolled the page
-                    await tb.click(timeout=1500, force=True)
+                    # DOM-level click: sticky header intercepts coordinate
+                    # clicks (even force=True) and the pane never activates
+                    await tb.evaluate("el => el.click()")
                     await page.wait_for_timeout(300)
                     await _settle_quiet(page, 700)
                 except Exception:
                     continue
-                for _ in range(6):
+                # walk ALL of this pane's pages (14+ seen in the wild)
+                for _ in range(40):
                     part = await page.evaluate(SECTIONS_JS)
                     for cat in panes_acc:
                         panes_acc[cat].extend(part.get(cat, []))
@@ -849,7 +871,7 @@ async def capture_one(browser, url, out_dir):
                             break
                     if nxt is None:
                         break
-                    await nxt.click(timeout=1500, force=True)
+                    await nxt.evaluate("el => el.click()")
                     await page.wait_for_timeout(700)
         except Exception:
             pass
