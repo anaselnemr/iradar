@@ -261,9 +261,12 @@ SECTIONS_JS = r"""
     const bits = [];
     for (const line of (root.innerText || '').split('\n')) {
       const s = line.trim();
-      if (DATE_RE.test(s) || LANG_RE.test(s)) bits.push(s);
+      if (DATE_RE.test(s) || LANG_RE.test(s) ||
+          /^\d+(\.\d+)? ?mb$/i.test(s) || /^(zip|pdf|xlsx?|txt|exe)$/i.test(s) ||
+          /^\d{2}_\d{2}$/.test(s) ||
+          /^[A-Z][a-z]{2,8} \d{1,2}, \d{4}$/.test(s)) bits.push(s);
     }
-    return bits.slice(0, 3).join(' | ');
+    return [...new Set(bits)].slice(0, 5).join(' | ');
   };
   document.querySelectorAll('[id^="ds-tabpane-"]').forEach(pane => {
     const suffix = pane.id.replace('ds-tabpane-', '');
@@ -286,13 +289,13 @@ SECTIONS_JS = r"""
       }
       push(cat, t, href, li ? cardExtras(li) : '', group);
     });
-    // href-less card anchors (trainings, gated downloads); video URL hides
-    // in the thumbnail rendition path (.../<video>.mp4/jcr:content/...)
-    pane.querySelectorAll('a.mobile-anchor-tag:not([href]), .board-container a:not([href])')
+    // href-less card/title anchors (trainings, CAD/IBIS file rows, gated
+    // downloads); a video URL hides in the thumbnail rendition path
+    pane.querySelectorAll('a:not([href])')
       .forEach(a2 => {
         const t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
-        if (t.length < 10 || t.length > 200 || GENERIC_LINK.test(t) ||
-            /^watch video$/i.test(t)) return;
+        if (t.length < 9 || t.length > 200 || GENERIC_LINK.test(t) ||
+            /^(watch video|log ?in|clear all|sort by.*|download)$/i.test(t)) return;
         const li = a2.closest('li, .boardlist') || pane;
         const img = li.querySelector('img[src*=".mp4/"]');
         const vurl = img ? img.src.split('/jcr:content')[0] : '';
@@ -302,7 +305,12 @@ SECTIONS_JS = r"""
 
   // Pass 1: known components (reliable IDs/classes on infineon.com).
   // Roots are trusted; only inner tab strips are filtered out.
+  const hasDsPanes = !!document.querySelector('[id^="ds-tabpane-"]');
   for (const [cat, sel] of COMPONENTS) {
+    // when the tabbed design-resources widget exists, its panes (collected
+    // above, with groups) are authoritative - skip the generic pass which
+    // would re-collect the same section plus unrelated neighbours ungrouped
+    if (cat === 'design_resources' && hasDsPanes) continue;
     let roots = [];
     try { roots = Array.from(document.querySelectorAll(sel)); } catch (e) {}
     for (const root of roots) {
@@ -421,6 +429,17 @@ SECTIONS_JS = r"""
     }
   }
 
+  // Login-gated document rows (MyInfineon lock icon) have no public link -
+  // capture them by their table cells so the groundtruth stays complete.
+  document.querySelectorAll('#documents tr, .documents_ifx tr').forEach(tr => {
+    if (!tr.querySelector('td') || tr.querySelector('a[href]')) return;
+    const cells = Array.from(tr.querySelectorAll('td'))
+      .map(td => (td.innerText || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (cells.length < 2 || cells[0].length < 8) return;
+    push('documents', cells[0], '', cells.slice(1, 9).join(' | '));
+  });
+
   // Pass 2: heading-based fallback, only for categories still empty
   for (const h of document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')) {
     if (isTabStrip(h)) continue;                   // tab labels are not sections
@@ -428,6 +447,7 @@ SECTIONS_JS = r"""
     if (!ht || ht.length > 60) continue;
     for (const [cat, re] of CATS) {
       if (out[cat].length || !re.test(ht)) continue;
+      if (cat === 'design_resources' && hasDsPanes) continue;
       const c = containerFor(h);
       if (!c) break;
       c.querySelectorAll('a[href]').forEach(a => collectAnchor(cat, a, true));
@@ -658,6 +678,7 @@ async def capture_one(browser, url, out_dir):
         # Document tables paginate client-side (page "1 2 ->"): walk every
         # page and merge the rows so no document is missed.
         docs_acc = []
+        panes_acc = {"design_resources": [], "trainings": []}
         try:
             for _ in range(8):
                 part = await page.evaluate(SECTIONS_JS)
@@ -677,6 +698,40 @@ async def capture_one(browser, url, out_dir):
             if first_pg is not None:
                 await first_pg.click(timeout=1200)
                 await page.wait_for_timeout(700)
+        except Exception:
+            pass
+
+        # Design-resources panes paginate too (e.g. 11 dev tools shown 5 per
+        # page): activate each tab and walk its pages, merging the items.
+        try:
+            for tb in await page.query_selector_all('[id^="ds-tab-"]'):
+                try:
+                    await tb.scroll_into_view_if_needed(timeout=1500)
+                    # force: the sticky page header can cover the tab strip
+                    # after the documents-table walk scrolled the page
+                    await tb.click(timeout=1500, force=True)
+                    await page.wait_for_timeout(600)
+                except Exception:
+                    continue
+                for _ in range(6):
+                    part = await page.evaluate(SECTIONS_JS)
+                    for cat in panes_acc:
+                        panes_acc[cat].extend(part.get(cat, []))
+                    # every pane has its own pagination bar in the DOM;
+                    # only the active pane's arrow is visible
+                    nxt = None
+                    for arrow in await page.query_selector_all(
+                            ".designresource-component .pagination "
+                            ".right-page-ds:not(.inactive), "
+                            ".designresource-component .pagination "
+                            ".right-page:not(.inactive)"):
+                        if await arrow.is_visible():
+                            nxt = arrow
+                            break
+                    if nxt is None:
+                        break
+                    await nxt.click(timeout=1500, force=True)
+                    await page.wait_for_timeout(700)
         except Exception:
             pass
 
@@ -708,28 +763,54 @@ async def capture_one(browser, url, out_dir):
             sections = await page.evaluate(SECTIONS_JS)
         except Exception:
             sections = {}
-        # merge documents collected across the table's pages + clean titles;
-        # the same document can be collected via two different links (row link
-        # vs download icon) - dedupe by TITLE+LANGUAGE (the same title often
-        # legitimately exists in EN/JA/CN variants), keeping the richer entry
+        # merge documents collected across the table's pages + clean titles.
+        # Distinct documents may share a title (language variants), so entries
+        # are NEVER merged across different links - only exact repeats are
+        # dropped, plus meta-less secondary anchors of an already-seen title
+        # (the same row collected again via its download-icon link).
         try:
             by_key = {}
             for d in list(sections.get("documents", [])) + docs_acc:
                 d["title"] = _clean_doc_title(d.get("title", ""))
-                langs = re.findall(r"\| ([A-Z]{2})(?: \||$)", d.get("meta", ""))
-                key = (d["title"].lower(), langs[-1] if langs else "")
+                key = (d["title"].lower(), d.get("url", ""))
                 prev = by_key.get(key)
-                if prev is None:
+                if prev is None or len(d.get("meta", "")) > len(prev.get("meta", "")):
                     by_key[key] = d
-                elif (len(d.get("meta", "")) + len(d.get("url", ""))) > \
-                        (len(prev.get("meta", "")) + len(prev.get("url", ""))):
-                    by_key[key] = d
-            # drop meta-less entries whose title already exists with meta
-            # (secondary anchors of the same row picked up via other links)
             titled = {d["title"].lower() for d in by_key.values() if d.get("meta")}
             sections["documents"] = [
                 d for d in by_key.values()
                 if d.get("meta") or d["title"].lower() not in titled]
+        except Exception:
+            pass
+        # merge paginated design-resource/training panes harvested per tab.
+        # The same card is often captured several times across passes (with or
+        # without its lazy-loaded video URL or group): dedupe by title+group,
+        # preferring grouped entries and keeping the richest one.
+        try:
+            for cat in ("design_resources", "trainings"):
+                pool = list(sections.get(cat, [])) + panes_acc.get(cat, [])
+                # tabbed pages: grouped (pane) items are authoritative - a
+                # single flaky pass can inject ungrouped page-wide junk
+                grouped_pool = [it for it in pool if it.get("group")]
+                if grouped_pool:
+                    pool = grouped_pool
+                grouped_titles = {it.get("title", "").lower()
+                                  for it in pool if it.get("group")}
+                best = {}
+                order = []
+                for it in pool:
+                    title_l = it.get("title", "").lower()
+                    if not it.get("group") and title_l in grouped_titles:
+                        continue
+                    k = (title_l, it.get("group", ""))
+                    prev = best.get(k)
+                    if prev is None:
+                        best[k] = it
+                        order.append(k)
+                    elif (len(it.get("url", "")) + len(it.get("meta", ""))) > \
+                            (len(prev.get("url", "")) + len(prev.get("meta", ""))):
+                        best[k] = it
+                sections[cat] = [best[k] for k in order]
         except Exception:
             pass
 

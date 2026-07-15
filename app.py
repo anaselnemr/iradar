@@ -533,10 +533,14 @@ def settings_view():
 
 @app.route("/export.xlsx")
 def export_xlsx():
-    """Full library export: every URL with status + every extracted item."""
+    """Excel export of ALL tracked URLs (never filtered/paged).
+
+    mode=table  -> one sheet: the whole dashboard table + library counts
+    mode=full   -> adds every extracted library item and all changes"""
     import tempfile
     from openpyxl import Workbook
 
+    mode = request.args.get("mode", "full")
     wb = Workbook(write_only=True)
     ws_pages = wb.create_sheet("Pages")
     cat_keys = [c for c, _ in SECTION_LABELS if c != "images"]
@@ -544,11 +548,13 @@ def export_xlsx():
                      "Last checked (UTC)", "Text lines", "Image count"] +
                     [label for c, label in SECTION_LABELS if c != "images"] +
                     ["Overview text"])
-    ws_items = wb.create_sheet("Library items")
-    ws_items.append(["URL ID", "URL", "Category", "Group", "Title", "Link",
-                     "Details"])
-    ws_changes = wb.create_sheet("Changes")
-    ws_changes.append(["Change ID", "URL", "When (UTC)", "Summary", "Verdict"])
+    ws_items = ws_changes = None
+    if mode == "full":
+        ws_items = wb.create_sheet("Library items")
+        ws_items.append(["URL ID", "URL", "Category", "Group", "Title", "Link",
+                         "Details"])
+        ws_changes = wb.create_sheet("Changes")
+        ws_changes.append(["Change ID", "URL", "When (UTC)", "Summary", "Verdict"])
 
     con = db.connect()
     label_by_cat = dict(SECTION_LABELS)
@@ -564,13 +570,14 @@ def export_xlsx():
                 counts.append(len(sections.get(c, [])))
             ov = sections.get("overview") or []
             overview_text = ov[0].get("title", "") if ov else ""
-            for c in cat_keys:
-                if c == "overview":
-                    continue
-                for it in sections.get(c, []):
-                    ws_items.append([u["id"], u["url"], label_by_cat[c],
-                                     it.get("group", ""), it.get("title", ""),
-                                     it.get("url", ""), it.get("meta", "")])
+            if ws_items is not None:
+                for c in cat_keys:
+                    if c == "overview":
+                        continue
+                    for it in sections.get(c, []):
+                        ws_items.append([u["id"], u["url"], label_by_cat[c],
+                                         it.get("group", ""), it.get("title", ""),
+                                         it.get("url", ""), it.get("meta", "")])
         else:
             counts = ["" for _ in cat_keys]
         ws_pages.append([u["id"], u["url"], u["label"], u["active"],
@@ -579,19 +586,20 @@ def export_xlsx():
                          snap["text_lines"] if snap else "",
                          snap["image_count"] if snap else ""] +
                         counts + [overview_text])
-    for c in con.execute(
-            "SELECT c.*, u.url AS u_url FROM changes c JOIN urls u ON u.id=c.url_id"
-            " ORDER BY c.id"):
-        verdict = ("to review" if not c["reviewed"] else
-                   ("rejected" if c["resolution"] == "reject" else "approved"))
-        ws_changes.append([c["id"], c["u_url"], c["ts"], c["summary"], verdict])
+    if ws_changes is not None:
+        for c in con.execute(
+                "SELECT c.*, u.url AS u_url FROM changes c JOIN urls u ON u.id=c.url_id"
+                " ORDER BY c.id"):
+            verdict = ("to review" if not c["reviewed"] else
+                       ("rejected" if c["resolution"] == "reject" else "approved"))
+            ws_changes.append([c["id"], c["u_url"], c["ts"], c["summary"], verdict])
     con.close()
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    out = Path(tempfile.gettempdir()) / f"infineonwatch-export-{stamp}.xlsx"
+    name = f"infineonwatch-{'table' if mode == 'table' else 'everything'}-{stamp}.xlsx"
+    out = Path(tempfile.gettempdir()) / name
     wb.save(out)
-    return send_file(out, as_attachment=True,
-                     download_name=f"infineonwatch-export-{stamp}.xlsx")
+    return send_file(out, as_attachment=True, download_name=name)
 
 
 @app.route("/history")

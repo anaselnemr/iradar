@@ -99,7 +99,8 @@
     <span class="muted" style="margin-left:auto">
       Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ total_match }}
       {% if q or status != 'all' %}(filtered){% endif %}
-      &nbsp;·&nbsp;<a href="{{ url_for('export_xlsx') }}" title="Download every page with status and its full library content as Excel">⬇ Export Excel</a>
+      &nbsp;·&nbsp;<a href="{{ url_for('export_xlsx', mode='table') }}" title="ALL pages (never filtered): the whole table with status + library counts — one sheet, fast">⬇ Excel: table</a>
+      &nbsp;·&nbsp;<a href="{{ url_for('export_xlsx', mode='full') }}" title="ALL pages + every library item (documents, boards, trainings, news, features...) + all changes — no screenshots">⬇ Excel: everything</a>
     </span>
   </div>
 
@@ -183,7 +184,16 @@ function selectAllMatching() {
   }
   refreshCount();
 }
-document.querySelectorAll('.rowsel').forEach(cb => cb.addEventListener('change', () => {
+// shift-click selects the whole range between the last-clicked box and this one
+const rowBoxes = Array.from(document.querySelectorAll('.rowsel'));
+let lastClickedBox = null;
+rowBoxes.forEach(cb => cb.addEventListener('click', (e) => {
+  if (e.shiftKey && lastClickedBox && lastClickedBox !== cb) {
+    const a = rowBoxes.indexOf(lastClickedBox), b = rowBoxes.indexOf(cb);
+    rowBoxes.slice(Math.min(a, b), Math.max(a, b) + 1)
+      .forEach(x => x.checked = cb.checked);
+  }
+  lastClickedBox = cb;
   document.getElementById('all-matching').value = '0';
   refreshCount();
 }));
