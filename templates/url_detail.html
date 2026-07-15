@@ -28,6 +28,29 @@
       <div class="muted" style="text-align:center; margin-top:6px">Full-page screenshot — click to open</div>
     </div>
     <div>
+      {% if cat_tree %}
+      {% macro tree(nodes) %}
+        <ul class="cattree">
+          {% for n in nodes %}
+          <li>
+            {% if n.page_id %}
+              <a href="{{ url_for('url_detail', url_id=n.page_id) }}" class="titlelink" title="Open our captured content for this page">{{ n.title }}</a>
+              <a href="{{ n.url }}" target="_blank" class="liveurl" title="Open the live page">↗</a>
+            {% else %}
+              <a href="{{ n.url }}" target="_blank" class="titlelink">{{ n.title }}</a>
+              <span class="muted" style="font-size:11.5px">not tracked</span>
+            {% endif %}
+            {% if n.children %}{{ tree(n.children) }}{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      {% endmacro %}
+      <details class="libcat" open>
+        <summary>Browse by category <b>{{ cat_tree|length }}</b></summary>
+        {{ tree(cat_tree) }}
+      </details>
+      {% endif %}
+
       {% for cat in library %}
       <details class="libcat" {% if cat['items'] and loop.index <= 3 %}open{% endif %}>
         <summary>{{ cat['label'] }} <b>{{ cat['items']|length }}</b></summary>
@@ -39,7 +62,9 @@
           <ul class="liblist">
             {% for it in gitems %}
             <li>
-              {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
+              {% if it.page_id %}<a href="{{ url_for('url_detail', url_id=it.page_id) }}" title="Open our captured content for this page">{{ it.title or it.url }}</a>
+                <a href="{{ it.url }}" target="_blank" class="liveurl" title="Open the live page">↗</a>
+              {% elif it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
               {% else %}{{ it.title }}{% endif %}
               {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
             </li>
@@ -50,7 +75,9 @@
         <ul class="liblist">
           {% for it in cat['items'] %}
           <li>
-            {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
+            {% if it.page_id %}<a href="{{ url_for('url_detail', url_id=it.page_id) }}" title="Open our captured content for this page">{{ it.title or it.url }}</a>
+              <a href="{{ it.url }}" target="_blank" class="liveurl" title="Open the live page">↗</a>
+            {% elif it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
             {% else %}{{ it.title }}{% endif %}
             {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
           </li>

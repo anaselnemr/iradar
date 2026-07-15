@@ -7,6 +7,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -402,6 +403,33 @@ def _load_sections(snap_dir):
         return None
 
 
+def _category_tree(items):
+    """Nest 'Browse by category' links by their URL path so they read as the
+    hierarchy they are (parent section -> children)."""
+    nodes = []
+    for it in items:
+        url = (it.get("url") or "").rstrip("/")
+        if not url:
+            continue
+        path = urlsplit(url).path.strip("/").split("/")
+        nodes.append({"title": it.get("title") or url, "url": url,
+                      "page_id": it.get("page_id"), "path": path,
+                      "children": []})
+    nodes.sort(key=lambda n: len(n["path"]))
+    roots = []
+    for n in nodes:
+        parent = None
+        for cand in nodes:
+            if cand is n:
+                continue
+            if len(cand["path"]) < len(n["path"]) and \
+                    n["path"][:len(cand["path"])] == cand["path"]:
+                if parent is None or len(cand["path"]) > len(parent["path"]):
+                    parent = cand
+        (parent["children"] if parent else roots).append(n)
+    return roots
+
+
 def _sections_diff(old_dir, new_dir):
     """Added/removed items per category between two snapshots' libraries."""
     o = _load_sections(old_dir) or {}
@@ -436,9 +464,34 @@ def url_detail(url_id):
         " AND rejected=0 ORDER BY id DESC LIMIT 1", (url_id,)).fetchone()
     con.close()
     sections = _load_sections(latest["dir"]) if latest else None
+    # resolve item links that point at pages we track -> open OUR content
+    tracked = {}
+    if sections:
+        links = {it.get("url", "").rstrip("/")
+                 for items in sections.values() if isinstance(items, list)
+                 for it in items if isinstance(it, dict) and it.get("url")}
+        if links:
+            con2 = db.connect()
+            marks = ",".join("?" * len(links))
+            for r in con2.execute(
+                    f"SELECT id, url FROM urls WHERE rtrim(url,'/') IN ({marks})",
+                    [l for l in links]):
+                tracked[r["url"].rstrip("/")] = r["id"]
+            con2.close()
+        for items in sections.values():
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                if isinstance(it, dict) and it.get("url"):
+                    it["page_id"] = tracked.get(it["url"].rstrip("/"))
+
+    cat_tree = _category_tree(sections.get("categories", []) if sections else [])
+
     library = []
     if sections:
         for cat, label in SECTION_LABELS:
+            if cat == "categories":
+                continue                      # rendered as a tree instead
             items = sections.get(cat, [])
             groups = []
             if any(i.get("group") for i in items):
@@ -453,7 +506,7 @@ def url_detail(url_id):
                 groups = [(g, by_group[g]) for g in order]
             library.append({"label": label, "items": items, "groups": groups})
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
-                           latest=latest, library=library)
+                           latest=latest, library=library, cat_tree=cat_tree)
 
 
 @app.route("/change/<int:change_id>")

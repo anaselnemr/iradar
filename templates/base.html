@@ -189,6 +189,16 @@
   .liblist { margin: 8px 0 4px; padding-left: 20px; font-size: 13.5px;
              max-height: 340px; overflow-y: auto; }
   .liblist li { margin: 3px 0; word-break: break-word; }
+  /* browse-by-category hierarchy */
+  .cattree { list-style: none; margin: 8px 0 2px; padding-left: 6px;
+             font-size: 13.5px; }
+  .cattree ul { list-style: none; margin: 2px 0 2px; padding-left: 18px;
+                border-left: 1px solid var(--line); }
+  .cattree li { position: relative; padding: 3px 0 3px 14px; }
+  .cattree li::before { content: ""; position: absolute; left: 0; top: 13px;
+                        width: 9px; height: 1px; background: var(--line); }
+  .cattree > li { padding-left: 0; }
+  .cattree > li::before { display: none; }
   .libgroup { margin: 12px 0 2px 4px; font-size: 13px; color: var(--accent);
               text-transform: uppercase; letter-spacing: .05em; }
   .hit { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;

@@ -59,7 +59,13 @@ HIDE_CSS = """
 #onetrust-consent-sdk, #usercentrics-root, #usercentrics-cmp-ui,
 #CybotCookiebotDialog, #truste-consent-track, .cc-window,
 [id*="cookie-banner" i], [class*="cookie-banner" i],
-[id*="cookieconsent" i], [class*="cookieconsent" i] {
+[id*="cookieconsent" i], [class*="cookieconsent" i],
+/* Qualtrics site-intercept "Feedback" tab + its (empty) iframe box:
+   page furniture that appeared in every screenshot */
+div[id^="QSI"], div[class^="QSI"], [id*="QSIFeedbackButton" i],
+[class*="QSIFeedbackButton" i], iframe[src*="qualtrics" i],
+iframe[src*="siteintercept" i], [id*="siteintercept" i],
+[class*="feedback-button" i], [id*="feedback-btn" i] {
     display: none !important; visibility: hidden !important;
 }
 html, body { overflow: auto !important; }
@@ -71,7 +77,9 @@ html, body { overflow: auto !important; }
 """
 
 BANNER_SELECTORS = ("#onetrust-consent-sdk, #usercentrics-root, #usercentrics-cmp-ui, "
-                    "#CybotCookiebotDialog, #truste-consent-track, .cc-window")
+                    "#CybotCookiebotDialog, #truste-consent-track, .cc-window, "
+                    "div[id^=\"QSI\"], div[class^=\"QSI\"], "
+                    "iframe[src*=\"qualtrics\"], iframe[src*=\"siteintercept\"]")
 
 # Extracts ALL text nodes (textContent walk), so text inside hidden tab
 # panels and collapsed sections is captured too.
@@ -136,7 +144,7 @@ SECTIONS_JS = r"""
     ['news',             /^(news( & highlights?)?|highlights?|videos?)$/i],
     ['trainings',        /^((support & )?trainings?( & webinars?)?|webinars?)$/i],
   ];
-  const GENERIC_LINK = /^(explore more|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all)|more|download|jump to|overview|add to cart.*|buy online.*|order now.*|boards? *& *designs?|development tools|embedded software|services)$/i;
+  const GENERIC_LINK = /^(explore( more| now)?|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all|products?)|more|download|jump to|overview|goto.?link|add to cart.*|buy online.*|order now.*|boards? *& *designs?|development tools|embedded software|services)$/i;
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
   const out = {documents: [], design_resources: [], news: [],
@@ -987,6 +995,40 @@ async def capture_one(browser, url, out_dir):
                                      d.get("url") not in titled_urls)]
         except Exception:
             pass
+        # Browse-by-category: one entry per destination page. The same page is
+        # linked twice (tile + "<name> Overview" list link) - keep the clean
+        # title, and drop generic CTA links to product tables.
+        try:
+            page_base = url.split("#")[0].rstrip("/")
+            cleaned, seen_url = [], set()
+            for it in sections.get("categories", []):
+                u_it = (it.get("url") or "").split("#")[0].rstrip("/")
+                t_it = re.sub(r"\s+Overview$", "",
+                              (it.get("title") or "").strip())
+                if not u_it or len(t_it) < 3 or u_it == page_base:
+                    continue          # empty / self-anchor link
+                if re.match(r"(?i)^(goto.?link|view (products?|all))$", t_it):
+                    continue
+                if u_it in seen_url:
+                    continue
+                seen_url.add(u_it)
+                it["url"], it["title"] = u_it, t_it
+                cleaned.append(it)
+            # one entry per category: a tile links both to the category page
+            # and to its product table - the page is the canonical destination
+            best, order_cat = {}, []
+            for it in cleaned:
+                k = it["title"].lower()
+                if k not in best:
+                    best[k] = it
+                    order_cat.append(k)
+                elif "/product-table/" in best[k]["url"] \
+                        and "/product-table/" not in it["url"]:
+                    best[k] = it
+            sections["categories"] = [best[k] for k in order_cat]
+        except Exception:
+            pass
+
         # merge paginated design-resource/training panes harvested per tab.
         # The same card is often captured several times across passes (with or
         # without its lazy-loaded video URL or group): dedupe by title+group,
