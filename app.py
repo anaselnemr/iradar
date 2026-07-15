@@ -126,13 +126,16 @@ STATUS_FILTERS = {
 }
 
 
-def _url_filter(q, status):
+def _url_filter(q, status, ptype="all"):
     where, params = [], []
     if q:
         where.append("(u.url LIKE ? OR u.label LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
     if status in STATUS_FILTERS:
         where.append(STATUS_FILTERS[status])
+    if ptype and ptype != "all":
+        where.append("u.ptype=?")
+        params.append(ptype)
     return ("WHERE " + " AND ".join(where)) if where else "", params
 
 
@@ -140,12 +143,13 @@ def _url_filter(q, status):
 def index():
     q = request.args.get("q", "").strip()
     status = request.args.get("status", "all")
+    ptype = request.args.get("ptype", "all")
     try:
         page = max(1, int(request.args.get("page", "1")))
     except ValueError:
         page = 1
 
-    wsql, params = _url_filter(q, status)
+    wsql, params = _url_filter(q, status, ptype)
 
     con = db.connect()
     total_match = con.execute(
@@ -184,13 +188,16 @@ def index():
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
         "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
+    ptypes = con.execute(
+        "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
+        " ORDER BY n DESC").fetchall()
     con.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            q=q, status=status, page=page, pages=pages,
                            total_match=total_match, counts=counts,
-                           per_page=PER_PAGE)
+                           per_page=PER_PAGE, ptype=ptype, ptypes=ptypes)
 
 
 @app.route("/urls/bulk", methods=["POST"])
@@ -204,7 +211,8 @@ def urls_bulk():
         ids = []
     if request.form.get("all_matching") == "1":
         wsql, params = _url_filter(request.form.get("q", "").strip(),
-                                   request.form.get("status", "all"))
+                                   request.form.get("status", "all"),
+                                   request.form.get("ptype", "all"))
         con0 = db.connect()
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
@@ -628,15 +636,15 @@ def export_xlsx():
     wb = Workbook(write_only=True)
     ws_pages = wb.create_sheet("Pages")
     cat_keys = [c for c, _ in SECTION_LABELS if c != "images"]
-    ws_pages.append(["ID", "URL", "Name", "Active", "Status", "HTTP",
-                     "Last checked (UTC)", "Text lines", "Image count"] +
+    ws_pages.append(["ID", "URL", "Name", "Page type", "Active", "Status",
+                     "HTTP", "Last checked (UTC)", "Text lines", "Image count"] +
                     [label for c, label in SECTION_LABELS if c != "images"] +
                     ["Overview text"])
     ws_items = ws_changes = None
     if mode == "full":
         ws_items = wb.create_sheet("Library items")
-        ws_items.append(["URL ID", "URL", "Category", "Group", "Title", "Link",
-                         "Details"])
+        ws_items.append(["URL ID", "URL", "Page type", "Category", "Group",
+                         "Title", "Link", "Details"])
         ws_changes = wb.create_sheet("Changes")
         ws_changes.append(["Change ID", "URL", "When (UTC)", "Summary", "Verdict"])
 
@@ -659,12 +667,13 @@ def export_xlsx():
                     if c == "overview":
                         continue
                     for it in sections.get(c, []):
-                        ws_items.append([u["id"], u["url"], label_by_cat[c],
-                                         it.get("group", ""), it.get("title", ""),
-                                         it.get("url", ""), it.get("meta", "")])
+                        ws_items.append([u["id"], u["url"], u["ptype"],
+                                         label_by_cat[c], it.get("group", ""),
+                                         it.get("title", ""), it.get("url", ""),
+                                         it.get("meta", "")])
         else:
             counts = ["" for _ in cat_keys]
-        ws_pages.append([u["id"], u["url"], u["label"], u["active"],
+        ws_pages.append([u["id"], u["url"], u["label"], u["ptype"], u["active"],
                          u["last_status"] or "not checked", u["last_http"],
                          u["last_checked"],
                          snap["text_lines"] if snap else "",

@@ -118,6 +118,8 @@ def init_db():
     # kept for the record but never used as a comparison baseline.
     _ensure_column(con, "snapshots", "rejected", "INTEGER DEFAULT 0")
     _ensure_column(con, "changes", "resolution", "TEXT DEFAULT ''")
+    # page type: Product / Application / Design resources / Promo / Part
+    _ensure_column(con, "urls", "ptype", "TEXT DEFAULT ''")
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (k, v))
     con.commit()

@@ -62,9 +62,20 @@
   <form method="get" action="{{ url_for('index') }}" class="searchbar">
     <input type="text" name="q" value="{{ q }}" placeholder="Search URLs… (e.g. wi-fi, psoc-4, optiga)">
     <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="ptype" value="{{ ptype }}">
     <button>Search</button>
-    {% if q %}<a class="btn btn-ghost" href="{{ url_for('index', status=status) }}">Clear</a>{% endif %}
+    {% if q %}<a class="btn btn-ghost" href="{{ url_for('index', status=status, ptype=ptype) }}">Clear</a>{% endif %}
   </form>
+
+  <div class="chips" style="margin-bottom:8px">
+    <span class="muted" style="align-self:center; font-size:12.5px; margin-right:2px">TYPE:</span>
+    <a class="chip {{ 'chip-on' if ptype == 'all' }}"
+       href="{{ url_for('index', ptype='all', status=status, q=q or None) }}">All types</a>
+    {% for t in ptypes %}
+    <a class="chip {{ 'chip-on' if ptype == t.ptype }}"
+       href="{{ url_for('index', ptype=t.ptype, status=status, q=q or None) }}">{{ t.ptype }} <b>{{ t.n }}</b></a>
+    {% endfor %}
+  </div>
 
   <div class="chips">
     {% for key, label, n in [
@@ -81,7 +92,7 @@
         ('paused', 'Paused', counts.paused or 0),
         ('new', 'Not checked yet', counts.fresh or 0)] %}
       <a class="chip {{ 'chip-on' if status == key }}"
-         href="{{ url_for('index', status=key, q=q or None) }}">{{ label }}{% if n is not none %} <b>{{ n }}</b>{% endif %}</a>
+         href="{{ url_for('index', status=key, q=q or None, ptype=ptype) }}">{{ label }}{% if n is not none %} <b>{{ n }}</b>{% endif %}</a>
     {% endfor %}
   </div>
 
@@ -94,6 +105,7 @@
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <input type="hidden" name="q" value="{{ q }}">
     <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="ptype" value="{{ ptype }}">
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
@@ -117,7 +129,7 @@
   <table>
     <tr>
       <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
-      <th>#</th><th>URL</th><th>Live</th><th>Status</th>
+      <th>#</th><th>Page</th><th>Type</th><th>Live</th><th>Status</th>
       <th>Last checked (local)</th><th>Changes</th>
     </tr>
     {% for u in urls %}
@@ -128,6 +140,7 @@
         <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ (u.page_title or u.label or u.url.rsplit('/', 1)[-1]) | clean_title }}</a><br>
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
       </td>
+      <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
       <td>
         {% if u.last_http is none and u.last_status == 'error' %}
           <span class="badge b-error" title="Could not reach the page">DOWN</span>
@@ -160,9 +173,9 @@
 
   {% if pages > 1 %}
   <div class="pager">
-    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=status) }}">← Prev</a>{% endif %}
+    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=status, ptype=ptype) }}">← Prev</a>{% endif %}
     <span class="muted">Page {{ page }} of {{ pages }}</span>
-    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=status) }}">Next →</a>{% endif %}
+    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=status, ptype=ptype) }}">Next →</a>{% endif %}
   </div>
   {% endif %}
   {% endif %}
