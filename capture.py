@@ -132,16 +132,15 @@ SECTIONS_JS = r"""
   const CATS = [
     ['documents',        /^(documents?|documentation|further documentation)$/i],
     ['design_resources', /^(design resources?|boards?( & designs?)?|development tools|kits & boards)$/i],
-    ['news',             /^(news( & highlights?)?|highlights?)$/i],
+    ['news',             /^(news( & highlights?)?|highlights?|videos?)$/i],
     ['trainings',        /^((support & )?trainings?( & webinars?)?|webinars?)$/i],
-    ['videos',           /^videos?$/i],
   ];
   const GENERIC_LINK = /^(explore more|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all)|more|download|jump to|overview|add to cart.*|buy online.*|order now.*|boards? *& *designs?|development tools|embedded software|services)$/i;
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
   const out = {documents: [], design_resources: [], news: [],
-               trainings: [], videos: [], features: [], benefits: [],
-               images: []};
+               trainings: [], features: [], benefits: [],
+               overview: [], applications: [], images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -183,7 +182,7 @@ SECTIONS_JS = r"""
     return '';
   };
 
-  const push = (cat, title, url, meta) => {
+  const push = (cat, title, url, meta, group) => {
     title = (title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!title || title.length < 3) return;
     if (NAV_LABEL.test(title) && !meta) return;
@@ -195,7 +194,7 @@ SECTIONS_JS = r"""
         if (title.length > existing.title.length   // more descriptive title
             && !GENERIC_LINK.test(title)) existing.title = title;
         if (meta && !existing.meta) existing.meta =
-          meta.replace(/\s+/g, ' ').trim().slice(0, 140);
+          meta.replace(/\s+/g, ' ').trim().slice(0, 260);
         return;
       }
       urlOwned.set(url, cat);
@@ -203,8 +202,21 @@ SECTIONS_JS = r"""
     const key = cat + '|' + title + '|' + (url || '');
     if (seen.has(key)) return;
     seen.add(key);
-    out[cat].push({title: title, url: url || '',
-                   meta: (meta || '').replace(/\s+/g, ' ').trim().slice(0, 140)});
+    const item = {title: title, url: url || '',
+                  meta: (meta || '').replace(/\s+/g, ' ').trim().slice(0, 260)};
+    if (group) item.group = group;
+    out[cat].push(item);
+  };
+
+  const containerFor = (h) => {
+    let el = h, best = null;
+    for (let i = 0; i < 5 && el.parentElement; i++) {
+      el = el.parentElement;
+      if (el.textContent.length > bodyLen * 0.34) break;   // grew past one section
+      const links = el.querySelectorAll('a[href]').length;
+      if (links >= 2 || (links >= 1 && i >= 2)) best = el;
+    }
+    return best || h.parentElement;
   };
 
   const collectAnchor = (cat, a, strictChrome) => {
@@ -234,10 +246,59 @@ SECTIONS_JS = r"""
           (t.startsWith(cells[0].slice(0, 12)) || t.length > cells[0].length + 8)) {
         t = cells[0].replace(/\s*(New|Updated)$/i, '');
       }
-      meta = cells.filter(x => x !== t).slice(0, 4).join(' | ');
+      meta = cells.filter(x => x !== t).slice(0, 8).join(' | ');
     }
     push(cat, t, href, meta);
   };
+
+  // Design-resources tab panes FIRST (before the generic component pass, so
+  // items keep their tab group): Boards & designs / PCB design data /
+  // Simulation models / Development tools / Training. The Overview pane is
+  // skipped: it is a union of the other tabs.
+  const DATE_RE = /^[A-Z][a-z]{2,8} \d{1,2}, \d{4}$/;
+  const LANG_RE = /^[A-Z]{2}(,[A-Z]{2})*$/;
+  const cardExtras = (root) => {
+    const bits = [];
+    for (const line of (root.innerText || '').split('\n')) {
+      const s = line.trim();
+      if (DATE_RE.test(s) || LANG_RE.test(s)) bits.push(s);
+    }
+    return bits.slice(0, 3).join(' | ');
+  };
+  document.querySelectorAll('[id^="ds-tabpane-"]').forEach(pane => {
+    const suffix = pane.id.replace('ds-tabpane-', '');
+    if (/^overview$/i.test(suffix)) return;
+    const tabBtn = document.getElementById('ds-tab-' + suffix);
+    const group = tabBtn
+      ? (tabBtn.textContent || '').replace(/\s+/g, ' ').trim()
+      : suffix.replace(/-/g, ' ');
+    const cat = /training/i.test(suffix) ? 'trainings' : 'design_resources';
+    pane.querySelectorAll('a[href]').forEach(a => {
+      const li = a.closest('li, .boardlist');
+      const href = a.href || '';
+      if (href.startsWith('javascript:') || href.startsWith('mailto:')) return;
+      if (isTabStrip(a)) return;
+      let t = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
+      if (GENERIC_LINK.test(t)) {
+        const ct = cardTitle(a);
+        if (!ct) return;
+        t = ct;
+      }
+      push(cat, t, href, li ? cardExtras(li) : '', group);
+    });
+    // href-less card anchors (trainings, gated downloads); video URL hides
+    // in the thumbnail rendition path (.../<video>.mp4/jcr:content/...)
+    pane.querySelectorAll('a.mobile-anchor-tag:not([href]), .board-container a:not([href])')
+      .forEach(a2 => {
+        const t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t.length < 10 || t.length > 200 || GENERIC_LINK.test(t) ||
+            /^watch video$/i.test(t)) return;
+        const li = a2.closest('li, .boardlist') || pane;
+        const img = li.querySelector('img[src*=".mp4/"]');
+        const vurl = img ? img.src.split('/jcr:content')[0] : '';
+        push(cat, t, vurl, cardExtras(li), group);
+      });
+  });
 
   // Pass 1: known components (reliable IDs/classes on infineon.com).
   // Roots are trusted; only inner tab strips are filtered out.
@@ -251,27 +312,6 @@ SECTIONS_JS = r"""
     }
   }
 
-  // Design-resources tab panes: category by pane suffix (training pane holds
-  // trainings; boards/software/services/overview hold design resources).
-  document.querySelectorAll('[id^="ds-tabpane-"]').forEach(pane => {
-    const cat = /training/i.test(pane.id) ? 'trainings' : 'design_resources';
-    pane.querySelectorAll('a[href]').forEach(a => collectAnchor(cat, a, false));
-    if (cat === 'trainings') {
-      // training cards use href-less anchors; the video URL hides in the
-      // thumbnail rendition path (.../<video>.mp4/jcr:content/...)
-      pane.querySelectorAll('a.mobile-anchor-tag, .board-container a').forEach(a2 => {
-        const t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
-        if (t.length < 10 || t.length > 200 || /^watch video$/i.test(t)) return;
-        const li = a2.closest('li, .boardlist') || pane;
-        const img = li.querySelector('img[src*=".mp4/"]');
-        const vurl = img ? img.src.split('/jcr:content')[0] : '';
-        const lang = li.querySelector('.labelname.space span');
-        push('trainings', t, vurl,
-             'Training' + (lang ? ' | ' + lang.textContent.trim() : ''));
-      });
-    }
-  });
-
   // Video cards (news & highlights carousels, training panes) have no links -
   // the "Watch video" button opens a modal. Extract title + duration/date.
   document.querySelectorAll('.fnVideoCard, [class*="videocard" i] .card').forEach(card => {
@@ -282,10 +322,11 @@ SECTIONS_JS = r"""
     for (const line of (card.innerText || '').split('\n')) {
       const s = line.trim();
       if (/^\d{1,2}:\d{2}$/.test(s) || /^video\b/i.test(s) ||
-          /^(training|webinar)\b/i.test(s)) meta.push(s);
+          /^(training|webinar)\b/i.test(s) || DATE_RE.test(s) ||
+          (/\b(19|20)\d{2}\b/.test(s) && s.length < 30)) meta.push(s);
     }
     const pane = card.closest('[id^="ds-tabpane-"]');
-    let cat = 'videos';
+    let cat = 'news';
     if (pane) {
       cat = /training/i.test(pane.id) ? 'trainings' : 'design_resources';
     } else {
@@ -298,14 +339,51 @@ SECTIONS_JS = r"""
         }
       }
       if (/webinar|training/i.test(secHead)) cat = 'trainings';
-      else if (/news|highlight/i.test(secHead)) cat = 'news';
-      else if (/video/i.test(secHead)) cat = 'videos';
-      else if (card.closest('[class*="event" i], [class*="news" i]')) cat = 'news';
     }
     const thumb = card.querySelector('img[src*=".mp4/"]');
     push(cat, title, thumb ? thumb.src.split('/jcr:content')[0] : '',
-         meta.join(' | '));
+         [...new Set(meta)].slice(0, 3).join(' | '));
   });
+
+  // Overview: the page's descriptive paragraph (outside the design-resources
+  // widget and page chrome). Stored as one item.
+  for (const h of document.querySelectorAll('h1,h2,h3')) {
+    if (isPageChrome(h) ||
+        h.closest('.designresource-component, [id^="ds-"], #documents')) continue;
+    const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!/^overview$/i.test(ht)) continue;
+    let c = h.parentElement;
+    for (let i = 0; i < 3 && c && c.textContent.replace(/\s+/g, ' ').trim().length < ht.length + 60; i++) {
+      c = c.parentElement;
+    }
+    if (!c) break;
+    let text = (c.innerText || '').replace(/\s+/g, ' ').trim();
+    text = text.replace(/^Overview\s*/i, '');
+    const cutAt = text.search(/Key features?|Benefits\b|Applications\b/i);
+    if (cutAt > 40) text = text.slice(0, cutAt);
+    text = text.trim();
+    if (text.length > 40) {
+      out.overview.push({title: text.slice(0, 700), url: '', meta: ''});
+    }
+    break;
+  }
+
+  // Applications: linked application areas / use-case lists
+  for (const h of document.querySelectorAll('h1,h2,h3,h4')) {
+    if (isPageChrome(h) || h.closest('.designresource-component, [id^="ds-"]')) continue;
+    const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!/^applications?$/i.test(ht) || out.applications.length) continue;
+    const c = containerFor(h);
+    if (!c) break;
+    c.querySelectorAll('a[href]').forEach(a => collectAnchor('applications', a, true));
+    if (!out.applications.length) {
+      Array.from(c.querySelectorAll('li'))
+        .map(li => (li.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter(t => t.length > 3 && t.length < 200)
+        .slice(0, 30).forEach(t => push('applications', t, '', ''));
+    }
+    break;
+  }
 
   // Key features / Benefits: bullet or card lists without links
   const FEAT_CATS = [
@@ -344,16 +422,6 @@ SECTIONS_JS = r"""
   }
 
   // Pass 2: heading-based fallback, only for categories still empty
-  const containerFor = (h) => {
-    let el = h, best = null;
-    for (let i = 0; i < 5 && el.parentElement; i++) {
-      el = el.parentElement;
-      if (el.textContent.length > bodyLen * 0.34) break;   // grew past one section
-      const links = el.querySelectorAll('a[href]').length;
-      if (links >= 2 || (links >= 1 && i >= 2)) best = el;
-    }
-    return best || h.parentElement;
-  };
   for (const h of document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')) {
     if (isTabStrip(h)) continue;                   // tab labels are not sections
     const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
@@ -642,18 +710,26 @@ async def capture_one(browser, url, out_dir):
             sections = {}
         # merge documents collected across the table's pages + clean titles;
         # the same document can be collected via two different links (row link
-        # vs download icon) - dedupe by TITLE, keeping the richer entry
+        # vs download icon) - dedupe by TITLE+LANGUAGE (the same title often
+        # legitimately exists in EN/JA/CN variants), keeping the richer entry
         try:
-            by_title = {}
+            by_key = {}
             for d in list(sections.get("documents", [])) + docs_acc:
                 d["title"] = _clean_doc_title(d.get("title", ""))
-                prev = by_title.get(d["title"])
+                langs = re.findall(r"\| ([A-Z]{2})(?: \||$)", d.get("meta", ""))
+                key = (d["title"].lower(), langs[-1] if langs else "")
+                prev = by_key.get(key)
                 if prev is None:
-                    by_title[d["title"]] = d
+                    by_key[key] = d
                 elif (len(d.get("meta", "")) + len(d.get("url", ""))) > \
                         (len(prev.get("meta", "")) + len(prev.get("url", ""))):
-                    by_title[d["title"]] = d
-            sections["documents"] = list(by_title.values())
+                    by_key[key] = d
+            # drop meta-less entries whose title already exists with meta
+            # (secondary anchors of the same row picked up via other links)
+            titled = {d["title"].lower() for d in by_key.values() if d.get("meta")}
+            sections["documents"] = [
+                d for d in by_key.values()
+                if d.get("meta") or d["title"].lower() not in titled]
         except Exception:
             pass
 

@@ -27,14 +27,27 @@
       <div class="muted" style="text-align:center; margin-top:6px">Full-page screenshot — click to open</div>
     </div>
     <div>
-      {% for label, items in library %}
-      <details class="libcat" {% if items and loop.index <= 2 %}open{% endif %}>
-        <summary>{{ label }} <b>{{ items|length }}</b></summary>
-        {% if not items %}
+      {% for cat in library %}
+      <details class="libcat" {% if cat['items'] and loop.index <= 3 %}open{% endif %}>
+        <summary>{{ cat['label'] }} <b>{{ cat['items']|length }}</b></summary>
+        {% if not cat['items'] %}
           <p class="muted" style="margin:8px 0 4px 4px">None found on this page.</p>
+        {% elif cat['groups'] %}
+          {% for gname, gitems in cat['groups'] %}
+          <h4 class="libgroup">{{ gname }} <span class="muted">({{ gitems|length }})</span></h4>
+          <ul class="liblist">
+            {% for it in gitems %}
+            <li>
+              {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
+              {% else %}{{ it.title }}{% endif %}
+              {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endfor %}
         {% else %}
         <ul class="liblist">
-          {% for it in items %}
+          {% for it in cat['items'] %}
           <li>
             {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
             {% else %}{{ it.title }}{% endif %}

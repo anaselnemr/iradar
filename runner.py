@@ -74,7 +74,8 @@ def _run_check_inner(kind, url_ids):
     con.close()
 
     RUN_STATE.update(running=True, kind=kind, total=len(urls), done=0,
-                     changed=0, errors=0, started=db.now_iso(), message="")
+                     changed=0, errors=0, started=db.now_iso(),
+                     started_ts=time.time(), message="")
     if not urls:
         RUN_STATE["message"] = "No active URLs to check."
         return {"total": 0, "ok": 0, "changed": 0, "errors": 0}

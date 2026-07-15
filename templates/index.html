@@ -18,6 +18,7 @@
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <div class="muted" style="margin-top:10px">
       Checking <span id="run-done">{{ state.done }}</span>/<span id="run-total">{{ state.total }}</span>
+      <b id="run-eta" style="color:var(--accent)"></b>
       &nbsp;·&nbsp; <span id="run-msg"></span>
     </div>
     <div class="progress"><div id="run-bar" style="width:0%"></div></div>
@@ -81,10 +82,15 @@
   <form id="bulkform" method="post" action="{{ url_for('urls_bulk') }}">
     <input type="hidden" name="action" id="bulk-action" value="">
     <input type="hidden" name="next" value="{{ request.full_path }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
   <div class="bulkbar">
     <span class="muted"><span id="selcount">0</span> selected</span>
+    <a href="#" id="matchall-link" style="display:none; font-size:13px"
+       onclick="selectAllMatching(); return false">Select all {{ total_match }} matching</a>
     <button class="btn-ghost btn-sm" onclick="bulk('check', this)">Check now</button>
     <button class="btn-ghost btn-sm" onclick="bulk('accept', this)">Mark unchanged</button>
     <button class="btn-ghost btn-sm" onclick="bulk('pause', this)">Pause</button>
@@ -93,6 +99,7 @@
     <span class="muted" style="margin-left:auto">
       Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ total_match }}
       {% if q or status != 'all' %}(filtered){% endif %}
+      &nbsp;·&nbsp;<a href="{{ url_for('export_xlsx') }}" title="Download every page with status and its full library content as Excel">⬇ Export Excel</a>
     </span>
   </div>
 
@@ -148,21 +155,58 @@
 </div>
 
 <script>
+const TOTAL_MATCH = {{ total_match }};
 function selected() { return document.querySelectorAll('.rowsel:checked').length; }
-function refreshCount() { document.getElementById('selcount').textContent = selected(); }
-document.querySelectorAll('.rowsel').forEach(cb => cb.addEventListener('change', refreshCount));
+function allMatching() { return document.getElementById('all-matching').value === '1'; }
+function refreshCount() {
+  const link = document.getElementById('matchall-link');
+  if (allMatching()) {
+    document.getElementById('selcount').textContent = TOTAL_MATCH + ' (all matching)';
+    if (link) { link.textContent = 'Clear selection'; link.style.display = ''; }
+    return;
+  }
+  document.getElementById('selcount').textContent = selected();
+  if (link) {
+    const pageAll = selected() > 0 && selected() === document.querySelectorAll('.rowsel').length;
+    link.style.display = (pageAll && TOTAL_MATCH > selected()) ? '' : 'none';
+    link.textContent = 'Select all ' + TOTAL_MATCH + ' matching';
+  }
+}
+function selectAllMatching() {
+  const am = document.getElementById('all-matching');
+  if (am.value === '1') {
+    am.value = '0';
+    document.querySelectorAll('.rowsel').forEach(cb => cb.checked = false);
+    document.getElementById('selall').checked = false;
+  } else {
+    am.value = '1';
+  }
+  refreshCount();
+}
+document.querySelectorAll('.rowsel').forEach(cb => cb.addEventListener('change', () => {
+  document.getElementById('all-matching').value = '0';
+  refreshCount();
+}));
 const selall = document.getElementById('selall');
 if (selall) selall.addEventListener('change', () => {
+  document.getElementById('all-matching').value = '0';
   document.querySelectorAll('.rowsel').forEach(cb => cb.checked = selall.checked);
   refreshCount();
 });
 function bulk(action, btn) {
-  const n = selected();
+  const n = allMatching() ? TOTAL_MATCH : selected();
   if (!n) { alert('Tick at least one URL first (or use the checkbox in the header row).'); return; }
   if (action === 'delete' &&
       !confirm(`Remove ${n} URL(s) and all their stored snapshots? This cannot be undone.`)) return;
+  if (action === 'check' && n > 200 &&
+      !confirm(`Check ${n} URLs now? This will take roughly ${Math.round(n * 9 / 60 / 60 * 10) / 10} hours.`)) return;
   document.getElementById('bulk-action').value = action;
   document.getElementById('bulkform').submit();
+}
+function fmtEta(sec) {
+  if (sec == null) return '';
+  const h = Math.floor(sec / 3600), m = Math.max(1, Math.round((sec % 3600) / 60));
+  return h ? `· ≈ ${h}h ${m}m left` : `· ≈ ${m}m left`;
 }
 // Poll continuously: picks up runs started anywhere (button, bulk "Check
 // now", the schedule) and reloads the page when a run finishes so the
@@ -177,6 +221,7 @@ async function poll() {
       box.style.display = 'block';
       document.getElementById('run-done').textContent = s.done;
       document.getElementById('run-total').textContent = s.total;
+      document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
       document.getElementById('run-msg').textContent = s.message || '';
       const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
       document.getElementById('run-bar').style.width = pct + '%';

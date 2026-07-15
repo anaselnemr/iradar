@@ -111,6 +111,16 @@ STATUS_FILTERS = {
 }
 
 
+def _url_filter(q, status):
+    where, params = [], []
+    if q:
+        where.append("(u.url LIKE ? OR u.label LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    if status in STATUS_FILTERS:
+        where.append(STATUS_FILTERS[status])
+    return ("WHERE " + " AND ".join(where)) if where else "", params
+
+
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
@@ -120,13 +130,7 @@ def index():
     except ValueError:
         page = 1
 
-    where, params = [], []
-    if q:
-        where.append("(u.url LIKE ? OR u.label LIKE ?)")
-        params += [f"%{q}%", f"%{q}%"]
-    if status in STATUS_FILTERS:
-        where.append(STATUS_FILTERS[status])
-    wsql = ("WHERE " + " AND ".join(where)) if where else ""
+    wsql, params = _url_filter(q, status)
 
     con = db.connect()
     total_match = con.execute(
@@ -177,6 +181,13 @@ def urls_bulk():
         ids = [int(i) for i in request.form.getlist("ids")]
     except ValueError:
         ids = []
+    if request.form.get("all_matching") == "1":
+        wsql, params = _url_filter(request.form.get("q", "").strip(),
+                                   request.form.get("status", "all"))
+        con0 = db.connect()
+        ids = [r["id"] for r in
+               con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
+        con0.close()
     if not ids:
         flash("No URLs selected — tick the boxes first.")
         return redirect(nxt)
@@ -260,12 +271,13 @@ def urls_toggle(url_id):
 
 
 SECTION_LABELS = [
+    ("overview", "Overview"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
     ("features", "Key features"),
     ("benefits", "Benefits"),
+    ("applications", "Applications"),
     ("trainings", "Trainings & webinars"),
-    ("videos", "Videos"),
     ("news", "News & highlights"),
     ("images", "Images"),
 ]
@@ -318,7 +330,19 @@ def url_detail(url_id):
     library = []
     if sections:
         for cat, label in SECTION_LABELS:
-            library.append((label, sections.get(cat, [])))
+            items = sections.get(cat, [])
+            groups = []
+            if any(i.get("group") for i in items):
+                order = []
+                by_group = {}
+                for i in items:
+                    g = i.get("group", "") or "Other"
+                    if g not in by_group:
+                        by_group[g] = []
+                        order.append(g)
+                    by_group[g].append(i)
+                groups = [(g, by_group[g]) for g in order]
+            library.append({"label": label, "items": items, "groups": groups})
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library)
 
@@ -481,7 +505,15 @@ def run_now():
 
 @app.route("/status")
 def status():
-    return jsonify(runner.RUN_STATE)
+    import time as _time
+    s = dict(runner.RUN_STATE)
+    if s.get("running") and s.get("done", 0) >= 3 and s.get("started_ts"):
+        elapsed = _time.time() - s["started_ts"]
+        if elapsed > 0:
+            rate = s["done"] / elapsed
+            remaining = max(0, s.get("total", 0) - s["done"])
+            s["eta_s"] = int(remaining / rate) if rate > 0 else None
+    return jsonify(s)
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -497,6 +529,69 @@ def settings_view():
         return redirect(url_for("settings_view"))
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS)
+
+
+@app.route("/export.xlsx")
+def export_xlsx():
+    """Full library export: every URL with status + every extracted item."""
+    import tempfile
+    from openpyxl import Workbook
+
+    wb = Workbook(write_only=True)
+    ws_pages = wb.create_sheet("Pages")
+    cat_keys = [c for c, _ in SECTION_LABELS if c != "images"]
+    ws_pages.append(["ID", "URL", "Name", "Active", "Status", "HTTP",
+                     "Last checked (UTC)", "Text lines", "Image count"] +
+                    [label for c, label in SECTION_LABELS if c != "images"] +
+                    ["Overview text"])
+    ws_items = wb.create_sheet("Library items")
+    ws_items.append(["URL ID", "URL", "Category", "Group", "Title", "Link",
+                     "Details"])
+    ws_changes = wb.create_sheet("Changes")
+    ws_changes.append(["Change ID", "URL", "When (UTC)", "Summary", "Verdict"])
+
+    con = db.connect()
+    label_by_cat = dict(SECTION_LABELS)
+    for u in con.execute("SELECT * FROM urls ORDER BY id"):
+        snap = con.execute(
+            "SELECT * FROM snapshots WHERE url_id=? AND status='ok' AND dir<>''"
+            " AND rejected=0 ORDER BY id DESC LIMIT 1", (u["id"],)).fetchone()
+        sections = _load_sections(snap["dir"]) if snap else None
+        counts = []
+        overview_text = ""
+        if sections:
+            for c in cat_keys:
+                counts.append(len(sections.get(c, [])))
+            ov = sections.get("overview") or []
+            overview_text = ov[0].get("title", "") if ov else ""
+            for c in cat_keys:
+                if c == "overview":
+                    continue
+                for it in sections.get(c, []):
+                    ws_items.append([u["id"], u["url"], label_by_cat[c],
+                                     it.get("group", ""), it.get("title", ""),
+                                     it.get("url", ""), it.get("meta", "")])
+        else:
+            counts = ["" for _ in cat_keys]
+        ws_pages.append([u["id"], u["url"], u["label"], u["active"],
+                         u["last_status"] or "not checked", u["last_http"],
+                         u["last_checked"],
+                         snap["text_lines"] if snap else "",
+                         snap["image_count"] if snap else ""] +
+                        counts + [overview_text])
+    for c in con.execute(
+            "SELECT c.*, u.url AS u_url FROM changes c JOIN urls u ON u.id=c.url_id"
+            " ORDER BY c.id"):
+        verdict = ("to review" if not c["reviewed"] else
+                   ("rejected" if c["resolution"] == "reject" else "approved"))
+        ws_changes.append([c["id"], c["u_url"], c["ts"], c["summary"], verdict])
+    con.close()
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    out = Path(tempfile.gettempdir()) / f"infineonwatch-export-{stamp}.xlsx"
+    wb.save(out)
+    return send_file(out, as_attachment=True,
+                     download_name=f"infineonwatch-export-{stamp}.xlsx")
 
 
 @app.route("/history")
