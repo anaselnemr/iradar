@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <div class="statrow">
+    <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">URLs tracked</div></div>
+    <div class="stat"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">Unreviewed changes</div></div>
+    <div class="stat"><div class="n" style="color:{{ '#dc2626' if counts.errors or counts.notlive else '#16a34a' }}">{{ (counts.errors or 0) + (counts.notlive or 0) }}</div><div class="l">Errors / not live</div></div>
+    <div class="stat"><div class="n" style="font-size:16px; padding-top:8px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
+    <div class="stat" style="padding-top:10px">
+      <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
+        <button {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Run check now</button>
+      </form>
+      <button class="btn-ghost" onclick="location.reload()" title="Reload the dashboard to show the latest results and times">⟳ Refresh</button>
+    </div>
+  </div>
+
+  <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
+    <div class="muted" style="margin-top:10px">
+      Checking <span id="run-done">{{ state.done }}</span>/<span id="run-total">{{ state.total }}</span>
+      &nbsp;·&nbsp; <span id="run-msg"></span>
+    </div>
+    <div class="progress"><div id="run-bar" style="width:0%"></div></div>
+  </div>
+  {% if last_run and last_run.finished %}
+  <div class="muted" style="margin-top:10px">
+    Last run: {{ last_run.finished|localtime }} (local time) — {{ last_run.ok }} ok,
+    <b>{{ last_run.changed }} changed</b>, {{ last_run.errors }} errors
+    ({{ last_run.kind }})
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>Add URLs (paste one or many)</h2>
+    <form method="post" action="{{ url_for('urls_add') }}">
+      <textarea name="urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+      <div style="margin-top:10px"><button>Add URLs</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Upload Excel / CSV / TXT</h2>
+    <form method="post" action="{{ url_for('urls_upload') }}" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".xlsx,.csv,.txt">
+      <div class="muted" style="margin:8px 0">Every URL found anywhere in the file is added; duplicates are skipped.</div>
+      <button>Upload &amp; add</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:14px">Tracked URLs</h2>
+
+  <form method="get" action="{{ url_for('index') }}" class="searchbar">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search URLs… (e.g. wi-fi, psoc-4, optiga)">
+    <input type="hidden" name="status" value="{{ status }}">
+    <button>Search</button>
+    {% if q %}<a class="btn btn-ghost" href="{{ url_for('index', status=status) }}">Clear</a>{% endif %}
+  </form>
+
+  <div class="chips">
+    {% for key, label, n in [
+        ('all', 'All', counts.total),
+        ('changed', 'Changed', counts.changed or 0),
+        ('rejected', 'Awaiting fix', counts.rejected or 0),
+        ('unchanged', 'Unchanged', None),
+        ('error', 'Errors', counts.errors or 0),
+        ('notlive', 'Not live', counts.notlive or 0),
+        ('paused', 'Paused', counts.paused or 0),
+        ('new', 'Not checked yet', counts.fresh or 0)] %}
+      <a class="chip {{ 'chip-on' if status == key }}"
+         href="{{ url_for('index', status=key, q=q or None) }}">{{ label }}{% if n is not none %} <b>{{ n }}</b>{% endif %}</a>
+    {% endfor %}
+  </div>
+
+  {% if not urls %}
+    <p class="muted" style="margin-top:14px">No URLs match{% if q %} “{{ q }}”{% endif %}.</p>
+  {% else %}
+
+  <form id="bulkform" method="post" action="{{ url_for('urls_bulk') }}">
+    <input type="hidden" name="action" id="bulk-action" value="">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+  </form>
+
+  <div class="bulkbar">
+    <span class="muted"><span id="selcount">0</span> selected</span>
+    <button class="btn-ghost btn-sm" onclick="bulk('check', this)">Check now</button>
+    <button class="btn-ghost btn-sm" onclick="bulk('accept', this)">Mark unchanged</button>
+    <button class="btn-ghost btn-sm" onclick="bulk('pause', this)">Pause</button>
+    <button class="btn-ghost btn-sm" onclick="bulk('resume', this)">Resume</button>
+    <button class="btn-ghost btn-sm" style="color:#dc2626" onclick="bulk('delete', this)">Remove</button>
+    <span class="muted" style="margin-left:auto">
+      Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ total_match }}
+      {% if q or status != 'all' %}(filtered){% endif %}
+    </span>
+  </div>
+
+  <table>
+    <tr>
+      <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
+      <th>#</th><th>URL</th><th>Live</th><th>Status</th>
+      <th>Last checked (local)</th><th>Changes</th>
+    </tr>
+    {% for u in urls %}
+    <tr>
+      <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
+      <td>{{ u.id }}</td>
+      <td class="urlcell"><a href="{{ url_for('url_detail', url_id=u.id) }}" title="{{ u.url }}">{{ u.url }}</a></td>
+      <td>
+        {% if u.last_http is none and u.last_status == 'error' %}
+          <span class="badge b-error" title="Could not reach the page">DOWN</span>
+        {% elif u.last_http is none %}
+          <span class="muted">—</span>
+        {% elif u.last_http < 400 %}
+          <span class="badge b-live" title="HTTP {{ u.last_http }}">LIVE</span>
+        {% else %}
+          <span class="badge b-error">HTTP {{ u.last_http }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if not u.active %}<span class="badge b-off">paused</span>
+        {% elif u.last_status == 'changed' %}<span class="badge b-changed">changed</span>
+        {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected a change: the old version stays the baseline until the website matches it again">awaiting fix</span>
+        {% elif u.last_status == 'unchanged' %}<span class="badge b-unchanged">unchanged</span>
+        {% elif u.last_status == 'baseline' %}<span class="badge b-baseline">baseline saved</span>
+        {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>
+        {% else %}<span class="badge b-new">not checked yet</span>{% endif %}
+      </td>
+      <td class="muted">{{ u.last_checked|localtime }}</td>
+      <td>
+        {% if u.open_changes %}
+          <a href="{{ url_for('change_view', change_id=u.latest_change_id) }}"><b>{{ u.open_changes }} to review</b></a>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=status) }}">← Prev</a>{% endif %}
+    <span class="muted">Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=status) }}">Next →</a>{% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<script>
+function selected() { return document.querySelectorAll('.rowsel:checked').length; }
+function refreshCount() { document.getElementById('selcount').textContent = selected(); }
+document.querySelectorAll('.rowsel').forEach(cb => cb.addEventListener('change', refreshCount));
+const selall = document.getElementById('selall');
+if (selall) selall.addEventListener('change', () => {
+  document.querySelectorAll('.rowsel').forEach(cb => cb.checked = selall.checked);
+  refreshCount();
+});
+function bulk(action, btn) {
+  const n = selected();
+  if (!n) { alert('Tick at least one URL first (or use the checkbox in the header row).'); return; }
+  if (action === 'delete' &&
+      !confirm(`Remove ${n} URL(s) and all their stored snapshots? This cannot be undone.`)) return;
+  document.getElementById('bulk-action').value = action;
+  document.getElementById('bulkform').submit();
+}
+// Poll continuously: picks up runs started anywhere (button, bulk "Check
+// now", the schedule) and reloads the page when a run finishes so the
+// times, badges and counts are always current.
+let sawRunning = {{ 'true' if state.running else 'false' }};
+async function poll() {
+  try {
+    const r = await fetch('/status'); const s = await r.json();
+    const box = document.getElementById('runbox');
+    if (s.running) {
+      sawRunning = true;
+      box.style.display = 'block';
+      document.getElementById('run-done').textContent = s.done;
+      document.getElementById('run-total').textContent = s.total;
+      document.getElementById('run-msg').textContent = s.message || '';
+      const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
+      document.getElementById('run-bar').style.width = pct + '%';
+      setTimeout(poll, 1500);
+    } else if (sawRunning) {
+      location.reload();
+    } else {
+      setTimeout(poll, 4000);
+    }
+  } catch (e) { setTimeout(poll, 5000); }
+}
+poll();
+</script>
+{% endblock %}

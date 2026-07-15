@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Change #{{ c.id }} — InfineonWatch{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('index') }}">← Dashboard</a> ·
+   <a href="{{ url_for('url_detail', url_id=u.id) }}">URL history</a></p>
+
+<div class="card">
+  <h1 style="font-size:17px; word-break:break-all">
+    Change detected on <a href="{{ u.url }}" target="_blank">{{ u.url }}</a></h1>
+  <div class="muted">Detected {{ c.ts|localtime }} (local time) — comparing snapshot of
+    {{ old_snap.ts|localtime if old_snap else '?' }} vs {{ new_snap.ts|localtime if new_snap else '?' }}</div>
+  <div style="margin-top:12px">
+    {% if c.text_changed %}<span class="badge b-changed">TEXT: +{{ c.lines_added }} / −{{ c.lines_removed }} lines</span>{% endif %}
+    {% if c.images_changed %}<span class="badge b-changed">IMAGES: +{{ c.images_added }} / −{{ c.images_removed }}</span>{% endif %}
+    {% if c.visual_changed %}<span class="badge b-changed">VISUAL: {{ '%.2f' % c.pixel_ratio }}% pixels, height {{ c.height_delta }}px</span>{% endif %}
+  </div>
+  {% if not c.reviewed %}
+  <div class="verdict">
+    <form class="inline" method="post" action="{{ url_for('change_resolve', change_id=c.id) }}">
+      <input type="hidden" name="next" value="{{ url_for('index') }}">
+      <input type="hidden" name="resolution" value="approve">
+      <button title="The new version is correct: it becomes the baseline for future checks">✔ Approve — new version is correct</button>
+    </form>
+    <form class="inline" method="post" action="{{ url_for('change_resolve', change_id=c.id) }}">
+      <input type="hidden" name="next" value="{{ url_for('index') }}">
+      <input type="hidden" name="resolution" value="reject">
+      <button class="btn-reject" title="The old version was correct: keep it as the baseline — the page stays flagged on future checks until the website matches it again">✖ Reject — old version was correct</button>
+    </form>
+    <span class="muted">Approve = the new text/images become the baseline. Reject = the old snapshot stays the baseline and this page will be flagged again until the website is fixed.</span>
+  </div>
+  {% elif c.resolution == 'reject' %}
+  <div class="verdict"><span class="badge b-error">✖ rejected — old version kept as baseline</span></div>
+  {% else %}
+  <div class="verdict"><span class="badge b-unchanged">✔ approved — this is the baseline now</span></div>
+  {% endif %}
+  <div class="muted" style="margin-top:12px">
+    Full extracted text:
+    {% if old_snap and old_snap.dir %}<a href="{{ url_for('snapshot_text', snap_id=old_snap.id) }}" target="_blank">before</a>{% endif %}
+    ·
+    {% if new_snap and new_snap.dir %}<a href="{{ url_for('snapshot_text', snap_id=new_snap.id) }}" target="_blank">after</a>{% endif %}
+    &nbsp;|&nbsp; All image URLs:
+    {% if old_snap and old_snap.dir %}<a href="{{ url_for('snapshot_images', snap_id=old_snap.id) }}" target="_blank">before</a>{% endif %}
+    ·
+    {% if new_snap and new_snap.dir %}<a href="{{ url_for('snapshot_images', snap_id=new_snap.id) }}" target="_blank">after</a>{% endif %}
+  </div>
+</div>
+
+{% if hunks %}
+<div class="card">
+  <h2>Text changes <span class="muted">(red = removed, green = added)</span></h2>
+  {% for h in hunks %}
+  <div class="diff">
+    <div class="h">around line {{ h.old_start }}</div>
+    {% for tag, line in h.lines %}
+      <div class="l {{ 'add' if tag == '+' else 'del' if tag == '-' else '' }}">{{ line }}</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if lib_diff %}
+<div class="card">
+  <h2>Library changes <span class="muted">(documents / resources / videos / news)</span></h2>
+  {% for label, d in lib_diff.items() %}
+    <h3 style="font-size:14.5px; margin:14px 0 4px">{{ label }}</h3>
+    {% if d.added %}
+    <ul class="liblist">
+      {% for it in d.added %}<li style="color:#166534">＋ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if d.removed %}
+    <ul class="liblist">
+      {% for it in d.removed %}<li style="color:#991b1b">－ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if img_added or img_removed %}
+<div class="card">
+  <h2>Image changes</h2>
+  {% if img_added %}
+    <h3 style="font-size:14px; color:#166534">Added ({{ img_added|length }})</h3>
+    <ul>{% for i in img_added %}<li style="word-break:break-all"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
+  {% endif %}
+  {% if img_removed %}
+    <h3 style="font-size:14px; color:#991b1b">Removed ({{ img_removed|length }})</h3>
+    <ul>{% for i in img_removed %}<li style="word-break:break-all"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if art.regions %}
+<div class="card">
+  <h2>Changed areas up close <span class="muted">({{ art.regions|length }} area(s) — click to open full size)</span></h2>
+  <p class="muted">Each strip shows the same spot on the page: left = before, right = after.</p>
+  {% for r in art.regions %}
+  <a href="{{ url_for('change_art', change_id=c.id, name=r) }}" target="_blank" title="Open full size" class="regionstrip">
+    <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=r) }}" alt="Changed area {{ loop.index }}">
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Full-page screenshots <span class="muted">(changed areas boxed in red — click to open full size)</span></h2>
+  <div class="shots shots2">
+    <figure>
+      <figcaption>BEFORE ({{ old_snap.ts|localtime if old_snap else '' }})</figcaption>
+      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name='old_boxed.png') }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name='old_boxed.png') }}"></a>
+      {% elif old_snap and old_snap.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=old_snap.id) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=old_snap.id) }}"></a>
+      {% else %}<p class="muted">not available</p>{% endif %}
+    </figure>
+    <figure>
+      <figcaption>AFTER ({{ new_snap.ts|localtime if new_snap else '' }})</figcaption>
+      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name='new_boxed.png') }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name='new_boxed.png') }}"></a>
+      {% elif new_snap and new_snap.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=new_snap.id) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=new_snap.id) }}"></a>
+      {% else %}<p class="muted">not available</p>{% endif %}
+    </figure>
+  </div>
+  {% if art.legacy and not art.boxed %}
+  <figure style="margin-top:14px">
+    <figcaption class="muted">DIFFERENCE (older format — changed pixels in red)</figcaption>
+    <a href="{{ url_for('change_visualdiff', change_id=c.id) }}" target="_blank"><img loading="lazy" style="max-width:420px; width:100%; border:1px solid var(--line); border-radius:6px" src="{{ url_for('change_visualdiff', change_id=c.id) }}"></a>
+  </figure>
+  {% endif %}
+  <p class="muted" style="margin-top:12px">ℹ Screenshots can only show what is visible on the page.
+    A change inside a collapsed tab or accordion has no screenshot to appear in —
+    it is always caught in the <b>Text changes</b> section above, so when a change
+    says TEXT but shows little or nothing visual, look there.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}InfineonWatch{% endblock %}</title>
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --ink: #1a2332; --muted: #64748b;
+    --accent: #b7002d; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --line: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+         background: var(--bg); color: var(--ink); font-size: 15px; }
+  header { background: #1a2332; color: #fff; padding: 14px 28px;
+           display: flex; align-items: center; gap: 24px; }
+  header .logo { font-weight: 700; font-size: 18px; letter-spacing: .3px; }
+  header .logo span { color: #ff5a7a; }
+  header nav a { color: #cbd5e1; text-decoration: none; margin-right: 18px;
+                 font-size: 14px; }
+  header nav a:hover { color: #fff; }
+  main { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+  h1 { font-size: 22px; margin: 0 0 14px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-weight: 600;
+       padding: 8px 10px; border-bottom: 2px solid var(--line);
+       font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line);
+       vertical-align: middle; }
+  tr:hover td { background: #f8fafc; }
+  a { color: #0f5bd7; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
+           font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .b-changed  { background: #fef3c7; color: #92400e; }
+  .b-unchanged{ background: #dcfce7; color: #166534; }
+  .b-baseline { background: #dbeafe; color: #1e40af; }
+  .b-error    { background: #fee2e2; color: #991b1b; }
+  .b-new      { background: #e2e8f0; color: #475569; }
+  .b-off      { background: #f1f5f9; color: #94a3b8; }
+  button, .btn { background: var(--accent); border: 0; color: #fff;
+        padding: 8px 16px; border-radius: 7px; font-size: 14px;
+        font-weight: 600; cursor: pointer; text-decoration: none;
+        display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.12); }
+  .btn-ghost { background: #fff; color: var(--ink);
+               border: 1px solid var(--line); }
+  .btn-sm { padding: 4px 10px; font-size: 12.5px; }
+  textarea, input[type=text], input[type=number], select {
+        width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+        border-radius: 7px; font-size: 14px; font-family: inherit; }
+  .flash { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
+           padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px){ .grid2 { grid-template-columns: 1fr; } }
+  .stat { text-align: center; padding: 6px 18px; }
+  .stat .n { font-size: 26px; font-weight: 700; }
+  .stat .l { color: var(--muted); font-size: 12.5px; text-transform: uppercase;
+             letter-spacing: .5px; }
+  .statrow { display: flex; gap: 8px; justify-content: space-around;
+             flex-wrap: wrap; }
+  .progress { background: #e2e8f0; border-radius: 999px; height: 10px;
+              overflow: hidden; margin-top: 8px; }
+  .progress > div { background: var(--accent); height: 100%;
+                    transition: width .4s; }
+  .diff { font-family: Consolas, monospace; font-size: 13px;
+          border: 1px solid var(--line); border-radius: 8px;
+          overflow-x: auto; margin-bottom: 14px; }
+  .diff .h { background: #f1f5f9; color: var(--muted); padding: 4px 12px;
+             font-size: 12px; border-bottom: 1px solid var(--line); }
+  .diff .l { padding: 2px 12px; white-space: pre-wrap; word-break: break-word; }
+  .diff .add { background: #dcfce7; }
+  .diff .del { background: #fee2e2; text-decoration: line-through;
+               text-decoration-color: #fca5a5; }
+  .shots { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  @media (max-width: 1000px){ .shots { grid-template-columns: 1fr; } }
+  .shots figure { margin: 0; }
+  .shots figcaption { font-size: 13px; color: var(--muted); margin-bottom: 6px;
+                      font-weight: 600; }
+  .shots img { width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+  .urlcell { max-width: 480px; overflow: hidden; text-overflow: ellipsis;
+             white-space: nowrap; }
+  form.inline { display: inline; }
+  .b-live { background: #dcfce7; color: #166534; }
+  .b-rejected { background: #fee2e2; color: #991b1b; }
+  .btn-reject { background: #fff; color: #b91c1c; border: 1.5px solid #fca5a5; }
+  .verdict { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+             margin-top: 14px; padding-top: 12px;
+             border-top: 1px solid var(--line); }
+  .verdict .muted { flex-basis: 100%; font-size: 12.5px; }
+  .shots a { display: block; cursor: zoom-in; }
+  .shots2 { grid-template-columns: 1fr 1fr; }
+  .regionstrip { display: block; cursor: zoom-in; margin: 10px 0; }
+  .regionstrip img { max-width: 100%; border: 1px solid var(--line);
+                     border-radius: 8px; display: block; }
+  .libgrid { display: grid; grid-template-columns: 300px 1fr; gap: 22px; }
+  @media (max-width: 900px){ .libgrid { grid-template-columns: 1fr; } }
+  .libshot img { width: 100%; max-height: 560px; object-fit: cover;
+                 object-position: top; border: 1px solid var(--line);
+                 border-radius: 8px; cursor: zoom-in; }
+  .libcat { border: 1px solid var(--line); border-radius: 8px;
+            padding: 10px 14px; margin-bottom: 10px; background: #fbfcfe; }
+  .libcat summary { cursor: pointer; font-weight: 600; font-size: 14.5px; }
+  .libcat summary b { color: var(--accent); margin-left: 4px; }
+  .liblist { margin: 8px 0 4px; padding-left: 20px; font-size: 13.5px;
+             max-height: 340px; overflow-y: auto; }
+  .liblist li { margin: 3px 0; word-break: break-word; }
+  .searchbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .searchbar input[type=text] { flex: 1; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .chip { display: inline-block; padding: 4px 13px; border-radius: 999px;
+          border: 1px solid var(--line); background: #fff; color: var(--ink);
+          font-size: 13px; text-decoration: none; }
+  .chip b { color: var(--accent); }
+  .chip-on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .chip-on b { color: #ff9eb0; }
+  .bulkbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+             background: #f8fafc; border: 1px solid var(--line);
+             border-radius: 8px; padding: 8px 12px; margin: 12px 0; }
+  .pager { display: flex; gap: 14px; align-items: center;
+           justify-content: center; margin-top: 14px; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent);
+                         cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Infineon<span>Watch</span></div>
+  <nav>
+    <a href="{{ url_for('index') }}">Dashboard</a>
+    <a href="{{ url_for('history') }}">Run history</a>
+    <a href="{{ url_for('settings_view') }}">Settings</a>
+  </nav>
+</header>
+<main>
+  {% with messages = get_flashed_messages() %}
+    {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

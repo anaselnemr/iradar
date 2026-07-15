@@ -1,0 +1,9 @@
+# virtual environment
+.venv/
+
+# runtime data: database, snapshots, screenshots, change artifacts
+data/
+
+# python
+__pycache__/
+*.pyc

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Run history — InfineonWatch{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Run history</h1>
+  {% if not runs %}<p class="muted">No checks have run yet.</p>
+  {% else %}
+  <table>
+    <tr><th>Started (local)</th><th>Finished</th><th>Type</th><th>URLs</th><th>OK</th><th>Changed</th><th>Errors</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td>{{ r.started|localtime }}</td>
+      <td>{{ r.finished|localtime if r.finished else 'running / aborted' }}</td>
+      <td>{{ r.kind }}</td>
+      <td>{{ r.total }}</td>
+      <td>{{ r.ok }}</td>
+      <td>{% if r.changed %}<b>{{ r.changed }}</b>{% else %}0{% endif %}</td>
+      <td>{% if r.errors %}<span style="color:#dc2626">{{ r.errors }}</span>{% else %}0{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

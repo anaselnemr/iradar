@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Settings — InfineonWatch{% endblock %}
+{% block content %}
+<div class="card" style="max-width:640px">
+  <h1>Settings</h1>
+  <form method="post">
+    <h2>Schedule</h2>
+    <p class="muted">Next automatic check: <b>{{ next_run }}</b>. The app must be
+      running (START.bat window open) for scheduled checks to fire. You can always
+      use "Run check now" on the dashboard.</p>
+    <label>Check frequency
+      <select name="frequency">
+        <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
+        <option value="bidaily" {% if s.frequency=='bidaily' %}selected{% endif %}>Every 2 days</option>
+        <option value="weekly"  {% if s.frequency=='weekly' %}selected{% endif %}>Weekly</option>
+      </select>
+    </label>
+    <div class="grid2" style="margin-top:10px">
+      <label>Day (for weekly)
+        <select name="weekday">
+          {% for d in weekdays %}<option value="{{ d }}" {% if s.weekday==d %}selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Hour of day (0–23, local time)
+        <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}">
+      </label>
+    </div>
+
+    <h2 style="margin-top:22px">Performance</h2>
+    <label>Parallel browser tabs (3–6 recommended; higher = faster but heavier)
+      <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
+    </label>
+
+    <h2 style="margin-top:22px">Sensitivity</h2>
+    <div class="grid2">
+      <label>Visual change threshold (% of pixels)
+        <input type="text" name="visual_threshold" value="{{ s.visual_threshold }}">
+      </label>
+      <label>Page height change threshold (px)
+        <input type="number" name="height_threshold" value="{{ s.height_threshold }}">
+      </label>
+    </div>
+    <label style="display:block; margin-top:10px">Ignore text lines matching these patterns (one per line, e.g. <code>^\d+ results$</code>)
+      <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
+    </label>
+    <label style="display:block; margin-top:10px">Ignore image URLs matching these patterns (one per line — default excludes flaky auto-generated video-player thumbnails)
+      <textarea name="ignore_image_patterns" rows="2">{{ s.ignore_image_patterns }}</textarea>
+    </label>
+    <div style="margin-top:16px"><button>Save settings</button></div>
+  </form>
+</div>
+{% endblock %}

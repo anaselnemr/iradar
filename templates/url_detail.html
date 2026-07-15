@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}URL library — InfineonWatch{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('index') }}">← Dashboard</a></p>
+<div class="card">
+  <h1 style="font-size:17px; word-break:break-all">
+    {% if u.label %}{{ u.label }}<br><span class="muted" style="font-weight:400; font-size:14px">{% endif %}<a href="{{ u.url }}" target="_blank">{{ u.url }}</a>{% if u.label %}</span>{% endif %}
+  </h1>
+  <div class="muted">Added {{ u.created_at|localtime }} · Last checked: {{ u.last_checked|localtime }}
+    · Status: {{ u.last_status or 'not checked' }}
+    {% if u.last_http %} · <span class="badge {{ 'b-live' if u.last_http < 400 else 'b-error' }}">HTTP {{ u.last_http }}</span>{% endif %}
+  </div>
+</div>
+
+{% if latest %}
+<div class="card">
+  <h2>Page library <span class="muted">(groundtruth from the snapshot of {{ latest.ts|localtime }})</span></h2>
+  {% if not library %}
+    <p class="muted">This snapshot was taken before library extraction existed —
+      run a check on this URL to build its library.</p>
+  {% else %}
+  <div class="libgrid">
+    <div class="libshot">
+      <a href="{{ url_for('snapshot_screenshot', snap_id=latest.id) }}" target="_blank" title="Open full-page screenshot">
+        <img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=latest.id) }}" alt="Full-page screenshot">
+      </a>
+      <div class="muted" style="text-align:center; margin-top:6px">Full-page screenshot — click to open</div>
+    </div>
+    <div>
+      {% for label, items in library %}
+      <details class="libcat" {% if items and loop.index <= 2 %}open{% endif %}>
+        <summary>{{ label }} <b>{{ items|length }}</b></summary>
+        {% if not items %}
+          <p class="muted" style="margin:8px 0 4px 4px">None found on this page.</p>
+        {% else %}
+        <ul class="liblist">
+          {% for it in items %}
+          <li>
+            {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
+            {% else %}{{ it.title }}{% endif %}
+            {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </details>
+      {% endfor %}
+      <p class="muted" style="margin-top:10px">Every list is part of the tracked
+        groundtruth: when an approved change adds or removes an item, this
+        library updates with it. Full raw data:
+        <a href="{{ url_for('snapshot_text', snap_id=latest.id) }}" target="_blank">all text lines</a> ·
+        <a href="{{ url_for('snapshot_images', snap_id=latest.id) }}" target="_blank">all image URLs</a></p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Detected changes</h2>
+  {% if not changes %}<p class="muted">No changes detected so far.</p>
+  {% else %}
+  <table>
+    <tr><th>When (local)</th><th>What changed</th><th>Verdict</th><th></th></tr>
+    {% for c in changes %}
+    <tr>
+      <td class="muted">{{ c.ts|localtime }}</td>
+      <td>{{ c.summary }}</td>
+      <td>
+        {% if not c.reviewed %}<span class="badge b-changed">to review</span>
+        {% elif c.resolution == 'reject' %}<span class="badge b-rejected">rejected</span>
+        {% else %}<span class="badge b-unchanged">approved</span>{% endif %}
+      </td>
+      <td><a class="btn btn-ghost btn-sm" href="{{ url_for('change_view', change_id=c.id) }}">Open diff</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Stored snapshots</h2>
+  <p class="muted">The newest snapshot is always kept; older ones are kept only while a
+     flagged change refers to them (saves disk space).</p>
+  <table>
+    <tr><th>When (local)</th><th>Status</th><th>HTTP</th><th>Page title</th><th>Text lines</th><th>Images</th><th></th></tr>
+    {% for s in snaps %}
+    <tr>
+      <td class="muted">{{ s.ts|localtime }}{% if s.rejected %} <span class="badge b-rejected">rejected</span>{% endif %}</td>
+      <td>{{ s.status }}{% if s.error %} <span class="muted">{{ s.error[:120] }}</span>{% endif %}</td>
+      <td>{% if s.http_status %}{{ s.http_status }}{% else %}—{% endif %}</td>
+      <td>{{ s.page_title }}</td>
+      <td>{% if s.dir %}<a href="{{ url_for('snapshot_text', snap_id=s.id) }}" target="_blank" title="View every extracted text line">{{ s.text_lines }}</a>{% else %}{{ s.text_lines }}{% endif %}</td>
+      <td>{% if s.dir %}<a href="{{ url_for('snapshot_images', snap_id=s.id) }}" target="_blank" title="View all image URLs">{{ s.image_count }}</a>{% else %}{{ s.image_count }}{% endif %}</td>
+      <td>{% if s.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=s.id) }}" target="_blank">screenshot</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

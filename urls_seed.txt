@@ -1,0 +1,10 @@
+https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/psoc-4-mcu
+https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-edge-arm
+https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/psoc-4-mcu/4000/4000t
+https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-control-arm-cortex-m33-mcu
+https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-control-arm-cortex-m33-mcu/psoc-control-c3-main-line
+https://www.infineon.com/products/security-smart-card-solutions/optiga-embedded-security-solutions
+https://www.infineon.com/products/microcontroller/32-bit-psoc-arm-cortex/32-bit-psoc-edge-arm/psoc-edge-e83
+https://www.infineon.com/products/security-smart-card-solutions/optiga-embedded-security-solutions/optiga-tpm
+https://www.infineon.com/products/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/wi-fi-6-6e
+https://www.infineon.com/products/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/wi-fi-7
