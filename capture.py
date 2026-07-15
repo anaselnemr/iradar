@@ -17,6 +17,7 @@ site header/nav), then extracts.
 import asyncio
 import json
 import re
+import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -486,6 +487,99 @@ SECTIONS_JS = r"""
 }
 """
 
+# "Fully loaded" has no single browser event on dynamic pages. This resolves
+# when the DOM has been mutation-silent for `windowMs` AND no loading
+# spinner/skeleton is visible (spinner check relaxes after 12s so a
+# decorative element cannot hang the capture; hard cap 25s).
+QUIESCENCE_JS = r"""
+(windowMs) => new Promise(resolve => {
+  const start = Date.now();
+  const deadline = start + 25000;
+  const spinnerGrace = start + 12000;
+  let last = Date.now();
+  const obs = new MutationObserver(muts => {
+    for (const m of muts) {
+      if ((m.type === 'childList' &&
+           (m.addedNodes.length || m.removedNodes.length)) ||
+          m.type === 'characterData') { last = Date.now(); return; }
+    }
+  });
+  obs.observe(document.body,
+              {childList: true, subtree: true, characterData: true});
+  const spinnerVisible = () => {
+    for (const el of document.querySelectorAll(
+        '[class*="spinner" i], [class*="skeleton" i], [class*="shimmer" i], [class*="loading" i]')) {
+      if (el.offsetParent === null) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 8 && r.height > 8) return true;
+    }
+    return false;
+  };
+  const tick = () => {
+    const now = Date.now();
+    if (now > deadline) { obs.disconnect(); resolve('timeout'); return; }
+    if (now - last >= windowMs &&
+        (now > spinnerGrace || !spinnerVisible())) {
+      obs.disconnect(); resolve('quiet'); return;
+    }
+    setTimeout(tick, 250);
+  };
+  tick();
+})
+"""
+
+# analytics/marketing beacons never stop - exclude them from network-drain
+_NOISE_HOSTS = ("google", "hotjar", "qualtrics", "facebook", "linkedin",
+                "bing", "demdex", "clarity", "doubleclick", "newrelic",
+                "nr-data", "omtrdc", "eloqua", "quantserve", "licdn",
+                "reddit", "baidu", "adobedtm", "everesttech")
+
+
+def _attach_inflight_tracker(page):
+    """Counts the page's own pending XHR/fetch requests."""
+    state = {"inflight": 0, "last_zero": time.monotonic()}
+
+    def _is_content(req):
+        if req.resource_type not in ("xhr", "fetch"):
+            return False
+        u = req.url.lower()
+        return not any(h in u for h in _NOISE_HOSTS)
+
+    def on_req(req):
+        if _is_content(req):
+            state["inflight"] += 1
+
+    def on_done(req):
+        if _is_content(req):
+            state["inflight"] = max(0, state["inflight"] - 1)
+            if state["inflight"] == 0:
+                state["last_zero"] = time.monotonic()
+
+    page.on("request", on_req)
+    page.on("requestfinished", on_done)
+    page.on("requestfailed", on_done)
+    return state
+
+
+async def _drain_network(page, state, hold_s=1.2, cap_s=15.0):
+    """Waits until no first-party XHR/fetch has been in flight for hold_s."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < cap_s:
+        if state["inflight"] == 0 and \
+                time.monotonic() - state["last_zero"] >= hold_s:
+            return True
+        await page.wait_for_timeout(250)
+    return False
+
+
+async def _settle_quiet(page, window_ms=1500):
+    """DOM-mutation silence + spinner absence (see QUIESCENCE_JS)."""
+    try:
+        return await page.evaluate(QUIESCENCE_JS, window_ms)
+    except Exception:
+        return "error"
+
+
 AUTO_SCROLL_JS = r"""
 async () => {
   const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -622,6 +716,7 @@ async def capture_one(browser, url, out_dir):
             ignore_https_errors=True)
         context.set_default_timeout(15_000)
         page = await context.new_page()
+        net_state = _attach_inflight_tracker(page)
 
         # If any click opens a popup/new tab, close it immediately.
         async def _close_popup(p):
@@ -655,15 +750,16 @@ async def capture_one(browser, url, out_dir):
         await page.evaluate(AUTO_SCROLL_JS)        # trigger lazy loading
         await _expand_interactive(page)            # tabs / accordions / load-more
         await page.wait_for_timeout(1000)
-        # Deterministic settle: late-initializing widgets (document lists,
-        # video players, search components) keep adding content for seconds
-        # after 'load'. Wait for the network to go quiet, then poll BOTH the
-        # total text length and the image inventory until neither changes
-        # between polls - only then is the page considered fully loaded.
+        # "Fully loaded" stack for dynamic pages (no single event exists):
+        # 1) first-party XHR/fetch drained for 1.2s (analytics ignored)
+        # 2) DOM mutation-silent for 1.5s AND no visible spinner/skeleton
+        # 3) text length + image inventory stable between polls
         try:
-            await page.wait_for_load_state("networkidle", timeout=10_000)
+            await page.wait_for_load_state("networkidle", timeout=8_000)
         except Exception:
             pass
+        await _drain_network(page, net_state)
+        await _settle_quiet(page, 1500)
         prev_sig = None
         for _ in range(8):
             text_len = await page.evaluate(
@@ -689,7 +785,8 @@ async def capture_one(browser, url, out_dir):
                 if nxt is None:
                     break
                 await nxt.click(timeout=1500)
-                await page.wait_for_timeout(900)
+                await page.wait_for_timeout(400)
+                await _settle_quiet(page, 700)
             # return the table to page 1 so the text layer and screenshot
             # always reflect the same (first-page) state on every run
             first_pg = await page.query_selector(
@@ -710,7 +807,8 @@ async def capture_one(browser, url, out_dir):
                     # force: the sticky page header can cover the tab strip
                     # after the documents-table walk scrolled the page
                     await tb.click(timeout=1500, force=True)
-                    await page.wait_for_timeout(600)
+                    await page.wait_for_timeout(300)
+                    await _settle_quiet(page, 700)
                 except Exception:
                     continue
                 for _ in range(6):
