@@ -168,10 +168,13 @@ SECTIONS_JS = r"""
     }
     return '';
   };
+  // a container holding many links is a list/component, not one card
+  const tooBig = (el) => !el || el.querySelectorAll('a').length > 8;
   const cardTitle = (a) => {
     let el = a;
     for (let i = 0; i < 5 && el.parentElement; i++) {
       el = el.parentElement;
+      if (tooBig(el)) break;                       // climbed out of the card
       const h = el.querySelector('h2,h3,h4,h5,strong,b,[class*="title" i],[class*="headline" i]');
       if (h) {
         const t = (h.textContent || '').replace(/\s+/g, ' ').trim();
@@ -245,14 +248,12 @@ SECTIONS_JS = r"""
     if (strictChrome ? isPageChrome(a) : isTabStrip(a)) return;
     let t = (a.innerText || a.textContent || a.getAttribute('title') ||
              a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
-    if (GENERIC_LINK.test(t)) {
-      const ct = cardTitle(a);                     // teaser card: use its title
-      if (!ct) return;                             // no real title -> skip junk
-      t = ct;
-    }
     let meta = '';
     const tr = a.closest('tr');
     if (tr) {
+      // A TABLE ROW IS NOT A CARD: its title must come from this row. Never
+      // climb - a row's icon-only/"download" anchor would escape the table
+      // and pick up page furniture (e.g. the filter bar's "Reset all").
       const cells = Array.from(tr.querySelectorAll('td'))
         .map(td => (td.innerText || '').replace(/\s+/g, ' ').trim())
         .filter(Boolean);
@@ -262,11 +263,18 @@ SECTIONS_JS = r"""
       const badgeCut = t.search(/(New)?(PDF|ZIP|XLSX?|TXT|PPTX?)(Public|Confidential|Restricted)/);
       if (badgeCut > 8) {
         t = t.slice(0, badgeCut).replace(/\s*(New|Updated)$/i, '').trim();
+      } else if (GENERIC_LINK.test(t) || t.length < 3) {
+        t = cells.length ? cells[0].replace(/\s*(New|Updated)$/i, '') : '';
       } else if (cells.length && cells[0].length > 8 &&
           (t.startsWith(cells[0].slice(0, 12)) || t.length > cells[0].length + 8)) {
         t = cells[0].replace(/\s*(New|Updated)$/i, '');
       }
+      if (!t || t.length < 3) return;      // icon anchor in a title-less row
       meta = cells.filter(x => x !== t).slice(0, 8).join(' | ');
+    } else if (GENERIC_LINK.test(t)) {
+      const ct = cardTitle(a);                     // teaser card: use its title
+      if (!ct) return;                             // no real title -> skip junk
+      t = ct;
     }
     push(cat, t, href, meta);
   };
@@ -310,6 +318,7 @@ SECTIONS_JS = r"""
         if (!root) {
           root = a.parentElement;
           for (let i = 0; i < 6 && root && root.parentElement; i++) {
+            if (tooBig(root.parentElement)) break;   // stop at the list level
             if ((root.innerText || '').replace(/\s+/g, ' ').trim().length >
                 t.length + 20) break;
             root = root.parentElement;
@@ -334,6 +343,7 @@ SECTIONS_JS = r"""
           if (!root) {
             root = a2.parentElement;
             for (let i = 0; i < 6 && root && root.parentElement; i++) {
+              if (tooBig(root.parentElement)) break;  // stop at the list level
               if ((root.innerText || '').replace(/\s+/g, ' ').trim().length >
                   t.length + 20) break;
               root = root.parentElement;
@@ -966,10 +976,15 @@ async def capture_one(browser, url, out_dir):
                 prev = by_key.get(key)
                 if prev is None or len(d.get("meta", "")) > len(prev.get("meta", "")):
                     by_key[key] = d
+            # safety net: a row collected via a second anchor (download icon)
+            # yields a meta-less twin sharing the row's URL - drop those
             titled = {d["title"].lower() for d in by_key.values() if d.get("meta")}
+            titled_urls = {d.get("url") for d in by_key.values()
+                           if d.get("meta") and d.get("url")}
             sections["documents"] = [
                 d for d in by_key.values()
-                if d.get("meta") or d["title"].lower() not in titled]
+                if d.get("meta") or (d["title"].lower() not in titled and
+                                     d.get("url") not in titled_urls)]
         except Exception:
             pass
         # merge paginated design-resource/training panes harvested per tab.
