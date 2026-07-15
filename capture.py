@@ -68,7 +68,10 @@ iframe[src*="siteintercept" i], [id*="siteintercept" i],
 [class*="feedback-button" i], [id*="feedback-btn" i] {
     display: none !important; visibility: hidden !important;
 }
-html, body { overflow: auto !important; }
+/* keep vertical scrolling possible (banners lock it) but never let a wide
+   element (e.g. the 2500px products table) stretch the document: that made
+   full-page screenshots much wider than the page, padded with white */
+html, body { overflow-x: hidden !important; overflow-y: auto !important; }
 *, *::before, *::after {
     animation: none !important;
     transition: none !important;
@@ -144,7 +147,10 @@ SECTIONS_JS = r"""
     ['news',             /^(news( & highlights?)?|highlights?|videos?)$/i],
     ['trainings',        /^((support & )?trainings?( & webinars?)?|webinars?)$/i],
   ];
-  const GENERIC_LINK = /^(explore( more| now)?|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all|products?)|more|download|jump to|overview|goto.?link|add to cart.*|buy online.*|order now.*|boards? *& *designs?|development tools|embedded software|services)$/i;
+  // ONLY true call-to-action text: never category names ("Boards & designs",
+  // "Documents"...) - on hub pages those ARE the teaser card titles, and
+  // filtering them here made the card's description get stored instead.
+  const GENERIC_LINK = /^(explore( more| now)?|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all|products?)|more|download|jump to|goto.?link|add to cart.*|buy online.*|order now.*)$/i;
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
   const out = {documents: [], design_resources: [], news: [],
@@ -166,19 +172,23 @@ SECTIONS_JS = r"""
     isTabStrip(el) || !!el.closest('header, footer, [role="navigation"], .nav');
 
   const CHIP_LABEL = /^(development tools?|embedded software|boards? *& *designs?|services|training|simulation (tools|models)|pcb design data|documents|partners)$/i;
-  // first meaningful text line of a card root: its visual title
-  const cardLine = (root) => {
+  // First meaningful text line of a card root: its visual title.
+  // strict=true only inside design-resource panes, where every card carries a
+  // category chip ("Development Tools") above its real title. On hub pages
+  // those same words ARE the teaser's title ("Boards & designs") - filtering
+  // them there makes the card's description get used instead.
+  const cardLine = (root, strict) => {
     if (!root) return '';
     for (const line of (root.innerText || '').split('\n')) {
       const t = line.replace(/\s+/g, ' ').trim();
       if (t.length > 2 && t.length < 130 && !GENERIC_LINK.test(t) &&
-          !CHIP_LABEL.test(t)) return t;
+          !(strict && CHIP_LABEL.test(t))) return t;
     }
     return '';
   };
   // a container holding many links is a list/component, not one card
   const tooBig = (el) => !el || el.querySelectorAll('a').length > 8;
-  const cardTitle = (a) => {
+  const cardTitle = (a, strict) => {
     let el = a;
     for (let i = 0; i < 5 && el.parentElement; i++) {
       el = el.parentElement;
@@ -187,7 +197,7 @@ SECTIONS_JS = r"""
       if (h) {
         const t = (h.textContent || '').replace(/\s+/g, ' ').trim();
         if (t.length > 2 && t.length < 150 && !GENERIC_LINK.test(t) &&
-            !CHIP_LABEL.test(t)) return t;
+            !(strict && CHIP_LABEL.test(t))) return t;
       }
     }
     // no heading in the card: climb to the ancestor that holds more text
@@ -202,7 +212,7 @@ SECTIONS_JS = r"""
       for (const line of (card.innerText || '').split('\n')) {
         const t = line.replace(/\s+/g, ' ').trim();
         if (t.length > 2 && t.length < 120 && !GENERIC_LINK.test(t) &&
-            !CHIP_LABEL.test(t)) return t;
+            !(strict && CHIP_LABEL.test(t))) return t;
       }
     }
     return '';
@@ -212,7 +222,9 @@ SECTIONS_JS = r"""
   const push = (cat, title, url, meta, group) => {
     title = (title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!title || title.length < 3) return;
-    if (NAV_LABEL.test(title) && !meta) return;
+    // NB: no nav-label filter here - "Documents"/"Design resources" are real
+    // teaser-card titles on hub pages. Nav strips are excluded structurally
+    // (isTabStrip / isPageChrome), which is where nav links actually live.
     if (/^note that there are additional results/i.test(title)) return;
     if (url) {
       const owner = urlOwned.get(url);
@@ -280,7 +292,8 @@ SECTIONS_JS = r"""
       if (!t || t.length < 3) return;      // icon anchor in a title-less row
       meta = cells.filter(x => x !== t).slice(0, 8).join(' | ');
     } else if (GENERIC_LINK.test(t)) {
-      const ct = cardTitle(a);                     // teaser card: use its title
+      // teaser card outside a pane: its heading IS the title (not strict)
+      const ct = cardTitle(a, false);
       if (!ct) return;                             // no real title -> skip junk
       t = ct;
     }
@@ -332,7 +345,7 @@ SECTIONS_JS = r"""
             root = root.parentElement;
           }
         }
-        const ct = cardLine(root) || cardTitle(a);
+        const ct = cardLine(root, true) || cardTitle(a, true);
         if (!ct) return;
         t = ct;
       }
@@ -357,7 +370,7 @@ SECTIONS_JS = r"""
               root = root.parentElement;
             }
           }
-          t = cardLine(root) || '';
+          t = cardLine(root, true) || '';
         }
         if (t.length < 9 || t.length > 200 ||
             /^(watch video|log ?in|clear all|sort by.*|download)$/i.test(t)) return;
@@ -677,6 +690,45 @@ async def _settle_quiet(page, window_ms=1500):
         return "error"
 
 
+# Sticky/fixed elements repeat down a stitched full-page screenshot; make them
+# render once, in place. Run only right before the screenshot.
+UNSTICK_JS = r"""
+() => {
+  let n = 0;
+  const vw = document.documentElement.clientWidth;
+  document.querySelectorAll('*').forEach(el => {
+    const p = getComputedStyle(el).position;
+    if (p !== 'sticky' && p !== 'fixed') return;
+    const r = el.getBoundingClientRect();
+    if (r.width > vw * 0.6 && r.height > 24) {
+      // full-width sticky chrome (global header, section nav): it follows the
+      // scroll and would be stitched down the whole image - and pinning it
+      // static only drops it in mid-page. Hide it for the screenshot; the
+      // text layer still records every word of it, so changes are not lost.
+      el.style.setProperty('display', 'none', 'important');
+    } else {
+      el.style.setProperty('position', 'static', 'important');
+    }
+    n++;
+  });
+  // Clip anything wider than the viewport (the products table is ~2500px):
+  // otherwise the stitched screenshot is as wide as the widest element and
+  // the rest of the page sits in a sea of white.
+  const vw = document.documentElement.clientWidth;
+  for (let pass = 0; pass < 3; pass++) {
+    document.querySelectorAll('body *').forEach(el => {
+      const w = el.getBoundingClientRect().width;
+      if (w > vw + 4 && el.parentElement && el.parentElement !== document.body) {
+        el.parentElement.style.setProperty('overflow-x', 'hidden', 'important');
+        el.parentElement.style.setProperty('max-width', '100%', 'important');
+      }
+    });
+  }
+  window.scrollTo(0, 0);
+  return n;
+}
+"""
+
 AUTO_SCROLL_JS = r"""
 async () => {
   const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -947,8 +999,31 @@ async def capture_one(browser, url, out_dir):
         except Exception:
             pass
 
-        await page.screenshot(path=str(out_dir / "shot.png"), full_page=True,
-                              timeout=60_000)
+        # A full-page screenshot is stitched while scrolling, so sticky/fixed
+        # bars (the page's own section nav) re-render over and over down the
+        # image. Pin them in place first - done last, so every click above
+        # still worked against the real layout.
+        try:
+            await page.evaluate(UNSTICK_JS)
+            await page.wait_for_timeout(250)
+        except Exception:
+            pass
+
+        # Clip to the viewport width: a wide element (products table ~2500px)
+        # otherwise makes the full-page image as wide as itself, leaving the
+        # page marooned in white. Height = the real document height.
+        try:
+            dims = await page.evaluate(
+                "() => ({w: document.documentElement.clientWidth,"
+                " h: Math.max(document.documentElement.scrollHeight,"
+                " document.body ? document.body.scrollHeight : 0)})")
+            await page.screenshot(
+                path=str(out_dir / "shot.png"), full_page=True,
+                clip={"x": 0, "y": 0, "width": dims["w"],
+                      "height": min(dims["h"], 30000)}, timeout=60_000)
+        except Exception:
+            await page.screenshot(path=str(out_dir / "shot.png"),
+                                  full_page=True, timeout=60_000)
 
         # Remove consent overlays from the DOM so their text never appears.
         try:
