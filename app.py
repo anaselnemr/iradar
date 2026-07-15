@@ -142,7 +142,10 @@ def index():
           (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
             AS open_changes,
           (SELECT c2.id FROM changes c2 WHERE c2.url_id=u.id AND c2.reviewed=0
-            ORDER BY c2.id DESC LIMIT 1) AS latest_change_id
+            ORDER BY c2.id DESC LIMIT 1) AS latest_change_id,
+          (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
+            AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)
+            AS page_title
         FROM urls u {wsql}
         ORDER BY CASE
             WHEN u.last_status='changed' AND u.active=1 THEN 0
@@ -270,9 +273,11 @@ def urls_toggle(url_id):
     return redirect(url_for("index"))
 
 
+# note: capture also stores an "about" category in sections.json; it is
+# deliberately NOT listed here - the user wants About content tracked for
+# text comparison only, never displayed as a library section.
 SECTION_LABELS = [
     ("overview", "Overview"),
-    ("about", "About the product"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
     ("features", "Key features"),

@@ -114,7 +114,10 @@
     <tr>
       <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
       <td>{{ u.id }}</td>
-      <td class="urlcell"><a href="{{ url_for('url_detail', url_id=u.id) }}" title="{{ u.url }}">{{ u.url }}</a></td>
+      <td class="urlcell">
+        <a href="{{ url_for('url_detail', url_id=u.id) }}" title="Open the saved library for this page"><b>{{ u.page_title or u.label or u.url.rsplit('/', 1)[-1] }}</b></a><br>
+        <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
+      </td>
       <td>
         {% if u.last_http is none and u.last_status == 'error' %}
           <span class="badge b-error" title="Could not reach the page">DOWN</span>
