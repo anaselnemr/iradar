@@ -49,7 +49,7 @@ _DOC_BADGE_RE = re.compile(
 def _clean_doc_title(title):
     t = _ZERO_WIDTH_RE.sub("", title or "")
     cut = _DOC_BADGE_RE.sub("", t).strip()
-    if len(cut) >= 8:
+    if len(cut) >= 4:      # short doc codes like "AN82156" are valid titles
         return re.sub(r"\s*(New|Updated)$", "", cut, flags=re.I).strip()
     return t.strip()
 
@@ -158,9 +158,19 @@ SECTIONS_JS = r"""
     isTabStrip(el) || !!el.closest('header, footer, [role="navigation"], .nav');
 
   const CHIP_LABEL = /^(development tools?|embedded software|boards? *& *designs?|services|training|simulation (tools|models)|pcb design data|documents|partners)$/i;
+  // first meaningful text line of a card root: its visual title
+  const cardLine = (root) => {
+    if (!root) return '';
+    for (const line of (root.innerText || '').split('\n')) {
+      const t = line.replace(/\s+/g, ' ').trim();
+      if (t.length > 2 && t.length < 130 && !GENERIC_LINK.test(t) &&
+          !CHIP_LABEL.test(t)) return t;
+    }
+    return '';
+  };
   const cardTitle = (a) => {
     let el = a;
-    for (let i = 0; i < 3 && el.parentElement; i++) {
+    for (let i = 0; i < 5 && el.parentElement; i++) {
       el = el.parentElement;
       const h = el.querySelector('h2,h3,h4,h5,strong,b,[class*="title" i],[class*="headline" i]');
       if (h) {
@@ -187,16 +197,21 @@ SECTIONS_JS = r"""
     return '';
   };
 
+  const normT = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
   const push = (cat, title, url, meta, group) => {
     title = (title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!title || title.length < 3) return;
     if (NAV_LABEL.test(title) && !meta) return;
+    if (/^note that there are additional results/i.test(title)) return;
     if (url) {
       const owner = urlOwned.get(url);
       if (owner && owner !== cat) return;         // already listed elsewhere
-      const existing = out[cat].find(i => i.url === url);
-      if (existing) {                              // same link twice: keep the
-        if (title.length > existing.title.length   // more descriptive title
+      // merge ONLY true twins (same link AND same title modulo whitespace):
+      // distinct products can legitimately share one vendor URL
+      const existing = out[cat].find(
+        i => i.url === url && normT(i.title) === normT(title));
+      if (existing) {
+        if (title.length > existing.title.length
             && !GENERIC_LINK.test(title)) existing.title = title;
         if (meta && !existing.meta) existing.meta =
           meta.replace(/\s+/g, ' ').trim().slice(0, 260);
@@ -288,23 +303,50 @@ SECTIONS_JS = r"""
       if (isTabStrip(a)) return;
       let t = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
       if (GENERIC_LINK.test(t)) {
-        const ct = cardTitle(a);
+        // "Read more"-only cards: the card's first text line IS its title
+        // (skipping the category chip). Some cards are not li/.boardlist -
+        // climb to the nearest ancestor with more text than the link itself.
+        let root = li;
+        if (!root) {
+          root = a.parentElement;
+          for (let i = 0; i < 6 && root && root.parentElement; i++) {
+            if ((root.innerText || '').replace(/\s+/g, ' ').trim().length >
+                t.length + 20) break;
+            root = root.parentElement;
+          }
+        }
+        const ct = cardLine(root) || cardTitle(a);
         if (!ct) return;
         t = ct;
       }
-      push(cat, t, href, li ? cardExtras(li) : '', group);
+      push(cat, t, href, cardExtras(li || a.parentElement), group);
     });
     // href-less card/title anchors (trainings, CAD/IBIS file rows, gated
-    // downloads); a video URL hides in the thumbnail rendition path
+    // downloads, and cards whose "Read more" has no href at all); a video
+    // URL hides in the thumbnail rendition path
     pane.querySelectorAll('a:not([href])')
       .forEach(a2 => {
-        const t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
-        if (t.length < 9 || t.length > 200 || GENERIC_LINK.test(t) ||
+        let t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
+        const li = a2.closest('li, .boardlist');
+        if (GENERIC_LINK.test(t) || t.length < 9) {
+          // resolve the card's real title from its container
+          let root = li;
+          if (!root) {
+            root = a2.parentElement;
+            for (let i = 0; i < 6 && root && root.parentElement; i++) {
+              if ((root.innerText || '').replace(/\s+/g, ' ').trim().length >
+                  t.length + 20) break;
+              root = root.parentElement;
+            }
+          }
+          t = cardLine(root) || '';
+        }
+        if (t.length < 9 || t.length > 200 ||
             /^(watch video|log ?in|clear all|sort by.*|download)$/i.test(t)) return;
-        const li = a2.closest('li, .boardlist') || pane;
-        const img = li.querySelector('img[src*=".mp4/"]');
+        const box = li || pane;
+        const img = box.querySelector('img[src*=".mp4/"]');
         const vurl = img ? img.src.split('/jcr:content')[0] : '';
-        push(cat, t, vurl, cardExtras(li), group);
+        push(cat, t, vurl, cardExtras(box), group);
       });
   });
 
@@ -961,9 +1003,11 @@ async def capture_one(browser, url, out_dir):
                     title_l = it.get("title", "").lower()
                     if not it.get("group") and title_l in grouped_titles:
                         continue
-                    # same link in the same group = same item (desktop/mobile
-                    # variants of one card differ only in whitespace)
-                    ident = it.get("url", "").lower() or title_l
+                    # twins = same normalized title AND same link; distinct
+                    # products can share one vendor URL, so title is part of
+                    # the identity
+                    norm_t = re.sub(r"\s+", "", title_l)
+                    ident = (norm_t, it.get("url", "").lower())
                     k = (ident, it.get("group", ""))
                     prev = best.get(k)
                     if prev is None:
@@ -976,7 +1020,15 @@ async def capture_one(browser, url, out_dir):
                              (0 if _PFX.match(prev.get("title", "")) else 20) +
                              -len(prev.get("title", ""))):
                         best[k] = it
-                sections[cat] = [best[k] for k in order]
+                merged = [best[k] for k in order]
+                # a card can be collected twice: once via its (rare) href and
+                # once href-less - drop url-less repeats of a titled+linked item
+                titled_urls = {it.get("title", "").lower()
+                               for it in merged if it.get("url")}
+                sections[cat] = [
+                    it for it in merged
+                    if it.get("url") or
+                    it.get("title", "").lower() not in titled_urls]
         except Exception:
             pass
 
