@@ -36,6 +36,23 @@ PAGES_PER_BROWSER = 100          # restart the browser periodically (memory hygi
 # website change (edit text/images in the live DOM). Never set in normal runs.
 INJECT_JS = None
 
+# Document titles concatenate badge spans (type/access/version/size/date),
+# sometimes joined by zero-width characters: cut everything from the badge
+# sequence onward. Applied in Python so it is deterministic and testable.
+_ZERO_WIDTH_RE = re.compile("[​‌‍⁠﻿]")
+_DOC_BADGE_RE = re.compile(
+    r"\s*(New|Updated)?\s*(PDF|ZIP|XLSX?|TXT|PPTX?|DOCX?)\s*"
+    r"(Public|Confidential|Restricted).*$", re.I)
+
+
+def _clean_doc_title(title):
+    t = _ZERO_WIDTH_RE.sub("", title or "")
+    cut = _DOC_BADGE_RE.sub("", t).strip()
+    if len(cut) >= 8:
+        return re.sub(r"\s*(New|Updated)$", "", cut, flags=re.I).strip()
+    return t.strip()
+
+
 # Cookie/consent overlays are hidden so they never pollute screenshots.
 HIDE_CSS = """
 #onetrust-consent-sdk, #usercentrics-root, #usercentrics-cmp-ui,
@@ -206,9 +223,12 @@ SECTIONS_JS = r"""
         .map(td => (td.innerText || '').replace(/\s+/g, ' ').trim())
         .filter(Boolean);
       // Anchor text in document tables concatenates badge spans without
-      // separators ("...GuideNewPDFPublic..."); the first cell is the clean
-      // human-readable title, so prefer it.
-      if (cells.length && cells[0].length > 8 &&
+      // separators ("...GuideNewPDFPublicEN01_003.64MBApr 29, 2020"): cut the
+      // title at the type+access badge sequence, or prefer a clean first cell.
+      const badgeCut = t.search(/(New)?(PDF|ZIP|XLSX?|TXT|PPTX?)(Public|Confidential|Restricted)/);
+      if (badgeCut > 8) {
+        t = t.slice(0, badgeCut).replace(/\s*(New|Updated)$/i, '').trim();
+      } else if (cells.length && cells[0].length > 8 &&
           (t.startsWith(cells[0].slice(0, 12)) || t.length > cells[0].length + 8)) {
         t = cells[0].replace(/\s*(New|Updated)$/i, '');
       }
@@ -234,6 +254,20 @@ SECTIONS_JS = r"""
   document.querySelectorAll('[id^="ds-tabpane-"]').forEach(pane => {
     const cat = /training/i.test(pane.id) ? 'trainings' : 'design_resources';
     pane.querySelectorAll('a[href]').forEach(a => collectAnchor(cat, a, false));
+    if (cat === 'trainings') {
+      // training cards use href-less anchors; the video URL hides in the
+      // thumbnail rendition path (.../<video>.mp4/jcr:content/...)
+      pane.querySelectorAll('a.mobile-anchor-tag, .board-container a').forEach(a2 => {
+        const t = (a2.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t.length < 10 || t.length > 200 || /^watch video$/i.test(t)) return;
+        const li = a2.closest('li, .boardlist') || pane;
+        const img = li.querySelector('img[src*=".mp4/"]');
+        const vurl = img ? img.src.split('/jcr:content')[0] : '';
+        const lang = li.querySelector('.labelname.space span');
+        push('trainings', t, vurl,
+             'Training' + (lang ? ' | ' + lang.textContent.trim() : ''));
+      });
+    }
   });
 
   // Video cards (news & highlights carousels, training panes) have no links -
@@ -252,7 +286,9 @@ SECTIONS_JS = r"""
     let cat = 'videos';
     if (pane) cat = /training/i.test(pane.id) ? 'trainings' : 'design_resources';
     else if (card.closest('[class*="event" i], [class*="news" i]')) cat = 'news';
-    push(cat, title, '', meta.join(' | '));
+    const thumb = card.querySelector('img[src*=".mp4/"]');
+    push(cat, title, thumb ? thumb.src.split('/jcr:content')[0] : '',
+         meta.join(' | '));
   });
 
   // Pass 2: heading-based fallback, only for categories still empty
@@ -282,6 +318,8 @@ SECTIONS_JS = r"""
   document.querySelectorAll('video').forEach(v => {
     const srcEl = v.querySelector('source');
     const src = v.currentSrc || v.src || (srcEl ? srcEl.src : '');
+    // placeholder <video> elements point at page URLs - only accept real media
+    if (!v.poster && !/\.(mp4|webm|m3u8|mov)([?#]|$)|video-cdn|brightcove|youtube/i.test(src)) return;
     let title = '';
     const fig = v.closest('figure, [class*="video" i], section, article');
     if (fig) {
@@ -542,16 +580,16 @@ async def capture_one(browser, url, out_dir):
             sections = await page.evaluate(SECTIONS_JS)
         except Exception:
             sections = {}
-        # merge documents collected across the table's pages
+        # merge documents collected across the table's pages + clean titles
         try:
-            docs = sections.get("documents", [])
-            seen_docs = {(d.get("title"), d.get("url")) for d in docs}
-            for d in docs_acc:
-                key = (d.get("title"), d.get("url"))
+            merged, seen_docs = [], set()
+            for d in list(sections.get("documents", [])) + docs_acc:
+                d["title"] = _clean_doc_title(d.get("title", ""))
+                key = (d["title"], d.get("url"))
                 if key not in seen_docs:
-                    docs.append(d)
+                    merged.append(d)
                     seen_docs.add(key)
-            sections["documents"] = docs
+            sections["documents"] = merged
         except Exception:
             pass
 
