@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Search content — InfineonWatch{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Search all captured content</h1>
+  <p class="muted">Find a document, board, training, video, feature — anything
+    captured — and see every page that carries it.
+    <b>{{ '{:,}'.format(indexed) }}</b> items indexed so far.</p>
+  <form method="get" class="searchbar" style="margin-top:14px">
+    <input type="text" name="q" value="{{ q }}" autofocus
+           placeholder="e.g. AN85951, CY8CKIT-042, datasheet, TRACE32, IBIS…">
+    <select name="cat" style="max-width:210px">
+      <option value="all">All categories</option>
+      {% for c in cats %}
+      <option value="{{ c }}" {% if cat == c %}selected{% endif %}>{{ labels.get(c, c) }}</option>
+      {% endfor %}
+    </select>
+    <button>Search</button>
+  </form>
+</div>
+
+{% if q %}
+<div class="card">
+  <h2>{{ groups|length }} distinct item(s){% if total %} · {{ total }} occurrence(s) across pages{% endif %}
+    {% if groups|length >= 1 and total > 2000 %}<span class="muted">(showing first 2000 matches)</span>{% endif %}
+  </h2>
+  {% if not groups %}
+    <p class="muted">Nothing matches “{{ q }}”{% if cat != 'all' %} in {{ labels.get(cat, cat) }}{% endif %}.
+      {% if indexed == 0 %}<br>The index fills as pages are captured — the baseline run is still going.{% endif %}
+    </p>
+  {% endif %}
+  {% for g in groups %}
+  <div class="hit">
+    <div class="hit-head">
+      {% if g.url %}<a href="{{ g.url }}" target="_blank" class="hit-title">{{ g.title }}</a>
+      {% else %}<span class="hit-title">{{ g.title }}</span>{% endif %}
+      <span class="badge b-new">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
+      <span class="badge {{ 'b-changed' if g.pages|length > 1 else 'b-unchanged' }}">on {{ g.pages|length }} page{{ 's' if g.pages|length > 1 }}</span>
+    </div>
+    {% if g.meta %}<div class="muted" style="font-size:12.5px">{{ g.meta }}</div>{% endif %}
+    <ul class="liblist" style="max-height:none">
+      {% for p in g.pages %}
+      <li><a href="{{ url_for('url_detail', url_id=p.id) }}" class="titlelink">{{ p.title | clean_title }}</a>
+        &nbsp;<a href="{{ p.url }}" target="_blank" class="liveurl">{{ p.url }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

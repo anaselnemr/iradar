@@ -6,6 +6,7 @@ snapshots are deleted UNLESS they are referenced by a flagged change (so you
 can always open old diffs). This keeps disk usage flat even at 3-4k URLs.
 """
 import asyncio
+import json
 import shutil
 import threading
 import time
@@ -33,6 +34,35 @@ RUN_STATE = {
 
 def _snapshot_dir(url_id, ts_label):
     return db.SNAP_DIR / str(url_id) / ts_label
+
+
+def index_items(con, url_id, snap_dir):
+    """Refresh the searchable item index for a URL from its current snapshot."""
+    con.execute("DELETE FROM items WHERE url_id=?", (url_id,))
+    p = Path(snap_dir) / "sections.json"
+    if not p.exists():
+        return
+    try:
+        sections = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    rows = []
+    for cat, items in sections.items():
+        if not isinstance(items, list):
+            continue
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            title = (it.get("title") or "").strip()
+            if not title:
+                continue
+            rows.append((url_id, cat, (it.get("group") or "")[:80],
+                         title[:300], (it.get("url") or "")[:600],
+                         (it.get("meta") or "")[:260]))
+    if rows:
+        con.executemany(
+            "INSERT INTO items(url_id, category, grp, title, item_url, meta)"
+            " VALUES(?,?,?,?,?,?)", rows)
 
 
 def _prune_snapshot(con, snap_row):
@@ -166,6 +196,8 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
         if prev is None:
             con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
                         (now, "baseline", url_id))
+            index_items(con, url_id, snap_dir)
+            con.commit()
             continue
 
         result = cmp.compare_snapshots(prev["dir"], snap_dir, change_dir=None,
@@ -179,6 +211,7 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
         else:
             con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
                         (now, "unchanged", url_id))
+            index_items(con, url_id, snap_dir)
             _prune_snapshot(con, prev)
         con.commit()
 
@@ -245,9 +278,11 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
                      str(change_dir)))
                 con.execute("UPDATE urls SET last_checked=?, last_status=?"
                             " WHERE id=?", (now, "changed", url_id))
+                index_items(con, url_id, confirm_dir)
             else:
                 con.execute("UPDATE urls SET last_checked=?, last_status=?"
                             " WHERE id=?", (now, "unchanged", url_id))
+                index_items(con, url_id, confirm_dir)
                 _prune_snapshot(con, prev)
             con.commit()
 

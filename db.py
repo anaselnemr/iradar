@@ -95,6 +95,19 @@ def init_db():
         errors INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+    -- searchable index of every library item of every page's current snapshot
+    CREATE TABLE IF NOT EXISTS items(
+        id INTEGER PRIMARY KEY,
+        url_id INTEGER NOT NULL REFERENCES urls(id) ON DELETE CASCADE,
+        category TEXT,
+        grp TEXT DEFAULT '',
+        title TEXT,
+        item_url TEXT DEFAULT '',
+        meta TEXT DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_items_url ON items(url_id);
+    CREATE INDEX IF NOT EXISTS idx_items_title ON items(title);
+    CREATE INDEX IF NOT EXISTS idx_items_cat ON items(category);
     CREATE INDEX IF NOT EXISTS idx_snapshots_url ON snapshots(url_id, ts);
     CREATE INDEX IF NOT EXISTS idx_changes_url ON changes(url_id, ts);
     """)

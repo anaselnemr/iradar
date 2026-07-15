@@ -113,11 +113,16 @@ PER_PAGE = 100
 STATUS_FILTERS = {
     "changed":   "u.last_status='changed' AND u.active=1",
     "unchanged": "u.last_status='unchanged' AND u.active=1",
+    "baseline":  "u.last_status='baseline'",
+    "checked":   "u.last_checked IS NOT NULL",
     "rejected":  "u.last_status='rejected'",
     "error":     "u.last_status='error'",
     "paused":    "u.active=0",
     "new":       "u.last_checked IS NULL",
     "notlive":   "u.last_http IS NOT NULL AND u.last_http >= 400",
+    "nodocs":    ("u.last_checked IS NOT NULL AND u.id NOT IN"
+                  " (SELECT url_id FROM items WHERE category='documents')"),
+    "hasdocs":   "u.id IN (SELECT url_id FROM items WHERE category='documents')",
 }
 
 
@@ -167,6 +172,9 @@ def index():
     counts = con.execute("""
         SELECT COUNT(*) AS total,
           SUM(CASE WHEN last_status='changed' AND active=1 THEN 1 ELSE 0 END) AS changed,
+          SUM(CASE WHEN last_status='unchanged' AND active=1 THEN 1 ELSE 0 END) AS unchanged,
+          SUM(CASE WHEN last_status='baseline' THEN 1 ELSE 0 END) AS baseline,
+          SUM(CASE WHEN last_checked IS NOT NULL THEN 1 ELSE 0 END) AS checked,
           SUM(CASE WHEN last_status='rejected' THEN 1 ELSE 0 END) AS rejected,
           SUM(CASE WHEN last_status='error' THEN 1 ELSE 0 END) AS errors,
           SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS paused,
@@ -513,8 +521,18 @@ def change_visualdiff(change_id):
 
 @app.route("/run-now", methods=["POST"])
 def run_now():
-    if runner.run_check_background(kind="manual"):
-        flash("Check started - progress is shown below.")
+    ids = None
+    if request.form.get("only_new") == "1" or request.args.get("only_new") == "1":
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls WHERE active=1 AND last_checked IS NULL")]
+        con.close()
+        if not ids:
+            flash("Every page has been checked already — nothing to resume.")
+            return redirect(url_for("index"))
+    if runner.run_check_background(kind="manual", url_ids=ids):
+        flash(f"Checking {len(ids)} not-yet-checked page(s)…" if ids
+              else "Check started - progress is shown below.")
     else:
         flash("A check is already running.")
     return redirect(url_for("index"))
@@ -546,6 +564,55 @@ def settings_view():
         return redirect(url_for("settings_view"))
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS)
+
+
+@app.route("/search")
+def search_items():
+    """Search every captured item (documents, boards, trainings, videos,
+    features...) and show which pages carry it."""
+    q = request.args.get("q", "").strip()
+    cat = request.args.get("cat", "all")
+    groups, total, cats = [], 0, []
+    con = db.connect()
+    cats = [r["category"] for r in con.execute(
+        "SELECT category, COUNT(*) n FROM items GROUP BY category ORDER BY n DESC")]
+    indexed = con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+    if q:
+        where = ["(i.title LIKE ? OR i.item_url LIKE ? OR i.meta LIKE ?)"]
+        params = [f"%{q}%"] * 3
+        if cat != "all" and cat in cats:
+            where.append("i.category=?")
+            params.append(cat)
+        wsql = "WHERE " + " AND ".join(where)
+        total = con.execute(
+            f"SELECT COUNT(*) FROM items i {wsql}", params).fetchone()[0]
+        rows = con.execute(f"""
+            SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
+                   u.url AS page_url, u.label,
+                   (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
+                     AND s.status='ok' AND s.page_title<>''
+                     ORDER BY s.id DESC LIMIT 1) AS page_title
+            FROM items i JOIN urls u ON u.id=i.url_id
+            {wsql} ORDER BY i.title LIMIT 2000""", params).fetchall()
+        # one entry per distinct item, listing every page that carries it
+        by_item = {}
+        order = []
+        for r in rows:
+            key = (r["title"].lower(), r["item_url"])
+            if key not in by_item:
+                by_item[key] = {"title": r["title"], "url": r["item_url"],
+                                "category": r["category"], "grp": r["grp"],
+                                "meta": r["meta"], "pages": []}
+                order.append(key)
+            by_item[key]["pages"].append(
+                {"id": r["url_id"], "url": r["page_url"],
+                 "title": r["page_title"] or r["label"] or r["page_url"]})
+        groups = [by_item[k] for k in order]
+        groups.sort(key=lambda g: -len(g["pages"]))
+    con.close()
+    return render_template("search.html", q=q, cat=cat, cats=cats,
+                           groups=groups, total=total, indexed=indexed,
+                           labels=dict(SECTION_LABELS))
 
 
 @app.route("/export.xlsx")

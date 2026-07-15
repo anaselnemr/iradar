@@ -11,6 +11,12 @@
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
         <button {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Run check now</button>
       </form>
+      {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 %}
+      <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
+        <input type="hidden" name="only_new" value="1">
+        <button class="btn-ghost" title="Capture only the pages that have never been checked" {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Resume ({{ counts.fresh }})</button>
+      </form>
+      {% endif %}
       <button class="btn-ghost" onclick="location.reload()" title="Reload the dashboard to show the latest results and times">⟳ Refresh</button>
     </div>
   </div>
@@ -65,7 +71,11 @@
         ('all', 'All', counts.total),
         ('changed', 'Changed', counts.changed or 0),
         ('rejected', 'Awaiting fix', counts.rejected or 0),
-        ('unchanged', 'Unchanged', None),
+        ('checked', 'Captured', counts.checked or 0),
+        ('baseline', 'Baseline saved', counts.baseline or 0),
+        ('unchanged', 'Unchanged', counts.unchanged or 0),
+        ('hasdocs', 'Has documents', None),
+        ('nodocs', 'No documents', None),
         ('error', 'Errors', counts.errors or 0),
         ('notlive', 'Not live', counts.notlive or 0),
         ('paused', 'Paused', counts.paused or 0),

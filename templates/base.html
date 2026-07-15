@@ -119,6 +119,12 @@
   .liblist li { margin: 3px 0; word-break: break-word; }
   .libgroup { margin: 12px 0 2px 4px; font-size: 13px; color: var(--accent);
               text-transform: uppercase; letter-spacing: .05em; }
+  .hit { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+         margin-bottom: 10px; background: #fbfcfe; }
+  .hit-head { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+  .hit-title { font-weight: 600; color: var(--ink); text-decoration: none;
+               font-size: 14.5px; }
+  a.hit-title:hover { color: var(--accent); text-decoration: underline; }
   .searchbar { display: flex; gap: 8px; margin-bottom: 12px; }
   .searchbar input[type=text] { flex: 1; }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
@@ -142,6 +148,7 @@
   <div class="logo">Infineon<span>Watch</span></div>
   <nav>
     <a href="{{ url_for('index') }}">Dashboard</a>
+    <a href="{{ url_for('search_items') }}">Search content</a>
     <a href="{{ url_for('history') }}">Run history</a>
     <a href="{{ url_for('settings_view') }}">Settings</a>
   </nav>
