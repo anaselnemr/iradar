@@ -272,6 +272,7 @@ def urls_toggle(url_id):
 
 SECTION_LABELS = [
     ("overview", "Overview"),
+    ("about", "About the product"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
     ("features", "Key features"),

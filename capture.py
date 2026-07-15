@@ -141,7 +141,7 @@ SECTIONS_JS = r"""
 
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], features: [], benefits: [],
-               overview: [], applications: [], images: []};
+               overview: [], applications: [], about: [], images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -354,9 +354,30 @@ SECTIONS_JS = r"""
          [...new Set(meta)].slice(0, 3).join(' | '));
   });
 
+  // About / functional-tabbed widgets ("01 ... / 02 Features of ... / 03
+  // ..."): each tab becomes ONE item in the dedicated About category -
+  // these tabs are their own section, distinct from the Key Features block.
+  document.querySelectorAll('.tab-comp').forEach(comp => {
+    const headers = Array.from(comp.querySelectorAll('.tab-header'))
+      .map(h => (h.textContent || '').replace(/\s+/g, ' ').trim());
+    const panes = Array.from(comp.querySelectorAll('[role="tabpanel"], .tab-pane'));
+    panes.forEach((pane, i) => {
+      const title = headers[i] || '';
+      if (!title) return;
+      const lis = Array.from(pane.querySelectorAll('li'))
+        .map(li => (li.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter(t => t.length > 3 && t.length < 250);
+      let desc = lis.length
+        ? lis.slice(0, 12).join(' • ')
+        : (pane.innerText || '').replace(/\s+/g, ' ').trim();
+      if (desc.length > 20) push('about', title.slice(0, 130), '', desc);
+    });
+  });
+
   // Overview: the page's descriptive paragraph (outside the design-resources
   // widget and page chrome). Stored as one item.
   for (const h of document.querySelectorAll('h1,h2,h3')) {
+    if (out.overview.length) break;
     if (isPageChrome(h) ||
         h.closest('.designresource-component, [id^="ds-"], #documents')) continue;
     const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
@@ -885,6 +906,12 @@ async def capture_one(browser, url, out_dir):
         # without its lazy-loaded video URL or group): dedupe by title+group,
         # preferring grouped entries and keeping the richest one.
         try:
+            _PFX = re.compile(
+                r"^(development tools?|embedded software|boards? *& *designs?|"
+                r"services|training|pcb design data|simulation models)\s*",
+                re.I)
+            _DL = re.compile(r"^download\s*-?\s*", re.I)
+            _DESC = re.compile(r"(?i)\s*click on read more.*$|\s*read more\s*$")
             for cat in ("design_resources", "trainings"):
                 pool = list(sections.get(cat, [])) + panes_acc.get(cat, [])
                 # tabbed pages: grouped (pane) items are authoritative - a
@@ -897,16 +924,28 @@ async def capture_one(browser, url, out_dir):
                 best = {}
                 order = []
                 for it in pool:
+                    # strip category label / DOWNLOAD prefix / description noise
+                    t = _DESC.sub("", _DL.sub(
+                        "", _PFX.sub("", it.get("title", "").strip()))).strip()
+                    if len(t) >= 6:
+                        it["title"] = t
                     title_l = it.get("title", "").lower()
                     if not it.get("group") and title_l in grouped_titles:
                         continue
-                    k = (title_l, it.get("group", ""))
+                    # same link in the same group = same item (desktop/mobile
+                    # variants of one card differ only in whitespace)
+                    ident = it.get("url", "").lower() or title_l
+                    k = (ident, it.get("group", ""))
                     prev = best.get(k)
                     if prev is None:
                         best[k] = it
                         order.append(k)
-                    elif (len(it.get("url", "")) + len(it.get("meta", ""))) > \
-                            (len(prev.get("url", "")) + len(prev.get("meta", ""))):
+                    elif (len(it.get("meta", "")) +
+                          (0 if _PFX.match(it.get("title", "")) else 20) +
+                          -len(it.get("title", ""))) > \
+                            (len(prev.get("meta", "")) +
+                             (0 if _PFX.match(prev.get("title", "")) else 20) +
+                             -len(prev.get("title", ""))):
                         best[k] = it
                 sections[cat] = [best[k] for k in order]
         except Exception:
