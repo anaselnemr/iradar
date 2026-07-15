@@ -126,10 +126,12 @@ def _run_check_inner(kind, url_ids):
     con.commit()
     ok = changed = errors = 0
 
-    # Process in batches: every batch is captured, compared, verified and
-    # COMMITTED before the next starts - dashboard counts update live and an
-    # interrupted run keeps everything already processed.
-    BATCH = 40
+    # Process in small batches: every batch is captured, compared, verified
+    # and COMMITTED before the next starts - so the table fills continuously
+    # and an interruption loses at most one batch. Keep this near the
+    # concurrency (a batch of ~2 waves) - a big batch means long stretches
+    # where nothing is saved.
+    BATCH = max(4, concurrency * 2)
     for batch_start in range(0, len(urls), BATCH):
         batch = urls[batch_start:batch_start + BATCH]
         ok_b, changed_b, errors_b = _process_batch(

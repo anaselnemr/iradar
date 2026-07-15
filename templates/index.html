@@ -3,101 +3,109 @@
 
 <div class="card">
   <div class="statrow">
-    <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">URLs tracked</div></div>
-    <div class="stat"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">Unreviewed changes</div></div>
-    <div class="stat"><div class="n" style="color:{{ '#dc2626' if counts.errors or counts.notlive else '#16a34a' }}">{{ (counts.errors or 0) + (counts.notlive or 0) }}</div><div class="l">Errors / not live</div></div>
-    <div class="stat"><div class="n" style="font-size:16px; padding-top:8px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
-    <div class="stat" style="padding-top:10px">
+    <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">Pages tracked</div></div>
+    <div class="stat"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">To review</div></div>
+    <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Captured</div></div>
+    <div class="stat"><div class="n" style="color:{{ '#dc2626' if (counts.errors or 0) + (counts.notlive or 0) else '#16a34a' }}">{{ (counts.errors or 0) + (counts.notlive or 0) }}</div><div class="l">Errors / not live</div></div>
+    <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
+    <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
-        <button {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Run check now</button>
+        <button {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Check all pages</button>
       </form>
-      {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 %}
-      <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
-        <input type="hidden" name="only_new" value="1">
-        <button class="btn-ghost" title="Capture only the pages that have never been checked" {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Resume ({{ counts.fresh }})</button>
-      </form>
+      <button class="iconbtn" onclick="location.reload()" title="Refresh this page">⟳</button>
+      {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 and not state.running %}
+      <div style="margin-top:7px">
+        <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
+          <input type="hidden" name="only_new" value="1">
+          <button class="linkbtn" title="Capture only pages never checked before">or capture just the {{ counts.fresh }} not-yet-captured</button>
+        </form>
+      </div>
       {% endif %}
-      <button class="btn-ghost" onclick="location.reload()" title="Reload the dashboard to show the latest results and times">⟳ Refresh</button>
     </div>
   </div>
 
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <div class="muted" style="margin-top:10px">
-      Checking <span id="run-done">{{ state.done }}</span>/<span id="run-total">{{ state.total }}</span>
+      Capturing <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>
+      · <b><span id="run-saved">0</span></b> saved
       <b id="run-eta" style="color:var(--accent)"></b>
-      &nbsp;·&nbsp; <span id="run-msg"></span>
+      &nbsp;·&nbsp; <span id="run-msg" style="font-size:12px"></span>
     </div>
     <div class="progress"><div id="run-bar" style="width:0%"></div></div>
   </div>
-  {% if last_run and last_run.finished %}
+  {% if last_run and last_run.finished and not state.running %}
   <div class="muted" style="margin-top:10px">
-    Last run: {{ last_run.finished|localtime }} (local time) — {{ last_run.ok }} ok,
+    Last run finished {{ last_run.finished|localtime }} — {{ last_run.ok }} ok,
     <b>{{ last_run.changed }} changed</b>, {{ last_run.errors }} errors
-    ({{ last_run.kind }})
   </div>
   {% endif %}
 </div>
 
-<div class="grid2">
-  <div class="card">
-    <h2>Add URLs (paste one or many)</h2>
+<details class="card addbox">
+  <summary>Add pages</summary>
+  <div class="grid2" style="margin-top:14px">
     <form method="post" action="{{ url_for('urls_add') }}">
-      <textarea name="urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
-      <div style="margin-top:10px"><button>Add URLs</button></div>
+      <textarea name="urls" rows="3" placeholder="Paste one or many URLs — anything that isn't a URL is ignored"></textarea>
+      <div style="margin-top:8px"><button>Add URLs</button></div>
     </form>
-  </div>
-  <div class="card">
-    <h2>Upload Excel / CSV / TXT</h2>
     <form method="post" action="{{ url_for('urls_upload') }}" enctype="multipart/form-data">
       <input type="file" name="file" accept=".xlsx,.csv,.txt">
-      <div class="muted" style="margin:8px 0">Every URL found anywhere in the file is added; duplicates are skipped.</div>
+      <div class="muted" style="margin:8px 0">Excel / CSV / TXT — every URL found in the file is added, duplicates skipped.</div>
       <button>Upload &amp; add</button>
     </form>
   </div>
-</div>
+</details>
 
 <div class="card">
-  <h2 style="margin-bottom:14px">Tracked URLs</h2>
-
-  <form method="get" action="{{ url_for('index') }}" class="searchbar">
-    <input type="text" name="q" value="{{ q }}" placeholder="Search URLs… (e.g. wi-fi, psoc-4, optiga)">
-    <input type="hidden" name="status" value="{{ status }}">
-    <input type="hidden" name="ptype" value="{{ ptype }}">
-    <button>Search</button>
-    {% if q %}<a class="btn btn-ghost" href="{{ url_for('index', status=status, ptype=ptype) }}">Clear</a>{% endif %}
-  </form>
-
-  <div class="chips" style="margin-bottom:8px">
-    <span class="muted" style="align-self:center; font-size:12.5px; margin-right:2px">TYPE:</span>
-    <a class="chip {{ 'chip-on' if ptype == 'all' }}"
-       href="{{ url_for('index', ptype='all', status=status, q=q or None) }}">All types</a>
-    {% for t in ptypes %}
-    <a class="chip {{ 'chip-on' if ptype == t.ptype }}"
-       href="{{ url_for('index', ptype=t.ptype, status=status, q=q or None) }}">{{ t.ptype }} <b>{{ t.n }}</b></a>
-    {% endfor %}
+  <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap">
+    <h2 style="margin:0">Tracked pages</h2>
+    <span class="exports">Export all {{ counts.total }}:
+      <a href="{{ url_for('export_xlsx', mode='table') }}" title="One sheet: every page with status and library counts">⬇ table</a>
+      <a href="{{ url_for('export_xlsx', mode='full') }}" title="Every page + every captured item (documents, boards, trainings…) + all changes">⬇ everything</a>
+    </span>
   </div>
 
-  <div class="chips">
-    {% for key, label, n in [
-        ('all', 'All', counts.total),
-        ('changed', 'Changed', counts.changed or 0),
-        ('rejected', 'Awaiting fix', counts.rejected or 0),
-        ('checked', 'Captured', counts.checked or 0),
-        ('baseline', 'Baseline saved', counts.baseline or 0),
-        ('unchanged', 'Unchanged', counts.unchanged or 0),
-        ('hasdocs', 'Has documents', None),
-        ('nodocs', 'No documents', None),
-        ('error', 'Errors', counts.errors or 0),
-        ('notlive', 'Not live', counts.notlive or 0),
-        ('paused', 'Paused', counts.paused or 0),
-        ('new', 'Not checked yet', counts.fresh or 0)] %}
+  <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
+    <input class="grow" type="text" name="q" value="{{ q }}" placeholder="Search page URL or name…">
+    <select class="ctl" name="ptype" onchange="this.form.submit()">
+      <option value="all">All types</option>
+      {% for t in ptypes %}
+      <option value="{{ t.ptype }}" {% if ptype == t.ptype %}selected{% endif %}>{{ t.ptype }} ({{ t.n }})</option>
+      {% endfor %}
+    </select>
+    <select class="ctl" name="status" onchange="this.form.submit()">
+      {% for key, label in [('all','Any status'), ('changed','Changed'), ('rejected','Awaiting fix'),
+                            ('checked','Captured'), ('baseline','Baseline saved'), ('unchanged','Unchanged'),
+                            ('hasdocs','Has documents'), ('nodocs','No documents'), ('error','Errors'),
+                            ('notlive','Not live'), ('paused','Paused'), ('new','Not captured yet')] %}
+      <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button>Search</button>
+    {% if q or status != 'all' or ptype != 'all' %}
+      <a class="btn btn-ghost" href="{{ url_for('index') }}">Clear</a>
+    {% endif %}
+  </form>
+
+  <div class="quickchips">
+    {% for key, label, n, tone in [
+        ('changed', 'Changed', counts.changed or 0, 'warn'),
+        ('rejected', 'Awaiting fix', counts.rejected or 0, 'warn'),
+        ('error', 'Errors', counts.errors or 0, 'bad'),
+        ('notlive', 'Not live', counts.notlive or 0, 'bad'),
+        ('new', 'Not captured yet', counts.fresh or 0, 'plain')] %}
+      {% if n or status == key %}
       <a class="chip {{ 'chip-on' if status == key }}"
-         href="{{ url_for('index', status=key, q=q or None, ptype=ptype) }}">{{ label }}{% if n is not none %} <b>{{ n }}</b>{% endif %}</a>
+         href="{{ url_for('index', status=key, q=q or None, ptype=ptype) }}">{{ label }} <b>{{ n }}</b></a>
+      {% endif %}
     {% endfor %}
+    {% if status != 'all' or ptype != 'all' or q %}
+      <a class="chip" href="{{ url_for('index') }}">✕ clear filters</a>
+    {% endif %}
   </div>
 
   {% if not urls %}
-    <p class="muted" style="margin-top:14px">No URLs match{% if q %} “{{ q }}”{% endif %}.</p>
+    <p class="muted" style="margin-top:14px">No pages match these filters.</p>
   {% else %}
 
   <form id="bulkform" method="post" action="{{ url_for('urls_bulk') }}">
@@ -109,35 +117,40 @@
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
-  <div class="bulkbar">
-    <span class="muted"><span id="selcount">0</span> selected</span>
+  <div class="bulkbar" id="bulkbar" style="display:none">
+    <b><span id="selcount">0</span> selected</b>
     <a href="#" id="matchall-link" style="display:none; font-size:13px"
        onclick="selectAllMatching(); return false">Select all {{ total_match }} matching</a>
-    <button class="btn-ghost btn-sm" onclick="bulk('check', this)">Check now</button>
-    <button class="btn-ghost btn-sm" onclick="bulk('accept', this)">Mark unchanged</button>
-    <button class="btn-ghost btn-sm" onclick="bulk('pause', this)">Pause</button>
-    <button class="btn-ghost btn-sm" onclick="bulk('resume', this)">Resume</button>
+    <span style="flex:1"></span>
+    <button class="btn-ghost btn-sm" onclick="bulk('check', this)">Capture now</button>
+    <button class="btn-ghost btn-sm" onclick="bulk('accept', this)">Approve changes</button>
+    <button class="btn-ghost btn-sm" onclick="bulk('pause', this)">Pause monitoring</button>
+    <button class="btn-ghost btn-sm" onclick="bulk('resume', this)">Resume monitoring</button>
     <button class="btn-ghost btn-sm" style="color:#dc2626" onclick="bulk('delete', this)">Remove</button>
-    <span class="muted" style="margin-left:auto">
-      Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ total_match }}
-      {% if q or status != 'all' %}(filtered){% endif %}
-      &nbsp;·&nbsp;<a href="{{ url_for('export_xlsx', mode='table') }}" title="ALL pages (never filtered): the whole table with status + library counts — one sheet, fast">⬇ Excel: table</a>
-      &nbsp;·&nbsp;<a href="{{ url_for('export_xlsx', mode='full') }}" title="ALL pages + every library item (documents, boards, trainings, news, features...) + all changes — no screenshots">⬇ Excel: everything</a>
-    </span>
+  </div>
+
+  <div class="muted" style="font-size:12.5px; margin:10px 0 2px">
+    Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ total_match }}
+    · tick rows for bulk actions (shift-click selects a range)
   </div>
 
   <table>
     <tr>
       <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
       <th>#</th><th>Page</th><th>Type</th><th>Live</th><th>Status</th>
-      <th>Last checked (local)</th><th>Changes</th>
+      <th>Last captured</th><th>Changes</th>
     </tr>
     {% for u in urls %}
     <tr>
       <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
-      <td>{{ u.id }}</td>
+      <td class="muted">{{ u.id }}</td>
       <td class="urlcell">
-        <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ (u.page_title or u.label or u.url.rsplit('/', 1)[-1]) | clean_title }}</a><br>
+        {% if u.page_title %}
+          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
+        {% else %}
+          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink provisional" title="Provisional name — the real page title appears once the page is captured">{{ (u.label or u.url.rstrip('/').rsplit('/', 1)[-1]) | pretty_slug }}</a>
+        {% endif %}
+        <br>
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
       </td>
       <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
@@ -155,11 +168,11 @@
       <td>
         {% if not u.active %}<span class="badge b-off">paused</span>
         {% elif u.last_status == 'changed' %}<span class="badge b-changed">changed</span>
-        {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected a change: the old version stays the baseline until the website matches it again">awaiting fix</span>
+        {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected a change: the old version stays the baseline until the site matches it again">awaiting fix</span>
         {% elif u.last_status == 'unchanged' %}<span class="badge b-unchanged">unchanged</span>
         {% elif u.last_status == 'baseline' %}<span class="badge b-baseline">baseline saved</span>
         {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>
-        {% else %}<span class="badge b-new">not checked yet</span>{% endif %}
+        {% else %}<span class="badge b-new">not captured yet</span>{% endif %}
       </td>
       <td class="muted">{{ u.last_checked|localtime }}</td>
       <td>
@@ -186,16 +199,19 @@ const TOTAL_MATCH = {{ total_match }};
 function selected() { return document.querySelectorAll('.rowsel:checked').length; }
 function allMatching() { return document.getElementById('all-matching').value === '1'; }
 function refreshCount() {
+  const bar = document.getElementById('bulkbar');
   const link = document.getElementById('matchall-link');
+  const n = selected();
+  bar.style.display = (n || allMatching()) ? 'flex' : 'none';
   if (allMatching()) {
     document.getElementById('selcount').textContent = TOTAL_MATCH + ' (all matching)';
     if (link) { link.textContent = 'Clear selection'; link.style.display = ''; }
     return;
   }
-  document.getElementById('selcount').textContent = selected();
+  document.getElementById('selcount').textContent = n;
   if (link) {
-    const pageAll = selected() > 0 && selected() === document.querySelectorAll('.rowsel').length;
-    link.style.display = (pageAll && TOTAL_MATCH > selected()) ? '' : 'none';
+    const pageAll = n > 0 && n === document.querySelectorAll('.rowsel').length;
+    link.style.display = (pageAll && TOTAL_MATCH > n) ? '' : 'none';
     link.textContent = 'Select all ' + TOTAL_MATCH + ' matching';
   }
 }
@@ -205,9 +221,7 @@ function selectAllMatching() {
     am.value = '0';
     document.querySelectorAll('.rowsel').forEach(cb => cb.checked = false);
     document.getElementById('selall').checked = false;
-  } else {
-    am.value = '1';
-  }
+  } else { am.value = '1'; }
   refreshCount();
 }
 // shift-click selects the whole range between the last-clicked box and this one
@@ -231,22 +245,19 @@ if (selall) selall.addEventListener('change', () => {
 });
 function bulk(action, btn) {
   const n = allMatching() ? TOTAL_MATCH : selected();
-  if (!n) { alert('Tick at least one URL first (or use the checkbox in the header row).'); return; }
+  if (!n) { alert('Tick at least one page first.'); return; }
   if (action === 'delete' &&
-      !confirm(`Remove ${n} URL(s) and all their stored snapshots? This cannot be undone.`)) return;
+      !confirm(`Remove ${n} page(s) and all their stored snapshots? This cannot be undone.`)) return;
   if (action === 'check' && n > 200 &&
-      !confirm(`Check ${n} URLs now? This will take roughly ${Math.round(n * 9 / 60 / 60 * 10) / 10} hours.`)) return;
+      !confirm(`Capture ${n} pages now? That takes roughly ${Math.round(n * 90 / 3600 * 10) / 10} hours.`)) return;
   document.getElementById('bulk-action').value = action;
   document.getElementById('bulkform').submit();
 }
 function fmtEta(sec) {
   if (sec == null) return '';
   const h = Math.floor(sec / 3600), m = Math.max(1, Math.round((sec % 3600) / 60));
-  return h ? `· ≈ ${h}h ${m}m left` : `· ≈ ${m}m left`;
+  return h ? ` · ≈ ${h}h ${m}m left` : ` · ≈ ${m}m left`;
 }
-// Poll continuously: picks up runs started anywhere (button, bulk "Check
-// now", the schedule) and reloads the page when a run finishes so the
-// times, badges and counts are always current.
 let sawRunning = {{ 'true' if state.running else 'false' }};
 async function poll() {
   try {
@@ -257,18 +268,20 @@ async function poll() {
       box.style.display = 'block';
       document.getElementById('run-done').textContent = s.done;
       document.getElementById('run-total').textContent = s.total;
+      document.getElementById('run-saved').textContent = s.saved != null ? s.saved : '—';
       document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
       document.getElementById('run-msg').textContent = s.message || '';
       const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
       document.getElementById('run-bar').style.width = pct + '%';
-      setTimeout(poll, 1500);
+      setTimeout(poll, 2000);
     } else if (sawRunning) {
       location.reload();
     } else {
-      setTimeout(poll, 4000);
+      setTimeout(poll, 5000);
     }
-  } catch (e) { setTimeout(poll, 5000); }
+  } catch (e) { setTimeout(poll, 6000); }
 }
 poll();
+refreshCount();
 </script>
 {% endblock %}

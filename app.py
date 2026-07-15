@@ -33,6 +33,26 @@ def clean_title_filter(s):
     return s.strip()
 
 
+ACRONYMS = {"psoc", "xmc", "optiga", "airoc", "traveo", "aurix", "tpm", "mcu",
+            "usb", "iot", "ai", "hmi", "rf", "sdk", "pcb", "ev", "led", "nfc",
+            "ble", "wifi", "gan", "sic", "id", "tpu", "cpu", "kit", "eol"}
+
+
+@app.template_filter("pretty_slug")
+def pretty_slug_filter(s):
+    """Readable provisional name for a page we have not captured yet."""
+    if not s:
+        return ""
+    s = re.sub(r"\s*[—–-]+\s*[A-Z]{2,6}\s*$", "", s.strip())   # drop PFP/PEFP
+    if " " in s:                       # already a real name
+        return s
+    words = [w for w in re.split(r"[-_/]+", s) if w]
+    out = []
+    for w in words:
+        out.append(w.upper() if w.lower() in ACRONYMS else w.capitalize())
+    return " ".join(out)
+
+
 @app.template_filter("localtime")
 def localtime_filter(s):
     """DB timestamps are UTC; show them in the user's local time."""
@@ -550,6 +570,13 @@ def run_now():
 def status():
     import time as _time
     s = dict(runner.RUN_STATE)
+    if s.get("running") and s.get("started"):
+        # how many are actually committed to the database so far
+        con = db.connect()
+        s["saved"] = con.execute(
+            "SELECT COUNT(*) FROM urls WHERE last_checked >= ?",
+            (s["started"],)).fetchone()[0]
+        con.close()
     if s.get("running") and s.get("done", 0) >= 3 and s.get("started_ts"):
         elapsed = _time.time() - s["started_ts"]
         if elapsed > 0:
@@ -582,11 +609,15 @@ def search_items():
     cat = request.args.get("cat", "all")
     groups, total, cats = [], 0, []
     con = db.connect()
+    # 'about' is tracked for text comparison only - never surfaced (user's call)
     cats = [r["category"] for r in con.execute(
-        "SELECT category, COUNT(*) n FROM items GROUP BY category ORDER BY n DESC")]
-    indexed = con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+        "SELECT category, COUNT(*) n FROM items WHERE category<>'about'"
+        " GROUP BY category ORDER BY n DESC")]
+    indexed = con.execute(
+        "SELECT COUNT(*) FROM items WHERE category<>'about'").fetchone()[0]
     if q:
-        where = ["(i.title LIKE ? OR i.item_url LIKE ? OR i.meta LIKE ?)"]
+        where = ["(i.title LIKE ? OR i.item_url LIKE ? OR i.meta LIKE ?)",
+                 "i.category<>'about'"]
         params = [f"%{q}%"] * 3
         if cat != "all" and cat in cats:
             where.append("i.category=?")
