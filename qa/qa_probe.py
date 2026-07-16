@@ -72,25 +72,32 @@ PANE_COUNT_JS = r"""
   const act = Array.from(document.querySelectorAll('[id^="ds-tabpane-"]'))
     .find(p => p.offsetParent !== null);
   if (!act) return null;
-  // Count CARDS, the way a person counting tiles would.
+  // Count RESULTS, the way the widget's own paginator counts them.
   //
-  // This used to count a Set of unique anchor TEXTS, which undercounts three
-  // ways and made the checker call a 74-card tab "70": titles of 8 characters
-  // or fewer were dropped by a length filter (C-STAT, C-RUN), two cards
-  // sharing a label collapsed into one Set entry, and a card whose only
-  // anchor reads "Read more" counted as nothing. An undercount is not
-  // harmless - it raises a false alarm against correct data, and every false
-  // alarm resets the sampling ladder and buries the findings that matter.
+  // Twice this has been wrong, and both times it cried EXTRA at correct data:
+  //  - it counted a Set of unique anchor TEXTS, which missed titles of eight
+  //    characters or fewer (C-STAT, C-RUN), collapsed two cards sharing a
+  //    label into one, and scored a card whose only anchor says "Read more"
+  //    as nothing.
+  //  - it then demanded a card carry .anchor-title / .board-anchor /
+  //    .card-title / .heading-dsobject. But a tab holds two KINDS of result:
+  //    partner tiles (thumbnail + description) and Infineon download rows
+  //    (filetype icon, title, size, "Download"). Download rows carry none of
+  //    those, so a 16-result tab counted 11 - page 3 as 1 and page 4 as 0.
+  //    The widget's own paginator counts them (5+5+5+1), and an AI reviewer
+  //    counted them off the screenshots.
+  // A result is a container not nested inside another one. Furniture is
+  // excluded by name rather than by demanding a title.
   let cards = Array.from(act.querySelectorAll(
-      'li, .mainboard, .boardlist, .wholepcbdata'))
-    .filter(el => !el.closest(
-      '.pagination, .pagination-container, #filter-container, .headerNote'))
-    // a card is something carrying a card title
-    .filter(el => el.querySelector(
-      '.anchor-title, .board-anchor, .card-title, .heading-dsobject'));
-  // one card, not three: li > .mainboard > .wholepcbdata all match, so keep
-  // only the innermost of any nest
-  cards = cards.filter(c => !cards.some(o => o !== c && c.contains(o)));
+    '.boardlist, .wholepcbdata, .tab-tools, li.style-none'));
+  if (!cards.length) cards = Array.from(act.querySelectorAll('li'));
+  cards = cards.filter(el =>
+    !el.closest('.partner-ul-box, .pagination, .pagination-container, ' +
+                '#filter-container, .headerNote') &&
+    !el.matches('li.box-style, li.partner-box, .pagination li'));
+  // one result, not three: li > .mainboard > .wholepcbdata all match, so keep
+  // only the outermost of any nest
+  cards = cards.filter(c => !cards.some(o => o !== c && o.contains(c)));
   return {id: act.id, cards: cards.length};
 }
 """
@@ -144,11 +151,12 @@ async def main():
                 await page.wait_for_timeout(700)
             except Exception:
                 continue
-            # Rewind to page 1. The pager is SHARED across tabs and holds
-            # whatever page the previous tab left it on, so without this a tab
-            # is counted from page 3 onwards - which is why this probe reported
-            # 11 items in a tab that really holds 16 and cried EXTRA at a
-            # capture that was right.
+            # Rewind to page 1 - defensive only. Switching tab does reset the
+            # pager (the left arrow is already inactive here, so this loop
+            # normally takes zero steps). It looked otherwise while the walk
+            # still paginated the Overview union, which left the pager
+            # advanced; that no longer happens. Kept because a walk that
+            # silently starts on page 3 is expensive to notice.
             for _ in range(40):
                 prv = None
                 for arrow in await page.query_selector_all(

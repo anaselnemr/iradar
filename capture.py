@@ -1394,10 +1394,11 @@ async def capture_one(browser, url, out_dir):
                     await _settle_quiet(page, 700)
                 except Exception:
                     continue
-                # Rewind to page 1 before walking. The pager is SHARED across
-                # the tabs and keeps whatever page the previous tab left it on,
-                # so without this a tab's walk starts three pages in and the
-                # order the tabs happen to sit in decides what gets captured.
+                # Rewind to page 1 before walking - defensive only. Switching
+                # tab does reset the pager, so this normally takes zero steps:
+                # it only looked otherwise while the walk still paginated the
+                # Overview union, which left the pager advanced. Kept because a
+                # walk that silently starts on page 3 loses items quietly.
                 for _ in range(40):
                     prv = None
                     for arrow in await page.query_selector_all(
