@@ -378,7 +378,7 @@ SECTIONS_JS = r"""
   };
 
   const normT = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
-  const push = (cat, title, url, meta, group, dtype) => {
+  const push = (cat, title, url, meta, group, dtype, exact) => {
     // 200 chars is a sane cap for a card title, but overview/about entries ARE
     // prose - their text is the item - and capping those chopped a paragraph
     // mid-sentence, hiding the tail from the library.
@@ -406,7 +406,13 @@ SECTIONS_JS = r"""
       }
       urlOwned.set(url, cat);
     }
-    const key = cat + '|' + title + '|' + (url || '');
+    // A link tells two rows apart; without one, only the meta can. The
+    // documents table lists login-gated rows with NO href, so an EN and a JA
+    // variant of one title were identical under (title, url) and the JA one
+    // vanished - a real document, lost silently. Their meta differs (the
+    // language cell), so it joins the key when there is no link to use.
+    const key = cat + '|' + title + '|' + (url || '') +
+                (url ? '' : '|' + (meta || ''));
     if (seen.has(key)) return;
     seen.add(key);
     const item = {title: title, url: url || '',
@@ -414,6 +420,9 @@ SECTIONS_JS = r"""
     if (group) item.group = group;
     // the document's own Type column - what decides DAM vs Windchill
     if (dtype) item.dtype = dtype.slice(0, 80);
+    // this title came from the card's own title element: it is the page's
+    // text verbatim and must not be tidied up afterwards
+    if (exact) item.exact = true;
     out[cat].push(item);
   };
 
@@ -552,7 +561,15 @@ SECTIONS_JS = r"""
         'h3:not(.heading-partnerobject), h4:not(.heading-partnerobject)');
       let t = titleEl ? (titleEl.innerText || titleEl.textContent || '')
                           .replace(/\s+/g, ' ').trim() : '';
+      // A title read from the card's own title element IS the page's text -
+      // mark it, so the tidy-up regexes downstream (which exist only for the
+      // reconstruct-from-innerText fallback below) leave it alone. Stripping
+      // "DOWNLOAD - " off "DOWNLOAD - DAVE(TM) IDE" left the library holding
+      // something the page never said, and a rename between the two forms
+      // would have been invisible to the watcher.
+      let exact = !!t && !GENERIC_LINK.test(t);
       if (!t || GENERIC_LINK.test(t)) {
+        exact = false;
         const partner = card.querySelector('.heading-partnerobject');
         const partnerTxt = partner ?
           (partner.textContent || '').replace(/\s+/g, ' ').trim() : '';
@@ -583,7 +600,7 @@ SECTIONS_JS = r"""
         const img = card.querySelector('img[src*=".mp4/"]');
         if (img) href = img.src.split('/jcr:content')[0];
       }
-      push(cat, t, href, cardExtras(card), group);
+      push(cat, t, href, cardExtras(card), group, '', exact);
     });
   });
 
@@ -1538,7 +1555,13 @@ async def capture_one(browser, url, out_dir):
             by_key = {}
             for d in list(sections.get("documents", [])) + docs_acc:
                 d["title"] = _clean_doc_title(d.get("title", ""))
-                key = (d["title"].lower(), d.get("url", ""))
+                # url tells variants apart; login-gated rows have none, so two
+                # language variants of one title were keyed identically and one
+                # was dropped. Fall back to the meta (which carries the
+                # language) when there is no url - matching the JS-layer key.
+                url = d.get("url", "")
+                key = (d["title"].lower(), url,
+                       "" if url else d.get("meta", ""))
                 prev = by_key.get(key)
                 if prev is None or len(d.get("meta", "")) > len(prev.get("meta", "")):
                     by_key[key] = d
@@ -1606,11 +1629,19 @@ async def capture_one(browser, url, out_dir):
                 best = {}
                 order = []
                 for it in pool:
-                    # strip category label / DOWNLOAD prefix / description noise
-                    t = _DESC.sub("", _DL.sub(
-                        "", _PFX.sub("", it.get("title", "").strip()))).strip()
-                    if len(t) >= 6:
-                        it["title"] = t
+                    # These strip the category chip, a "DOWNLOAD - " prefix and
+                    # trailing description noise - all artefacts of having to
+                    # rebuild a title out of a card's concatenated innerText.
+                    # A title the card gave us outright is the page's own text
+                    # and is left exactly as the page says it, or the library
+                    # would hold "DAVE(TM) IDE" for a card the page titles
+                    # "DOWNLOAD - DAVE(TM) IDE" - and a rename between those
+                    # two forms would never be flagged.
+                    if not it.get("exact"):
+                        t = _DESC.sub("", _DL.sub(
+                            "", _PFX.sub("", it.get("title", "").strip()))).strip()
+                        if len(t) >= 6:
+                            it["title"] = t
                     title_l = it.get("title", "").lower()
                     if not it.get("group") and title_l in grouped_titles:
                         continue
