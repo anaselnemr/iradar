@@ -144,6 +144,25 @@ async def main():
                 await page.wait_for_timeout(700)
             except Exception:
                 continue
+            # Rewind to page 1. The pager is SHARED across tabs and holds
+            # whatever page the previous tab left it on, so without this a tab
+            # is counted from page 3 onwards - which is why this probe reported
+            # 11 items in a tab that really holds 16 and cried EXTRA at a
+            # capture that was right.
+            for _ in range(40):
+                prv = None
+                for arrow in await page.query_selector_all(
+                        ".designresource-component .pagination "
+                        ".left-page-ds:not(.inactive), "
+                        ".designresource-component .pagination "
+                        ".left-page:not(.inactive)"):
+                    if await arrow.is_visible():
+                        prv = arrow
+                        break
+                if prv is None:
+                    break
+                await prv.evaluate("el => el.click()")
+                await page.wait_for_timeout(350)
             total = 0
             for _ in range(40):
                 info = await page.evaluate(PANE_COUNT_JS)

@@ -272,6 +272,15 @@ SECTIONS_JS = r"""
 
   // NB: every category pushed to below MUST exist here. A push() to a key
   // that was never initialised throws, and the whole library comes back empty.
+  // The page's anchor-nav strip. Each tab's href targets that section's own
+  // wrapper, which makes it the most reliable way to find a section: heading
+  // text lies (the only "Overview" heading on a product page is this nav tab,
+  // and the heading above the family carousel can read "Block diagram").
+  const NAV_ANCHORS =
+    '#stickyNavTab a[href^="#"], .maintabs a[href^="#"], ' +
+    '[class*="tabbar" i] a[href^="#"], [class*="anchor-nav" i] a[href^="#"], ' +
+    '[class*="stickynav" i] a[href^="#"]';
+
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
                overview: [], applications: [], about: [], categories: [],
@@ -497,6 +506,12 @@ SECTIONS_JS = r"""
   document.querySelectorAll('[id^="ds-tabpane-"]').forEach(pane => {
     const suffix = pane.id.replace('ds-tabpane-', '');
     if (/^overview$/i.test(suffix)) return;
+    // ONLY the tab that is actually open. Paginating the Overview tab (the
+    // union of every tab) re-renders the HIDDEN panes with union content, so
+    // reading them filed other tabs' cards under whichever pane they landed
+    // in - storing 17 "Embedded software" where the tab shows 11, and 39
+    // where it shows 7. The caller opens each tab in turn; read what is open.
+    if (pane.offsetParent === null) return;
     const tabBtn = document.getElementById('ds-tab-' + suffix);
     const group = tabBtn
       ? (tabBtn.textContent || '').replace(/\s+/g, ' ').trim()
@@ -653,10 +668,7 @@ SECTIONS_JS = r"""
   // what produced labels like "Block diagram".
   const navLabelFor = (el) => {
     let following = '';
-    for (const a of document.querySelectorAll(
-        '#stickyNavTab a[href^="#"], .maintabs a[href^="#"], ' +
-        '[class*="tabbar" i] a[href^="#"], [class*="anchor-nav" i] a[href^="#"], ' +
-        '[class*="stickynav" i] a[href^="#"]')) {
+    for (const a of document.querySelectorAll(NAV_ANCHORS)) {
       const id = (a.getAttribute('href') || '').slice(1);
       if (!id) continue;
       let marker = null;
@@ -731,6 +743,7 @@ SECTIONS_JS = r"""
   // the complete record to anonymous visitors in a hidden div[data-json] and
   // gates only the PDF bytes. So the document is captured with full metadata
   // and its real URL, without touching the gate.
+  let docAbstract = '';          // fallback overview for gated promo pages
   document.querySelectorAll('[data-json]').forEach(d => {
     let rec;
     try { rec = JSON.parse(d.getAttribute('data-json') || ''); } catch (e) { return; }
@@ -757,9 +770,15 @@ SECTIONS_JS = r"""
     // the feed names the type outright - no parsing needed
     push('documents', rec.title, u, bits.join(' | '), '',
          rec.documentType || '');
-    // the abstract is the only prose on these pages
-    if (rec.description && rec.description !== rec.title)
-      push('overview', rec.description, '', '');
+    // On a gated promo page the document's abstract is the only prose there
+    // is, so it stands in as the page's overview. It must NOT pre-empt a real
+    // one: a product page carrying a document record put that document's short
+    // description into overview first, and the DOM extractor below then skipped
+    // the page's actual paragraph because overview was already non-empty -
+    // storing 87 characters of a 253-character overview. Held back and used
+    // only as a last resort, once nothing else has claimed overview.
+    if (rec.description && rec.description !== rec.title && !docAbstract)
+      docAbstract = rec.description;
   });
 
   // About / functional-tabbed widgets ("01 ... / 02 Features of ... / 03
@@ -782,8 +801,28 @@ SECTIONS_JS = r"""
     });
   });
 
-  // Overview: the page's descriptive paragraph (outside the design-resources
-  // widget and page chrome). Stored as one item.
+  // Overview, found through the anchor-nav tab that points at it. Searching
+  // for an "Overview" heading finds only the NAV TAB on a product page - the
+  // section's own heading is not an h1-h3 - so the paragraph went uncaptured
+  // and a document's 87-character abstract stood in for a 253-character
+  // overview. The tab's href targets the section's own wrapper (the same
+  // markers the family module is named from), so ask it directly.
+  for (const a of document.querySelectorAll(NAV_ANCHORS)) {
+    if (out.overview.length) break;
+    const t = (a.innerText || '').replace(/\s+/g, ' ').trim();
+    if (!/^overview$/i.test(t)) continue;
+    const id = (a.getAttribute('href') || '').slice(1);
+    let sec = null;
+    try { sec = id ? document.getElementById(id) : null; } catch (e) {}
+    if (!sec) continue;
+    const paras = Array.from(sec.querySelectorAll('p'))
+      .map(p => (p.innerText || '').replace(/\s+/g, ' ').trim())
+      .filter(x => x.length > 40);
+    if (paras.length) push('overview', paras.join(' '), '', '');
+    break;
+  }
+
+  // Fallback: pages whose overview section has a real heading and no nav tab.
   for (const h of document.querySelectorAll('h1,h2,h3')) {
     if (out.overview.length) break;
     if (isPageChrome(h) ||
@@ -898,6 +937,11 @@ SECTIONS_JS = r"""
       break;
     }
   }
+
+  // Last resort only: a gated promo page has no prose but its document's
+  // abstract. Every real overview on the page has had its chance by now.
+  if (!out.overview.length && docAbstract)
+    push('overview', docAbstract, '', '');
 
   document.querySelectorAll('video').forEach(v => {
     const srcEl = v.querySelector('source');
@@ -1333,6 +1377,14 @@ async def capture_one(browser, url, out_dir):
         # page): activate each tab and walk its pages, merging the items.
         try:
             for tb in await page.query_selector_all('[id^="ds-tab-"]'):
+                tab_id = (await tb.get_attribute("id")) or ""
+                # Never walk the Overview tab. It is the union of the others,
+                # so it adds nothing - but paginating it re-renders the hidden
+                # panes with union content AND leaves the shared pager on page
+                # 3, so the next tab's walk started three pages in and the
+                # union's cards got filed under whatever tab they landed in.
+                if tab_id.lower().endswith("overview"):
+                    continue
                 try:
                     await tb.scroll_into_view_if_needed(timeout=1500)
                     # DOM-level click: sticky header intercepts coordinate
@@ -1342,6 +1394,25 @@ async def capture_one(browser, url, out_dir):
                     await _settle_quiet(page, 700)
                 except Exception:
                     continue
+                # Rewind to page 1 before walking. The pager is SHARED across
+                # the tabs and keeps whatever page the previous tab left it on,
+                # so without this a tab's walk starts three pages in and the
+                # order the tabs happen to sit in decides what gets captured.
+                for _ in range(40):
+                    prv = None
+                    for arrow in await page.query_selector_all(
+                            ".designresource-component .pagination "
+                            ".left-page-ds:not(.inactive), "
+                            ".designresource-component .pagination "
+                            ".left-page:not(.inactive)"):
+                        if await arrow.is_visible():
+                            prv = arrow
+                            break
+                    if prv is None:
+                        break
+                    await prv.evaluate("el => el.click()")
+                    await page.wait_for_timeout(350)
+
                 # walk ALL of this pane's pages (14+ seen in the wild)
                 for _ in range(40):
                     part = await page.evaluate(SECTIONS_JS)
@@ -1508,13 +1579,19 @@ async def capture_one(browser, url, out_dir):
                 # link-less entry whose title merely repeats a real one.
                 pool = [it for it in pool
                         if not _BLOB.search(it.get("title", ""))]
+                # Drop a link-less item only when it is the SAME item as one we
+                # already have with a link - never when one title merely
+                # contains another. A substring test deleted real documents:
+                # the board "FM0-V48-S6E1A1" is a substring of the schematic
+                # "SK-FM0-V48-S6E1A1 Evaluation Board Schematics", so a whole
+                # PCB design data group vanished because a board card shared
+                # part of its name.
                 linked = {re.sub(r"\W+", "", it.get("title", "").lower())
                           for it in pool if it.get("url")}
                 pool = [it for it in pool
                         if it.get("url") or
-                        not any(k and k in re.sub(r"\W+", "",
-                                                  it.get("title", "").lower())
-                                for k in linked)]
+                        re.sub(r"\W+", "", it.get("title", "").lower())
+                        not in linked]
                 # tabbed pages: grouped (pane) items are authoritative - a
                 # single flaky pass can inject ungrouped page-wide junk
                 grouped_pool = [it for it in pool if it.get("group")]
