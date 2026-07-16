@@ -1234,6 +1234,13 @@ async def capture_one(browser, url, out_dir):
         if last_exc is not None:
             raise last_exc
         result["http_status"] = resp.status if resp else None
+        # Where the SERVER sent us, read from the navigation response and not
+        # from page.url later on. By then this capture has clicked every tab
+        # and expanded every accordion - page.url reflects our own clicking
+        # (it already picks up a #news-highlights fragment), so trusting it
+        # would let a stray click repoint the user's watch list at whatever
+        # page we wandered onto. Only a server redirect may move the list.
+        result["final_url"] = (resp.url if resp else url).split("#")[0]
 
         await page.add_style_tag(content=HIDE_CSS)
         try:                                       # all images/scripts finished
@@ -1570,9 +1577,6 @@ async def capture_one(browser, url, out_dir):
         result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
                                 if isinstance(b, dict) and b.get("title")]
         result["flags"] = sections.get("flags") or {}
-        # where the page actually answered from: a listed URL that 301s
-        # elsewhere is a stale address and the list is repointed at the target
-        result["final_url"] = (page.url or "").split("#")[0]
 
         (out_dir / "text.txt").write_text(text, encoding="utf-8")
         (out_dir / "images.json").write_text(
