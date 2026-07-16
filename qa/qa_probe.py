@@ -72,18 +72,26 @@ PANE_COUNT_JS = r"""
   const act = Array.from(document.querySelectorAll('[id^="ds-tabpane-"]'))
     .find(p => p.offsetParent !== null);
   if (!act) return null;
-  let cards = act.querySelectorAll('.boardlist').length;
-  if (!cards) {
-    const seen = new Set();
-    act.querySelectorAll('a').forEach(a => {
-      const t = (a.textContent || '').replace(/\s+/g, ' ').trim();
-      if (t.length > 8 && t.length < 200 &&
-          !/^(log ?in|clear all|read more.*|add to cart.*|download|sort by.*|watch video)$/i.test(t))
-        seen.add(t);
-    });
-    cards = seen.size;
-  }
-  return {id: act.id, cards: cards};
+  // Count CARDS, the way a person counting tiles would.
+  //
+  // This used to count a Set of unique anchor TEXTS, which undercounts three
+  // ways and made the checker call a 74-card tab "70": titles of 8 characters
+  // or fewer were dropped by a length filter (C-STAT, C-RUN), two cards
+  // sharing a label collapsed into one Set entry, and a card whose only
+  // anchor reads "Read more" counted as nothing. An undercount is not
+  // harmless - it raises a false alarm against correct data, and every false
+  // alarm resets the sampling ladder and buries the findings that matter.
+  let cards = Array.from(act.querySelectorAll(
+      'li, .mainboard, .boardlist, .wholepcbdata'))
+    .filter(el => !el.closest(
+      '.pagination, .pagination-container, #filter-container, .headerNote'))
+    // a card is something carrying a card title
+    .filter(el => el.querySelector(
+      '.anchor-title, .board-anchor, .card-title, .heading-dsobject'));
+  // one card, not three: li > .mainboard > .wholepcbdata all match, so keep
+  // only the innermost of any nest
+  cards = cards.filter(c => !cards.some(o => o !== c && c.contains(o)));
+  return {id: act.id, cards: cards.length};
 }
 """
 

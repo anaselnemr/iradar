@@ -76,14 +76,13 @@ def verify(snap, sections, live, snap_dir):
             reasons.append(f"document dates stored={with_date} live={live['doc_dates']}")
 
     # ---- design resources / trainings: every live tab must exist ----
-    # Asymmetric on purpose. Stored FEWER than live is evidence of a miss.
-    # Stored MORE is not evidence of anything: this probe's own pane walk
-    # undercounts, and that is not a guess - two AI reviewers counted the live
-    # tab by eye across all 15 pagination pages and got 74 where the probe said
-    # 70, and the 74 stored items carry 74 distinct titles with 0 duplicates.
-    # Real over-collection surfaces as duplicate titles, which is checked
-    # separately below. Warning on an excess only reset the sampling ladder to
-    # its strictest rung forever and drowned out the signals that matter.
+    # Strict in BOTH directions: an extra item is as wrong as a missing one.
+    # This check was briefly one-sided while the probe undercounted (it counted
+    # unique anchor TEXTS, so it called a 74-card tab "70"). The probe counts
+    # cards now and agrees with a by-eye count on every group of two product
+    # pages, so an excess means something real again and is reported.
+    # Tolerance stays at 1 for live-site churn: a document can genuinely appear
+    # between our capture and this probe.
     notes = []
     sgroups = {}
     for it in sections.get("design_resources", []) + sections.get("trainings", []):
@@ -97,10 +96,10 @@ def verify(snap, sections, live, snap_dir):
             reasons.append(f"group '{gname}' live={n_live} stored=0")
         elif n_live and n_stored < n_live - 1:
             reasons.append(f"group '{gname}' live={n_live} stored={n_stored}"
-                           f" - {n_live - n_stored} items missing")
+                           f" - {n_live - n_stored} MISSING")
         elif n_live and n_stored > n_live + 1:
-            notes.append(f"group '{gname}' live={n_live} stored={n_stored}"
-                         f" (probe undercounts; stored titles are distinct)")
+            reasons.append(f"group '{gname}' live={n_live} stored={n_stored}"
+                           f" - {n_stored - n_live} EXTRA")
 
     # ---- other sections present when the page has them ----
     if live["features_li"] >= 3 and not sections.get("features"):
