@@ -51,12 +51,23 @@ def log(obj):
 
 
 def probe(url):
-    r = subprocess.run([PY, str(SP / "qa_probe.py"), url],
-                       capture_output=True, text=True, timeout=320,
-                       encoding="utf-8", errors="replace")
-    if r.returncode != 0:
-        raise RuntimeError((r.stderr or "probe failed")[-300:])
-    return json.loads(r.stdout.strip().splitlines()[-1])
+    # The probe drives its own browser while the capture run competes for the
+    # same network, so a slow page can time it out. A SKIP silently loses that
+    # page's independent check, so retry once before giving up - most timeouts
+    # are transient and a second, unhurried attempt succeeds.
+    last = ""
+    for attempt in range(2):
+        try:
+            r = subprocess.run([PY, str(SP / "qa_probe.py"), url],
+                               capture_output=True, text=True, timeout=320,
+                               encoding="utf-8", errors="replace")
+            if r.returncode == 0:
+                return json.loads(r.stdout.strip().splitlines()[-1])
+            last = (r.stderr or "probe failed")[-300:]
+        except Exception as exc:
+            last = str(exc)[-300:]
+        time.sleep(5)
+    raise RuntimeError(last)
 
 
 def verify(snap, sections, live, snap_dir):
@@ -250,7 +261,6 @@ def main():
                 random.shuffle(rows)
                 picks = rows[:1]
             for u in picks:
-                sampled.add(u["id"])
                 snap = con.execute(
                     "SELECT * FROM snapshots WHERE url_id=? AND status='ok'"
                     " AND dir<>'' AND rejected=0 ORDER BY id DESC LIMIT 1",
@@ -264,9 +274,14 @@ def main():
                 try:
                     live = probe(u["url"])
                 except Exception as exc:
+                    # A SKIP is a LOST check, not a passed one - do not mark the
+                    # page sampled, so it is picked again on a later tick when
+                    # the network is quieter. "Bulletproof" means every sampled
+                    # page actually gets verified, not silently dropped.
                     log({"kind": "sample", "verdict": "SKIP", "url": u["url"],
                          "reasons": [f"probe failed: {str(exc)[:150]}"]})
                     continue
+                sampled.add(u["id"])
                 verdict, reasons, notes = verify(snap, sections, live,
                                                  snap["dir"])
                 if verdict == "PASS":
