@@ -529,7 +529,12 @@ def _breadcrumbs(con, ptype):
         "   AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)"
         "   AS page_title"
         " FROM urls WHERE active=1 AND ptype=? AND breadcrumb NOT IN ('', '[]')"
-        " AND breadcrumb IS NOT NULL", (ptype,)).fetchall()
+        " AND breadcrumb IS NOT NULL"
+        # dead and blank pages are not part of the tree: a 404 publishes a
+        # breadcrumb of its own ("Error Pages > Page Not Found") and would
+        # otherwise appear in the product hierarchy as though it were a product
+        " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
+        (ptype,)).fetchall()
     out = []
     for r in rows:
         try:

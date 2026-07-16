@@ -276,10 +276,15 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
         # still gets a snapshot (so a revival shows up as a change) but it is
         # reported as not live and kept out of the library index.
         dead = (res.get("http_status") or 0) >= 400
+        # A 404 page publishes a breadcrumb too ("Home > Error Pages > Page Not
+        # Found") and it would sit in the product tree as if it were a product.
+        # An error page's own furniture is not this page's hierarchy, the same
+        # reason its images stay out of the library index.
         con.execute(
             "UPDATE urls SET last_http=?, breadcrumb=?, flags=? WHERE id=?",
             (res.get("http_status"),
-             json.dumps(res.get("breadcrumb") or [], ensure_ascii=False),
+             json.dumps([] if dead else (res.get("breadcrumb") or []),
+                        ensure_ascii=False),
              json.dumps(res.get("flags") or {}, ensure_ascii=False), url_id))
         gone, rmsg = _follow_redirect(con, url_id, row["url"],
                                       res.get("final_url") or "")
