@@ -228,12 +228,21 @@ def _bulk_counts(con, filters):
 
 
 def _url_filter(q, statuses, ptypes, attrs):
-    """statuses OR'd, types OR'd, attributes AND'd - all multi-select."""
+    """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
+
+    EVERY condition is wrapped in its own parentheses before being combined.
+    Several filter conditions contain a top-level OR (e.g. "Not live" is
+    404/500 OR blank), and AND binds tighter than OR in SQL, so an unwrapped
+    `A AND B OR C` silently became `(A AND B) OR C` - which made combining any
+    such filter with another quietly drop every other filter. That is the
+    "multiple filters not working" the user saw.
+    """
     where, params = [], []
     if q:
         where.append("(u.url LIKE ? OR u.label LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
-    picked = [STATUS_FILTERS[s][1] for s in statuses if s in STATUS_FILTERS]
+    picked = ["(" + STATUS_FILTERS[s][1] + ")"
+              for s in statuses if s in STATUS_FILTERS]
     if picked:
         where.append("(" + " OR ".join(picked) + ")")
     types = [t for t in ptypes if t]
@@ -242,7 +251,7 @@ def _url_filter(q, statuses, ptypes, attrs):
         params += types
     for a in attrs:
         if a in ATTR_FILTERS:
-            where.append(ATTR_FILTERS[a][1])
+            where.append("(" + ATTR_FILTERS[a][1] + ")")
     return ("WHERE " + " AND ".join(where)) if where else "", params
 
 
