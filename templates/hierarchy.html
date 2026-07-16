@@ -12,7 +12,10 @@
       {% for c in n.children %}{{ node(c) }}{% endfor %}
       {% for p in n.pages %}
         <div class="tleaf">
-          {% if p.level %}<span class="lvl lvl-{{ p.level|lower }}" title="{{ p.level_name }}">{{ p.level }}</span>{% endif %}
+          {%- if p.live_level %}
+          <span class="lvl lvl-{{ p.live_level|lower }}{{ ' lvl-diff' if p.level_disagrees }}"
+                title="{{ level_names.get(p.live_level, '') }} — read from the live structure{% if p.level_disagrees %}. The source report calls this {{ p.level }} ({{ level_names.get(p.level, '') }}){% endif %}">{{ p.live_level }}</span>
+          {%- endif %}
           <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
           <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
         </div>
@@ -55,6 +58,16 @@
       <span class="muted" style="font-size:12px; margin-right:8px">{{ level_names.get(l, '') }}</span>
     {% endfor %}
   </div>
+  <p class="muted" style="font-size:12.5px; margin:10px 0 0">
+    Levels are read from the live structure, not from the source report.
+    {% if disagreements %}
+      <b>{{ disagreements }}</b> page{{ 's' if disagreements != 1 }} on this tab
+      {{ 'are' if disagreements != 1 else 'is' }} filed differently in the
+      report — those badges are outlined, and hovering shows both. While the
+      run is still going a page can look like an end family simply because its
+      children have not been captured yet.
+    {% endif %}
+  </p>
   {% endif %}
 </div>
 

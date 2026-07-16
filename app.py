@@ -617,7 +617,45 @@ def _hierarchy_tree(pages):
                 "children": [freeze(c, depth + 1)
                              for c in sorted(n["children"].values(),
                                              key=lambda c: c["name"])]}
-    return freeze(root)
+    tree = freeze(root)
+    _live_levels(tree)
+    return tree
+
+
+def _live_levels(node, depth=0):
+    """Work out each page's level from the LIVE tree it actually sits in,
+    rather than taking the sheet's word for it.
+
+        depth 1                     product category
+        depth 2                     product family
+        no child nodes below it     product end family
+        anything in between         product sub-family
+        a part page                 part type page
+
+    A part shares its product's node (their breadcrumbs meet there), so a
+    product with parts is still an end family - the parts are pages on it, not
+    branches under it.
+
+    Recomputed from whatever has been captured, so it sharpens as the run fills
+    the tree in - and it follows the site rather than a report that can go
+    stale. Where it disagrees with the sheet, the live answer is shown.
+    """
+    kind = "PTP" if not node["children"] else "PSFP"
+    for p in node["pages"]:
+        if p.get("ptype") == "Part":
+            p["live_level"] = "PTP"
+        elif depth <= 1:
+            p["live_level"] = "PC"
+        elif depth == 2:
+            p["live_level"] = "PFP"
+        elif not node["children"]:
+            p["live_level"] = "PEFP"
+        else:
+            p["live_level"] = "PSFP"
+        p["level_disagrees"] = bool(
+            p.get("level") and p["live_level"] != p["level"])
+    for c in node["children"]:
+        _live_levels(c, depth + 1)
 
 
 def _redirect_target(snap_dir, url):
@@ -1112,16 +1150,19 @@ def hierarchy():
         totals[lbl] = con.execute(
             f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})",
             mem).fetchone()[0]
+    con.close()
+    tree = _hierarchy_tree(pages)          # also assigns each page's live_level
     # the levels present in this tab, in taxonomy order, for the legend
     order = list(LEVEL_NAMES)
-    seen_levels = sorted({p["level"] for p in pages if p["level"]},
+    seen_levels = sorted({p.get("live_level") for p in pages
+                          if p.get("live_level")},
                          key=lambda l: order.index(l) if l in order else 99)
-    con.close()
-    tree = _hierarchy_tree(pages)
+    disagreements = sum(1 for p in pages if p.get("level_disagrees"))
     return render_template("hierarchy.html", types=labels, sel=sel, tree=tree,
                            counts=counts, total=totals.get(sel, 0),
                            shown=len(pages), levels=seen_levels,
-                           level_names=LEVEL_NAMES)
+                           level_names=LEVEL_NAMES,
+                           disagreements=disagreements)
 
 
 @app.route("/export.xlsx")
