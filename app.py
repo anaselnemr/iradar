@@ -522,19 +522,51 @@ def _cats_present_for_type(con, ptype):
         " WHERE u.ptype=?", (ptype,))}
 
 
-def _breadcrumbs(con, ptype):
+# Infineon's page levels, from the source report's own "Page Type" column.
+# A part IS a part type page and belongs inside the product tree - PC > PFP >
+# PSFP > PEFP > PTP is one taxonomy, not two. Never inferred from URL depth:
+# the sheet has PEFPs at 2, 3, 4 and 5 path segments.
+LEVEL_NAMES = {
+    "PC": "Product category", "PFP": "Product family",
+    "PSFP": "Product sub-family", "PEFP": "Product end family",
+    "PTP": "Part type page",
+    "ADP": "Application division", "AOP": "Application overview",
+    "ASP": "Application solution", "AFB": "Application focus",
+}
+# page types that share one tree, in the order their levels nest
+MERGED_TABS = [("Products & parts", ["Product", "Part"])]
+
+
+def _hierarchy_tabs(con):
+    """Tabs, discovered from the data: one per page type, except that parts
+    are folded into the product tree rather than standing alone."""
+    types = [r["ptype"] for r in con.execute(
+        "SELECT ptype, COUNT(*) n FROM urls WHERE active=1 AND ptype<>''"
+        " GROUP BY ptype ORDER BY n DESC")]
+    tabs, merged = [], set()
+    for label, members in MERGED_TABS:
+        present = [t for t in members if t in types]
+        if present:
+            tabs.append((label, present))
+            merged.update(present)
+    tabs += [(t, [t]) for t in types if t not in merged]
+    return tabs
+
+
+def _breadcrumbs(con, ptypes):
+    marks = ",".join("?" * len(ptypes))
     rows = con.execute(
-        "SELECT id, url, ptype, breadcrumb,"
+        "SELECT id, url, ptype, level, breadcrumb,"
         " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
         "   AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)"
         "   AS page_title"
-        " FROM urls WHERE active=1 AND ptype=? AND breadcrumb NOT IN ('', '[]')"
-        " AND breadcrumb IS NOT NULL"
+        f" FROM urls WHERE active=1 AND ptype IN ({marks})"
+        " AND breadcrumb NOT IN ('', '[]') AND breadcrumb IS NOT NULL"
         # dead and blank pages are not part of the tree: a 404 publishes a
         # breadcrumb of its own ("Error Pages > Page Not Found") and would
         # otherwise appear in the product hierarchy as though it were a product
         " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
-        (ptype,)).fetchall()
+        list(ptypes)).fetchall()
     out = []
     for r in rows:
         try:
@@ -545,15 +577,15 @@ def _breadcrumbs(con, ptype):
                   and c["title"].strip().lower() != "home"]
         if not crumbs:
             continue
-        # A product page's breadcrumb ENDS WITH ITSELF, so its last crumb is
-        # not a parent. A part page's does not - its last crumb is the product
-        # family it belongs to, which is exactly the edge we want. Decide by
-        # comparing the last crumb's URL with the page's, never by page type.
-        norm = lambda u: (u or "").split("#")[0].split("?")[0].rstrip("/").lower()
+        # The full crumb path is the page's address in the taxonomy, self
+        # included. A product's breadcrumb ends with itself, and a part's ends
+        # with the product family it belongs to - so both land on the SAME
+        # node, and the part sits inside its product instead of beside it.
+        # That is the PFP > PSFP > PEFP > PTP chain, from the site's own data.
         path = [c["title"].strip() for c in crumbs]
-        if norm(crumbs[-1].get("url")) == norm(r["url"]):
-            path = path[:-1]
-        out.append({"id": r["id"], "url": r["url"],
+        out.append({"id": r["id"], "url": r["url"], "ptype": r["ptype"],
+                    "level": r["level"] or "",
+                    "level_name": LEVEL_NAMES.get(r["level"] or "", ""),
                     "title": r["page_title"] or "", "crumbs": path})
     return out
 
@@ -1062,23 +1094,34 @@ def item_detail(key):
 def hierarchy():
     """A tree per page type, built from each page's own JSON-LD breadcrumb -
     so it follows the site's structure and grows with new entries instead of
-    being a hand-maintained list."""
+    being a hand-maintained list. Parts nest inside products, because a part
+    type page is the bottom of the product taxonomy, not a separate one."""
     con = db.connect()
-    types = [r["ptype"] for r in con.execute(
-        "SELECT ptype, COUNT(*) n FROM urls WHERE active=1 AND ptype<>''"
-        " GROUP BY ptype ORDER BY n DESC")]
-    sel = request.args.get("type") or (types[0] if types else "")
-    pages = _breadcrumbs(con, sel)
-    counts = {t: con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1 AND ptype=? AND"
-        " breadcrumb NOT IN ('','[]') AND breadcrumb IS NOT NULL",
-        (t,)).fetchone()[0] for t in types}
-    total = con.execute("SELECT COUNT(*) FROM urls WHERE active=1 AND ptype=?",
-                        (sel,)).fetchone()[0]
+    tabs = _hierarchy_tabs(con)
+    labels = [t[0] for t in tabs]
+    sel = request.args.get("type") or (labels[0] if labels else "")
+    members = next((m for lbl, m in tabs if lbl == sel), [])
+    pages = _breadcrumbs(con, members) if members else []
+    counts, totals = {}, {}
+    for lbl, mem in tabs:
+        marks = ",".join("?" * len(mem))
+        counts[lbl] = con.execute(
+            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})"
+            " AND breadcrumb NOT IN ('','[]') AND breadcrumb IS NOT NULL",
+            mem).fetchone()[0]
+        totals[lbl] = con.execute(
+            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})",
+            mem).fetchone()[0]
+    # the levels present in this tab, in taxonomy order, for the legend
+    order = list(LEVEL_NAMES)
+    seen_levels = sorted({p["level"] for p in pages if p["level"]},
+                         key=lambda l: order.index(l) if l in order else 99)
     con.close()
     tree = _hierarchy_tree(pages)
-    return render_template("hierarchy.html", types=types, sel=sel, tree=tree,
-                           counts=counts, total=total, shown=len(pages))
+    return render_template("hierarchy.html", types=labels, sel=sel, tree=tree,
+                           counts=counts, total=totals.get(sel, 0),
+                           shown=len(pages), levels=seen_levels,
+                           level_names=LEVEL_NAMES)
 
 
 @app.route("/export.xlsx")

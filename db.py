@@ -120,6 +120,12 @@ def init_db():
     _ensure_column(con, "changes", "resolution", "TEXT DEFAULT ''")
     # page type: Product / Application / Design resources / Promo / Part
     _ensure_column(con, "urls", "ptype", "TEXT DEFAULT ''")
+    # Infineon's own page level from the source report's "Page Type" column:
+    # PC > PFP > PSFP > PEFP > PTP for products (parts are PTPs and belong
+    # INSIDE the product tree), ADP > AOP > ASP / AFB for applications.
+    # Never inferred from URL depth - the sheet has PEFPs at 2, 3, 4 and 5
+    # path segments, so depth says nothing about level.
+    _ensure_column(con, "urls", "level", "TEXT DEFAULT ''")
     # the page's own JSON-LD breadcrumb, kept on the row so the per-type
     # hierarchy is one query rather than 4,145 file reads
     _ensure_column(con, "urls", "breadcrumb", "TEXT DEFAULT ''")

@@ -12,6 +12,7 @@
       {% for c in n.children %}{{ node(c) }}{% endfor %}
       {% for p in n.pages %}
         <div class="tleaf">
+          {% if p.level %}<span class="lvl lvl-{{ p.level|lower }}" title="{{ p.level_name }}">{{ p.level }}</span>{% endif %}
           <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
           <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
         </div>
@@ -31,10 +32,11 @@
 
 {% block content %}
 <h1>Hierarchy</h1>
-<p class="muted" style="margin:-6px 0 16px; max-width:70ch">
+<p class="muted" style="margin:-6px 0 16px; max-width:74ch">
   Each page's place in Infineon's own structure, read from the breadcrumb it
-  publishes. A part sits under the product family it belongs to. Nothing here
-  is hand-maintained — capture a new page and it appears in its tree.
+  publishes. Parts sit inside products — a part type page is the bottom of the
+  product taxonomy, not a separate one. Nothing here is hand-maintained:
+  capture a new page and it appears in its tree.
 </p>
 
 <div class="card" style="padding:12px 14px">
@@ -45,6 +47,15 @@
     </a>
     {% endfor %}
   </div>
+  {% if levels %}
+  <div class="pills" style="margin-top:10px; align-items:center">
+    <span class="muted" style="font-size:12px">Levels:</span>
+    {% for l in levels %}
+      <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+      <span class="muted" style="font-size:12px; margin-right:8px">{{ level_names.get(l, '') }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 <div class="card">
