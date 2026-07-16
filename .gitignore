@@ -7,3 +7,7 @@ data/
 # python
 __pycache__/
 *.pyc
+
+# QA run logs (the tooling is tracked, its output is not)
+qa/*.jsonl
+qa/*.log
