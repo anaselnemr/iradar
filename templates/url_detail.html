@@ -77,6 +77,27 @@
       </li>
       {% endmacro %}
 
+      {#- presence-only blocks: recorded as booleans, contents deliberately not
+          captured (they churn constantly and would swamp the change feed) -#}
+      {% if flags %}
+      {% macro flagrow(label, f) %}
+        <div class="flagrow">
+          <span>{{ label }}</span>
+          {% if not f or not f.exists %}
+            <span class="badge b-off">not on this page</span>
+          {% elif f.has_content %}
+            <span class="badge b-live">present, has content</span>
+          {% else %}
+            <span class="badge b-new">present but empty</span>
+          {% endif %}
+        </div>
+      {% endmacro %}
+      <div class="flagbox">
+        {{ flagrow('Products table', flags.get('product_table')) }}
+        {{ flagrow('Developer community', flags.get('developer_community')) }}
+      </div>
+      {% endif %}
+
       {% for cat in library %}
       <details class="libcat" {% if cat['items'] and loop.index <= 3 %}open{% endif %}>
         <summary>{{ cat['label'] }} <b>{{ cat['items']|length }}</b></summary>

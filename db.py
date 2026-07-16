@@ -123,6 +123,9 @@ def init_db():
     # the page's own JSON-LD breadcrumb, kept on the row so the per-type
     # hierarchy is one query rather than 4,145 file reads
     _ensure_column(con, "urls", "breadcrumb", "TEXT DEFAULT ''")
+    # presence/emptiness of blocks whose CONTENT we deliberately do not store
+    # (parametric OPN table, developer community) - booleans only
+    _ensure_column(con, "urls", "flags", "TEXT DEFAULT ''")
     # stable id for "this exact item, wherever it appears" - a document lives
     # on many pages and needs one page of its own
     _ensure_column(con, "items", "item_key", "TEXT DEFAULT ''")

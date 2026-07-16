@@ -136,6 +136,12 @@ def _has(cat):
             f" AND i.category='{cat}')")
 
 
+def _flag(block, key):
+    """Filter on a presence-only boolean stored in urls.flags (JSON)."""
+    return (f"(u.flags IS NOT NULL AND u.flags<>''"
+            f" AND json_extract(u.flags, '$.{block}.{key}') = 1)")
+
+
 # real monitoring states - what the watcher says about the page (OR-combined)
 STATUS_FILTERS = {
     "changed":   ("Changed", "u.last_status='changed' AND u.active=1"),
@@ -172,6 +178,14 @@ ATTR_FILTERS = {
     "hasapps":      ("Has applications", _has("applications")),
     "hascategories": ("Has browse-by-category", _has("categories")),
     "hasproducts":  ("Has related products", _has("products")),
+    # presence-only blocks: we store the boolean, never the churny content
+    "hastable":     ("Has products table", _flag("product_table", "exists")),
+    "hastablerows": ("Products table has rows",
+                     _flag("product_table", "has_content")),
+    "hascommunity": ("Has developer community",
+                     _flag("developer_community", "exists")),
+    "hasthreads":   ("Developer community has threads",
+                     _flag("developer_community", "has_content")),
 }
 ATTR_CAT = {"hasdocs": "documents", "hasvideos": "videos", "hasnews": "news",
             "hastrainings": "trainings", "hasdesign": "design_resources",
@@ -409,28 +423,60 @@ SECTION_LABELS = [
 
 
 # --------------------------------------------------------------------------
-# Where an asset lives in the backend.
-#
-# Images and videos are always DAM. Documents are split between DAM and
-# Windchill (formerly SAMI) by document type - that mapping is Infineon's own
-# and cannot be guessed, so until it is supplied a document reports "not mapped
-# yet" rather than a confident wrong answer. Fill DOC_TYPE_SYSTEM with
-# {"datasheet": "Windchill", ...} (keys lower-case) and every document page,
-# filter and export picks it up with no other change.
-DOC_TYPE_SYSTEM = {}
+# Where an asset lives in the backend (from Infineon's DAM/SAMI migration
+# sheet). Images and videos are always DAM; documents split by document type.
+# SAMI is Windchill now, so the SAMI list is reported under that name.
+DAM_DOC_TYPES = [
+    "Additional Product Information", "Application Examples", "Application Brief",
+    "Customer Connector", "FAQ Document", "Application Presentation", "Article",
+    "Application Brochure", "Editorials", "Fighting Guide", "Product Catalogue",
+    "Product Family Overview", "Product Selection Guide", "Product Brief",
+    "Product Brochure", "New Product Introduction", "Product Presentation",
+    "Presentations", "Product Information", "Product Overview", "Tool Brief",
+    "Roadmap", "Success Story", "Whitepaper", "Training", "Webinar",
+]
+WINDCHILL_DOC_TYPES = [        # the sheet's "SAMI Documents" column
+    "Additional Technical Information", "PCB Design Data", "Application Notes",
+    "User Manual", "Packing", "Block Diagram", "Code Example",
+    "Target Data Sheet", "Software", "Certificates", "Simulation Tool",
+    "Simulation Models", "Data Sheet", "Development Tools", "Errata Sheet",
+    "Software Module Datasheets", "Delta Sheet", "Simulation Data",
+    "Reference Design", "Product Qualification Report",
+    "Programming Specifications", "FIT Report", "Getting Started",
+    "Preliminary Data Sheet", "Firmware", "Footprint",
+    "Material Content Data Sheet", "Package Data", "Material Content Sheet",
+    "Package",
+]
 
 ALWAYS_DAM = {"images", "videos"}
 
 
+def _norm_doc_type(t):
+    """Match the sheet's wording to the site's.
+
+    The sheet says "Data Sheet" and "Application Notes"; the pages render
+    "Datasheet" and "Application note". Collapse spacing/punctuation and a
+    plural 's' so the two vocabularies meet.
+    """
+    s = re.sub(r"[^a-z0-9]+", "", (t or "").lower())
+    return s[:-1] if s.endswith("s") and len(s) > 3 else s
+
+
+DOC_TYPE_SYSTEM = {}
+for _t in DAM_DOC_TYPES:
+    DOC_TYPE_SYSTEM[_norm_doc_type(_t)] = "DAM"
+for _t in WINDCHILL_DOC_TYPES:
+    DOC_TYPE_SYSTEM[_norm_doc_type(_t)] = "Windchill"
+
+
 def backend_system(category, meta):
-    """DAM / Windchill / '' (unknown) for one library item."""
+    """DAM / Windchill / '' (type not on the migration sheet)."""
     if category in ALWAYS_DAM:
         return "DAM"
     if category != "documents":
         return ""
     # documents meta reads "Datasheet | PDF | Public | EN | 19_00 | 2.75MB | ..."
-    dtype = (meta or "").split("|")[0].strip().lower()
-    return DOC_TYPE_SYSTEM.get(dtype, "")
+    return DOC_TYPE_SYSTEM.get(_norm_doc_type(document_type_of(meta)), "")
 
 
 def document_type_of(meta):
@@ -635,6 +681,10 @@ def url_detail(url_id):
     con3 = db.connect()
     present = _cats_present_for_type(con3, u["ptype"] or "")
     con3.close()
+    try:
+        flags = json.loads(u["flags"] or "{}")
+    except Exception:
+        flags = {}
 
     library = []
     if sections:
@@ -666,7 +716,7 @@ def url_detail(url_id):
                             "cat": cat})
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
-                           redirect_to=redirect_to)
+                           redirect_to=redirect_to, flags=flags)
 
 
 @app.route("/change/<int:change_id>")

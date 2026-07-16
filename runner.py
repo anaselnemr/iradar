@@ -55,6 +55,57 @@ def item_key(category, title, item_url):
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _same_page(a, b):
+    strip = lambda u: (u or "").split("#")[0].split("?")[0].rstrip("/").lower()
+    return strip(a) == strip(b)
+
+
+# Infineon tags its own redirects (…/digital-health?redirId=135683). That param
+# describes the hop, not the page, and must never end up on the watch list.
+_REDIR_PARAMS = {"redirid", "redir_id"}
+
+
+def _clean_redirect_url(u):
+    """The destination address, without the redirect's own bookkeeping."""
+    base, _, query = (u or "").split("#")[0].partition("?")
+    keep = [p for p in query.split("&")
+            if p and p.split("=")[0].strip().lower() not in _REDIR_PARAMS]
+    return base + ("?" + "&".join(keep) if keep else "")
+
+
+def _follow_redirect(con, url_id, old_url, final_url):
+    """Keep the watch list pointed at the page that actually answers.
+
+    A listed URL that 301s elsewhere is a stale address: the library under it
+    describes a different page. So the list is repointed at the target and the
+    old address dropped. If the target is already tracked, the stale row is
+    removed outright rather than duplicating a page under two names.
+
+    Returns (row_deleted, message). When row_deleted is True the caller MUST
+    stop working on this url_id: the row is gone and anything still referencing
+    it (snapshots, items) has cascaded away with it.
+    """
+    final_url = _clean_redirect_url(final_url)
+    if not final_url or not final_url.startswith("http") \
+            or _same_page(old_url, final_url):
+        return False, ""
+    existing = con.execute(
+        "SELECT id FROM urls WHERE id<>? AND rtrim(url,'/')=?",
+        (url_id, final_url.rstrip("/"))).fetchone()
+    if existing:
+        # the destination is already on the list: drop the stale twin rather
+        # than track one page under two names. Its snapshots are captures of
+        # the destination, which the destination's own row will make anyway.
+        for s in con.execute("SELECT dir FROM snapshots WHERE url_id=?",
+                             (url_id,)).fetchall():
+            if s["dir"]:
+                shutil.rmtree(s["dir"], ignore_errors=True)
+        con.execute("DELETE FROM urls WHERE id=?", (url_id,))
+        return True, f"{old_url} redirects to already-tracked {final_url} - removed"
+    con.execute("UPDATE urls SET url=? WHERE id=?", (final_url, url_id))
+    return False, f"{old_url} -> {final_url} (list repointed)"
+
+
 def index_items(con, url_id, snap_dir, dead=False):
     """Refresh the searchable item index for a URL from its current snapshot.
 
@@ -224,10 +275,19 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
         # still gets a snapshot (so a revival shows up as a change) but it is
         # reported as not live and kept out of the library index.
         dead = (res.get("http_status") or 0) >= 400
-        con.execute("UPDATE urls SET last_http=?, breadcrumb=? WHERE id=?",
-                    (res.get("http_status"),
-                     json.dumps(res.get("breadcrumb") or [], ensure_ascii=False),
-                     url_id))
+        con.execute(
+            "UPDATE urls SET last_http=?, breadcrumb=?, flags=? WHERE id=?",
+            (res.get("http_status"),
+             json.dumps(res.get("breadcrumb") or [], ensure_ascii=False),
+             json.dumps(res.get("flags") or {}, ensure_ascii=False), url_id))
+        gone, rmsg = _follow_redirect(con, url_id, row["url"],
+                                      res.get("final_url") or "")
+        if rmsg:
+            RUN_STATE["redirected"] = RUN_STATE.get("redirected", 0) + 1
+            print("redirect:", rmsg, flush=True)
+        if gone:
+            con.commit()          # the row (and its snapshot) no longer exist
+            continue
         prev = con.execute(
             "SELECT * FROM snapshots WHERE url_id=? AND status='ok' AND id<>?"
             " AND dir<>'' AND rejected=0 ORDER BY id DESC LIMIT 1",

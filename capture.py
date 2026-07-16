@@ -893,6 +893,30 @@ SECTIONS_JS = r"""
     out.images.push({url: src,
       title: (img.alt || img.title || '').replace(/\s+/g, ' ').trim().slice(0, 150)});
   });
+
+  // Two blocks we deliberately do NOT store the contents of - only whether the
+  // page has them and whether they are empty. The parametric OPN table and the
+  // Developer community threads both churn constantly (new posts, re-sorted
+  // rows) and would swamp the change feed; their presence is the useful fact,
+  // and "exists but empty" is a real third state, distinct from absent.
+  // Booleans only, deliberately: these components nest (a wrapper and the
+  // table share a class) and carry filter rows, so any row count taken here
+  // would be a confident wrong number - 84 where the page says 7 results.
+  const tableEls = Array.from(document.querySelectorAll(
+    '.ifx_product_table_component, .producttablereference'));
+  const tableHasRows = tableEls.some(e => e.querySelectorAll('tbody tr').length > 0);
+  // NB #community only, never .btn-askcommunity: that "Go to community" button
+  // is site-wide furniture and appears on pages with no community section.
+  const comm = document.querySelector('react-component#community, #community');
+  const commTxt = comm ? (comm.innerText || '') : '';
+  out.flags = {
+    product_table: {exists: tableEls.length > 0, has_content: tableHasRows},
+    developer_community: {
+      exists: !!comm,
+      // the component renders its own empty state rather than disappearing
+      has_content: !!comm && !/there are no questions/i.test(commTxt)
+    }
+  };
   return out;
 }
 """
@@ -1537,6 +1561,10 @@ async def capture_one(browser, url, out_dir):
         # built with one query instead of opening 4,145 snapshot files
         result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
                                 if isinstance(b, dict) and b.get("title")]
+        result["flags"] = sections.get("flags") or {}
+        # where the page actually answered from: a listed URL that 301s
+        # elsewhere is a stale address and the list is repointed at the target
+        result["final_url"] = (page.url or "").split("#")[0]
 
         (out_dir / "text.txt").write_text(text, encoding="utf-8")
         (out_dir / "images.json").write_text(
