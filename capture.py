@@ -346,8 +346,27 @@ SECTIONS_JS = r"""
     return '';
   };
 
+  // The documents table publishes its own columns:
+  //   Document | Type | File | Access rights | Language | Version | Size | Date
+  // Read the document's type from the Type COLUMN, by header. Taking the first
+  // field of the joined meta instead is positional, and positional is what let
+  // a "New" badge push a title into the type slot - and rows do carry empty
+  // cells mid-row, which shifts every index after them.
+  const columnValue = (tr, header) => {
+    const table = tr.closest('table');
+    if (!table) return '';
+    const heads = Array.from(table.querySelectorAll(
+      'thead th, thead td, tr:first-child th'))
+      .map(h => (h.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase());
+    const i = heads.indexOf(header);
+    if (i < 0) return '';
+    const tds = tr.querySelectorAll('td');       // NOT filtered: index matters
+    return i < tds.length
+      ? (tds[i].innerText || '').replace(/\s+/g, ' ').trim() : '';
+  };
+
   const normT = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
-  const push = (cat, title, url, meta, group) => {
+  const push = (cat, title, url, meta, group, dtype) => {
     // 200 chars is a sane cap for a card title, but overview/about entries ARE
     // prose - their text is the item - and capping those chopped a paragraph
     // mid-sentence, hiding the tail from the library.
@@ -370,6 +389,7 @@ SECTIONS_JS = r"""
             && !GENERIC_LINK.test(title)) existing.title = title;
         if (meta && !existing.meta) existing.meta =
           meta.replace(/\s+/g, ' ').trim().slice(0, 260);
+        if (dtype && !existing.dtype) existing.dtype = dtype;
         return;
       }
       urlOwned.set(url, cat);
@@ -380,6 +400,8 @@ SECTIONS_JS = r"""
     const item = {title: title, url: url || '',
                   meta: (meta || '').replace(/\s+/g, ' ').trim().slice(0, 260)};
     if (group) item.group = group;
+    // the document's own Type column - what decides DAM vs Windchill
+    if (dtype) item.dtype = dtype.slice(0, 80);
     out[cat].push(item);
   };
 
@@ -414,9 +436,10 @@ SECTIONS_JS = r"""
     if (strictChrome ? isPageChrome(a) : isTabStrip(a)) return;
     let t = (a.innerText || a.textContent || a.getAttribute('title') ||
              a.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
-    let meta = '';
+    let meta = '', dtype = '';
     const tr = a.closest('tr');
     if (tr) {
+      dtype = columnValue(tr, 'type');       // the row's own Type column
       // A TABLE ROW IS NOT A CARD: its title must come from this row. Never
       // climb - a row's icon-only/"download" anchor would escape the table
       // and pick up page furniture (e.g. the filter bar's "Reset all").
@@ -451,7 +474,7 @@ SECTIONS_JS = r"""
       if (!ct) return;                             // no real title -> skip junk
       t = ct;
     }
-    push(cat, t, href, meta);
+    push(cat, t, href, meta, '', dtype);
   };
 
   // Design-resources tab panes FIRST (before the generic component pass, so
@@ -731,7 +754,9 @@ SECTIONS_JS = r"""
     if (rec.publicationDate) bits.push(rec.publicationDate);
     let u = String(rec.URL);
     if (u.startsWith('/')) u = 'https://www.infineon.com' + u;
-    push('documents', rec.title, u, bits.join(' | '));
+    // the feed names the type outright - no parsing needed
+    push('documents', rec.title, u, bits.join(' | '), '',
+         rec.documentType || '');
     // the abstract is the only prose on these pages
     if (rec.description && rec.description !== rec.title)
       push('overview', rec.description, '', '');
@@ -854,7 +879,8 @@ SECTIONS_JS = r"""
       .map(td => (td.innerText || '').replace(/\s+/g, ' ').trim())
       .filter(Boolean);
     if (cells.length < 2 || cells[0].length < 8) return;
-    push('documents', cells[0], '', cells.slice(1, 9).join(' | '));
+    push('documents', cells[0].replace(/\s*(New|Updated)$/i, ''), '',
+         cells.slice(1, 9).join(' | '), '', columnValue(tr, 'type'));
   });
 
   // Pass 2: heading-based fallback, only for categories still empty

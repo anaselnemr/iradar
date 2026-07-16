@@ -134,11 +134,12 @@ def index_items(con, url_id, snap_dir, dead=False):
             rows.append((url_id, cat, (it.get("group") or "")[:80],
                          title[:300], (it.get("url") or "")[:600],
                          (it.get("meta") or "")[:260],
-                         item_key(cat, title, it.get("url") or "")))
+                         item_key(cat, title, it.get("url") or ""),
+                         (it.get("dtype") or "")[:80]))
     if rows:
         con.executemany(
             "INSERT INTO items(url_id, category, grp, title, item_url, meta,"
-            " item_key) VALUES(?,?,?,?,?,?,?)", rows)
+            " item_key, doc_type) VALUES(?,?,?,?,?,?,?,?)", rows)
 
 
 def _prune_snapshot(con, snap_row):

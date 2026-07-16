@@ -129,6 +129,10 @@ def init_db():
     # stable id for "this exact item, wherever it appears" - a document lives
     # on many pages and needs one page of its own
     _ensure_column(con, "items", "item_key", "TEXT DEFAULT ''")
+    # the document's own Type column ("Datasheet", "Application note"): what
+    # decides DAM vs Windchill, kept as its own field rather than parsed back
+    # out of the meta string
+    _ensure_column(con, "items", "doc_type", "TEXT DEFAULT ''")
     con.execute("CREATE INDEX IF NOT EXISTS idx_items_key ON items(item_key)")
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (k, v))

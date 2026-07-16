@@ -469,17 +469,26 @@ for _t in WINDCHILL_DOC_TYPES:
     DOC_TYPE_SYSTEM[_norm_doc_type(_t)] = "Windchill"
 
 
-def backend_system(category, meta):
-    """DAM / Windchill / '' (type not on the migration sheet)."""
+def backend_system(category, meta, doc_type=None):
+    """DAM / Windchill / '' (type not on the migration sheet).
+
+    Per document, never per page: one product page carries a datasheet
+    (Windchill) and a product brief (DAM) side by side.
+
+    doc_type is the row's own Type column, captured as its own field. The meta
+    fallback exists only for snapshots taken before that was stored.
+    """
     if category in ALWAYS_DAM:
         return "DAM"
     if category != "documents":
         return ""
-    # documents meta reads "Datasheet | PDF | Public | EN | 19_00 | 2.75MB | ..."
-    return DOC_TYPE_SYSTEM.get(_norm_doc_type(document_type_of(meta)), "")
+    return DOC_TYPE_SYSTEM.get(
+        _norm_doc_type(doc_type or document_type_of(meta)), "")
 
 
 def document_type_of(meta):
+    """Fallback only: the first meta field is the Type column by convention.
+    Prefer the captured doc_type - position is what a "New" badge broke."""
     return (meta or "").split("|")[0].strip()
 
 
@@ -700,7 +709,8 @@ def url_detail(url_id):
                 if isinstance(it, dict):
                     it["item_key"] = runner.item_key(cat, it.get("title", ""),
                                                      it.get("url", ""))
-                    it["backend"] = backend_system(cat, it.get("meta", ""))
+                    it["backend"] = backend_system(cat, it.get("meta", ""),
+                                                   it.get("dtype"))
             groups = []
             if any(i.get("group") for i in items):
                 order = []
@@ -946,7 +956,7 @@ def search_items():
             f"SELECT COUNT(*) FROM items i {wsql}", params).fetchone()[0]
         rows = con.execute(f"""
             SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
-                   i.item_key, u.url AS page_url, u.label,
+                   i.item_key, i.doc_type, u.url AS page_url, u.label,
                    (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
                      AND s.status='ok' AND s.page_title<>''
                      ORDER BY s.id DESC LIMIT 1) AS page_title
@@ -964,7 +974,8 @@ def search_items():
                                 "item_key": r["item_key"] or runner.item_key(
                                     r["category"], r["title"], r["item_url"]),
                                 "backend": backend_system(r["category"],
-                                                          r["meta"])}
+                                                          r["meta"],
+                                                          r["doc_type"])}
                 order.append(key)
             by_item[key]["pages"].append(
                 {"id": r["url_id"], "url": r["page_url"],
@@ -1022,10 +1033,11 @@ def item_detail(key):
     first = rows[0]
     # the richest meta wins: the same item can be listed tersely on one page
     meta = max((r["meta"] or "" for r in rows), key=len)
+    dtype = next((r["doc_type"] for r in rows if r["doc_type"]), "")
     item = {"title": first["title"], "url": first["item_url"],
             "category": first["category"], "grp": first["grp"], "meta": meta,
-            "backend": backend_system(first["category"], meta),
-            "doc_type": document_type_of(meta)
+            "backend": backend_system(first["category"], meta, dtype),
+            "doc_type": (dtype or document_type_of(meta))
             if first["category"] == "documents" else "",
             "label": dict(SECTION_LABELS).get(first["category"],
                                               first["category"])}
