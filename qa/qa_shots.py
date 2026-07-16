@@ -62,7 +62,11 @@ async def main():
                 ".documents_ifx .pagination .right-page:not(.inactive)")
             if nxt is None:
                 break
-            await nxt.click(timeout=1500, force=True)
+            # DOM-level click, like the design-resources loop below: a
+            # coordinate click throws "element is outside of the viewport" on
+            # the documents pager and killed the whole walk at page 3, so a
+            # reviewer never saw the later pages or any design-resources tab.
+            await nxt.evaluate("el => el.click()")
             await page.wait_for_timeout(900)
 
         # every design-resources tab, every page of each

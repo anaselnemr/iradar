@@ -79,9 +79,35 @@ CAPTURE INTEGRITY
 - stored page title is the real page title
 - text.txt contains hidden-tab content (that is by design)
 
+DOCUMENT TYPE + BACKEND  (check these explicitly)
+- the documents table has a Type column (Document | Type | File | Access
+  rights | Language | Version | Size | Date). Every stored document must
+  carry `dtype` EQUAL to that row's Type cell - not its title, not its
+  format. A "New" badge on a row must not disturb it.
+- backend location is per DOCUMENT, never per page: DAM or Windchill by
+  type. One page can legitimately show both.
+- images and videos are always DAM.
+
+FAMILY MODULE (related products / related applications)
+- the same carousel is named differently per page ("Related products",
+  "Related applications"). Every card in it must be stored, with its
+  group = the page's own anchor-nav tab label for that section, and the
+  CTA label ("View product family") in its meta.
+
+BREADCRUMB / HIERARCHY
+- `breadcrumb` must match the page's own JSON-LD BreadcrumbList
+- a 404/error page's breadcrumb must NOT be stored
+
+PRESENCE-ONLY FLAGS (contents deliberately NOT captured)
+- `flags.product_table` and `flags.developer_community`: each must say
+  whether the block exists and whether it has content. "Exists but empty"
+  is a real state (the community renders "there are no questions") and is
+  different from absent. Verify both against the live page. Do NOT report
+  the absence of their content as a gap - that is deliberate.
+
 GAPS
 - name any content section visible on the page that has NO library
-  category at all
+  category at all (except the two presence-only blocks above)
 
 ## Output (final message = the report)
 VERDICT: PASS | WARN | FAIL
