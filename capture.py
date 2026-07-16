@@ -247,12 +247,22 @@ TEXT_JS = r"""
 }
 """
 
+# Injected into every image collector (and matched identically by the QA
+# probe) so the stored inventory and the live count always compare like for
+# like. A Qualtrics tracking pixel loads whenever the intercept fires and a
+# "missing-product-images" placeholder is the site's own "no image available"
+# graphic - neither is page content, and both drifted the count run to run.
+NON_CONTENT_IMG_JS = \
+    r"/qualtrics|siteintercept|wrqualtrics|graphic\.php|missing-product-images/i"
+
 IMAGES_JS = r"""
 () => {
+  const NON_CONTENT_IMG = """ + NON_CONTENT_IMG_JS + r""";
   const urls = new Set();
   document.querySelectorAll('img').forEach(img => {
     const src = img.currentSrc || img.src;
-    if (src && !src.startsWith('data:')) urls.add(src);
+    if (src && !src.startsWith('data:') && !NON_CONTENT_IMG.test(src))
+      urls.add(src);
   });
   // srcset: split ONLY on commas that start a new candidate URL. Scene7 URLs
   // carry commas inside their query ("?qlt=55,0&op_usm=1.75,0.3,2,0"), and a
@@ -262,13 +272,16 @@ IMAGES_JS = r"""
       .split(/,(?=\s*(?:https?:)?\/\/|\s*\/[^\/]|\s*[\w.-]+\.[a-z]{2,6}\/)/i)
       .forEach(part => {
         const u = part.trim().split(/\s+/)[0];
-        if (u && !u.startsWith('data:')) {
+        if (u && !u.startsWith('data:') && !NON_CONTENT_IMG.test(u)) {
           try { urls.add(new URL(u, location.href).href); } catch (e) {}
         }
       });
   });
   document.querySelectorAll('video[poster]').forEach(v => {
-    try { urls.add(new URL(v.getAttribute('poster'), location.href).href); } catch (e) {}
+    const p = v.getAttribute('poster');
+    if (p && !NON_CONTENT_IMG.test(p)) {
+      try { urls.add(new URL(p, location.href).href); } catch (e) {}
+    }
   });
   return Array.from(urls).sort();
 }
@@ -1011,9 +1024,10 @@ SECTIONS_JS = r"""
       'iframe[src*="youtube" i], iframe[src*="video" i], iframe[src*="brightcove" i]')
     .forEach(f => push('videos', f.title || 'embedded video', f.src, 'iframe'));
 
+  const NON_CONTENT_IMG = """ + NON_CONTENT_IMG_JS + r""";
   document.querySelectorAll('img').forEach(img => {
     const src = img.currentSrc || img.src;
-    if (!src || src.startsWith('data:')) return;
+    if (!src || src.startsWith('data:') || NON_CONTENT_IMG.test(src)) return;
     const key = 'img|' + src;
     if (seen.has(key)) return;
     seen.add(key);

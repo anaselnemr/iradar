@@ -51,11 +51,18 @@ PROBE_JS = r"""
     if (s) seen.add(s);
   });
   out.news_cards = seen.size;
-  // images the way a person sees them: real <img> with a usable source
+  // images the way a person sees them: real <img> with a usable source.
+  // Exclude exactly what the capture excludes (tracking pixels, missing-image
+  // placeholders) or the live count outruns the stored one - a Qualtrics
+  // Graphic.php pixel plus two "missing-product-images" placeholders read as
+  // 3 phantom images and tripped the tolerance. Must stay in sync with
+  // capture.py NON_CONTENT_IMG_JS.
+  const NON_CONTENT_IMG =
+    /qualtrics|siteintercept|wrqualtrics|graphic\.php|missing-product-images/i;
   const iu = new Set();
   document.querySelectorAll('img').forEach(im => {
     const s = im.currentSrc || im.src || '';
-    if (!s || s.startsWith('data:')) return;
+    if (!s || s.startsWith('data:') || NON_CONTENT_IMG.test(s)) return;
     iu.add(s);
     if ((im.alt || '').trim()) out.imgs_with_alt++;
   });
