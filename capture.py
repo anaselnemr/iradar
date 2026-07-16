@@ -61,6 +61,44 @@ def _norm_title(t):
     return re.sub(r"\s+", " ", (t or "")).strip().lower()
 
 
+# A tile links to the same destination several times - its image, its title,
+# its product table, and a "View product family" CTA - so a raw anchor sweep
+# yields one real title plus a pile of CTA twins.
+_CTA_TITLE_RE = re.compile(
+    r"(?i)^(goto.?link|view ((all )?(products?|product famil(y|ies)|famil(y|ies)"
+    r"|more|details?)|all)|explore( more)?|learn more|read more|discover( more)?"
+    r"|get started|show (more|all)|see (more|all))$")
+
+
+def _clean_link_list(items, page_base):
+    """One entry per destination for tile/card lists (categories, products).
+
+    Keeps the first real title seen for a URL, drops self-links and CTA-only
+    titles, and prefers a family page over its product table.
+    """
+    cleaned, seen_url = [], set()
+    for it in items:
+        u_it = (it.get("url") or "").split("#")[0].rstrip("/")
+        t_it = re.sub(r"\s+Overview$", "", (it.get("title") or "").strip())
+        if not u_it or len(t_it) < 3 or u_it == page_base:
+            continue
+        if _CTA_TITLE_RE.match(t_it) or u_it in seen_url:
+            continue
+        seen_url.add(u_it)
+        it["url"], it["title"] = u_it, t_it
+        cleaned.append(it)
+    best, order = {}, []
+    for it in cleaned:
+        k = it["title"].lower()
+        if k not in best:
+            best[k] = it
+            order.append(k)
+        elif "/product-table/" in best[k]["url"] \
+                and "/product-table/" not in it["url"]:
+            best[k] = it
+    return [best[k] for k in order]
+
+
 def _api_url_map(bodies):
     """Build {normalized title -> URL} from the page's own dataApi feeds."""
     out = {}
@@ -232,10 +270,12 @@ SECTIONS_JS = r"""
   const GENERIC_LINK = /^(explore( more| now)?|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view ((all )?(more|products?|product famil(y|ies)|famil(y|ies)|details?)|all)|more|download|jump to|goto.?link|add to cart.*|buy online.*|order now.*)$/i;
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
+  // NB: every category pushed to below MUST exist here. A push() to a key
+  // that was never initialised throws, and the whole library comes back empty.
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
                overview: [], applications: [], about: [], categories: [],
-               images: []};
+               products: [], images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -555,6 +595,58 @@ SECTIONS_JS = r"""
     if (!vurl && card.querySelector('.exclusive-video'))
       metaParts.push('login required (MyInfineon)');
     push(cat, title, vurl, metaParts.join(' | '));
+  });
+
+  // "Related products" is a real, visible section with its own heading and its
+  // own anchor-nav tab. Its cards were the source of the phantom "documents":
+  // filing them as documents was the bug, but dropping them entirely trades a
+  // wrong category for no category, so they get their own. Each card links to
+  // the same product several times (image, title, product table, CTA); one
+  // entry per destination is sorted out in Python (_clean_link_list).
+  for (const h of document.querySelectorAll('h2, h3')) {
+    if (out.products.length) break;
+    if (isPageChrome(h)) continue;
+    const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!/^related products?$/i.test(ht)) continue;
+    const c = containerFor(h);
+    if (!c) break;
+    c.querySelectorAll('a[href]').forEach(a => collectAnchor('products', a, true));
+    break;
+  }
+
+  // Gated document promo pages (/gated/...): the whitepaper IS the page, and
+  // it was being stored as nothing at all. There is no form and no link to
+  // follow - the gate is a JS "Login to Download" button - but Infineon ships
+  // the complete record to anonymous visitors in a hidden div[data-json] and
+  // gates only the PDF bytes. So the document is captured with full metadata
+  // and its real URL, without touching the gate.
+  document.querySelectorAll('[data-json]').forEach(d => {
+    let rec;
+    try { rec = JSON.parse(d.getAttribute('data-json') || ''); } catch (e) { return; }
+    if (!rec || typeof rec !== 'object') return;
+    if (!rec.title || !rec.extension || !rec.URL) return;   // not a doc record
+    const bits = [];
+    if (rec.documentType) bits.push(rec.documentType);
+    bits.push(String(rec.extension).toUpperCase());
+    // the asset itself 302s to the SSO login, so say so rather than leaving a
+    // link that looks live but is not
+    bits.push(rec.isGated ? 'login required'
+                          : (rec.confidentialityLevel || 'Public'));
+    if (Array.isArray(rec.language) && rec.language.length)
+      bits.push(rec.language.join(',').toUpperCase());
+    if (rec.docRevision) bits.push(rec.docRevision);
+    if (rec.size) {
+      const n = Number(rec.size);
+      bits.push(n >= 1048576 ? (n / 1048576).toFixed(2) + ' mb'
+                             : (n / 1024).toFixed(2) + ' kb');
+    }
+    if (rec.publicationDate) bits.push(rec.publicationDate);
+    let u = String(rec.URL);
+    if (u.startsWith('/')) u = 'https://www.infineon.com' + u;
+    push('documents', rec.title, u, bits.join(' | '));
+    // the abstract is the only prose on these pages
+    if (rec.description && rec.description !== rec.title)
+      push('overview', rec.description, '', '');
   });
 
   // About / functional-tabbed widgets ("01 ... / 02 Features of ... / 03
@@ -1246,32 +1338,9 @@ async def capture_one(browser, url, out_dir):
         # title, and drop generic CTA links to product tables.
         try:
             page_base = url.split("#")[0].rstrip("/")
-            cleaned, seen_url = [], set()
-            for it in sections.get("categories", []):
-                u_it = (it.get("url") or "").split("#")[0].rstrip("/")
-                t_it = re.sub(r"\s+Overview$", "",
-                              (it.get("title") or "").strip())
-                if not u_it or len(t_it) < 3 or u_it == page_base:
-                    continue          # empty / self-anchor link
-                if re.match(r"(?i)^(goto.?link|view (products?|all))$", t_it):
-                    continue
-                if u_it in seen_url:
-                    continue
-                seen_url.add(u_it)
-                it["url"], it["title"] = u_it, t_it
-                cleaned.append(it)
-            # one entry per category: a tile links both to the category page
-            # and to its product table - the page is the canonical destination
-            best, order_cat = {}, []
-            for it in cleaned:
-                k = it["title"].lower()
-                if k not in best:
-                    best[k] = it
-                    order_cat.append(k)
-                elif "/product-table/" in best[k]["url"] \
-                        and "/product-table/" not in it["url"]:
-                    best[k] = it
-            sections["categories"] = [best[k] for k in order_cat]
+            for cat in ("categories", "products"):
+                sections[cat] = _clean_link_list(sections.get(cat, []),
+                                                 page_base)
         except Exception:
             pass
 

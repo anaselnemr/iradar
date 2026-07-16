@@ -152,10 +152,14 @@ STATUS_FILTERS = {
 # properties of the page itself / what we captured from it (AND-combined)
 ATTR_FILTERS = {
     "checked":      ("Captured", "u.last_checked IS NOT NULL"),
+    # "live" means a visitor gets the page: a 2xx with an empty body does not
+    # count, so blank pages are excluded here and counted as not live below.
     "live":         ("Live (HTTP OK)",
-                     "u.last_http IS NOT NULL AND u.last_http < 400"),
-    "notlive":      ("Not live (404/500)",
-                     "u.last_http IS NOT NULL AND u.last_http >= 400"),
+                     "u.last_http IS NOT NULL AND u.last_http < 400"
+                     " AND IFNULL(u.last_status,'') <> 'blank'"),
+    "notlive":      ("Not live (404/500/blank)",
+                     "(u.last_http IS NOT NULL AND u.last_http >= 400)"
+                     " OR u.last_status='blank'"),
     "hasdocs":      ("Has documents", _has("documents")),
     "nodocs":       ("No documents",
                      "u.last_checked IS NOT NULL AND NOT " + _has("documents")),
@@ -167,11 +171,13 @@ ATTR_FILTERS = {
     "hasbenefits":  ("Has benefits", _has("benefits")),
     "hasapps":      ("Has applications", _has("applications")),
     "hascategories": ("Has browse-by-category", _has("categories")),
+    "hasproducts":  ("Has related products", _has("products")),
 }
 ATTR_CAT = {"hasdocs": "documents", "hasvideos": "videos", "hasnews": "news",
             "hastrainings": "trainings", "hasdesign": "design_resources",
             "hasfeatures": "features", "hasbenefits": "benefits",
-            "hasapps": "applications", "hascategories": "categories"}
+            "hasapps": "applications", "hascategories": "categories",
+            "hasproducts": "products"}
 
 
 def _url_filter(q, statuses, ptypes, attrs):
@@ -238,7 +244,11 @@ def index():
           SUM(CASE WHEN last_status='error' THEN 1 ELSE 0 END) AS errors,
           SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS paused,
           SUM(CASE WHEN last_checked IS NULL THEN 1 ELSE 0 END) AS fresh,
-          SUM(CASE WHEN last_http IS NOT NULL AND last_http>=400 THEN 1 ELSE 0 END) AS notlive
+          SUM(CASE WHEN last_status='blank' THEN 1 ELSE 0 END) AS blank,
+          -- a page serving an empty body is not reachable content either,
+          -- so it belongs in the same headline number as the 404s
+          SUM(CASE WHEN (last_http IS NOT NULL AND last_http>=400)
+                        OR last_status='blank' THEN 1 ELSE 0 END) AS notlive
         FROM urls""").fetchone()
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
@@ -385,6 +395,7 @@ def urls_toggle(url_id):
 SECTION_LABELS = [
     ("overview", "Overview"),
     ("categories", "Browse by category"),
+    ("products", "Related products"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
     ("features", "Key features"),

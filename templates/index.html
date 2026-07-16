@@ -177,6 +177,10 @@
       <td>
         {% if u.last_http is none and u.last_status == 'error' %}
           <span class="badge b-error" title="Could not reach the page">DOWN</span>
+        {% elif u.last_status == 'blank' %}
+          {# HTTP said OK but the page rendered nothing: not live in any sense
+             that matters to a visitor, so never show it as LIVE #}
+          <span class="badge b-error" title="HTTP {{ u.last_http or '?' }} with an empty body - a visitor sees a blank page">EMPTY</span>
         {% elif u.last_http is none %}
           <span class="muted">—</span>
         {% elif u.last_http < 400 %}
