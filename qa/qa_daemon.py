@@ -60,14 +60,27 @@ def probe(url):
 
 
 def verify(snap, sections, live, snap_dir):
-    """Returns (verdict, reasons). FAIL = systematic miss, WARN = suspicious."""
-    reasons, fail = [], False
+    """Returns (verdict, reasons, notes). FAIL = systematic miss, WARN =
+    suspicious, notes = tolerated but never silently.
+
+    The bar is "not extra or less". A tolerance of 1 exists only because the
+    live site genuinely churns between our capture and this check - but an
+    off-by-one is recorded as a note rather than swallowed, because it is just
+    as likely to be a real error as it is to be a new document.
+    """
+    reasons, notes, fail = [], [], False
 
     # ---- documents ----
     docs = sections.get("documents", [])
-    if abs(len(docs) - live["docs"]) > 1:
+    d_diff = len(docs) - live["docs"]
+    if abs(d_diff) > 1:
         fail = True
-        reasons.append(f"documents stored={len(docs)} live={live['docs']}")
+        reasons.append(f"documents stored={len(docs)} live={live['docs']}"
+                       f" - {abs(d_diff)} {'EXTRA' if d_diff > 0 else 'MISSING'}")
+    elif d_diff:
+        notes.append(f"documents stored={len(docs)} live={live['docs']}"
+                     f" - off by one ({'extra' if d_diff > 0 else 'missing'});"
+                     f" tolerated as churn, not ignored")
     if live["doc_dates"] >= 3:
         with_date = sum(1 for d in docs
                         if re.search(r"[A-Z][a-z]{2} \d{1,2}, \d{4}",
@@ -82,8 +95,7 @@ def verify(snap, sections, live, snap_dir):
     # cards now and agrees with a by-eye count on every group of two product
     # pages, so an excess means something real again and is reported.
     # Tolerance stays at 1 for live-site churn: a document can genuinely appear
-    # between our capture and this probe.
-    notes = []
+    # between our capture and this probe - but it is noted, not swallowed.
     sgroups = {}
     for it in sections.get("design_resources", []) + sections.get("trainings", []):
         g = it.get("group")
@@ -100,6 +112,9 @@ def verify(snap, sections, live, snap_dir):
         elif n_live and n_stored > n_live + 1:
             reasons.append(f"group '{gname}' live={n_live} stored={n_stored}"
                            f" - {n_stored - n_live} EXTRA")
+        elif n_live and n_stored != n_live:
+            notes.append(f"group '{gname}' live={n_live} stored={n_stored}"
+                         f" - off by one; tolerated as churn, not ignored")
 
     # ---- other sections present when the page has them ----
     if live["features_li"] >= 3 and not sections.get("features"):
