@@ -418,6 +418,25 @@ def _load_sections(snap_dir):
         return None
 
 
+def _redirect_target(snap_dir, url):
+    """The page a URL actually served, when it is not the URL you asked for.
+
+    Some listed URLs 301 elsewhere, so the library can describe a different
+    page than the address implies (one /medical-wearables... URL serves the
+    Digital health hub). We follow the redirect - that IS the live page - but
+    the reader has to be told, or the library quietly answers a question they
+    did not ask.
+    """
+    try:
+        final = json.loads((Path(snap_dir) / "meta.json")
+                           .read_text(encoding="utf-8")).get("final_url") or ""
+    except Exception:
+        return ""
+    # ignore the trailing #anchor our own tab-clicking leaves behind
+    strip = lambda u: u.split("#")[0].rstrip("/")
+    return final.split("#")[0] if strip(final) and strip(final) != strip(url) else ""
+
+
 def _category_tree(items):
     """Nest 'Browse by category' links by their URL path so they read as the
     hierarchy they are (parent section -> children)."""
@@ -479,6 +498,7 @@ def url_detail(url_id):
         " AND rejected=0 ORDER BY id DESC LIMIT 1", (url_id,)).fetchone()
     con.close()
     sections = _load_sections(latest["dir"]) if latest else None
+    redirect_to = _redirect_target(latest["dir"], u["url"]) if latest else ""
     # resolve item links that point at pages we track -> open OUR content
     tracked = {}
     if sections:
@@ -521,7 +541,8 @@ def url_detail(url_id):
                 groups = [(g, by_group[g]) for g in order]
             library.append({"label": label, "items": items, "groups": groups})
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
-                           latest=latest, library=library, cat_tree=cat_tree)
+                           latest=latest, library=library, cat_tree=cat_tree,
+                           redirect_to=redirect_to)
 
 
 @app.route("/change/<int:change_id>")

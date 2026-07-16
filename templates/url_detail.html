@@ -11,6 +11,16 @@
     · Status: {{ u.last_status or 'not checked' }}
     {% if u.last_http %} · <span class="badge {{ 'b-live' if u.last_http < 400 else 'b-error' }}">HTTP {{ u.last_http }}</span>{% endif %}
   </div>
+  {% if redirect_to %}
+  {# the listed address is not the page that answered: say so plainly, or the
+     library silently describes a page nobody asked about #}
+  <div class="notice" style="margin-top:10px">
+    <strong>This URL redirects.</strong> Infineon serves it from
+    <a href="{{ redirect_to }}" target="_blank">{{ redirect_to }}</a>, so
+    everything below describes <em>that</em> page. The address in your list may
+    be out of date.
+  </div>
+  {% endif %}
 </div>
 
 {% if latest %}
