@@ -120,6 +120,13 @@ def init_db():
     _ensure_column(con, "changes", "resolution", "TEXT DEFAULT ''")
     # page type: Product / Application / Design resources / Promo / Part
     _ensure_column(con, "urls", "ptype", "TEXT DEFAULT ''")
+    # the page's own JSON-LD breadcrumb, kept on the row so the per-type
+    # hierarchy is one query rather than 4,145 file reads
+    _ensure_column(con, "urls", "breadcrumb", "TEXT DEFAULT ''")
+    # stable id for "this exact item, wherever it appears" - a document lives
+    # on many pages and needs one page of its own
+    _ensure_column(con, "items", "item_key", "TEXT DEFAULT ''")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_items_key ON items(item_key)")
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (k, v))
     con.commit()

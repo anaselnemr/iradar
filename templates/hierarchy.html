@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Hierarchy — InfineonWatch{% endblock %}
+
+{% macro node(n) %}
+  {% if n.name %}
+  <details class="tnode" {% if n.depth < 2 %}open{% endif %}>
+    <summary>
+      <span class="tname">{{ n.name }}</span>
+      <span class="tcount">{{ n.count }}</span>
+    </summary>
+    <div class="tbody">
+      {% for c in n.children %}{{ node(c) }}{% endfor %}
+      {% for p in n.pages %}
+        <div class="tleaf">
+          <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
+          <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% else %}
+    {% for c in n.children %}{{ node(c) }}{% endfor %}
+    {% for p in n.pages %}
+      <div class="tleaf">
+        <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
+        <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<h1>Hierarchy</h1>
+<p class="muted" style="margin:-6px 0 16px; max-width:70ch">
+  Each page's place in Infineon's own structure, read from the breadcrumb it
+  publishes. A part sits under the product family it belongs to. Nothing here
+  is hand-maintained — capture a new page and it appears in its tree.
+</p>
+
+<div class="card" style="padding:12px 14px">
+  <div class="pills">
+    {% for t in types %}
+    <a class="pill {{ 'pill-on' if t == sel }}" href="{{ url_for('hierarchy', type=t) }}">
+      {{ t }} <span class="muted">{{ counts.get(t, 0) }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>{{ sel }}
+    <span class="muted" style="font-weight:400; font-size:14px">
+      — {{ shown }} of {{ total }} captured with a breadcrumb</span>
+  </h2>
+  {% if not tree.children and not tree.pages %}
+    <p class="muted">No pages of this type have been captured yet. The tree
+      builds itself as the run reaches them.</p>
+  {% else %}
+    {% if not tree.children %}
+      <p class="muted" style="margin-top:0">This type is flat — its pages sit at
+        the top level of the site with no parent path of their own.</p>
+    {% endif %}
+    <div class="tree">{{ node(tree) }}</div>
+  {% endif %}
+</div>
+{% endblock %}

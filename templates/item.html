@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title[:60] }} — InfineonWatch{% endblock %}
+{% block content %}
+
+<p style="margin:0 0 14px"><a href="{{ url_for('search_items') }}" class="muted">← Search content</a></p>
+
+<div class="card itemhero">
+  <div class="itemhero-main">
+    <div class="itemtags">
+      <span class="badge b-type">{{ item.label }}</span>
+      {% if item.grp %}<span class="badge b-new">{{ item.grp }}</span>{% endif %}
+      {% if item.doc_type %}<span class="badge b-new">{{ item.doc_type }}</span>{% endif %}
+      {% if item.backend %}
+        <span class="badge b-sys" title="Where this asset lives in your backend">{{ item.backend }}</span>
+      {% elif item.category == 'documents' %}
+        <span class="badge b-off" title="Document types have not been mapped to DAM / Windchill yet">backend not mapped</span>
+      {% endif %}
+    </div>
+    <h1 style="margin:10px 0 8px">{{ item.title }}</h1>
+    {% if item.meta %}<div class="muted" style="font-size:14px">{{ item.meta }}</div>{% endif %}
+    {% if item.url %}
+      <p style="margin:14px 0 0"><a href="{{ item.url }}" target="_blank" class="liveurl">{{ item.url }}</a></p>
+    {% else %}
+      <p class="muted" style="margin:14px 0 0">No public link — this item is only reachable from the pages below.</p>
+    {% endif %}
+  </div>
+  <div class="itemhero-side">
+    <div class="stat">
+      <div class="n">{{ pages|length }}</div>
+      <div class="l">page{{ '' if pages|length == 1 else 's' }} using it</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Assigned to {{ pages|length }} page{{ '' if pages|length == 1 else 's' }}</h2>
+  {% for ptype, plist in by_type %}
+    <div class="grouphead">{{ ptype }} <span class="muted">({{ plist|length }})</span></div>
+    <div class="pagegrid">
+      {% for p in plist %}
+      <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
+        <div class="pagecard-title">{{ p.title or p.url }}</div>
+        <div class="pagecard-url">{{ p.url }}</div>
+        {% if p.grp %}<div class="muted" style="font-size:12px; margin-top:6px">in {{ p.grp }}</div>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  {% endfor %}
+  <p class="muted" style="margin:14px 0 0; font-size:13px">
+    Each card opens that page's library here. This list is rebuilt from the
+    captured pages, so it follows the site rather than a static mapping.
+  </p>
+</div>
+
+{% endblock %}

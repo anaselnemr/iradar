@@ -408,6 +408,35 @@ SECTION_LABELS = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Where an asset lives in the backend.
+#
+# Images and videos are always DAM. Documents are split between DAM and
+# Windchill (formerly SAMI) by document type - that mapping is Infineon's own
+# and cannot be guessed, so until it is supplied a document reports "not mapped
+# yet" rather than a confident wrong answer. Fill DOC_TYPE_SYSTEM with
+# {"datasheet": "Windchill", ...} (keys lower-case) and every document page,
+# filter and export picks it up with no other change.
+DOC_TYPE_SYSTEM = {}
+
+ALWAYS_DAM = {"images", "videos"}
+
+
+def backend_system(category, meta):
+    """DAM / Windchill / '' (unknown) for one library item."""
+    if category in ALWAYS_DAM:
+        return "DAM"
+    if category != "documents":
+        return ""
+    # documents meta reads "Datasheet | PDF | Public | EN | 19_00 | 2.75MB | ..."
+    dtype = (meta or "").split("|")[0].strip().lower()
+    return DOC_TYPE_SYSTEM.get(dtype, "")
+
+
+def document_type_of(meta):
+    return (meta or "").split("|")[0].strip()
+
+
 def _load_sections(snap_dir):
     p = Path(snap_dir) / "sections.json"
     if not p.exists():
@@ -416,6 +445,87 @@ def _load_sections(snap_dir):
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _cats_present_for_type(con, ptype):
+    """Which library categories this page TYPE ever has anything in.
+
+    Returns None while the type is still being captured: an empty category on
+    a half-captured type means "not yet", not "never". Once every page of the
+    type has been checked, a category that is 0 across all of them genuinely
+    does not exist on that shape of page (Parts have no benefits), so the
+    library stops showing an empty row for it. One page with one entry is
+    enough to keep it - this is measured, never hardcoded.
+    """
+    row = con.execute(
+        "SELECT COUNT(*) n, SUM(CASE WHEN last_checked IS NULL THEN 1 ELSE 0 END)"
+        " pending FROM urls WHERE active=1 AND ptype=?", (ptype,)).fetchone()
+    if not row or not row["n"] or row["pending"]:
+        return None
+    return {r["category"] for r in con.execute(
+        "SELECT DISTINCT i.category FROM items i JOIN urls u ON u.id=i.url_id"
+        " WHERE u.ptype=?", (ptype,))}
+
+
+def _breadcrumbs(con, ptype):
+    rows = con.execute(
+        "SELECT id, url, ptype, breadcrumb,"
+        " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+        "   AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)"
+        "   AS page_title"
+        " FROM urls WHERE active=1 AND ptype=? AND breadcrumb NOT IN ('', '[]')"
+        " AND breadcrumb IS NOT NULL", (ptype,)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            crumbs = json.loads(r["breadcrumb"])
+        except Exception:
+            continue
+        crumbs = [c for c in crumbs if c.get("title")
+                  and c["title"].strip().lower() != "home"]
+        if not crumbs:
+            continue
+        # A product page's breadcrumb ENDS WITH ITSELF, so its last crumb is
+        # not a parent. A part page's does not - its last crumb is the product
+        # family it belongs to, which is exactly the edge we want. Decide by
+        # comparing the last crumb's URL with the page's, never by page type.
+        norm = lambda u: (u or "").split("#")[0].split("?")[0].rstrip("/").lower()
+        path = [c["title"].strip() for c in crumbs]
+        if norm(crumbs[-1].get("url")) == norm(r["url"]):
+            path = path[:-1]
+        out.append({"id": r["id"], "url": r["url"],
+                    "title": r["page_title"] or "", "crumbs": path})
+    return out
+
+
+def _hierarchy_tree(pages):
+    """Nest pages under their own breadcrumb path.
+
+    The site publishes a JSON-LD breadcrumb on every page, and a part's
+    breadcrumb ends at its product family - so parts land under their product
+    without scraping a parametric table off all 190 product pages. Types whose
+    pages have no depth (a flat /part/ list) simply come out flat.
+    """
+    root = {"name": "", "children": {}, "pages": [], "count": 0}
+    for p in pages:
+        node = root
+        node["count"] += 1
+        for part in p["crumbs"]:
+            child = node["children"].get(part)
+            if child is None:
+                child = {"name": part, "children": {}, "pages": [], "count": 0}
+                node["children"][part] = child
+            node = child
+            node["count"] += 1
+        node["pages"].append(p)
+
+    def freeze(n, depth=0):
+        return {"name": n["name"], "count": n["count"], "depth": depth,
+                "pages": sorted(n["pages"], key=lambda x: x["title"] or x["url"]),
+                "children": [freeze(c, depth + 1)
+                             for c in sorted(n["children"].values(),
+                                             key=lambda c: c["name"])]}
+    return freeze(root)
 
 
 def _redirect_target(snap_dir, url):
@@ -522,12 +632,25 @@ def url_detail(url_id):
 
     cat_tree = _category_tree(sections.get("categories", []) if sections else [])
 
+    con3 = db.connect()
+    present = _cats_present_for_type(con3, u["ptype"] or "")
+    con3.close()
+
     library = []
     if sections:
         for cat, label in SECTION_LABELS:
             if cat == "categories":
                 continue                      # rendered as a tree instead
             items = sections.get(cat, [])
+            # once every page of this type is captured, a category that is
+            # empty across ALL of them does not belong to this page shape
+            if not items and present is not None and cat not in present:
+                continue
+            for it in items:
+                if isinstance(it, dict):
+                    it["item_key"] = runner.item_key(cat, it.get("title", ""),
+                                                     it.get("url", ""))
+                    it["backend"] = backend_system(cat, it.get("meta", ""))
             groups = []
             if any(i.get("group") for i in items):
                 order = []
@@ -539,7 +662,8 @@ def url_detail(url_id):
                         order.append(g)
                     by_group[g].append(i)
                 groups = [(g, by_group[g]) for g in order]
-            library.append({"label": label, "items": items, "groups": groups})
+            library.append({"label": label, "items": items, "groups": groups,
+                            "cat": cat})
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to)
@@ -772,7 +896,7 @@ def search_items():
             f"SELECT COUNT(*) FROM items i {wsql}", params).fetchone()[0]
         rows = con.execute(f"""
             SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
-                   u.url AS page_url, u.label,
+                   i.item_key, u.url AS page_url, u.label,
                    (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
                      AND s.status='ok' AND s.page_title<>''
                      ORDER BY s.id DESC LIMIT 1) AS page_title
@@ -786,7 +910,11 @@ def search_items():
             if key not in by_item:
                 by_item[key] = {"title": r["title"], "url": r["item_url"],
                                 "category": r["category"], "grp": r["grp"],
-                                "meta": r["meta"], "pages": []}
+                                "meta": r["meta"], "pages": [],
+                                "item_key": r["item_key"] or runner.item_key(
+                                    r["category"], r["title"], r["item_url"]),
+                                "backend": backend_system(r["category"],
+                                                          r["meta"])}
                 order.append(key)
             by_item[key]["pages"].append(
                 {"id": r["url_id"], "url": r["page_url"],
@@ -797,6 +925,93 @@ def search_items():
     return render_template("search.html", q=q, cat=cat, cats=cats,
                            groups=groups, total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS))
+
+
+@app.route("/api/suggest")
+def api_suggest():
+    """Type-ahead for content search: real item titles, most-used first."""
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify([])
+    cat = request.args.get("cat", "all")
+    where = ["i.title LIKE ?", "i.category<>'about'"]
+    params = [f"%{q}%"]
+    if cat != "all":
+        where.append("i.category=?")
+        params.append(cat)
+    con = db.connect()
+    rows = con.execute(
+        "SELECT i.title, i.category, COUNT(DISTINCT i.url_id) pages"
+        f" FROM items i WHERE {' AND '.join(where)}"
+        " GROUP BY i.title, i.category"
+        " ORDER BY (CASE WHEN i.title LIKE ? THEN 0 ELSE 1 END), pages DESC,"
+        " LENGTH(i.title) LIMIT 12", params + [f"{q}%"]).fetchall()
+    con.close()
+    labels = dict(SECTION_LABELS)
+    return jsonify([{"title": r["title"],
+                     "category": labels.get(r["category"], r["category"]),
+                     "pages": r["pages"]} for r in rows])
+
+
+@app.route("/item/<key>")
+def item_detail(key):
+    """One real-world item - a document, video, image, board - and every page
+    it is assigned to. The same datasheet can sit on forty product pages; this
+    is the view that answers "where does this thing appear?"."""
+    con = db.connect()
+    rows = con.execute("""
+        SELECT i.*, u.url AS page_url, u.ptype, u.label, u.last_status,
+               (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
+                 AND s.status='ok' AND s.page_title<>''
+                 ORDER BY s.id DESC LIMIT 1) AS page_title
+        FROM items i JOIN urls u ON u.id=i.url_id
+        WHERE i.item_key=? ORDER BY u.ptype, page_title""", (key,)).fetchall()
+    if not rows:
+        con.close()
+        abort(404)
+    first = rows[0]
+    # the richest meta wins: the same item can be listed tersely on one page
+    meta = max((r["meta"] or "" for r in rows), key=len)
+    item = {"title": first["title"], "url": first["item_url"],
+            "category": first["category"], "grp": first["grp"], "meta": meta,
+            "backend": backend_system(first["category"], meta),
+            "doc_type": document_type_of(meta)
+            if first["category"] == "documents" else "",
+            "label": dict(SECTION_LABELS).get(first["category"],
+                                              first["category"])}
+    pages = [{"id": r["url_id"], "url": r["page_url"],
+              "title": r["page_title"] or r["label"] or "",
+              "ptype": r["ptype"] or "", "grp": r["grp"] or "",
+              "status": r["last_status"] or ""} for r in rows]
+    by_type = {}
+    for p in pages:
+        by_type.setdefault(p["ptype"] or "Other", []).append(p)
+    con.close()
+    return render_template("item.html", item=item, pages=pages,
+                           by_type=sorted(by_type.items()))
+
+
+@app.route("/hierarchy")
+def hierarchy():
+    """A tree per page type, built from each page's own JSON-LD breadcrumb -
+    so it follows the site's structure and grows with new entries instead of
+    being a hand-maintained list."""
+    con = db.connect()
+    types = [r["ptype"] for r in con.execute(
+        "SELECT ptype, COUNT(*) n FROM urls WHERE active=1 AND ptype<>''"
+        " GROUP BY ptype ORDER BY n DESC")]
+    sel = request.args.get("type") or (types[0] if types else "")
+    pages = _breadcrumbs(con, sel)
+    counts = {t: con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1 AND ptype=? AND"
+        " breadcrumb NOT IN ('','[]') AND breadcrumb IS NOT NULL",
+        (t,)).fetchone()[0] for t in types}
+    total = con.execute("SELECT COUNT(*) FROM urls WHERE active=1 AND ptype=?",
+                        (sel,)).fetchone()[0]
+    con.close()
+    tree = _hierarchy_tree(pages)
+    return render_template("hierarchy.html", types=types, sel=sel, tree=tree,
+                           counts=counts, total=total, shown=len(pages))
 
 
 @app.route("/export.xlsx")

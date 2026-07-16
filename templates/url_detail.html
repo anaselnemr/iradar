@@ -61,6 +61,22 @@
       </details>
       {% endif %}
 
+      {#- one row per item. The title opens the item's OWN page (every page it
+          is assigned to); when the item is itself a page we track, it opens
+          that page's library instead, which is the more useful destination. -#}
+      {% macro libitem(it) %}
+      <li>
+        {% if it.page_id %}
+          <a href="{{ url_for('url_detail', url_id=it.page_id) }}" title="Open our captured content for this page">{{ it.title or it.url }}</a>
+        {% elif it.item_key %}
+          <a href="{{ url_for('item_detail', key=it.item_key) }}" title="Every page this is assigned to">{{ it.title or it.url }}</a>
+        {% else %}{{ it.title }}{% endif %}
+        {% if it.url %}<a href="{{ it.url }}" target="_blank" class="liveurl" title="Open the item itself">↗</a>{% endif %}
+        {% if it.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ it.backend }}</span>{% endif %}
+        {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
+      </li>
+      {% endmacro %}
+
       {% for cat in library %}
       <details class="libcat" {% if cat['items'] and loop.index <= 3 %}open{% endif %}>
         <summary>{{ cat['label'] }} <b>{{ cat['items']|length }}</b></summary>
@@ -70,28 +86,12 @@
           {% for gname, gitems in cat['groups'] %}
           <h4 class="libgroup">{{ gname }} <span class="muted">({{ gitems|length }})</span></h4>
           <ul class="liblist">
-            {% for it in gitems %}
-            <li>
-              {% if it.page_id %}<a href="{{ url_for('url_detail', url_id=it.page_id) }}" title="Open our captured content for this page">{{ it.title or it.url }}</a>
-                <a href="{{ it.url }}" target="_blank" class="liveurl" title="Open the live page">↗</a>
-              {% elif it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
-              {% else %}{{ it.title }}{% endif %}
-              {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
-            </li>
-            {% endfor %}
+            {% for it in gitems %}{{ libitem(it) }}{% endfor %}
           </ul>
           {% endfor %}
         {% else %}
         <ul class="liblist">
-          {% for it in cat['items'] %}
-          <li>
-            {% if it.page_id %}<a href="{{ url_for('url_detail', url_id=it.page_id) }}" title="Open our captured content for this page">{{ it.title or it.url }}</a>
-              <a href="{{ it.url }}" target="_blank" class="liveurl" title="Open the live page">↗</a>
-            {% elif it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>
-            {% else %}{{ it.title }}{% endif %}
-            {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
-          </li>
-          {% endfor %}
+          {% for it in cat['items'] %}{{ libitem(it) }}{% endfor %}
         </ul>
         {% endif %}
       </details>

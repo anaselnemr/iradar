@@ -6,7 +6,9 @@ snapshots are deleted UNLESS they are referenced by a flagged change (so you
 can always open old diffs). This keeps disk usage flat even at 3-4k URLs.
 """
 import asyncio
+import hashlib
 import json
+import re
 import shutil
 import threading
 import time
@@ -36,6 +38,23 @@ def _snapshot_dir(url_id, ts_label):
     return db.SNAP_DIR / str(url_id) / ts_label
 
 
+# breadcrumb is the page's own hierarchy, not library content: it lives on the
+# urls row and must never reach search results.
+NON_LIBRARY_CATS = {"breadcrumb"}
+
+
+def item_key(category, title, item_url):
+    """Stable id for one real-world item across every page that carries it.
+
+    Identity is (category, normalized title, url): the same datasheet listed on
+    forty product pages is ONE document with forty pages, while two distinct
+    products sharing a vendor URL stay two items (title is part of the key).
+    """
+    norm = re.sub(r"\s+", " ", (title or "")).strip().lower()
+    raw = f"{category}|{norm}|{(item_url or '').strip().rstrip('/').lower()}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
 def index_items(con, url_id, snap_dir, dead=False):
     """Refresh the searchable item index for a URL from its current snapshot.
 
@@ -53,7 +72,7 @@ def index_items(con, url_id, snap_dir, dead=False):
         return
     rows = []
     for cat, items in sections.items():
-        if not isinstance(items, list):
+        if not isinstance(items, list) or cat in NON_LIBRARY_CATS:
             continue
         for it in items:
             if not isinstance(it, dict):
@@ -63,11 +82,12 @@ def index_items(con, url_id, snap_dir, dead=False):
                 continue
             rows.append((url_id, cat, (it.get("group") or "")[:80],
                          title[:300], (it.get("url") or "")[:600],
-                         (it.get("meta") or "")[:260]))
+                         (it.get("meta") or "")[:260],
+                         item_key(cat, title, it.get("url") or "")))
     if rows:
         con.executemany(
-            "INSERT INTO items(url_id, category, grp, title, item_url, meta)"
-            " VALUES(?,?,?,?,?,?)", rows)
+            "INSERT INTO items(url_id, category, grp, title, item_url, meta,"
+            " item_key) VALUES(?,?,?,?,?,?,?)", rows)
 
 
 def _prune_snapshot(con, snap_row):
@@ -204,8 +224,10 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
         # still gets a snapshot (so a revival shows up as a change) but it is
         # reported as not live and kept out of the library index.
         dead = (res.get("http_status") or 0) >= 400
-        con.execute("UPDATE urls SET last_http=? WHERE id=?",
-                    (res.get("http_status"), url_id))
+        con.execute("UPDATE urls SET last_http=?, breadcrumb=? WHERE id=?",
+                    (res.get("http_status"),
+                     json.dumps(res.get("breadcrumb") or [], ensure_ascii=False),
+                     url_id))
         prev = con.execute(
             "SELECT * FROM snapshots WHERE url_id=? AND status='ok' AND id<>?"
             " AND dir<>'' AND rejected=0 ORDER BY id DESC LIMIT 1",

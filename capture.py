@@ -275,7 +275,7 @@ SECTIONS_JS = r"""
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
                overview: [], applications: [], about: [], categories: [],
-               products: [], images: []};
+               products: [], breadcrumb: [], images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -348,7 +348,11 @@ SECTIONS_JS = r"""
 
   const normT = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
   const push = (cat, title, url, meta, group) => {
-    title = (title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    // 200 chars is a sane cap for a card title, but overview/about entries ARE
+    // prose - their text is the item - and capping those chopped a paragraph
+    // mid-sentence, hiding the tail from the library.
+    const cap = (cat === 'overview' || cat === 'about') ? 4000 : 200;
+    title = (title || '').replace(/\s+/g, ' ').trim().slice(0, cap);
     if (!title || title.length < 3) return;
     // NB: no nav-label filter here - "Documents"/"Design resources" are real
     // teaser-card titles on hub pages. Nav strips are excluded structurally
@@ -489,9 +493,13 @@ SECTIONS_JS = r"""
       // is a label, not a title - identify it structurally, not by name
       const chipEl = card.querySelector('.st-title-dsobject, .labelname');
       const chip = chipEl ? (chipEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
-      // never let the partner badge ("<vendor>Preferred") pose as the title
+      // never let the partner badge ("<vendor>Preferred") pose as the title.
+      // NB .board-anchor: board cards carry no .anchor-title at all, and
+      // without it the fallback grabbed the card's description paragraph and
+      // stored THAT as a title ("PSOC 5LP I/O access in a breadboard-
+      // compatible format...") - a phantom extra card on every board tab.
       const titleEl = card.querySelector(
-        '.anchor-title, .heading-dsobject a, .heading-dsobject, ' +
+        '.anchor-title, .board-anchor, .heading-dsobject a, .heading-dsobject, ' +
         'h3:not(.heading-partnerobject), h4:not(.heading-partnerobject)');
       let t = titleEl ? (titleEl.innerText || titleEl.textContent || '')
                           .replace(/\s+/g, ' ').trim() : '';
@@ -511,7 +519,8 @@ SECTIONS_JS = r"""
       }
       if (!t || t === chip || t.length < 3) return;
       let href = '';
-      const a1 = card.querySelector('.anchor-title[href], .heading-dsobject a[href]');
+      const a1 = card.querySelector(
+        '.anchor-title[href], .board-anchor[href], .heading-dsobject a[href]');
       if (a1) {
         href = a1.href;
       } else {
@@ -597,21 +606,92 @@ SECTIONS_JS = r"""
     push(cat, title, vurl, metaParts.join(' | '));
   });
 
-  // "Related products" is a real, visible section with its own heading and its
-  // own anchor-nav tab. Its cards were the source of the phantom "documents":
-  // filing them as documents was the bug, but dropping them entirely trades a
-  // wrong category for no category, so they get their own. Each card links to
-  // the same product several times (image, title, product table, CTA); one
-  // entry per destination is sorted out in Python (_clean_link_list).
-  for (const h of document.querySelectorAll('h2, h3')) {
-    if (out.products.length) break;
-    if (isPageChrome(h)) continue;
-    const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!/^related products?$/i.test(ht)) continue;
-    const c = containerFor(h);
-    if (!c) break;
-    c.querySelectorAll('a[href]').forEach(a => collectAnchor('products', a, true));
-    break;
+  // The related-families carousel. ONE module that wears different names: it
+  // is "Related products" on one page and "Related applications" on the next,
+  // with a "View product family" / "View application family" button. Matching
+  // it by name missed whole modules (a 7-card one stored as zero), and the
+  // nearest heading above it lies too - on one page that is "Block diagram".
+  // So: find it by its component class, and name it from the anchor-nav tab
+  // that actually points at its section.
+  // The module's real name is its anchor-nav tab ("Related applications" on
+  // one page, "Related products" on the next). The tab's href points at that
+  // section's own wrapper (#related = div.relAppcarousel-main), so containment
+  // is the definitive answer - but measured against live pages the carousel
+  // element sits just OUTSIDE that wrapper, so fall back to the first tab whose
+  // section starts at or after the module. Picking the last tab BEFORE it is
+  // what produced labels like "Block diagram".
+  const navLabelFor = (el) => {
+    let following = '';
+    for (const a of document.querySelectorAll(
+        '#stickyNavTab a[href^="#"], .maintabs a[href^="#"], ' +
+        '[class*="tabbar" i] a[href^="#"], [class*="anchor-nav" i] a[href^="#"], ' +
+        '[class*="stickynav" i] a[href^="#"]')) {
+      const id = (a.getAttribute('href') || '').slice(1);
+      if (!id) continue;
+      let marker = null;
+      try { marker = document.getElementById(id); } catch (e) { continue; }
+      if (!marker) continue;
+      const txt = (a.innerText || '').replace(/\s+/g, ' ').trim();
+      if (!txt) continue;
+      if (marker.contains(el)) return txt;
+      // PRECEDING here means el precedes the marker, i.e. the marker is after it
+      if (!following &&
+          (marker.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING))
+        following = txt;
+    }
+    return following;
+  };
+  const famMods = Array.from(document.querySelectorAll(
+    '.functionalrelatedcarousel, .relAppSwiper, ' +
+    '[id*="related_application_carousel" i]'));
+  for (const mod of famMods.filter(m => !famMods.some(o => o !== m && o.contains(m)))) {
+    const label = navLabelFor(mod) || 'Related products';
+    for (const card of mod.querySelectorAll('.card')) {
+      const tEl = card.querySelector('.card-title');
+      const title = tEl ? (tEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      if (!title) continue;
+      // the family page, never its /product-table/ twin (a separate link in
+      // the same card that _clean_link_list would otherwise have to guess at)
+      let href = '';
+      const main = card.querySelector('a.cardlink-hover[href], a.cardlink-ref[href]');
+      if (main) href = main.href;
+      if (!href) {
+        const a = card.querySelector('a[href]');
+        if (a) href = a.href;
+      }
+      // whatever the card carries inside - feature/benefit bullets - minus the
+      // CTA, which is a list item of the same list
+      const bullets = Array.from(card.querySelectorAll('ul li'))
+        .filter(li => !li.classList.contains('label-style'))
+        .map(li => (li.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter(t => t.length > 1);
+      const cta = card.querySelector('.label-style');
+      const bits = [];
+      if (cta) bits.push((cta.innerText || '').replace(/\s+/g, ' ').trim());
+      if (bullets.length) bits.push(bullets.slice(0, 8).join(' • '));
+      push('products', title, href, bits.join(' | '), label);
+    }
+  }
+
+  // The site's own canonical hierarchy for this page. Read from JSON-LD, not
+  // from the DOM breadcrumb: that container also holds the Facebook/LinkedIn/
+  // Email share row, and on product pages it repeats a level and drops the leaf.
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    if (out.breadcrumb.length) break;
+    let j;
+    try { j = JSON.parse(s.textContent); } catch (e) { continue; }
+    for (const o of (Array.isArray(j) ? j : [j])) {
+      if (!o || o['@type'] !== 'BreadcrumbList' ||
+          !Array.isArray(o.itemListElement)) continue;
+      for (const e of o.itemListElement) {
+        const name = e.name || (e.item && e.item.name) || '';
+        const u = typeof e.item === 'string' ? e.item
+                                            : ((e.item && e.item['@id']) || '');
+        if (name) out.breadcrumb.push({title: String(name).replace(/\s+/g, ' ').trim(),
+                                       url: String(u || ''), meta: ''});
+      }
+      break;
+    }
   }
 
   // Gated document promo pages (/gated/...): the whitepaper IS the page, and
@@ -1452,6 +1532,11 @@ async def capture_one(browser, url, out_dir):
                         it["url"] = _delivery_url(it["url"])
         except Exception:
             pass
+
+        # the page's own hierarchy, kept on the URL row so the tree can be
+        # built with one query instead of opening 4,145 snapshot files
+        result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
+                                if isinstance(b, dict) and b.get("title")]
 
         (out_dir / "text.txt").write_text(text, encoding="utf-8")
         (out_dir / "images.json").write_text(

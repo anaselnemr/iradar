@@ -7,9 +7,14 @@
   <p class="muted" style="margin:0">Documents, boards, tools, trainings, videos,
     features — find any item and see every page it lives on.
     <b>{{ '{:,}'.format(indexed) }}</b> items indexed so far.</p>
-  <form method="get" class="bigsearch">
-    <input class="grow" type="text" name="q" value="{{ q }}" autofocus
-           placeholder="AN85951 · CY8CKIT-042 · datasheet · TRACE32 · IBIS model…">
+  <form method="get" class="bigsearch" id="sform" autocomplete="off">
+    <span class="grow sugwrap">
+      <input class="grow" type="text" name="q" value="{{ q }}" autofocus id="sq"
+             role="combobox" aria-expanded="false" aria-controls="suggest"
+             aria-autocomplete="list"
+             placeholder="AN85951 · CY8CKIT-042 · datasheet · TRACE32 · IBIS model…">
+      <div class="suggest" id="suggest" role="listbox"></div>
+    </span>
     <input type="hidden" name="cat" value="{{ cat }}">
     <button>Search</button>
   </form>
@@ -41,10 +46,11 @@
     {% for g in groups %}
     <div class="rescard">
       <div class="hit-head">
-        {% if g.url %}<a href="{{ g.url }}" target="_blank" class="hit-title">{{ g.title }}</a>
-        {% else %}<span class="hit-title">{{ g.title }}</span>{% endif %}
+        <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
         <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
         <span class="badge {{ 'b-changed' if g.pages|length > 1 else 'b-unchanged' }}">{{ g.pages|length }} page{{ 's' if g.pages|length > 1 }}</span>
+        {% if g.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ g.backend }}</span>{% endif %}
+        {% if g.url %}<a href="{{ g.url }}" target="_blank" class="liveurl">open ↗</a>{% endif %}
       </div>
       {% if g.meta %}
       <div class="meta-chips">
@@ -52,15 +58,88 @@
       </div>
       {% endif %}
       <ul class="pagelist">
-        {% for p in g.pages %}
+        {% for p in g.pages[:6] %}
         <li>
           <a href="{{ url_for('url_detail', url_id=p.id) }}" class="titlelink">{{ p.title | clean_title | pretty_slug }}</a>
           <a href="{{ p.url }}" target="_blank" class="liveurl" style="margin-left:8px">{{ p.url }}</a>
         </li>
         {% endfor %}
+        {% if g.pages|length > 6 %}
+        <li><a href="{{ url_for('item_detail', key=g.item_key) }}" class="titlelink">
+          and {{ g.pages|length - 6 }} more — see all pages using this item →</a></li>
+        {% endif %}
       </ul>
     </div>
     {% endfor %}
   {% endif %}
 {% endif %}
+
+<script>
+// Type-ahead over the real item index: no static word list, it answers from
+// whatever has been captured so far.
+(function () {
+  const input = document.getElementById('sq');
+  const box = document.getElementById('suggest');
+  const form = document.getElementById('sform');
+  if (!input || !box) return;
+  const cat = form.querySelector('input[name=cat]').value || 'all';
+  let items = [], sel = -1, timer = null, lastQ = null;
+
+  const close = () => { box.classList.remove('on'); input.setAttribute('aria-expanded', 'false'); sel = -1; };
+  const draw = () => {
+    if (!items.length) return close();
+    box.innerHTML = '';
+    items.forEach((it, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      if (i === sel) b.className = 'sel';
+      const t = document.createElement('span');
+      t.className = 'stitle';
+      t.textContent = it.title;
+      const m = document.createElement('span');
+      m.className = 'smeta';
+      m.textContent = it.category + ' · ' + it.pages + ' page' + (it.pages === 1 ? '' : 's');
+      b.append(t, m);
+      b.addEventListener('click', () => { input.value = it.title; close(); form.submit(); });
+      box.appendChild(b);
+    });
+    box.classList.add('on');
+    input.setAttribute('aria-expanded', 'true');
+  };
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (q.length < 2) return close();
+    timer = setTimeout(async () => {
+      if (q === lastQ) return;
+      lastQ = q;
+      try {
+        const r = await fetch('/api/suggest?q=' + encodeURIComponent(q) + '&cat=' + encodeURIComponent(cat));
+        items = await r.json();
+        sel = -1;
+        draw();
+      } catch (e) { close(); }
+    }, 140);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (!box.classList.contains('on')) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      sel += (e.key === 'ArrowDown' ? 1 : -1);
+      if (sel < 0) sel = items.length - 1;
+      if (sel >= items.length) sel = 0;
+      draw();
+    } else if (e.key === 'Enter' && sel >= 0) {
+      e.preventDefault();
+      input.value = items[sel].title;
+      close();
+      form.submit();
+    } else if (e.key === 'Escape') { close(); }
+  });
+  document.addEventListener('click', (e) => { if (!box.contains(e.target) && e.target !== input) close(); });
+})();
+</script>
 {% endblock %}
