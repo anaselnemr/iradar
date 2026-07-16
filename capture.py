@@ -99,8 +99,23 @@ def _clean_link_list(items, page_base):
     return [best[k] for k in order]
 
 
+def _feed_lang(o):
+    """The language a feed record is in, as an upper-case code, or ''."""
+    v = o.get("languages") or o.get("language")
+    if isinstance(v, list):
+        v = v[0] if v else ""
+    return re.sub(r"[^A-Za-z]", "", str(v or "")).upper()[:2]
+
+
 def _api_url_map(bodies):
-    """Build {normalized title -> URL} from the page's own dataApi feeds."""
+    """Map a title (and language) to its URL from the page's own dataApi feeds.
+
+    Returns {normalized title: {lang: url, '': first_url}}. The language matters:
+    a documents table lists EN and JA variants under one title, and matching on
+    title alone gave BOTH the first variant's URL - so the English row pointed
+    at the Japanese file. The '' key keeps the old title-only behaviour as a
+    fallback for records with no stated language.
+    """
     out = {}
 
     def visit(o):
@@ -120,7 +135,11 @@ def _api_url_map(bodies):
                     if u.startswith("/"):
                         u = "https://www.infineon.com" + u
                     if u.startswith("http"):
-                        out.setdefault(_norm_title(title), _delivery_url(u))
+                        by_lang = out.setdefault(_norm_title(title), {})
+                        by_lang.setdefault("", _delivery_url(u))
+                        lang = _feed_lang(o)
+                        if lang:
+                            by_lang.setdefault(lang, _delivery_url(u))
                         break
             for v in o.values():
                 visit(v)
@@ -134,6 +153,16 @@ def _api_url_map(bodies):
         except Exception:
             continue
     return out
+
+
+# A document's language sits in its meta ("... | JA | 04_00 | 1.03MB | ...").
+_META_LANG_RE = re.compile(r"(?:^|\|)\s*([A-Z]{2}(?:,[A-Z]{2})*)\s*(?:\||$)")
+
+
+def _item_lang(meta):
+    """The language code from a library item's meta, or '' (first if several)."""
+    m = _META_LANG_RE.search(meta or "")
+    return m.group(1).split(",")[0] if m else ""
 
 # Document titles concatenate badge spans (type/access/version/size/date),
 # sometimes joined by zero-width characters: cut everything from the badge
@@ -1688,7 +1717,13 @@ async def capture_one(browser, url, out_dir):
                     for it in items:
                         if not isinstance(it, dict) or it.get("url"):
                             continue
-                        u = api_map.get(_norm_title(it.get("title", "")))
+                        by_lang = api_map.get(_norm_title(it.get("title", "")))
+                        if not by_lang:
+                            continue
+                        # give a row the URL for ITS language, so an EN and a JA
+                        # variant of one title do not both get the first file
+                        lang = _item_lang(it.get("meta", ""))
+                        u = by_lang.get(lang) or by_lang.get("")
                         if u:
                             it["url"] = u
                             filled += 1

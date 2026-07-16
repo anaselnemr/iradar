@@ -169,14 +169,15 @@ def verify(snap, sections, live, snap_dir):
                 fail = True
                 reasons.append(f"junk title in {cat}: {t[:40]!r}")
                 break
-            # A url tells two items apart; a link-less item has none, so its
-            # body (meta) has to. Infineon genuinely ships two About tabs under
-            # the same header with different text, and a documents table lists
-            # gated EN and JA variants of one title - both real, neither a
-            # duplicate. Keying only on (title, url) flagged them falsely. This
-            # mirrors the capture's own key exactly.
-            url = it.get("url", "")
-            k = (t.lower(), url, "" if url else (it.get("meta", "") or "")[:80])
+            # Identity is title + url + meta, all three. Two items are the same
+            # only when all match; anything else is a distinct item. This is
+            # what the live page shows: two About tabs share a header with
+            # different bodies, and a documents table lists EN and JA variants
+            # of one title - and Infineon reuses one asset URL across those
+            # language variants, so url alone does NOT separate them. The meta
+            # (which carries the language, size and version) is what does. A
+            # genuine duplicate still matches on all three and is still flagged.
+            k = (t.lower(), it.get("url", ""), (it.get("meta", "") or "")[:80])
             if k in seen:
                 reasons.append(f"duplicate item in {cat}: {t[:40]!r}")
                 break
