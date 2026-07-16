@@ -105,6 +105,20 @@ PANE_COUNT_JS = r"""
   // one result, not three: li > .mainboard > .wholepcbdata all match, so keep
   // only the outermost of any nest
   cards = cards.filter(c => !cards.some(o => o !== c && o.contains(c)));
+  // Some components render each card TWICE - a desktop node and a mobile node,
+  // one hidden by CSS at any viewport - so counting DOM elements over-reported
+  // a 25-card tab as 28. The capture dedups by title; a person sees only the
+  // visible copy. Count only cards that are actually displayed.
+  cards = cards.filter(c => c.offsetParent !== null &&
+                            c.getClientRects().length > 0);
+  // a real result has a title; an empty spacer card does not. The capture
+  // skips title-less cards, so counting them here over-reported the tab.
+  // "Title" is any meaningful line, not a specific class, so download rows
+  // (no .anchor-title) still count.
+  const FURNITURE = /^(download|read more.*|watch video|add to cart.*|log ?in|show (more|all)|view (more|all))$/i;
+  cards = cards.filter(c => (c.innerText || '').split('\n')
+    .some(s => { s = s.replace(/\s+/g, ' ').trim();
+                 return s.length > 3 && !FURNITURE.test(s); }));
   return {id: act.id, cards: cards.length};
 }
 """

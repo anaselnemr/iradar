@@ -979,9 +979,17 @@ SECTIONS_JS = r"""
     const cells = Array.from(tr.querySelectorAll('td'))
       .map(td => (td.innerText || '').replace(/\s+/g, ' ').trim())
       .filter(Boolean);
-    if (cells.length < 2 || cells[0].length < 8) return;
+    const dtype = columnValue(tr, 'type');
+    // A document code can be short - "TA1226" is 6 chars, like "AN82156" - so
+    // a blunt length>=8 guard dropped three real gated documents. Keep the row
+    // when it actually looks like a document (a Type cell, or a format/access
+    // cell), which still rejects spacer/junk rows without those.
+    const looksDoc = dtype || cells.some(c =>
+      /^(new |updated )?(pdf|zip|xlsx?|txt|pptx?|docx?)$/i.test(c) ||
+      /^(public|confidential|restricted|myinfineon)$/i.test(c));
+    if (cells.length < 2 || cells[0].length < 3 || !looksDoc) return;
     push('documents', cells[0].replace(/\s*(New|Updated)$/i, ''), '',
-         cells.slice(1, 9).join(' | '), '', columnValue(tr, 'type'));
+         cells.slice(1, 9).join(' | '), '', dtype);
   });
 
   // Pass 2: heading-based fallback, only for categories still empty
@@ -1690,9 +1698,18 @@ async def capture_one(browser, url, out_dir):
                         continue
                     # twins = same normalized title AND same link; distinct
                     # products can share one vendor URL, so title is part of
-                    # the identity
+                    # the identity. A link-less (gated) card has no url to tell
+                    # variants apart, so its language-bearing meta joins the key
+                    # - or a CN and a JA "001-13679_SPIS" datasheet collapse
+                    # into one and a real document is lost (same bug the
+                    # documents table had).
                     norm_t = re.sub(r"\s+", "", title_l)
-                    ident = (norm_t, it.get("url", "").lower())
+                    url_l = it.get("url", "").lower()
+                    # language, not the whole meta: two real variants differ by
+                    # language (SPIS CN vs JA), but the same card rendered for
+                    # desktop and mobile has jittery meta yet one language, so
+                    # keying on full meta wrongly kept those as separate copies.
+                    ident = (norm_t, url_l or ("|" + _item_lang(it.get("meta", ""))))
                     k = (ident, it.get("group", ""))
                     prev = best.get(k)
                     if prev is None:
