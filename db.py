@@ -108,6 +108,10 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_items_url ON items(url_id);
     CREATE INDEX IF NOT EXISTS idx_items_title ON items(title);
     CREATE INDEX IF NOT EXISTS idx_items_cat ON items(category);
+    -- the content filters ask EXISTS(items WHERE url_id=? AND category=?) once
+    -- per url; without this composite index that was a 37-SECOND scan of the
+    -- items table per dashboard load. With it, each check is a single seek.
+    CREATE INDEX IF NOT EXISTS idx_items_url_cat ON items(url_id, category);
     CREATE INDEX IF NOT EXISTS idx_snapshots_url ON snapshots(url_id, ts);
     CREATE INDEX IF NOT EXISTS idx_changes_url ON changes(url_id, ts);
     """)

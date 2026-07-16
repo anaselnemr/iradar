@@ -56,7 +56,7 @@
   </div>
 </details>
 
-<div class="card">
+<div class="card" id="trackpanel">
   <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">Tracked pages</h2>
     <span class="exports">Export all {{ counts.total }}:
@@ -220,7 +220,7 @@
 </div>
 
 <script>
-const TOTAL_MATCH = {{ total_match }};
+let TOTAL_MATCH = {{ total_match }};  // updated after an in-place filter swap
 function selected() { return document.querySelectorAll('.rowsel:checked').length; }
 function allMatching() { return document.getElementById('all-matching').value === '1'; }
 function refreshCount() {
@@ -249,25 +249,76 @@ function selectAllMatching() {
   } else { am.value = '1'; }
   refreshCount();
 }
-// shift-click selects the whole range between the last-clicked box and this one
-const rowBoxes = Array.from(document.querySelectorAll('.rowsel'));
+// row-selection wiring, re-run after an in-place filter swap replaces the rows
 let lastClickedBox = null;
-rowBoxes.forEach(cb => cb.addEventListener('click', (e) => {
-  if (e.shiftKey && lastClickedBox && lastClickedBox !== cb) {
-    const a = rowBoxes.indexOf(lastClickedBox), b = rowBoxes.indexOf(cb);
-    rowBoxes.slice(Math.min(a, b), Math.max(a, b) + 1)
-      .forEach(x => x.checked = cb.checked);
-  }
-  lastClickedBox = cb;
-  document.getElementById('all-matching').value = '0';
-  refreshCount();
-}));
-const selall = document.getElementById('selall');
-if (selall) selall.addEventListener('change', () => {
-  document.getElementById('all-matching').value = '0';
-  document.querySelectorAll('.rowsel').forEach(cb => cb.checked = selall.checked);
-  refreshCount();
+function initTable() {
+  const rowBoxes = Array.from(document.querySelectorAll('.rowsel'));
+  lastClickedBox = null;
+  rowBoxes.forEach(cb => cb.addEventListener('click', (e) => {
+    if (e.shiftKey && lastClickedBox && lastClickedBox !== cb) {
+      const a = rowBoxes.indexOf(lastClickedBox), b = rowBoxes.indexOf(cb);
+      rowBoxes.slice(Math.min(a, b), Math.max(a, b) + 1)
+        .forEach(x => x.checked = cb.checked);
+    }
+    lastClickedBox = cb;
+    document.getElementById('all-matching').value = '0';
+    refreshCount();
+  }));
+  const selall = document.getElementById('selall');
+  if (selall) selall.addEventListener('change', () => {
+    document.getElementById('all-matching').value = '0';
+    document.querySelectorAll('.rowsel').forEach(cb => cb.checked = selall.checked);
+    refreshCount();
+  });
+}
+initTable();
+
+// Filter in place instead of a full page reload. Every filter control (the
+// toolbar form, the quick chips, the pager) points back at this same page;
+// intercept those, fetch the new results, and swap ONLY the tracked-pages
+// panel - no white flash, no scroll jump, no re-running the whole page. Any
+// failure falls back to an ordinary navigation, so it can never get stuck.
+const panel = document.getElementById('trackpanel');
+function pjax(url) {
+  panel.style.opacity = '0.55';
+  fetch(url, {headers: {'X-Requested-With': 'fetch'}})
+    .then(r => r.text())
+    .then(html => {
+      const fresh = new DOMParser().parseFromString(html, 'text/html')
+        .getElementById('trackpanel');
+      if (!fresh) { window.location.href = url; return; }
+      panel.innerHTML = fresh.innerHTML;
+      // keep the bulk "select all N matching" count in step with the new filter
+      const showing = Array.from(panel.querySelectorAll('.muted'))
+        .map(e => e.textContent).find(t => /Showing.*of\s+[\d,]/.test(t)) || '';
+      const m = /of\s+([\d,]+)/.exec(showing);
+      if (m) TOTAL_MATCH = parseInt(m[1].replace(/,/g, ''));
+      history.pushState(null, '', url);
+      panel.style.opacity = '';
+      initTable();
+    })
+    .catch(() => { window.location.href = url; });
+}
+// text search: also intercept so typing + Enter filters in place
+panel.addEventListener('submit', (e) => {
+  const f = e.target.closest('form.toolbar');
+  if (!f) return;                      // the bulk form still submits normally
+  e.preventDefault();
+  const p = new URLSearchParams(new FormData(f)).toString();
+  pjax(f.getAttribute('action') + (p ? '?' + p : ''));
 });
+panel.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (!a) return;
+  let u; try { u = new URL(a.href, location.origin); } catch (_) { return; }
+  // only links that stay on this dashboard (filters, chips, pager) - never a
+  // row's link out to a page's library
+  if (u.pathname === '{{ url_for("index") }}' && u.origin === location.origin) {
+    e.preventDefault();
+    pjax(a.getAttribute('href') || a.href);
+  }
+});
+window.addEventListener('popstate', () => pjax(location.pathname + location.search));
 function bulk(action, btn) {
   const n = allMatching() ? TOTAL_MATCH : selected();
   if (!n) { alert('Tick at least one page first.'); return; }
