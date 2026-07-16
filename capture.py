@@ -436,7 +436,15 @@ SECTIONS_JS = r"""
         t = cells[0].replace(/\s*(New|Updated)$/i, '');
       }
       if (!t || t.length < 3) return;      // icon anchor in a title-less row
-      meta = cells.filter(x => x !== t).slice(0, 8).join(' | ');
+      // Drop the row's OWN title cell from its meta. Compare normalised: the
+      // title has had its "New"/"Updated" badge stripped while the cell still
+      // carries it, so a plain !== left the title sitting in front of the meta
+      // - which made the document's TYPE read as its title, and the DAM /
+      // Windchill lookup fail on every New-badged document.
+      const normCell = (s) => s.replace(/\s*(New|Updated)$/i, '')
+                               .replace(/\s+/g, ' ').trim().toLowerCase();
+      const tNorm = normCell(t);
+      meta = cells.filter(x => normCell(x) !== tNorm).slice(0, 8).join(' | ');
     } else if (GENERIC_LINK.test(t)) {
       // teaser card outside a pane: its heading IS the title (not strict)
       const ct = cardTitle(a, false);
