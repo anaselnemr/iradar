@@ -136,10 +136,20 @@ def _has(cat):
             f" AND i.category='{cat}')")
 
 
+def _nohas(cat):
+    # captured, but this category never appeared. Guarded on last_checked so an
+    # uncaptured page (content unknown) is not counted as "no X".
+    return "u.last_checked IS NOT NULL AND NOT " + _has(cat)
+
+
 def _flag(block, key):
     """Filter on a presence-only boolean stored in urls.flags (JSON)."""
     return (f"(u.flags IS NOT NULL AND u.flags<>''"
             f" AND json_extract(u.flags, '$.{block}.{key}') = 1)")
+
+
+def _noflag(block, key):
+    return "u.last_checked IS NOT NULL AND NOT " + _flag(block, key)
 
 
 # real monitoring states - what the watcher says about the page (OR-combined)
@@ -155,43 +165,66 @@ STATUS_FILTERS = {
     "new":       ("Not captured yet", "u.last_checked IS NULL"),
 }
 
-# properties of the page itself / what we captured from it (AND-combined)
+# properties of the page itself / what we captured from it (AND-combined).
+# Every content attribute gets a Has and a No half, generated together so the
+# two can never drift apart or one be forgotten.
+#   stem: short, stable key fragment (used in URLs) -> library category, label
+_CONTENT_ATTRS = [
+    ("docs",       "documents",        "documents"),
+    ("design",     "design_resources", "design resources"),
+    ("features",   "features",         "key features"),
+    ("benefits",   "benefits",         "benefits"),
+    ("apps",       "applications",     "applications"),
+    ("categories", "categories",       "browse-by-category"),
+    ("products",   "products",         "related products"),
+    ("news",       "news",             "news & highlights"),
+    ("trainings",  "trainings",        "trainings & webinars"),
+    ("videos",     "videos",           "videos"),
+]
+
 ATTR_FILTERS = {
-    "checked":      ("Captured", "u.last_checked IS NOT NULL"),
+    "checked":  ("Captured", "u.last_checked IS NOT NULL"),
     # "live" means a visitor gets the page: a 2xx with an empty body does not
     # count, so blank pages are excluded here and counted as not live below.
-    "live":         ("Live (HTTP OK)",
-                     "u.last_http IS NOT NULL AND u.last_http < 400"
-                     " AND IFNULL(u.last_status,'') <> 'blank'"),
-    "notlive":      ("Not live (404/500/blank)",
-                     "(u.last_http IS NOT NULL AND u.last_http >= 400)"
-                     " OR u.last_status='blank'"),
-    "hasdocs":      ("Has documents", _has("documents")),
-    "nodocs":       ("No documents",
-                     "u.last_checked IS NOT NULL AND NOT " + _has("documents")),
-    "hasvideos":    ("Has videos", _has("videos")),
-    "hasnews":      ("Has news & highlights", _has("news")),
-    "hastrainings": ("Has trainings & webinars", _has("trainings")),
-    "hasdesign":    ("Has design resources", _has("design_resources")),
-    "hasfeatures":  ("Has key features", _has("features")),
-    "hasbenefits":  ("Has benefits", _has("benefits")),
-    "hasapps":      ("Has applications", _has("applications")),
-    "hascategories": ("Has browse-by-category", _has("categories")),
-    "hasproducts":  ("Has related products", _has("products")),
-    # presence-only blocks: we store the boolean, never the churny content
-    "hastable":     ("Has products table", _flag("product_table", "exists")),
-    "hastablerows": ("Products table has rows",
-                     _flag("product_table", "has_content")),
-    "hascommunity": ("Has developer community",
-                     _flag("developer_community", "exists")),
-    "hasthreads":   ("Developer community has threads",
-                     _flag("developer_community", "has_content")),
+    "live":     ("Live (HTTP OK)",
+                 "u.last_http IS NOT NULL AND u.last_http < 400"
+                 " AND IFNULL(u.last_status,'') <> 'blank'"),
+    "notlive":  ("Not live (404/500/blank)",
+                 "(u.last_http IS NOT NULL AND u.last_http >= 400)"
+                 " OR u.last_status='blank'"),
 }
-ATTR_CAT = {"hasdocs": "documents", "hasvideos": "videos", "hasnews": "news",
-            "hastrainings": "trainings", "hasdesign": "design_resources",
-            "hasfeatures": "features", "hasbenefits": "benefits",
-            "hasapps": "applications", "hascategories": "categories",
-            "hasproducts": "products"}
+for _stem, _cat, _label in _CONTENT_ATTRS:
+    ATTR_FILTERS["has" + _stem] = ("Has " + _label, _has(_cat))
+    ATTR_FILTERS["no" + _stem] = ("No " + _label, _nohas(_cat))
+# presence-only blocks (content itself never stored) - each with its inverse
+ATTR_FILTERS["hastable"] = ("Has products table",
+                            _flag("product_table", "exists"))
+ATTR_FILTERS["notable"] = ("No products table",
+                           _noflag("product_table", "exists"))
+ATTR_FILTERS["hastablerows"] = ("Products table has rows",
+                                _flag("product_table", "has_content"))
+ATTR_FILTERS["hascommunity"] = ("Has developer community",
+                                _flag("developer_community", "exists"))
+ATTR_FILTERS["nocommunity"] = ("No developer community",
+                               _noflag("developer_community", "exists"))
+ATTR_FILTERS["hasthreads"] = ("Developer community has threads",
+                              _flag("developer_community", "has_content"))
+
+
+def _bulk_counts(con, filters):
+    """{key: count} in ONE pass, for filters whose SQL touches only the urls
+    row. Deriving these by hand is how Dead-page/Blank-page came to show 0
+    while 101 existed; deriving them from the same SQL the filter uses keeps
+    the count and the filter in lock-step. Category filters (EXISTS over the
+    items table) are NOT put through here - 20+ correlated subqueries per row
+    take seconds - they are answered from one GROUP BY in index() instead."""
+    conds = {k: v[1] for k, v in filters.items() if "items i" not in v[1]}
+    if not conds:
+        return {}
+    cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
+                     for i, c in enumerate(conds.values()))
+    row = con.execute(f"SELECT {cols} FROM urls u").fetchone()
+    return {k: (row[f"k{i}"] or 0) for i, k in enumerate(conds)}
 
 
 def _url_filter(q, statuses, ptypes, attrs):
@@ -270,26 +303,41 @@ def index():
     ptypes = con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
         " ORDER BY n DESC").fetchall()
-    # how many pages carry each kind of content (for the Content filter)
+    # how many captured pages carry each category - one GROUP BY, indexed
     cat_pages = {r["category"]: r["n"] for r in con.execute(
         "SELECT category, COUNT(DISTINCT url_id) n FROM items GROUP BY category")}
+    # status + urls-only attr filters: one bulk pass each
+    status_counts = _bulk_counts(con, STATUS_FILTERS)
+    attr_counts = _bulk_counts(con, ATTR_FILTERS)
     con.close()
+    # content has/no counts come from cat_pages: has = pages with the category
+    # (identical to the EXISTS filter), no = captured pages without it
+    checked = attr_counts.get("checked", 0)
+    for _stem, _cat, _ in _CONTENT_ATTRS:
+        has = cat_pages.get(_cat, 0)
+        attr_counts["has" + _stem] = has
+        attr_counts["no" + _stem] = checked - has
 
-    status_counts = {"changed": counts["changed"] or 0,
-                     "rejected": counts["rejected"] or 0,
-                     "unchanged": counts["unchanged"] or 0,
-                     "baseline": counts["baseline"] or 0,
-                     "error": counts["errors"] or 0,
-                     "paused": counts["paused"] or 0,
-                     "new": counts["fresh"] or 0}
-    attr_counts = {"checked": counts["checked"] or 0,
-                   "live": (counts["checked"] or 0) - (counts["notlive"] or 0)
-                           - (counts["errors"] or 0),
-                   "notlive": counts["notlive"] or 0,
-                   "nodocs": (counts["checked"] or 0)
-                             - cat_pages.get("documents", 0)}
-    for key, cat in ATTR_CAT.items():
-        attr_counts[key] = cat_pages.get(cat, 0)
+    # quick chips: the handful of filters worth one-click access, shown only
+    # when they actually match something. status kind links ?status=, attr ?attr=
+    quick_chips = [c for c in (
+        {"kind": "status", "key": "new", "label": "Not captured yet",
+         "n": status_counts["new"]},
+        {"kind": "status", "key": "baseline", "label": "Baseline saved",
+         "n": status_counts["baseline"]},
+        {"kind": "attr", "key": "live", "label": "Live",
+         "n": attr_counts["live"]},
+        {"kind": "status", "key": "notlive", "label": "Dead (404/500)",
+         "n": status_counts["notlive"]},
+        {"kind": "status", "key": "blank", "label": "Blank page",
+         "n": status_counts["blank"]},
+        {"kind": "status", "key": "changed", "label": "Changed",
+         "n": status_counts["changed"]},
+        {"kind": "status", "key": "rejected", "label": "Awaiting fix",
+         "n": status_counts["rejected"]},
+        {"kind": "status", "key": "error", "label": "Errors",
+         "n": status_counts["error"]},
+    ) if c["n"]]
 
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            last_run=last_run, total_open=total_open,
@@ -300,7 +348,8 @@ def index():
                            sel_status=statuses, sel_types=sel_types,
                            sel_attrs=attrs, status_filters=STATUS_FILTERS,
                            attr_filters=ATTR_FILTERS,
-                           status_counts=status_counts, attr_counts=attr_counts)
+                           status_counts=status_counts, attr_counts=attr_counts,
+                           quick_chips=quick_chips)
 
 
 @app.route("/urls/bulk", methods=["POST"])

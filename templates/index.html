@@ -108,14 +108,13 @@
   </form>
 
   <div class="quickchips">
-    {% for key, label, n in [
-        ('changed', 'Changed', counts.changed or 0),
-        ('rejected', 'Awaiting fix', counts.rejected or 0),
-        ('error', 'Errors', counts.errors or 0),
-        ('new', 'Not captured yet', counts.fresh or 0)] %}
-      {% if n or key in sel_status %}
-      <a class="chip {{ 'chip-on' if sel_status == [key] and not sel_types and not sel_attrs }}"
-         href="{{ url_for('index', status=key, q=q or None) }}">{{ label }} <b>{{ n }}</b></a>
+    {% for c in quick_chips %}
+      {% if c.kind == 'status' %}
+      <a class="chip {{ 'chip-on' if sel_status == [c.key] and not sel_types and not sel_attrs }}"
+         href="{{ url_for('index', status=c.key, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
+      {% else %}
+      <a class="chip {{ 'chip-on' if sel_attrs == [c.key] and not sel_types and not sel_status }}"
+         href="{{ url_for('index', attr=c.key, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
       {% endif %}
     {% endfor %}
     {% if sel_status or sel_types or sel_attrs or q %}
