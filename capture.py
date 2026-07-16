@@ -37,6 +37,66 @@ PAGES_PER_BROWSER = 100          # restart the browser periodically (memory hygi
 # website change (edit text/images in the live DOM). Never set in normal runs.
 INJECT_JS = None
 
+# Marks a capture that failed because the page itself served an empty body.
+# The runner keys the "serves a blank page" state off this, so it lives here
+# as one constant rather than as a magic string duplicated across modules.
+BLANK_RENDER = "blank render"
+
+
+# Many Infineon cards are React components whose anchors carry NO href at all
+# (<a class="anchor-title" rel="">) - the click is wired in JavaScript, so the
+# download URL exists nowhere in the DOM. The page fetches its own content from
+# a /dataApi/ JSON feed which does carry it, so the feed is harvested during the
+# capture and used to fill in the links the markup omits.
+# Field order matters: assetDmPath is the delivery URL that actually serves the
+# file (verified 200 application/pdf); promoPageLinkUrl is only a landing page,
+# so it is the last resort.
+_API_TITLE_KEYS = ("documentDisplayName", "imageCaption", "title", "displayName",
+                   "headline", "name", "videoTitle", "cardTitle")
+_API_URL_KEYS = ("assetDmPath", "videoUrl", "videoURL", "url", "link", "href",
+                 "ctaLink", "promoPageLinkUrl")
+
+
+def _norm_title(t):
+    return re.sub(r"\s+", " ", (t or "")).strip().lower()
+
+
+def _api_url_map(bodies):
+    """Build {normalized title -> URL} from the page's own dataApi feeds."""
+    out = {}
+
+    def visit(o):
+        if isinstance(o, dict):
+            title = ""
+            for k in _API_TITLE_KEYS:
+                v = o.get(k)
+                if isinstance(v, str) and v.strip():
+                    title = v
+                    break
+            if title:
+                for k in _API_URL_KEYS:
+                    v = o.get(k)
+                    if not isinstance(v, str) or not v.strip():
+                        continue
+                    u = v.strip()
+                    if u.startswith("/"):
+                        u = "https://www.infineon.com" + u
+                    if u.startswith("http"):
+                        out.setdefault(_norm_title(title), _delivery_url(u))
+                        break
+            for v in o.values():
+                visit(v)
+        elif isinstance(o, list):
+            for v in o:
+                visit(v)
+
+    for b in bodies:
+        try:
+            visit(json.loads(b))
+        except Exception:
+            continue
+    return out
+
 # Document titles concatenate badge spans (type/access/version/size/date),
 # sometimes joined by zero-width characters: cut everything from the badge
 # sequence onward. Applied in Python so it is deterministic and testable.
@@ -169,7 +229,7 @@ SECTIONS_JS = r"""
   // ONLY true call-to-action text: never category names ("Boards & designs",
   // "Documents"...) - on hub pages those ARE the teaser card titles, and
   // filtering them here made the card's description get stored instead.
-  const GENERIC_LINK = /^(explore( more| now)?|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view (more|all|products?)|more|download|jump to|goto.?link|add to cart.*|buy online.*|order now.*)$/i;
+  const GENERIC_LINK = /^(explore( more| now)?|learn more|read more.*|read on|get started|discover( more)?|show (more|all)|see (more|all)|view ((all )?(more|products?|product famil(y|ies)|famil(y|ies)|details?)|all)|more|download|jump to|goto.?link|add to cart.*|buy online.*|order now.*)$/i;
   const NAV_LABEL = /^(product details|documents|design resources|support|about|overview|quicklinks?)$/i;
 
   const out = {documents: [], design_resources: [], news: [],
@@ -179,6 +239,15 @@ SECTIONS_JS = r"""
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
+
+  // Which categories does this page render with a real AEM component? Where
+  // one exists it is the ONLY groundtruth for that category and the
+  // heading-text fallback below must not run - a component showing "there
+  // aren't any results" means zero items, not "go look elsewhere".
+  const hasComponent = {};
+  for (const [cat, sel] of COMPONENTS) {
+    if (document.querySelector(sel)) hasComponent[cat] = true;
+  }
 
   // Tab strips / buttons are NEVER content, even inside a trusted component.
   const isTabStrip = (el) =>
@@ -270,11 +339,25 @@ SECTIONS_JS = r"""
     out[cat].push(item);
   };
 
+  // A component that rendered an empty state is NOT a page without content:
+  // it is a page with zero items, and that is the groundtruth.
+  const EMPTY_STATE =
+    /(there aren'?t any results|no results? (were )?found|no documents? (are )?available|sorry.{0,30}no results)/i;
+
+  // Climb from a heading to the container holding that section's links.
+  // Bounded by two rules, because an unbounded climb swallows the next
+  // section whole (an empty "Documents" heading once ate 14 product cards):
+  //   - stop once the candidate contains a heading of the same or higher
+  //     level: that heading belongs to a sibling section, so we have left ours
+  //   - stop once the candidate holds a third of the page's text
   const containerFor = (h) => {
+    const lvl = /^H([1-6])$/.test(h.tagName) ? +h.tagName[1] : 3;
+    const peers = 'h1,h2,h3,h4,h5,h6'.split(',').slice(0, lvl).join(',');
     let el = h, best = null;
     for (let i = 0; i < 5 && el.parentElement; i++) {
       el = el.parentElement;
       if (el.textContent.length > bodyLen * 0.34) break;   // grew past one section
+      if (Array.from(el.querySelectorAll(peers)).some(o => o !== h)) break;
       const links = el.querySelectorAll('a[href]').length;
       if (links >= 2 || (links >= 1 && i >= 2)) best = el;
     }
@@ -451,9 +534,27 @@ SECTIONS_JS = r"""
       }
       if (/webinar|training/i.test(secHead)) cat = 'trainings';
     }
-    const thumb = card.querySelector('img[src*=".mp4/"]');
-    push(cat, title, thumb ? thumb.src.split('/jcr:content')[0] : '',
-         [...new Set(meta)].slice(0, 3).join(' | '));
+    // The video URL is not in any href - the card is a div with
+    // onclick="playVideo(this)". That function reads the media URL out of the
+    // ID attribute of the .videos element:
+    //     var n = $(e).find(".video-container").find(".videos").attr("id");
+    //     document.querySelector(".model-pop .video").src = n;
+    // so an id holding a URL is exactly where the site itself looks. (Training
+    // cards instead carry a DAM thumbnail path: .../<name>.mp4/jcr:content/...)
+    let vurl = '';
+    const vEl = card.querySelector('.video-container .videos[id], .videos[id]');
+    if (vEl && /^https?:\/\//i.test(vEl.id || '')) vurl = vEl.id;
+    if (!vurl) {
+      const thumb = card.querySelector('img[src*=".mp4/"]');
+      if (thumb) vurl = thumb.src.split('/jcr:content')[0];
+    }
+    // playVideo() bails out to a login popup when the card holds an
+    // .exclusive-video, so these have no public URL at all. Say so, rather
+    // than leaving a blank that reads like something we failed to find.
+    const metaParts = [...new Set(meta)].slice(0, 3);
+    if (!vurl && card.querySelector('.exclusive-video'))
+      metaParts.push('login required (MyInfineon)');
+    push(cat, title, vurl, metaParts.join(' | '));
   });
 
   // About / functional-tabbed widgets ("01 ... / 02 Features of ... / 03
@@ -583,9 +684,10 @@ SECTIONS_JS = r"""
     if (!ht || ht.length > 60) continue;
     for (const [cat, re] of CATS) {
       if (out[cat].length || !re.test(ht)) continue;
+      if (hasComponent[cat]) continue;      // the component already had its say
       if (cat === 'design_resources' && hasDsPanes) continue;
       const c = containerFor(h);
-      if (!c) break;
+      if (!c || EMPTY_STATE.test(c.innerText || '')) break;
       c.querySelectorAll('a[href]').forEach(a => collectAnchor(cat, a, true));
       break;
     }
@@ -890,6 +992,22 @@ async def capture_one(browser, url, out_dir):
         page = await context.new_page()
         net_state = _attach_inflight_tracker(page)
 
+        # Keep the page's own content feeds: they carry the URLs for cards
+        # whose anchors are JS-driven (see _api_url_map).
+        api_bodies = []
+
+        async def _keep_api(resp):
+            try:
+                if "/dataapi/" not in resp.url.lower():
+                    return
+                if "json" not in (resp.headers or {}).get("content-type", "").lower():
+                    return
+                api_bodies.append(await resp.text())
+            except Exception:
+                pass
+
+        page.on("response", lambda r: asyncio.ensure_future(_keep_api(r)))
+
         # If any click opens a popup/new tab, close it immediately.
         async def _close_popup(p):
             try:
@@ -1088,15 +1206,17 @@ async def capture_one(browser, url, out_dir):
         title = await page.title()
         # Infineon intermittently serves blank shells (HTTP 200/202, empty
         # body). Never store those as baselines - fail the capture instead
-        # so the page shows as an error and is retried on the next run.
+        # so the page is reported as blank and retried on the next run.
         if len(text.strip()) < 50 and not title.strip():
             raise Exception(
-                f"blank render (text={len(text.strip())} chars, "
-                f"http={result['http_status']})")
-        try:
-            sections = await page.evaluate(SECTIONS_JS)
-        except Exception:
-            sections = {}
+                f"{BLANK_RENDER}: page answered HTTP {result['http_status']} "
+                f"with an empty body ({len(text.strip())} chars of text)")
+        # NOT wrapped in try/except on purpose. A JS error here used to yield
+        # sections={} on a capture still marked "ok" - an EMPTY library stored
+        # as groundtruth, silently. That has cost this project three separate
+        # bugs. Let it raise: the page is then reported as an error and retried,
+        # which is loud, correct, and recoverable. Never store a lie.
+        sections = await page.evaluate(SECTIONS_JS)
         # merge documents collected across the table's pages + clean titles.
         # Distinct documents may share a title (language variants), so entries
         # are NEVER merged across different links - only exact repeats are
@@ -1228,6 +1348,28 @@ async def capture_one(browser, url, out_dir):
         except Exception:
             pass
 
+        # Fill in links the markup never had. Infineon renders many cards with
+        # an href-less <a> and wires the click in JS, so a card can be real,
+        # titled and dated yet unreachable from the DOM. Its own feed knows the
+        # URL - match on title and only ever ADD, never override a real href.
+        try:
+            api_map = _api_url_map(api_bodies)
+            if api_map:
+                filled = 0
+                for cat, items in sections.items():
+                    if cat == "images" or not isinstance(items, list):
+                        continue
+                    for it in items:
+                        if not isinstance(it, dict) or it.get("url"):
+                            continue
+                        u = api_map.get(_norm_title(it.get("title", "")))
+                        if u:
+                            it["url"] = u
+                            filled += 1
+                result["api_links_filled"] = filled
+        except Exception:
+            pass
+
         # LAST step before writing: rewrite video authoring paths to the
         # delivery host. Must be after every merge - the pane walk pools in
         # its own copies of the items, so rewriting earlier gets overwritten.
@@ -1271,6 +1413,28 @@ async def capture_one(browser, url, out_dir):
     return result
 
 
+async def _selftest(browser):
+    """Parse-check the injected JS before a run touches a single real page.
+
+    A syntax error in these scripts is invisible at import time (they are
+    Python strings) and would otherwise surface as thousands of pages captured
+    with empty libraries. Runs against about:blank in ~50ms.
+    """
+    page = await browser.new_page()
+    try:
+        await page.goto("about:blank")
+        for name, js in (("SECTIONS_JS", SECTIONS_JS), ("TEXT_JS", TEXT_JS),
+                         ("IMAGES_JS", IMAGES_JS), ("UNSTICK_JS", UNSTICK_JS)):
+            try:
+                await page.evaluate(js)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"{name} failed its parse/run self-test - refusing to start "
+                    f"the run: {exc}") from None
+    finally:
+        await page.close()
+
+
 async def capture_all(jobs, concurrency=4, progress=None):
     """Capture many URLs. jobs = [(url, out_dir), ...]. Returns list of result dicts.
 
@@ -1285,6 +1449,8 @@ async def capture_all(jobs, concurrency=4, progress=None):
                 headless=True,
                 args=["--disable-blink-features=AutomationControlled",
                       "--disable-dev-shm-usage"])
+            if batch_start == 0:
+                await _selftest(browser)
             sem = asyncio.Semaphore(concurrency)
 
             async def run_job(url, out_dir):

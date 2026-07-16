@@ -191,6 +191,8 @@
         {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected a change: the old version stays the baseline until the site matches it again">awaiting fix</span>
         {% elif u.last_status == 'unchanged' %}<span class="badge b-unchanged">unchanged</span>
         {% elif u.last_status == 'baseline' %}<span class="badge b-baseline">baseline saved</span>
+        {% elif u.last_status == 'notlive' %}<span class="badge b-off" title="Infineon serves this URL as an error page. It is still watched, so a revival shows up as a change.">dead page</span>
+        {% elif u.last_status == 'blank' %}<span class="badge b-error" title="The page answers with an HTTP success code but an empty body - nothing renders, for us or for a visitor. This is a fault on the page itself.">serves blank page</span>
         {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>
         {% else %}<span class="badge b-new">not captured yet</span>{% endif %}
       </td>

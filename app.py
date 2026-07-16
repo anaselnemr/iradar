@@ -142,6 +142,8 @@ STATUS_FILTERS = {
     "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
     "baseline":  ("Baseline saved", "u.last_status='baseline'"),
+    "notlive":   ("Dead page (404/500)", "u.last_status='notlive'"),
+    "blank":     ("Serves a blank page", "u.last_status='blank'"),
     "error":     ("Error", "u.last_status='error'"),
     "paused":    ("Paused (not monitored)", "u.active=0"),
     "new":       ("Not captured yet", "u.last_checked IS NULL"),

@@ -36,11 +36,16 @@ def _snapshot_dir(url_id, ts_label):
     return db.SNAP_DIR / str(url_id) / ts_label
 
 
-def index_items(con, url_id, snap_dir):
-    """Refresh the searchable item index for a URL from its current snapshot."""
+def index_items(con, url_id, snap_dir, dead=False):
+    """Refresh the searchable item index for a URL from its current snapshot.
+
+    `dead` (HTTP >= 400) purges instead: an error page's own furniture is not
+    library content, and indexing it would pollute search with the nav links
+    of every retired part page.
+    """
     con.execute("DELETE FROM items WHERE url_id=?", (url_id,))
     p = Path(snap_dir) / "sections.json"
-    if not p.exists():
+    if dead or not p.exists():
         return
     try:
         sections = json.loads(p.read_text(encoding="utf-8"))
@@ -179,15 +184,26 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
 
         if res["status"] != "ok":
             errors += 1
+            # "Infineon served an empty page" and "our capture broke" are
+            # different facts and only one of them is the site owner's to fix.
+            # A blank render answers with a 2xx and an empty <body>, so the
+            # HTTP code is real and worth keeping.
+            blank = capture.BLANK_RENDER in (res.get("error") or "")
             con.execute(
-                "UPDATE urls SET last_checked=?, last_status=?, last_http=NULL"
-                " WHERE id=?", (now, "error", url_id))
+                "UPDATE urls SET last_checked=?, last_status=?, last_http=?"
+                " WHERE id=?",
+                (now, "blank" if blank else "error",
+                 res.get("http_status"), url_id))
             # keep the previous good snapshot; drop the failed one's files
             shutil.rmtree(snap_dir, ignore_errors=True)
             con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
             continue
 
         ok += 1
+        # A page the site itself serves as 404/500 is not "captured fine": it
+        # still gets a snapshot (so a revival shows up as a change) but it is
+        # reported as not live and kept out of the library index.
+        dead = (res.get("http_status") or 0) >= 400
         con.execute("UPDATE urls SET last_http=? WHERE id=?",
                     (res.get("http_status"), url_id))
         prev = con.execute(
@@ -197,8 +213,8 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
 
         if prev is None:
             con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
-                        (now, "baseline", url_id))
-            index_items(con, url_id, snap_dir)
+                        (now, "notlive" if dead else "baseline", url_id))
+            index_items(con, url_id, snap_dir, dead)
             con.commit()
             continue
 
@@ -212,8 +228,8 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
                              "new1_dir": snap_dir, "prev": prev})
         else:
             con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
-                        (now, "unchanged", url_id))
-            index_items(con, url_id, snap_dir)
+                        (now, "notlive" if dead else "unchanged", url_id))
+            index_items(con, url_id, snap_dir, dead)
             _prune_snapshot(con, prev)
         con.commit()
 
@@ -258,7 +274,13 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
                 shutil.rmtree(s["new1_dir"], ignore_errors=True)
                 con.execute("DELETE FROM snapshots WHERE id=?", (s["new1_id"],))
                 confirm_id, confirm_dir = vsnap_id, vdir
+                con.execute("UPDATE urls SET last_http=? WHERE id=?",
+                            (vres.get("http_status"), url_id))
 
+            # A page that JUST died is the most important change there is, so
+            # it stays 'changed' (the Live column reports the 404); only a
+            # steady dead page reads as 'notlive'.
+            dead_now = (vres.get("http_status") or 0) >= 400
             if confirmed:
                 changed += 1
                 change_dir = db.CHANGE_DIR / str(url_id) / ts_label
@@ -280,11 +302,12 @@ def _process_batch(con, batch, ts_label, concurrency, progress):
                      str(change_dir)))
                 con.execute("UPDATE urls SET last_checked=?, last_status=?"
                             " WHERE id=?", (now, "changed", url_id))
-                index_items(con, url_id, confirm_dir)
+                index_items(con, url_id, confirm_dir, dead_now)
             else:
                 con.execute("UPDATE urls SET last_checked=?, last_status=?"
-                            " WHERE id=?", (now, "unchanged", url_id))
-                index_items(con, url_id, confirm_dir)
+                            " WHERE id=?",
+                            (now, "notlive" if dead_now else "unchanged", url_id))
+                index_items(con, url_id, confirm_dir, dead_now)
                 _prune_snapshot(con, prev)
             con.commit()
 
