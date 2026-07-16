@@ -276,10 +276,13 @@ SECTIONS_JS = r"""
   // wrapper, which makes it the most reliable way to find a section: heading
   // text lies (the only "Overview" heading on a product page is this nav tab,
   // and the heading above the family carousel can read "Block diagram").
+  // NB "sticky-nav" as well as "stickynav": product pages use
+  // ul.products-sticky-nav, which [class*="stickynav"] does NOT match, so the
+  // strip went unseen there and every nav-based lookup silently fell back.
   const NAV_ANCHORS =
     '#stickyNavTab a[href^="#"], .maintabs a[href^="#"], ' +
     '[class*="tabbar" i] a[href^="#"], [class*="anchor-nav" i] a[href^="#"], ' +
-    '[class*="stickynav" i] a[href^="#"]';
+    '[class*="stickynav" i] a[href^="#"], [class*="sticky-nav" i] a[href^="#"]';
 
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
