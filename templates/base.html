@@ -325,6 +325,19 @@
   .bulkbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
              background: #f8fafc; border: 1px solid var(--line);
              border-radius: 8px; padding: 8px 12px; margin: 12px 0; }
+  .bulkbar .act:disabled { opacity: .4; cursor: not-allowed; }
+  #bulkhint { color: var(--muted); font-weight: 500; }
+  .statlink { text-decoration: none; color: inherit; border-radius: 8px;
+              transition: background .12s; }
+  .statlink:hover { background: #f1f5f9; }
+  .quickchips { display: flex; gap: 7px; flex-wrap: wrap; align-items: center;
+                margin-top: 12px; }
+  /* tone a chip's COUNT so problems (red) and healthy (green) scan at a glance,
+     while the chip body stays neutral and calm */
+  .chip-bad b  { color: #dc2626; }
+  .chip-warn b { color: #d97706; }
+  .chip-good b { color: #16a34a; }
+  .chip-on.chip-bad b, .chip-on.chip-warn b, .chip-on.chip-good b { color: #fff; }
   .pager { display: flex; gap: 14px; align-items: center;
            justify-content: center; margin-top: 14px; }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent);

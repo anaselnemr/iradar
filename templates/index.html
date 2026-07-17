@@ -4,9 +4,9 @@
 <div class="card">
   <div class="statrow">
     <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">Pages tracked</div></div>
-    <div class="stat"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">To review</div></div>
+    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages with a change waiting for you"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">To review</div></a>
     <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Captured</div></div>
-    <div class="stat"><div class="n" style="color:{{ '#dc2626' if (counts.notlive or 0) else '#16a34a' }}">{{ counts.notlive or 0 }}</div><div class="l">Not live / Blank page</div></div>
+    <a class="stat statlink" href="{{ url_for('index', status=['notlive','blank']) }}" title="404/500 pages and blank pages — anything not serving real content"><div class="n" style="color:{{ '#dc2626' if notlive_total else '#16a34a' }}">{{ notlive_total }}</div><div class="l">Not live</div></a>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
@@ -49,28 +49,33 @@
   {% endif %}
 </div>
 
-<details class="card addbox">
-  <summary>Add pages</summary>
-  <div class="grid2" style="margin-top:14px">
-    <form method="post" action="{{ url_for('urls_add') }}">
-      <textarea name="urls" rows="3" placeholder="Paste one or many URLs — anything that isn't a URL is ignored"></textarea>
-      <div style="margin-top:8px"><button>Add URLs</button></div>
-    </form>
-    <form method="post" action="{{ url_for('urls_upload') }}" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".xlsx,.csv,.txt">
-      <div class="muted" style="margin:8px 0">Excel / CSV / TXT — every URL found in the file is added, duplicates skipped.</div>
-      <button>Upload &amp; add</button>
-    </form>
-  </div>
-</details>
-
 <div class="card" id="trackpanel">
-  <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap">
-    <h2 style="margin:0">Tracked pages</h2>
-    <span class="exports">Export all {{ counts.total }}:
-      <a href="{{ url_for('export_xlsx', mode='table') }}" title="One sheet: every page with status and library counts">⬇ table</a>
-      <a href="{{ url_for('export_xlsx', mode='full') }}" title="Every page + every captured item (documents, boards, trainings…) + all changes">⬇ everything</a>
-    </span>
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
+    <h2 style="margin:0">Tracked pages
+      <span class="muted" style="font-weight:400; font-size:14px">— {{ '{:,}'.format(total_match) }} shown</span></h2>
+    <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
+      <button type="button" class="btn" onclick="toggleAdd()">＋ Add pages</button>
+      <span class="exports">Export:
+        <a href="{{ url_for('export_xlsx', mode='table') }}" title="One sheet: every page with status and library counts">⬇ table</a>
+        <a href="{{ url_for('export_xlsx', mode='full') }}" title="Every page + every captured item (documents, boards, trainings…) + all changes">⬇ everything</a>
+      </span>
+    </div>
+  </div>
+
+  <div id="addbox" style="display:none; margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--bg)">
+    <div class="grid2">
+      <form method="post" action="{{ url_for('urls_add') }}">
+        <label class="muted" style="font-size:12.5px">Paste URLs</label>
+        <textarea name="urls" rows="3" placeholder="One or many URLs — anything that isn't a URL is ignored"></textarea>
+        <div style="margin-top:8px"><button>Add URLs</button></div>
+      </form>
+      <form method="post" action="{{ url_for('urls_upload') }}" enctype="multipart/form-data">
+        <label class="muted" style="font-size:12.5px">Or upload a file</label>
+        <div style="margin-top:6px"><input type="file" name="file" accept=".xlsx,.csv,.txt"></div>
+        <div class="muted" style="margin:8px 0; font-size:12px">Excel / CSV / TXT — every URL found is added, duplicates skipped.</div>
+        <button>Upload &amp; add</button>
+      </form>
+    </div>
   </div>
 
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
@@ -116,17 +121,18 @@
   </form>
 
   <div class="quickchips">
+    <span class="muted" style="font-size:12px; align-self:center; margin-right:3px">Quick filters:</span>
     {% for c in quick_chips %}
       {% if c.kind == 'status' %}
-      <a class="chip {{ 'chip-on' if sel_status == [c.key] and not sel_types and not sel_attrs }}"
-         href="{{ url_for('index', status=c.key, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
+      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if sel_status == c.keys and not sel_types and not sel_attrs }}"
+         href="{{ url_for('index', status=c.keys, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
       {% else %}
-      <a class="chip {{ 'chip-on' if sel_attrs == [c.key] and not sel_types and not sel_status }}"
-         href="{{ url_for('index', attr=c.key, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
+      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if sel_attrs == c.keys and not sel_types and not sel_status }}"
+         href="{{ url_for('index', attr=c.keys, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
       {% endif %}
     {% endfor %}
     {% if sel_status or sel_types or sel_attrs or q %}
-      <a class="chip" href="{{ url_for('index') }}">✕ clear filters</a>
+      <a class="chip" href="{{ url_for('index') }}">✕ clear</a>
     {% endif %}
   </div>
 
@@ -144,21 +150,22 @@
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
-  <div class="bulkbar" id="bulkbar" style="display:none">
-    <b><span id="selcount">0</span> selected</b>
+  <div class="bulkbar" id="bulkbar">
+    <b id="bulkhint">☑ Tick pages below, then act on them →</b>
+    <b id="selsummary" style="display:none"><span id="selcount">0</span> selected</b>
     <a href="#" id="matchall-link" style="display:none; font-size:13px"
-       onclick="selectAllMatching(); return false">Select all {{ total_match }} matching</a>
+       onclick="selectAllMatching(); return false">Select all {{ '{:,}'.format(total_match) }} matching</a>
     <span style="flex:1"></span>
-    <button class="btn-ghost btn-sm" onclick="bulk('check', this)">Capture now</button>
-    <button class="btn-ghost btn-sm" onclick="bulk('accept', this)">Approve changes</button>
-    <button class="btn-ghost btn-sm" onclick="bulk('pause', this)">Pause monitoring</button>
-    <button class="btn-ghost btn-sm" onclick="bulk('resume', this)">Resume monitoring</button>
-    <button class="btn-ghost btn-sm" style="color:#dc2626" onclick="bulk('delete', this)">Remove</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('check', this)" disabled>Capture</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)" disabled>Approve changes</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('pause', this)" disabled>Pause</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('resume', this)" disabled>Resume</button>
+    <button class="btn-ghost btn-sm act" style="color:#dc2626" onclick="bulk('delete', this)" disabled>Remove</button>
   </div>
 
   <div class="muted" style="font-size:12.5px; margin:10px 0 2px">
-    Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ total_match }}
-    · tick rows for bulk actions (shift-click selects a range)
+    Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ '{:,}'.format(total_match) }}
+    · shift-click selects a range
   </div>
 
   <table>
@@ -240,21 +247,31 @@
 let TOTAL_MATCH = {{ total_match }};  // updated after an in-place filter swap
 function selected() { return document.querySelectorAll('.rowsel:checked').length; }
 function allMatching() { return document.getElementById('all-matching').value === '1'; }
+function toggleAdd() {
+  const box = document.getElementById('addbox');
+  if (box) box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+}
 function refreshCount() {
-  const bar = document.getElementById('bulkbar');
+  const hint = document.getElementById('bulkhint');
+  const summ = document.getElementById('selsummary');
   const link = document.getElementById('matchall-link');
   const n = selected();
-  bar.style.display = (n || allMatching()) ? 'flex' : 'none';
+  const active = allMatching() ? TOTAL_MATCH : n;
+  // actions light up only once something is selected - that's the cue that
+  // ticking a row is what gives you actions
+  document.querySelectorAll('.bulkbar .act').forEach(b => { b.disabled = !active; });
+  if (hint) hint.style.display = active ? 'none' : '';
+  if (summ) summ.style.display = active ? '' : 'none';
   if (allMatching()) {
-    document.getElementById('selcount').textContent = TOTAL_MATCH + ' (all matching)';
+    document.getElementById('selcount').textContent = TOTAL_MATCH.toLocaleString() + ' (all matching)';
     if (link) { link.textContent = 'Clear selection'; link.style.display = ''; }
     return;
   }
-  document.getElementById('selcount').textContent = n;
+  document.getElementById('selcount').textContent = n.toLocaleString();
   if (link) {
     const pageAll = n > 0 && n === document.querySelectorAll('.rowsel').length;
     link.style.display = (pageAll && TOTAL_MATCH > n) ? '' : 'none';
-    link.textContent = 'Select all ' + TOTAL_MATCH + ' matching';
+    link.textContent = 'Select all ' + TOTAL_MATCH.toLocaleString() + ' matching';
   }
 }
 function selectAllMatching() {

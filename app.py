@@ -191,16 +191,18 @@ def _noflag(block, key):
 
 
 # real monitoring states - what the watcher says about the page (OR-combined)
+# One canonical name per state, used everywhere (stats, chips, this dropdown),
+# so the same page-state never reads under two different words.
 STATUS_FILTERS = {
     "changed":   ("Changed", "u.last_status='changed' AND u.active=1"),
     "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
-    "baseline":  ("Baseline saved", "u.last_status='baseline'"),
-    "notlive":   ("Dead page (404/500)", "u.last_status='notlive'"),
-    "blank":     ("Serves a blank page", "u.last_status='blank'"),
-    "error":     ("Error", "u.last_status='error'"),
-    "paused":    ("Paused (not monitored)", "u.active=0"),
-    "new":       ("Not captured yet", "u.last_checked IS NULL"),
+    "baseline":  ("Baseline", "u.last_status='baseline'"),
+    "notlive":   ("Not live (404)", "u.last_status='notlive'"),
+    "blank":     ("Blank page", "u.last_status='blank'"),
+    "error":     ("Capture error", "u.last_status='error'"),
+    "paused":    ("Paused", "u.active=0"),
+    "new":       ("Not captured", "u.last_checked IS NULL"),
 }
 
 # properties of the page itself / what we captured from it (AND-combined).
@@ -389,27 +391,31 @@ def index():
         attr_counts["has" + _stem] = has
         attr_counts["no" + _stem] = checked - has
 
+    # "Not live" = a page serving no real content: a 404/500 OR a blank body.
+    notlive_total = status_counts["notlive"] + status_counts["blank"]
     # quick chips: the handful of filters worth one-click access, shown only
     # when they actually match something. status kind links ?status=, attr ?attr=
     quick_chips = [c for c in (
-        {"kind": "status", "key": "new", "label": "Not captured yet",
-         "n": status_counts["new"]},
-        {"kind": "status", "key": "baseline", "label": "Baseline saved",
-         "n": status_counts["baseline"]},
-        {"kind": "attr", "key": "live", "label": "Live",
-         "n": attr_counts["live"]},
-        {"kind": "status", "key": "notlive", "label": "Dead (404/500)",
-         "n": status_counts["notlive"]},
-        {"kind": "status", "key": "blank", "label": "Blank page",
-         "n": status_counts["blank"]},
-        {"kind": "status", "key": "changed", "label": "Changed",
-         "n": status_counts["changed"], "always": True},
-        {"kind": "status", "key": "unchanged", "label": "Unchanged",
+        # ordered by what needs you: attention first, then health, then states.
+        # "Not live" folds 404s and blank pages into one filter (dead+blank).
+        {"kind": "status", "keys": ["changed"], "label": "Changed",
+         "n": status_counts["changed"], "always": True, "tone": "warn"},
+        {"kind": "status", "keys": ["rejected"], "label": "Awaiting fix",
+         "n": status_counts["rejected"], "tone": "warn"},
+        {"kind": "status", "keys": ["notlive", "blank"], "label": "Not live",
+         "n": notlive_total, "tone": "bad"},
+        {"kind": "status", "keys": ["error"], "label": "Capture error",
+         "n": status_counts["error"], "tone": "bad"},
+        {"kind": "attr", "keys": ["live"], "label": "Live",
+         "n": attr_counts["live"], "tone": "good"},
+        {"kind": "status", "keys": ["unchanged"], "label": "Unchanged",
          "n": status_counts["unchanged"], "always": True},
-        {"kind": "status", "key": "rejected", "label": "Awaiting fix",
-         "n": status_counts["rejected"]},
-        {"kind": "status", "key": "error", "label": "Errors",
-         "n": status_counts["error"]},
+        {"kind": "status", "keys": ["baseline"], "label": "Baseline",
+         "n": status_counts["baseline"]},
+        {"kind": "status", "keys": ["new"], "label": "Not captured",
+         "n": status_counts["new"]},
+        {"kind": "status", "keys": ["paused"], "label": "Paused",
+         "n": status_counts["paused"]},
     ) if c["n"] or c.get("always")]
 
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
@@ -417,6 +423,7 @@ def index():
                            next_run=next_run_text(), settings=db.get_settings(),
                            q=q, page=page, pages=pages, sort=sort,
                            new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
+                           notlive_total=notlive_total,
                            total_match=total_match, counts=counts,
                            per_page=PER_PAGE, ptypes=ptypes,
                            sel_status=statuses, sel_types=sel_types,
