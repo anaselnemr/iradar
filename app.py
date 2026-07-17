@@ -2489,6 +2489,103 @@ def _office_to_pdf(data, ext):
         _sh.rmtree(d, ignore_errors=True)
 
 
+def _fetch_bytes(url, cap=40_000_000):
+    import urllib.request
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    with urllib.request.urlopen(req, timeout=40) as resp:
+        return resp.read(cap)
+
+
+def _pdf_first_png(pdf_bytes, out_path):
+    import pypdfium2 as pdfium
+    pdf = pdfium.PdfDocument(pdf_bytes)
+    pil = pdf[0].render(scale=1.6).to_pil()
+    pil.thumbnail((1100, 1400))
+    pil.save(out_path, "PNG")
+    pdf.close()
+
+
+# background pre-render of every Office preview so the item page never waits on
+# a cold LibreOffice - batched (one soffice start converts a whole chunk, ~1s
+# per file amortised vs ~12s each on-demand). Kicked off at startup.
+PREWARM = {"running": False, "done": 0, "total": 0}
+
+
+def _prewarm_office():
+    if PREWARM["running"]:
+        return
+    PREWARM["running"] = True
+    try:
+        import tempfile
+        import subprocess
+        import shutil as _sh
+        so = _soffice()
+        cache = db.DATA_DIR / "previews"
+        cache.mkdir(exist_ok=True)
+        con = db.connect()
+        exts = " OR ".join("lower(item_url) LIKE '%%.%s'" % e for e in _OFFICE_EXT)
+        rows = con.execute(
+            "SELECT DISTINCT item_key, item_url FROM items"
+            " WHERE item_key<>'' AND (" + exts + ")").fetchall()
+        con.close()
+        todo = [(r["item_key"], r["item_url"]) for r in rows
+                if not (cache / (re.sub(r"[^a-f0-9]", "", r["item_key"]) + ".png")).exists()
+                and not (cache / (re.sub(r"[^a-f0-9]", "", r["item_key"]) + ".fail")).exists()]
+        PREWARM.update(total=len(todo), done=0)
+        if not so:
+            return
+        CHUNK = 25
+        for i in range(0, len(todo), CHUNK):
+            chunk = todo[i:i + CHUNK]
+            d = tempfile.mkdtemp()
+            by_stem = {}
+            try:
+                for key, url in chunk:
+                    safe = re.sub(r"[^a-f0-9]", "", key)
+                    low = url.lower().split("?")[0]
+                    ext = low.rsplit(".", 1)[-1]
+                    try:
+                        data = _fetch_bytes(url)
+                    except Exception:
+                        continue
+                    if not (data[:2] == b"PK" or data[:4] == b"\xd0\xcf\x11\xe0"):
+                        (cache / (safe + ".fail")).touch()   # gated / not a file
+                        continue
+                    with open(os.path.join(d, safe + "." + ext), "wb") as f:
+                        f.write(data)
+                    by_stem[safe] = key
+                if by_stem:
+                    srcs = [os.path.join(d, s + "." + u.lower().rsplit(".", 1)[-1])
+                            for s, k in by_stem.items()
+                            for u in [dict(chunk)[k]]]
+                    srcs = [p for p in srcs if os.path.exists(p)]
+                    try:
+                        subprocess.run([so, "--headless", "--convert-to", "pdf",
+                                        "--outdir", d] + srcs, timeout=300,
+                                       stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL)
+                    except Exception:
+                        pass
+                    for safe in by_stem:
+                        pdf = os.path.join(d, safe + ".pdf")
+                        out = cache / (safe + ".png")
+                        if os.path.exists(pdf) and not out.exists():
+                            try:
+                                with open(pdf, "rb") as f:
+                                    _pdf_first_png(f.read(), out)
+                            except Exception:
+                                (cache / (safe + ".fail")).touch()
+                        elif not out.exists():
+                            (cache / (safe + ".fail")).touch()
+            finally:
+                _sh.rmtree(d, ignore_errors=True)
+            PREWARM["done"] = min(i + CHUNK, len(todo))
+            time.sleep(1)     # be gentle while a capture run shares the CPU
+    finally:
+        PREWARM["running"] = False
+
+
 @app.route("/docpreview/<key>.png")
 def doc_preview_png(key):
     """FRONT PAGE of a document as an image - enough to verify it is the right
@@ -2729,10 +2826,19 @@ def history():
     return render_template("history.html", runs=runs)
 
 
+@app.route("/prewarm", methods=["POST"])
+def prewarm():
+    if not PREWARM["running"]:
+        threading.Thread(target=_prewarm_office, daemon=True).start()
+    return jsonify(PREWARM)
+
+
 if __name__ == "__main__":
     db.init_db()
     scheduler.start()
     reschedule()
+    # warm the Office previews in the background so item pages open instantly
+    threading.Thread(target=_prewarm_office, daemon=True).start()
     print()
     print("  InfineonWatch is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")
