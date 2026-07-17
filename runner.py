@@ -245,6 +245,27 @@ def _write_page_meta(con, url_id, page_url, res, dead):
          url_id))
 
 
+def _set_checked(con, url_id, now, status):
+    """Record a check result WITHOUT hiding pending review work.
+
+    'unchanged' must not overwrite 'changed' while an unreviewed change is
+    open: the page being stable at its NEW content does not mean the human
+    has looked at the edit. Without the guard, the next run after a flagged
+    change flipped the row back to unchanged and it vanished from the
+    Changed filter while still counting in the review queue. A death
+    (notlive) always shows - a page going 404 outranks review bookkeeping.
+    """
+    con.execute("UPDATE urls SET last_checked=? WHERE id=?", (now, url_id))
+    if status == "unchanged":
+        con.execute(
+            "UPDATE urls SET last_status='unchanged' WHERE id=? AND NOT EXISTS"
+            " (SELECT 1 FROM changes c WHERE c.url_id=urls.id AND c.reviewed=0)",
+            (url_id,))
+    else:
+        con.execute("UPDATE urls SET last_status=? WHERE id=?",
+                    (status, url_id))
+
+
 def _prune_snapshot(con, snap_row):
     """Delete a snapshot's files+row if no flagged change references it."""
     ref = con.execute(
@@ -277,6 +298,20 @@ def _run_check_inner(kind, url_ids):
     concurrency = max(1, int(settings.get("concurrency", 4)))
 
     con = db.connect()
+    # Crash recovery: a 'pending' snapshot is a suspected change whose verify
+    # pass never ruled on it (server restarted/died mid-run). It must not
+    # linger - it is unverified, excluded from baseline lookups, and its
+    # change will be re-detected cleanly this run against the real baseline.
+    stale = con.execute("SELECT id, dir FROM snapshots"
+                        " WHERE status='pending'").fetchall()
+    for s in stale:
+        if s["dir"]:
+            shutil.rmtree(s["dir"], ignore_errors=True)
+        con.execute("DELETE FROM snapshots WHERE id=?", (s["id"],))
+    if stale:
+        con.commit()
+        print(f"[recovery] dropped {len(stale)} unverified snapshot(s) from"
+              " an interrupted run", flush=True)
     # Work the queue in NEED order, not id order: a page never captured has
     # no library at all (highest priority), a baseline page has only its first
     # capture, a failed page (blank/error) has no good current state - all of
@@ -485,26 +520,38 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
     if not dead and not result.get("text_changed"):
         prev_n = con.execute("SELECT COUNT(*) FROM items WHERE url_id=?",
                              (url_id,)).fetchone()[0]
-        if prev_n >= 5 and _snapshot_item_count(snap_dir) == 0:
+        new_n = _snapshot_item_count(snap_dir)
+        # a PARTIAL collapse is the same break in a smaller size: markup that
+        # renamed for one component drops its items while the page text stays
+        # identical. Real removals change the text (the titles leave the
+        # page); text-unchanged with less than half the items left means the
+        # extractor stopped seeing them. -1 = unreadable, never triggers.
+        if prev_n >= 5 and 0 <= new_n < prev_n * 0.5:
             con.execute("UPDATE urls SET last_checked=?, last_status='error'"
                         " WHERE id=?", (now, url_id))
             shutil.rmtree(snap_dir, ignore_errors=True)
             con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
             counters["errors"] += 1
             counters["saved"] += 1
-            print(f"[guard] {row['url']}: {prev_n} items -> 0 with text unchanged;"
-                  " extractor likely broke, baseline kept", flush=True)
+            print(f"[guard] {row['url']}: {prev_n} items -> {new_n} with text"
+                  " unchanged; extractor likely broke, baseline kept",
+                  flush=True)
             return
 
     if result["any_changed"]:
         # Don't flag yet: late-loading widgets can make a page LOOK different
         # once. Re-capture at the end and flag only if the change persists
         # (real edits stay; loading flakes don't).
+        # The snapshot goes into limbo ('pending') until the verify pass rules
+        # on it: were it left 'ok' and the server died before verification,
+        # the next run would silently adopt the UNVERIFIED capture as its
+        # baseline and the real change would never be flagged.
+        con.execute("UPDATE snapshots SET status='pending' WHERE id=?",
+                    (new_snap_id,))
         suspects.append({"row": row, "new1_id": new_snap_id,
                          "new1_dir": snap_dir, "prev": prev})
     else:
-        con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
-                    (now, "notlive" if dead else "unchanged", url_id))
+        _set_checked(con, url_id, now, "notlive" if dead else "unchanged")
         index_items(con, url_id, snap_dir, dead)
         _prune_snapshot(con, prev)
         counters["saved"] += 1
@@ -540,8 +587,11 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
 
         if vres["status"] != "ok":
             # Verification capture failed - keep the original detection rather
-            # than risk missing a real change.
+            # than risk missing a real change. The kept snapshot leaves limbo:
+            # it is now this page's baseline-to-be.
             shutil.rmtree(vdir, ignore_errors=True)
+            con.execute("UPDATE snapshots SET status='ok' WHERE id=?",
+                        (s["new1_id"],))
             confirm_id, confirm_dir = s["new1_id"], s["new1_dir"]
             confirmed = True
         else:
@@ -592,9 +642,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
                         " WHERE id=?", (now, "changed", url_id))
             index_items(con, url_id, confirm_dir, dead_now)
         else:
-            con.execute("UPDATE urls SET last_checked=?, last_status=?"
-                        " WHERE id=?",
-                        (now, "notlive" if dead_now else "unchanged", url_id))
+            _set_checked(con, url_id, now,
+                         "notlive" if dead_now else "unchanged")
             index_items(con, url_id, confirm_dir, dead_now)
             _prune_snapshot(con, prev)
         counters["saved"] += 1

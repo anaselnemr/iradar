@@ -105,6 +105,18 @@
         <label><input type="checkbox" name="ptype" value="{{ t.ptype }}"
                  {% if t.ptype in sel_types %}checked{% endif %}> {{ t.ptype }}
           <span class="cnt">{{ t.n }}</span></label>
+        {% if t.levels %}
+        <div style="margin:-2px 0 4px 20px; border-left:2px solid var(--line); padding-left:8px">
+          {% for l in t.levels %}
+          <label style="font-size:12.5px" title="{{ level_names.get(l.lvl, '') }}">
+            <input type="checkbox" name="ptype" value="{{ l.lvl }}"
+                   {% if l.lvl in sel_types %}checked{% endif %}>
+            <span class="lvl lvl-{{ l.lvl|lower }}">{{ l.lvl }}</span>
+            <span class="muted" style="font-size:11px">{{ level_names.get(l.lvl, '') }}</span>
+            <span class="cnt">{{ l.n }}</span></label>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% endfor %}
       </div>
     </details>

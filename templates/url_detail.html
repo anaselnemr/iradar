@@ -106,10 +106,11 @@
     </div>
     <div>
       {% if price %}
-      <div style="margin:0 0 12px; padding:9px 12px; border:1px solid rgba(128,128,128,.28); border-radius:8px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap">
-        <span class="muted" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em">Price</span>
-        <span style="font-weight:600">{{ price }}</span>
-        <span class="muted" style="font-size:11.5px">— text only, from the buying-options block</span>
+      <div style="margin:0 0 12px; padding:10px 14px; border:1px solid rgba(128,128,128,.28); border-radius:8px">
+        <div class="muted" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px">Price</div>
+        {% for line in price|fmt_price %}
+        <div style="{{ 'font-weight:600; font-size:15px' if loop.first else 'margin-top:2px' }}">{{ line }}</div>
+        {% endfor %}
       </div>
       {% endif %}
       {% if cat_tree %}

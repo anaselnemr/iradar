@@ -72,6 +72,47 @@ def clean_title_filter(s):
     return s.strip()
 
 
+@app.template_filter("fmt_price")
+def fmt_price_filter(s):
+    """The captured buying-options text, split into clean display lines.
+
+    Raw capture mashes everything together ('$4.28ea. 986 in stock Volume
+    pricing: $2.34- $4.28 ea. Request Free Samples'). Parse the known pieces
+    and rebuild with proper spacing:
+        $4.28 ea.
+        986 in stock
+        Volume pricing: $2.34 - $4.28 ea.
+    'Request Free Samples' (a button caption, not a price) is dropped. A
+    string with none of the known shapes ('Multiple OPNs available') passes
+    through as a single line.
+    """
+    s = " ".join((s or "").split())
+    if not s:
+        return []
+    rest = re.sub(r"request\s+free\s+samples?\.?", "", s, flags=re.I).strip()
+    lines = []
+    m = re.search(r"([$€£]\s?[\d.,]+\d)\s*ea\.?(?!\s*[-–])", rest)
+    if m:
+        lines.append(m.group(1).replace(" ", "") + " ea.")
+        rest = rest.replace(m.group(0), " ", 1)
+    m = re.search(r"([\d.,]*\d)\s*in\s+stock", rest, flags=re.I)
+    if m:
+        lines.append(m.group(1) + " in stock")
+        rest = rest.replace(m.group(0), " ", 1)
+    m = re.search(r"volume\s+pricing:?\s*([$€£]\s?[\d.,]+\d)\s*[-–]\s*"
+                  r"([$€£]\s?[\d.,]+\d)\s*ea\.?", rest, flags=re.I)
+    if m:
+        lines.append(f"Volume pricing: {m.group(1).replace(' ', '')} - "
+                     f"{m.group(2).replace(' ', '')} ea.")
+        rest = rest.replace(m.group(0), " ", 1)
+    rest = rest.strip(" .-–")
+    if rest and not lines:
+        lines.append(rest)          # unknown shape - show as captured
+    elif rest:
+        lines.append(rest)          # leftovers ride along, never lost
+    return lines
+
+
 ACRONYMS = {"psoc", "xmc", "optiga", "airoc", "traveo", "aurix", "tpm", "mcu",
             "usb", "iot", "ai", "hmi", "rf", "sdk", "pcb", "ev", "led", "nfc",
             "ble", "wifi", "gan", "sic", "id", "tpu", "cpu", "kit", "eol"}
@@ -126,9 +167,26 @@ def reschedule():
     else:  # weekly
         trigger = CronTrigger(day_of_week=weekday, hour=hour, minute=0)
 
-    scheduler.add_job(lambda: runner.run_check(kind="scheduled"),
-                      trigger, id="check", replace_existing=True,
-                      misfire_grace_time=3600 * 6)
+    scheduler.add_job(_scheduled_check, trigger, id="check",
+                      replace_existing=True, misfire_grace_time=3600 * 6)
+
+
+def _scheduled_check(_retry=0):
+    """The cron job, with a retry: run_check returns None when another run
+    already holds the lock, and without a retry that whole scheduled check
+    would silently vanish (on weekly cadence, a lost week). Re-try every
+    15 minutes for up to 12 hours, then give up loudly."""
+    if runner.run_check(kind="scheduled") is not None:
+        return
+    if _retry >= 48:
+        print("[scheduler] gave up: another run blocked the scheduled check"
+              " for 12 hours", flush=True)
+        return
+    print(f"[scheduler] run in progress - scheduled check retries in 15 min"
+          f" ({_retry + 1}/48)", flush=True)
+    t = threading.Timer(900, _scheduled_check, kwargs={"_retry": _retry + 1})
+    t.daemon = True
+    t.start()
 
 
 def next_run_text():
@@ -677,6 +735,12 @@ def _url_filter(q, statuses, ptypes, attrs):
         # "Part" is split into two selectable types by URL shape: PTP (/part/)
         # and Evaluation board (/evaluation-board/). They are the same report
         # sheet (ptype='Part'), so the split lives here, not in the data.
+        # a detail level is a selectable sub-type of its general type - same
+        # pseudo-type pattern the PTP/EB split established
+        level_of = {l: pt for pt, lvls in (("Product", PRODUCT_LEVELS),
+                                           ("Application", APP_LEVELS),
+                                           ("Design resources", DR_LEVELS))
+                    for l in lvls}
         tconds = []
         for t in types:
             if t == "PTP":
@@ -684,6 +748,9 @@ def _url_filter(q, statuses, ptypes, attrs):
             elif t == "Evaluation board":
                 tconds.append(
                     "(u.ptype='Part' AND u.url LIKE '%/evaluation-board/%')")
+            elif t in level_of:
+                tconds.append("(u.ptype=? AND u.level=?)")
+                params.extend([level_of[t], t])
             else:
                 tconds.append("u.ptype=?")
                 params.append(t)
@@ -788,6 +855,13 @@ def index():
     ptypes_raw = con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
         " ORDER BY n DESC").fetchall()
+    # per-level counts, so the Type dropdown can nest each general type's
+    # detail levels (Product > PC/PFP/PSFP/PEFP, ...) under it
+    lvl_counts = {(r["ptype"], r["level"]): r["n"] for r in con.execute(
+        "SELECT ptype, level, COUNT(*) n FROM urls"
+        " WHERE ptype<>'' AND IFNULL(level,'')<>'' GROUP BY ptype, level")}
+    _SCHEMES = {"Product": PRODUCT_LEVELS, "Application": APP_LEVELS,
+                "Design resources": DR_LEVELS}
     # the Part sheet is two kinds of page - offer them as their own types
     ptypes = []
     for r in ptypes_raw:
@@ -796,10 +870,13 @@ def index():
                                 " AND url LIKE '%/part/%'").fetchone()[0]
             n_eb = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
                                " AND url LIKE '%/evaluation-board/%'").fetchone()[0]
-            ptypes.append({"ptype": "PTP", "n": n_ptp})
-            ptypes.append({"ptype": "Evaluation board", "n": n_eb})
+            ptypes.append({"ptype": "PTP", "n": n_ptp, "levels": []})
+            ptypes.append({"ptype": "Evaluation board", "n": n_eb, "levels": []})
         else:
-            ptypes.append({"ptype": r["ptype"], "n": r["n"]})
+            levels = [{"lvl": l, "n": lvl_counts.get((r["ptype"], l), 0)}
+                      for l in _SCHEMES.get(r["ptype"], ())
+                      if lvl_counts.get((r["ptype"], l))]
+            ptypes.append({"ptype": r["ptype"], "n": r["n"], "levels": levels})
     # how many captured pages carry each category - one GROUP BY, indexed
     cat_pages = {r["category"]: r["n"] for r in con.execute(
         "SELECT category, COUNT(DISTINCT url_id) n FROM items GROUP BY category")}
@@ -2365,6 +2442,11 @@ def settings_components():
         "SELECT COUNT(*) FROM urls WHERE ptype IN"
         " ('Product','Application','Part')"
         " AND (level IS NULL OR level='')").fetchone()[0]
+    # computed ONCE, before first use: row_any below reads it, and Python
+    # treats `matrix` as local for the whole function - assigning it only
+    # later in the POST branches made any zero-count component (e.g. a
+    # freshly added custom one) crash the page with UnboundLocalError
+    matrix = _effective_matrix(con)
     con.close()
     # per-type max count, for the heatmap tint (each column self-normalises)
     maxn = {t: max(list(counts.get(t, {}).values()) or [1]) for t in types}
@@ -2415,9 +2497,7 @@ def settings_components():
         if action == "prune":
             # after the run: a component that appears on ZERO pages of a type
             # never showed up there - drop it from that type's expected list
-            con = db.connect()
-            matrix = _effective_matrix(con)
-            con.close()
+            # (matrix already computed above, before the connection closed)
             removed = []
             for t in list(matrix):
                 for k in list(matrix[t]):
@@ -2442,9 +2522,6 @@ def settings_components():
         flash("Component matrix saved — the url pages now answer from it.")
         return redirect(url_for("settings_components"))
 
-    con = db.connect()
-    matrix = _effective_matrix(con)
-    con.close()
     saved = bool((db.get_settings().get("component_matrix") or "").strip())
     return render_template("settings_components.html",
                            comps=_all_components(), types=types,
