@@ -174,10 +174,17 @@ def _has(cat):
             f" AND i.category='{cat}')")
 
 
+# "No X" is a claim about the PAGE, so it needs a good capture behind it: a
+# blank/error capture is unknown (we never saw the page) and a 404 is dead -
+# none of those genuinely "has no videos". They stay in the plain table and
+# under their own state filters, but never inside a No-X attribute filter.
+_KNOWN_GOOD = ("u.last_checked IS NOT NULL AND IFNULL(u.last_status,'')"
+               " NOT IN ('blank','error','notlive')")
+
+
 def _nohas(cat):
-    # captured, but this category never appeared. Guarded on last_checked so an
-    # uncaptured page (content unknown) is not counted as "no X".
-    return "u.last_checked IS NOT NULL AND NOT " + _has(cat)
+    # captured fine, and this category genuinely never appeared
+    return _KNOWN_GOOD + " AND NOT " + _has(cat)
 
 
 def _flag(block, key):
@@ -187,7 +194,7 @@ def _flag(block, key):
 
 
 def _noflag(block, key):
-    return "u.last_checked IS NOT NULL AND NOT " + _flag(block, key)
+    return _KNOWN_GOOD + " AND NOT " + _flag(block, key)
 
 
 # real monitoring states - what the watcher says about the page (OR-combined)
@@ -249,13 +256,14 @@ _VIDEO_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
               " AND i.category IN ('videos','news'))")
 ATTR_FILTERS["hasvideos"] = ("Has videos", _VIDEO_SQL)
 ATTR_FILTERS["novideos"] = ("No videos",
-                            "u.last_checked IS NOT NULL AND NOT " + _VIDEO_SQL)
+                            _KNOWN_GOOD + " AND NOT " + _VIDEO_SQL)
 # price is captured text on component pages; "no price" only means something
 # once the page has been through component detection ('' = not measured yet)
 ATTR_FILTERS["hasprice"] = ("Has price",
                             "u.price IS NOT NULL AND u.price<>''")
 ATTR_FILTERS["noprice"] = ("No price",
-                           "u.components IS NOT NULL AND u.components<>''"
+                           _KNOWN_GOOD +
+                           " AND u.components IS NOT NULL AND u.components<>''"
                            " AND IFNULL(u.price,'')=''")
 # presence-only blocks (content itself never stored) - each with its inverse
 ATTR_FILTERS["hastable"] = ("Has products table",
@@ -291,7 +299,8 @@ def _navjson(col, label):
 def _no_navjson(col, label):
     labels = label if isinstance(label, tuple) else (label,)
     miss = " AND ".join(f"instr(lower(u.{col}), '\"{l}\"') = 0" for l in labels)
-    return f"u.{col} IS NOT NULL AND u.{col}<>'' AND {miss}"
+    return (_KNOWN_GOOD +
+            f" AND u.{col} IS NOT NULL AND u.{col}<>'' AND {miss}")
 
 
 _NAV_FILTER_ATTRS = [

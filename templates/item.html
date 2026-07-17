@@ -80,6 +80,12 @@
           <img src="{{ item.url }}" alt="{{ item.title }}" loading="lazy"
                style="max-width:min(460px,100%); max-height:300px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:6px"></a>
       </div>
+      {% if 'missing-product-images' in item.url %}
+      <p class="notice" style="margin:8px 0 0; font-size:13px">
+        <b>Default image.</b> Infineon serves this from its
+        <code>missing-product-images</code> placeholder set — the product has
+        no image of its own yet.</p>
+      {% endif %}
     {% endif %}
     {% if item.url %}
       <p style="margin:14px 0 0"><a href="{{ item.url }}" target="_blank" class="liveurl">{{ item.url }}</a></p>
