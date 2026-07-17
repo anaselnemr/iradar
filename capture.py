@@ -1070,13 +1070,12 @@ SECTIONS_JS = r"""
   // The page's OWN section navigation is the authoritative list of the
   // components it carries - read here, after full render, so it reflects the
   // live page. Each nav anchor is a real section (not a text match), which is
-  // exactly "make sure they are components".
-  const NAV = '[class*="stickynav" i] a[href^="#"], [class*="sticky-nav" i] a[href^="#"], '
-    + 'ul.products-sticky-nav a, #stickyNavTab a, .maintabs a, '
-    + '[class*="anchornav" i] a, [class*="sectionnav" i] a';
+  // exactly "make sure they are components". Reuses the same NAV_ANCHORS the
+  // section lookups trust; the nav is scrolled fully open first (it mounts its
+  // anchors lazily as sections enter the viewport) - see _settle_section_nav.
   const navSeen = new Set();
   out.components = [];
-  document.querySelectorAll(NAV).forEach(a => {
+  document.querySelectorAll(NAV_ANCHORS).forEach(a => {
     const t = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
     const k = t.toLowerCase();
     if (t && t.length < 40 && !navSeen.has(k)) { navSeen.add(k); out.components.push(t); }
@@ -1246,6 +1245,56 @@ async () => {
   window.scrollTo(0, 0);
 }
 """
+
+# The canonical section-nav selector, mirrored from NAV_ANCHORS inside
+# SECTIONS_JS. Kept in sync deliberately - the component read and this
+# stabiliser must agree on what "the nav" is.
+NAV_SEL = ('#stickyNavTab a[href^="#"], .maintabs a[href^="#"], '
+           '[class*="tabbar" i] a[href^="#"], [class*="anchor-nav" i] a[href^="#"], '
+           '[class*="stickynav" i] a[href^="#"], [class*="sticky-nav" i] a[href^="#"]')
+
+
+async def _settle_section_nav(page, cap_s=12.0):
+    """Make sure the sticky section-nav is FULLY populated before its anchors
+    are read as the component list.
+
+    The nav mounts its links lazily - each one appears only once its section
+    has scrolled through the viewport - and then takes a beat to finish
+    rendering. Reading too early silently drops real components. So: scroll the
+    whole page through (top -> bottom -> top) to force every section to mount,
+    then poll the nav's anchor count until it stops growing. Returns the final
+    count (best-effort; never raises - a nav-less page just returns 0)."""
+    try:
+        await page.evaluate("""async () => {
+          const d = ms => new Promise(r => setTimeout(r, ms));
+          const step = Math.max(400, Math.floor(window.innerHeight * 0.9));
+          const H = () => document.body ? document.body.scrollHeight : 0;
+          for (let y = 0; y <= H(); y += step) { window.scrollTo(0, y); await d(90); }
+          window.scrollTo(0, H()); await d(200);
+          window.scrollTo(0, 0); await d(200);
+        }""")
+        # The full scroll above already mounts every section's anchor, so poll
+        # until the count holds steady - INCLUDING steady at zero, so a page
+        # with no section-nav (family/application pages) bails in ~1s instead
+        # of burning the whole cap.
+        last, stable = -1, 0
+        for _ in range(max(4, int(cap_s / 0.4))):
+            n = await page.evaluate(
+                "sel => document.querySelectorAll(sel).length", NAV_SEL)
+            if n == last:
+                stable += 1
+                if stable >= 2:      # two equal reads in a row = settled
+                    return n
+            else:
+                stable = 0
+            last = n
+            await page.wait_for_timeout(400)
+        return max(last, 0)
+    except Exception as exc:
+        if INJECT_JS:
+            print(f"  [section-nav] settle failed: {exc}")
+        return 0
+
 
 IN_NAV_JS = "el => !!el.closest('header, nav, [role=\"navigation\"], footer')"
 
@@ -1625,6 +1674,13 @@ async def capture_one(browser, url, out_dir):
             raise Exception(
                 f"{BLANK_RENDER}: page answered HTTP {result['http_status']} "
                 f"with an empty body ({len(text.strip())} chars of text)")
+        # The component list is read from the section-nav, which mounts its
+        # anchors lazily on scroll and takes a beat to settle - open it fully
+        # first so no real component is missed. (Screenshot/text/images above
+        # are already captured, so this extra scroll cannot disturb them.)
+        nav_n = await _settle_section_nav(page)
+        if INJECT_JS:
+            print(f"  [section-nav] {nav_n} components settled")
         # NOT wrapped in try/except on purpose. A JS error here used to yield
         # sections={} on a capture still marked "ok" - an EMPTY library stored
         # as groundtruth, silently. That has cost this project three separate
