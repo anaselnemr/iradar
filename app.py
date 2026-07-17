@@ -1968,6 +1968,12 @@ def settings_components():
     con.close()
     # per-type max count, for the heatmap tint (each column self-normalises)
     maxn = {t: max(list(counts.get(t, {}).values()) or [1]) for t in types}
+    # a component with zero everywhere (and no manual tick) has no business on
+    # the grid - its row hides unless the user opens the empty cells to edit
+    row_any = {}
+    for key, _l, _k, _a in _all_components():
+        row_any[key] = (any(counts.get(t, {}).get(key) for t in types)
+                        or any(key in matrix.get(t, ()) for t in types))
 
     if request.method == "POST":
         action = request.form.get("action", "save")
@@ -2043,6 +2049,7 @@ def settings_components():
     return render_template("settings_components.html",
                            comps=_all_components(), types=types,
                            matrix=matrix, counts=counts, saved=saved, maxn=maxn,
+                           row_any=row_any,
                            custom_keys={c[0] for c in _custom_components()},
                            pending=pending, missing_levels=missing_levels,
                            state=runner.RUN_STATE)
