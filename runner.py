@@ -313,11 +313,17 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
     # An error page's own furniture is not this page's hierarchy, the same
     # reason its images stay out of the library index.
     con.execute(
-        "UPDATE urls SET last_http=?, breadcrumb=?, flags=? WHERE id=?",
+        "UPDATE urls SET last_http=?, breadcrumb=?, flags=?, components=?,"
+        " detail_tabs=?, price=? WHERE id=?",
         (res.get("http_status"),
          json.dumps([] if dead else (res.get("breadcrumb") or []),
                     ensure_ascii=False),
-         json.dumps(res.get("flags") or {}, ensure_ascii=False), url_id))
+         json.dumps(res.get("flags") or {}, ensure_ascii=False),
+         json.dumps([] if dead else (res.get("components") or []),
+                    ensure_ascii=False),
+         json.dumps([] if dead else (res.get("detail_tabs") or []),
+                    ensure_ascii=False),
+         "" if dead else (res.get("price") or ""), url_id))
     gone, rmsg = _follow_redirect(con, url_id, row["url"],
                                   res.get("final_url") or "")
     if rmsg:

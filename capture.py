@@ -1066,6 +1066,40 @@ SECTIONS_JS = r"""
       has_content: !!comm && !/there are no questions/i.test(commTxt)
     }
   };
+
+  // The page's OWN section navigation is the authoritative list of the
+  // components it carries - read here, after full render, so it reflects the
+  // live page. Each nav anchor is a real section (not a text match), which is
+  // exactly "make sure they are components".
+  const NAV = '[class*="stickynav" i] a[href^="#"], [class*="sticky-nav" i] a[href^="#"], '
+    + 'ul.products-sticky-nav a, #stickyNavTab a, .maintabs a, '
+    + '[class*="anchornav" i] a, [class*="sectionnav" i] a';
+  const navSeen = new Set();
+  out.components = [];
+  document.querySelectorAll(NAV).forEach(a => {
+    const t = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
+    const k = t.toLowerCase();
+    if (t && t.length < 40 && !navSeen.has(k)) { navSeen.add(k); out.components.push(t); }
+  });
+
+  // "Product details" sub-tabs (Parametrics / Ordering / Description / Features
+  // / Benefits) - the tabbed block inside a component page.
+  const dt = new Set();
+  document.querySelectorAll('[role="tab"], .nav-link, .tab-link, .nav-item a, ' +
+    '[class*="tab" i] a, [class*="tab" i] button').forEach(el => {
+    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (/^(parametrics?|ordering|description|features?|benefits?)$/i.test(t)) dt.add(t.toLowerCase());
+  });
+  out.detail_tabs = Array.from(dt);
+
+  // Price (component pages): the buying-options / pricing block, TEXT ONLY - to
+  // be shown on the page like overview/features, not as its own object.
+  let priceTxt = '';
+  const pe = document.querySelector('[class*="buyingoption" i], [class*="buying-option" i], '
+    + '[class*="pricing" i], [class*="product-price" i], [class*="unitprice" i]');
+  if (pe) priceTxt = (pe.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  out.price = priceTxt;
+
   return out;
 }
 """
@@ -1781,6 +1815,11 @@ async def capture_one(browser, url, out_dir):
         result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
                                 if isinstance(b, dict) and b.get("title")]
         result["flags"] = sections.get("flags") or {}
+        # authoritative component list (the page's own section nav) + the
+        # Product-details sub-tabs + price text, for the per-type component map
+        result["components"] = sections.get("components") or []
+        result["detail_tabs"] = sections.get("detail_tabs") or []
+        result["price"] = sections.get("price") or ""
 
         (out_dir / "text.txt").write_text(text, encoding="utf-8")
         (out_dir / "images.json").write_text(

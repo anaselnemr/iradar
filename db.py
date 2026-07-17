@@ -139,6 +139,11 @@ def init_db():
     # when a listed address 301'd here, the address it came from - so the row
     # can wear a "redirect" sign: we track the destination, not the stale link
     _ensure_column(con, "urls", "redirect_from", "TEXT DEFAULT ''")
+    # the page's own section-nav = the authoritative list of components it
+    # carries (JSON list); plus the Product-details sub-tabs and price text.
+    _ensure_column(con, "urls", "components", "TEXT DEFAULT ''")
+    _ensure_column(con, "urls", "detail_tabs", "TEXT DEFAULT ''")
+    _ensure_column(con, "urls", "price", "TEXT DEFAULT ''")
     # stable id for "this exact item, wherever it appears" - a document lives
     # on many pages and needs one page of its own
     _ensure_column(con, "items", "item_key", "TEXT DEFAULT ''")
