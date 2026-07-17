@@ -4,6 +4,7 @@ Run:  python app.py     then open http://127.0.0.1:5000
 """
 import io
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,8 +12,8 @@ from urllib.parse import urlsplit
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from flask import (Flask, abort, flash, jsonify, redirect, render_template,
-                   request, send_file, url_for)
+from flask import (Flask, Response, abort, flash, jsonify, redirect,
+                   render_template, request, send_file, url_for)
 
 import compare as cmp
 import db
@@ -20,6 +21,25 @@ import runner
 
 app = Flask(__name__)
 app.secret_key = "infineonwatch-local-only"
+
+# Optional HTTP Basic Auth for when the dashboard is exposed through a public
+# tunnel. Credentials come from the environment (DASH_USER / DASH_PASS) so they
+# never live in the source or git history; when unset, auth is OFF and local
+# use stays friction-free.
+DASH_USER = os.environ.get("DASH_USER")
+DASH_PASS = os.environ.get("DASH_PASS")
+
+
+@app.before_request
+def _require_login():
+    if not DASH_USER:
+        return  # no credentials configured -> open (local-only default)
+    auth = request.authorization
+    if not auth or auth.username != DASH_USER or auth.password != DASH_PASS:
+        return Response(
+            "InfineonWatch — sign in required.", 401,
+            {"WWW-Authenticate": 'Basic realm="InfineonWatch", charset="UTF-8"'})
+
 
 URL_RE = re.compile(r"https?://[^\s\"',;<>]+")
 
