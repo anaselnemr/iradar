@@ -264,6 +264,7 @@ def ptype_for_url(u):
                       ("/applications/", "Application"),
                       ("/application/", "Application"),
                       ("/design-resources/", "Design resources"),
+                      ("/design-support/", "Design resources"),
                       ("/gated/", "Promo"), ("/document-promo/", "Promo"),
                       ("/promo", "Promo")):
         if path.startswith(prefix):

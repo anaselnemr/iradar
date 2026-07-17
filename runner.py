@@ -421,26 +421,6 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         " AND dir<>'' AND rejected=0 ORDER BY id DESC LIMIT 1",
         (url_id, new_snap_id)).fetchone()
 
-    # GUARD: a page that had a real library but now extracts NOTHING almost
-    # always means Infineon renamed the markup our selectors depend on - not
-    # that the page truly lost all its content (the text layer would change
-    # too). Refuse to overwrite the good baseline with emptiness: keep the old
-    # snapshot + items, report an error so it is loud and retried. Without this,
-    # one markup change could silently hollow out the library for a whole shape.
-    if prev is not None and not dead:
-        prev_n = con.execute("SELECT COUNT(*) FROM items WHERE url_id=?",
-                             (url_id,)).fetchone()[0]
-        if prev_n >= 5 and _snapshot_item_count(snap_dir) == 0:
-            con.execute("UPDATE urls SET last_checked=?, last_status='error'"
-                        " WHERE id=?", (now, url_id))
-            shutil.rmtree(snap_dir, ignore_errors=True)
-            con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
-            counters["errors"] += 1
-            counters["saved"] += 1
-            print(f"[guard] {row['url']}: {prev_n} items -> 0, extractor likely "
-                  "broke; baseline kept", flush=True)
-            return
-
     if prev is None:
         con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
                     (now, "notlive" if dead else "baseline", url_id))
@@ -450,6 +430,27 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
 
     result = cmp.compare_snapshots(prev["dir"], snap_dir, change_dir=None,
                                    settings=db.get_settings())
+
+    # GUARD: text UNCHANGED but a populated library suddenly empty = Infineon
+    # renamed the markup our selectors depend on (a real content loss would
+    # change the text too; a partial render under memory pressure changes it as
+    # well). Refuse to overwrite the good baseline with emptiness - keep the old
+    # snapshot + items, report an error so it is loud and retried. Without this,
+    # one markup change could silently hollow out the library for a whole shape.
+    if not dead and not result.get("text_changed"):
+        prev_n = con.execute("SELECT COUNT(*) FROM items WHERE url_id=?",
+                             (url_id,)).fetchone()[0]
+        if prev_n >= 5 and _snapshot_item_count(snap_dir) == 0:
+            con.execute("UPDATE urls SET last_checked=?, last_status='error'"
+                        " WHERE id=?", (now, url_id))
+            shutil.rmtree(snap_dir, ignore_errors=True)
+            con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
+            counters["errors"] += 1
+            counters["saved"] += 1
+            print(f"[guard] {row['url']}: {prev_n} items -> 0 with text unchanged;"
+                  " extractor likely broke, baseline kept", flush=True)
+            return
+
     if result["any_changed"]:
         # Don't flag yet: late-loading widgets can make a page LOOK different
         # once. Re-capture at the end and flag only if the change persists
