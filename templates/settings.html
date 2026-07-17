@@ -83,12 +83,12 @@
       </label>
       <label style="display:block; margin-top:10px">AEM author URL (pages) — <code>{path}</code> = the page's public path
         <input type="text" name="aem_author_url" value="{{ s.aem_author_url }}"
-               placeholder="https://author.infineon.com/editor.html/content/ifx/en{path}.html">
+               placeholder="https://author.infineon.com/editor.html/content/ifx/language-masters/en{path}.html">
       </label>
       <p class="muted" style="font-size:12.5px; margin-top:12px">
         The AEM badge on every tracked page opens the author editor:
         <code>{path}</code> is replaced by the page's public path
-        (…/content/ifx/en<b>/products/…</b>.html). Name extraction for
+        (…/content/ifx/language-masters/en<b>/products/…</b>.html). Part and evaluation-board pages are generated, not authored, so their badge is grayed out. Name extraction for
         assets: videos use the URL's last segment; images the part before the
         first dot; gated documents drop the trailing _id and language; public
         documents drop the extension and language.</p>
