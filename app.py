@@ -934,6 +934,21 @@ def _doclike_url(u):
     return u.endswith(".pdf") or "/gated/" in u or "/documents/" in u
 
 
+# design-resources groups whose members ARE documents by type - PCB design
+# data and simulation models sit on Infineon's own document-type sheet
+_DOC_TYPED_GRP = re.compile(
+    r"^(pcb design data|simulation models?|documents?)$", re.I)
+
+
+def _doc_typed(d):
+    """A design-resources item that is a DOCUMENT by its type: its group is a
+    document type (PCB design data, Simulation models) or its file format is
+    PDF (meta reads 'PDF | version | lang | size | date')."""
+    if _DOC_TYPED_GRP.match((d.get("grp") or "").strip()):
+        return True
+    return (d.get("meta") or "").split("|")[0].strip().upper() == "PDF"
+
+
 def _videolike(d):
     r"""A news/trainings item that is actually a video: a media URL or a
     duration (\d:\d\d) in its meta."""
@@ -948,7 +963,8 @@ SEARCH_PILLS = [
      lambda d: d["cat"] == "design_resources"),
     ("docs",         "Documents",
      lambda d: d["cat"] == "documents"
-     or (d["cat"] == "design_resources" and _doclike_url(d.get("url")))),
+     or (d["cat"] == "design_resources"
+         and (_doclike_url(d.get("url")) or _doc_typed(d)))),
     ("images",       "Images", lambda d: d["cat"] == "images"),
     ("features",     "Key features", lambda d: d["cat"] == "features"),
     ("benefits",     "Benefits", lambda d: d["cat"] == "benefits"),
@@ -2009,7 +2025,7 @@ def _rebuild_search_cache():
     try:
         rows = con.execute(
             "SELECT item_key AS k, MIN(title) AS t, MIN(category) AS c,"
-            " MIN(meta) AS m, MIN(item_url) AS u,"
+            " MIN(meta) AS m, MIN(item_url) AS u, MIN(grp) AS g,"
             " COUNT(DISTINCT url_id) AS n FROM items"
             " WHERE category<>'about' AND item_key<>'' GROUP BY item_key"
         ).fetchall()
@@ -2033,7 +2049,7 @@ def _rebuild_search_cache():
             except Exception:
                 slug = ""
         data.append({"key": r["k"], "title": title, "cat": cat,
-                     "meta": r["m"] or "", "url": url,
+                     "meta": r["m"] or "", "url": url, "grp": r["g"] or "",
                      "tl": title.lower(),
                      "sl": _searchable(title + " " + slug)})
     _search_cache.update(ts=time.monotonic(), data=data,
@@ -2178,7 +2194,7 @@ def search_items():
         _pfn = PILL_FN.get(cat)
         for r in rows:
             if _pfn and not _pfn({"cat": r["category"], "url": r["item_url"],
-                                  "meta": r["meta"]}):
+                                  "meta": r["meta"], "grp": r["grp"]}):
                 continue
             gk = (r["title"].lower(), r["item_url"])
             if gk not in by_item:
