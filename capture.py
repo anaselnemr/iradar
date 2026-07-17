@@ -1072,6 +1072,36 @@ SECTIONS_JS = r"""
     }
   };
 
+  // The hero/stage image: the big image beside or behind the title at the
+  // top of the page (its class differs per page type - hero, stage, banner,
+  // product photo - so it is found by POSITION, not by name). Three states:
+  // a page-specific image, the DEFAULT image (exists but has_content=false),
+  // or nothing assigned. Header/nav logos never count.
+  let heroSrc = '';
+  const inChrome = el => !!el.closest('header, nav, [role="navigation"], footer');
+  for (const im of document.querySelectorAll('img')) {
+    const r = im.getBoundingClientRect();
+    const top = r.top + window.scrollY;
+    if (top > 1400 || r.width < 180 || r.height < 100 || inChrome(im)) continue;
+    heroSrc = im.currentSrc || im.src || '';
+    if (heroSrc) break;
+  }
+  if (!heroSrc) {
+    // some stages paint the image as a CSS background instead
+    for (const el of document.querySelectorAll(
+        '[class*="hero" i], [class*="stage" i], [class*="banner" i], [class*="teaser" i]')) {
+      const r = el.getBoundingClientRect();
+      const top = r.top + window.scrollY;
+      if (top > 1400 || r.width < 300 || r.height < 120 || inChrome(el)) continue;
+      const m = (getComputedStyle(el).backgroundImage || '').match(/url\(["']?([^"')]+)/);
+      if (m && m[1]) { heroSrc = m[1]; break; }
+    }
+  }
+  const heroDefault = !!heroSrc && /default|placeholder|fallback|no-?image/i.test(heroSrc);
+  out.flags.hero_image = {exists: !!heroSrc,
+                          has_content: !!heroSrc && !heroDefault,
+                          src: (heroSrc || '').slice(0, 400)};
+
   // The page's OWN section navigation is the authoritative list of the
   // components it carries - read here, after full render, so it reflects the
   // live page. Each nav anchor is a real section (not a text match), which is

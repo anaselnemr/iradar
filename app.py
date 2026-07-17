@@ -263,6 +263,12 @@ ATTR_FILTERS["nocommunity"] = ("No developer community",
                                _noflag("developer_community", "exists"))
 ATTR_FILTERS["hasthreads"] = ("Developer community has threads",
                               _flag("developer_community", "has_content"))
+ATTR_FILTERS["hashero"] = ("Has hero image", _flag("hero_image", "exists"))
+ATTR_FILTERS["nohero"] = ("No hero image", _noflag("hero_image", "exists"))
+ATTR_FILTERS["herodefault"] = (
+    "Hero image is the default",
+    "(" + _flag("hero_image", "exists") + " AND NOT "
+    + _flag("hero_image", "has_content") + ")")
 
 # Components read from the page's own section-nav / Product-details sub-tabs
 # (urls.components / urls.detail_tabs, filled by the component re-capture).
@@ -307,7 +313,8 @@ COMPONENT_KEYS = []
 for _stem, _c, _l in _COMPONENT_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
 COMPONENT_KEYS += ["hastable", "notable", "hastablerows",
-                   "hascommunity", "nocommunity", "hasthreads"]
+                   "hascommunity", "nocommunity", "hasthreads",
+                   "hashero", "nohero", "herodefault"]
 for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
 
@@ -334,6 +341,7 @@ COMPONENTS = [
     ("videos",             "Videos",                "cat",  "videos"),
     ("product_table",      "Products table",        "flag", "product_table"),
     ("developer_community","Developer community",   "flag", "developer_community"),
+    ("hero_image",         "Hero image",            "flag", "hero_image"),
     ("buying_options",     "View buying options",   "nav",  "view buying options"),
     ("product_details",    "Product details",       "nav",  "product details"),
     # PTP pages label it "Diagrams", application pages "Diagram" - one component
@@ -534,7 +542,7 @@ def _component_counts(con):
             fl = json.loads(r["flags"] or "{}")
         except Exception:
             fl = {}
-        for block in ("product_table", "developer_community"):
+        for block in ("product_table", "developer_community", "hero_image"):
             if (fl.get(block) or {}).get("exists"):
                 bump(et, block)
         def _loadset(j):

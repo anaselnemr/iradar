@@ -130,14 +130,14 @@
         </div>
         <div class="compchips">
         {% for c in components %}
-          {% if c.key in ('product_table', 'developer_community') %}
+          {% if c.key in ('product_table', 'developer_community', 'hero_image') %}
             {% set f = flags.get(c.key) %}
             {% if not f or not f.exists %}
-              <span class="cchip off" title="Not on this page">{{ c.label }}</span>
+              <span class="cchip off" title="{{ 'No hero image assigned' if c.key == 'hero_image' else 'Not on this page' }}">{{ c.label }}</span>
             {% elif f.has_content %}
-              <span class="cchip on" title="Present, has content">✓ {{ c.label }}</span>
+              <span class="cchip on" title="{{ 'A page-specific image is assigned' if c.key == 'hero_image' else 'Present, has content' }}">✓ {{ c.label }}</span>
             {% else %}
-              <span class="cchip mid" title="Present but empty">◐ {{ c.label }}</span>
+              <span class="cchip mid" title="{{ 'The DEFAULT image is assigned — not a page-specific one' if c.key == 'hero_image' else 'Present but empty' }}">◐ {{ c.label }}{{ ' (default)' if c.key == 'hero_image' }}</span>
             {% endif %}
           {% elif c.exists %}
             <span class="cchip on" title="Present on this page">✓ {{ c.label }}</span>
@@ -196,7 +196,7 @@
           {% endfor %}
         {% else %}
         <ul class="liblist">
-          {% for it in cat['items'] %}{{ libitem(it) }}{% endfor %}
+          {% for it in cat['items'] %}{% if cat['cat'] == 'overview' %}<li>{{ it.title }}</li>{% else %}{{ libitem(it) }}{% endif %}{% endfor %}
         </ul>
         {% endif %}
       </details>
