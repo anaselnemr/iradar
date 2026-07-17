@@ -1088,6 +1088,12 @@ def _aemlink(page_url, base):
     if not base or not path or host not in ("www.infineon.com",
                                             "infineon.com"):
         return ""
+    # a /gated/ or /document-promo/ address IS a document, not an authored
+    # page - there is no AEM editor behind it (the _uuid suffix is the tell)
+    low = path.lower()
+    if (low.startswith("/gated/") or low.startswith("/document-promo/")
+            or re.search(r"_[0-9a-f]{8}-[0-9a-f]{4}-", low)):
+        return ""
     return base.replace("{path}", path) if "{path}" in base else base + path
 
 
