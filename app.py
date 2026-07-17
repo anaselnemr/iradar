@@ -250,6 +250,13 @@ _VIDEO_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
 ATTR_FILTERS["hasvideos"] = ("Has videos", _VIDEO_SQL)
 ATTR_FILTERS["novideos"] = ("No videos",
                             "u.last_checked IS NOT NULL AND NOT " + _VIDEO_SQL)
+# price is captured text on component pages; "no price" only means something
+# once the page has been through component detection ('' = not measured yet)
+ATTR_FILTERS["hasprice"] = ("Has price",
+                            "u.price IS NOT NULL AND u.price<>''")
+ATTR_FILTERS["noprice"] = ("No price",
+                           "u.components IS NOT NULL AND u.components<>''"
+                           " AND IFNULL(u.price,'')=''")
 # presence-only blocks (content itself never stored) - each with its inverse
 ATTR_FILTERS["hastable"] = ("Has products table",
                             _flag("product_table", "exists"))
@@ -310,6 +317,7 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 CONTENT_KEYS = ["checked", "live", "notlive"]
 for _stem, _c, _l in _CONTENT_ATTRS:
     CONTENT_KEYS += ["has" + _stem, "no" + _stem]
+CONTENT_KEYS += ["hasprice", "noprice"]
 COMPONENT_KEYS = []
 for _stem, _c, _l in _COMPONENT_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
@@ -1792,6 +1800,19 @@ def run_now():
         con.close()
         if not ids:
             flash("Component detection has run on every page already.")
+            return redirect(url_for("index"))
+    elif (request.form.get("refresh_price") == "1"
+          or request.args.get("refresh_price") == "1"):
+        # PTPs captured before the volume-pricing fix: their price lacks the
+        # volume range - re-capture just those
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls WHERE active=1 AND ptype='Part'"
+            " AND url LIKE '%/part/%' AND components<>''"
+            " AND price<>'' AND price NOT LIKE '%Volume pricing%'")]
+        con.close()
+        if not ids:
+            flash("Every priced part already carries its volume range.")
             return redirect(url_for("index"))
     if runner.run_check_background(kind="manual", url_ids=ids):
         flash(f"Checking {len(ids)} pending page(s)…" if ids
