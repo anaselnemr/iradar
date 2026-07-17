@@ -67,14 +67,24 @@
     {% if total > 2000 %}<span> (showing the first 2000)</span>{% endif %}
   </div>
     {% for g in groups %}
+    {# an overview is a page's own text, unique to that one page - so it is
+       searchable like anything else, but has no "assigned to N pages" view;
+       it just links straight to its page. #}
+    {% set is_overview = g.category == 'overview' %}
     <div class="rescard">
       <div class="hit-head">
         <span class="hit-title-row">
           {{ ticon(g.category) }}
+          {% if is_overview %}
+          <a href="{{ url_for('url_detail', url_id=g.pages[0].id) }}" class="hit-title">{{ g.title }}</a>
+          {% else %}
           <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
+          {% endif %}
         </span>
         <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
+        {% if not is_overview %}
         <span class="badge {{ 'b-changed' if g.pages|length > 1 else 'b-unchanged' }}">{{ g.pages|length }} page{{ 's' if g.pages|length > 1 }}</span>
+        {% endif %}
         {% if g.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ g.backend }}</span>{% endif %}
         {% if g.url %}<a href="{{ g.url }}" target="_blank" class="liveurl">open ↗</a>{% endif %}
       </div>
@@ -83,6 +93,12 @@
         {% for m in g.meta.split('|') %}{% if m.strip() %}<span class="mchip">{{ m.strip() }}</span>{% endif %}{% endfor %}
       </div>
       {% endif %}
+      {% if is_overview %}
+      <div class="pagelist" style="margin-top:6px">
+        <a href="{{ url_for('url_detail', url_id=g.pages[0].id) }}" class="titlelink">on {{ g.pages[0].title | clean_title | pretty_slug }}</a>
+        <a href="{{ g.pages[0].url }}" target="_blank" class="liveurl" style="margin-left:8px">{{ g.pages[0].url }}</a>
+      </div>
+      {% else %}
       <ul class="pagelist">
         {% for p in g.pages[:6] %}
         <li>
@@ -95,6 +111,7 @@
           and {{ g.pages|length - 6 }} more — see all pages using this item →</a></li>
         {% endif %}
       </ul>
+      {% endif %}
     </div>
     {% endfor %}
   {% endif %}

@@ -1466,6 +1466,11 @@ def item_detail(key):
         con.close()
         abort(404)
     first = rows[0]
+    # an overview is a page's own text, not a shared asset - there is no
+    # "assigned to these pages" answer for it, so send it straight to its page.
+    if first["category"] == "overview":
+        con.close()
+        return redirect(url_for("url_detail", url_id=first["url_id"]))
     # the richest meta wins: the same item can be listed tersely on one page
     meta = max((r["meta"] or "" for r in rows), key=len)
     dtype = next((r["doc_type"] for r in rows if r["doc_type"]), "")

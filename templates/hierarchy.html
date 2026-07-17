@@ -17,18 +17,21 @@
   </div>
 {% endmacro %}
 
+{# the node's own level badge (PC/PFP/PSFP/PEFP/PTP), read from its depth #}
+{% macro nlvl(n) %}{%- if n.live_level %}<span class="lvl lvl-{{ n.live_level|lower }}" title="{{ level_names.get(n.live_level, '') }} — read from the live structure">{{ n.live_level }}</span>{% endif -%}{% endmacro %}
+
 {# a grouping node's clickable label: our captured page if we have it, else the
-   real live Infineon page, else (no URL known) plain text #}
+   real live Infineon page, else (no URL known) plain text. Every node keeps its
+   level badge so a product's place (PC/PFP/PSFP/PEFP/PTP) always reads. #}
 {% macro nodelabel(n) %}
   {%- if n.self_page -%}
     {{ badge(n.self_page) }}<a class="tname titlelink" href="{{ url_for('url_detail', url_id=n.self_page.id) }}">{{ n.name }}</a><a class="liveurl" href="{{ n.self_page.url }}" target="_blank" title="Open on infineon.com">↗</a>
   {%- elif n.page_id -%}
-    {%- if n.live_level %}<span class="lvl lvl-{{ n.live_level|lower }}" title="{{ level_names.get(n.live_level, '') }} — read from the live structure">{{ n.live_level }}</span>{% endif -%}
-    <a class="tname titlelink" href="{{ url_for('url_detail', url_id=n.page_id) }}">{{ n.name }}</a>{% if n.url %}<a class="liveurl" href="{{ n.url }}" target="_blank" title="Open on infineon.com">↗</a>{% endif %}
+    {{ nlvl(n) }}<a class="tname titlelink" href="{{ url_for('url_detail', url_id=n.page_id) }}">{{ n.name }}</a>{% if n.url %}<a class="liveurl" href="{{ n.url }}" target="_blank" title="Open on infineon.com">↗</a>{% endif %}
   {%- elif n.url -%}
-    <a class="tname titlelink" href="{{ n.url }}" target="_blank" title="This page exists on infineon.com — not captured in our library yet">{{ n.name }} <span style="font-size:11px; opacity:.55">↗</span></a>
+    {{ nlvl(n) }}<a class="tname titlelink" href="{{ n.url }}" target="_blank" title="This page exists on infineon.com — not captured in our library yet">{{ n.name }} <span style="font-size:11px; opacity:.55">↗</span></a>
   {%- else -%}
-    <span class="tname">{{ n.name }}</span>
+    {{ nlvl(n) }}<span class="tname">{{ n.name }}</span>
   {%- endif -%}
 {% endmacro %}
 

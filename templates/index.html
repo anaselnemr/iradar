@@ -81,7 +81,7 @@
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
     <input class="grow" type="text" name="q" value="{{ q }}" placeholder="Search page URL or name…">
 
-    <details class="dd">
+    <details class="dd" name="filters">
       <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for t in ptypes %}
@@ -92,7 +92,7 @@
       </div>
     </details>
 
-    <details class="dd">
+    <details class="dd" name="filters">
       <summary>Status{% if sel_status %}<span class="fbadge">{{ sel_status|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key, sf in status_filters.items() %}
@@ -103,7 +103,7 @@
       </div>
     </details>
 
-    <details class="dd">
+    <details class="dd" name="filters">
       <summary>Content{% if sel_attrs %}<span class="fbadge">{{ sel_attrs|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key, af in attr_filters.items() %}
@@ -167,6 +167,14 @@
     Showing {{ (page-1)*per_page + 1 }}–{{ (page-1)*per_page + urls|length }} of {{ '{:,}'.format(total_match) }}
     · shift-click selects a range
   </div>
+
+  {% if pages > 1 %}
+  <div class="pager" style="justify-content:flex-start; margin:4px 0 10px">
+    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}">← Prev</a>{% endif %}
+    <span class="muted">Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}">Next →</a>{% endif %}
+  </div>
+  {% endif %}
 
   <table>
     <tr>
@@ -235,9 +243,9 @@
 
   {% if pages > 1 %}
   <div class="pager">
-    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs) }}">← Prev</a>{% endif %}
+    {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page-1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}">← Prev</a>{% endif %}
     <span class="muted">Page {{ page }} of {{ pages }}</span>
-    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs) }}">Next →</a>{% endif %}
+    {% if page < pages %}<a class="btn btn-ghost btn-sm" href="{{ url_for('index', page=page+1, q=q or None, status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}">Next →</a>{% endif %}
   </div>
   {% endif %}
   {% endif %}
