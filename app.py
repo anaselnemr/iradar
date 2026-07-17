@@ -226,7 +226,6 @@ _COMPONENT_ATTRS = [
     ("categories", "categories",       "browse-by-category"),
     ("products",   "products",         "related products"),
     ("news",       "news",             "news & highlights"),
-    ("trainings",  "trainings",        "trainings & webinars"),
 ]
 
 ATTR_FILTERS = {
@@ -271,19 +270,21 @@ ATTR_FILTERS["hasthreads"] = ("Developer community has threads",
 # through component detection yet (unknown is not the same as absent), while
 # '[]' = detection ran and found none, which IS a real "No".
 def _navjson(col, label):
-    return (f"(u.{col} IS NOT NULL AND u.{col}<>''"
-            f" AND instr(lower(u.{col}), '\"{label}\"') > 0)")
+    labels = label if isinstance(label, tuple) else (label,)
+    hit = " OR ".join(f"instr(lower(u.{col}), '\"{l}\"') > 0" for l in labels)
+    return f"(u.{col} IS NOT NULL AND u.{col}<>'' AND ({hit}))"
 
 
 def _no_navjson(col, label):
-    return (f"u.{col} IS NOT NULL AND u.{col}<>''"
-            f" AND instr(lower(u.{col}), '\"{label}\"') = 0")
+    labels = label if isinstance(label, tuple) else (label,)
+    miss = " AND ".join(f"instr(lower(u.{col}), '\"{l}\"') = 0" for l in labels)
+    return f"u.{col} IS NOT NULL AND u.{col}<>'' AND {miss}"
 
 
 _NAV_FILTER_ATTRS = [
     ("buyopts",   "components",  "view buying options", "buying options"),
     ("pdetails",  "components",  "product details",     "product details"),
-    ("diagrams",  "components",  "diagrams",            "diagrams"),
+    ("diagrams",  "components",  ("diagram", "diagrams"), "diagram"),
     ("featured",  "components",  "featured products",   "featured products"),
     ("partners",  "components",  "partner solutions",   "partner solutions"),
     ("register",  "components",  "register product",    "register product"),
@@ -330,13 +331,13 @@ COMPONENTS = [
     ("categories",         "Browse by category",    "cat",  "categories"),
     ("products",           "Related products",      "cat",  "products"),
     ("news",               "News & highlights",     "cat",  "news"),
-    ("trainings",          "Trainings & webinars",  "cat",  "trainings"),
     ("videos",             "Videos",                "cat",  "videos"),
     ("product_table",      "Products table",        "flag", "product_table"),
     ("developer_community","Developer community",   "flag", "developer_community"),
     ("buying_options",     "View buying options",   "nav",  "view buying options"),
     ("product_details",    "Product details",       "nav",  "product details"),
-    ("diagrams",           "Diagrams",              "nav",  "diagrams"),
+    # PTP pages label it "Diagrams", application pages "Diagram" - one component
+    ("diagrams",           "Diagram",               "nav",  ("diagram", "diagrams")),
     ("featured_products",  "Featured products",     "nav",  "featured products"),
     ("partner_solutions",  "Partner solutions",     "nav",  "partner solutions"),
     ("register_product",   "Register product",      "nav",  "register product"),
@@ -376,15 +377,21 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
         except Exception:
             return set()
     nav, tabs = _loadset(components_json), _loadset(detail_tabs_json)
+
+    def _in(arg, pool):
+        # a component may go by several nav labels ("Diagram" / "Diagrams")
+        return (any(a in pool for a in arg) if isinstance(arg, tuple)
+                else arg in pool)
+
     have = set()
     for key, _label, kind, arg in _all_components():
         if kind == "cat" and arg in cat_present:
             have.add(key)
         elif kind == "flag" and (flags.get(arg) or {}).get("exists"):
             have.add(key)
-        elif kind == "nav" and arg in nav:
+        elif kind == "nav" and _in(arg, nav):
             have.add(key)
-        elif kind == "tab" and arg in tabs:
+        elif kind == "tab" and _in(arg, tabs):
             have.add(key)
     return have
 
@@ -449,7 +456,12 @@ def _component_counts(con):
                 return set()
         nav, tabs = _loadset(r["components"]), _loadset(r["detail_tabs"])
         for key, _l, kind, arg in comps:
-            if (kind == "nav" and arg in nav) or (kind == "tab" and arg in tabs):
+            pool = nav if kind == "nav" else tabs if kind == "tab" else None
+            if pool is None:
+                continue
+            hit = (any(a in pool for a in arg) if isinstance(arg, tuple)
+                   else arg in pool)
+            if hit:
                 bump(et, key)
     return out
 
