@@ -2525,13 +2525,37 @@ def _pdf_first_png(pdf_bytes, out_path):
     pdf.close()
 
 
-# background pre-render of every Office preview so the item page never waits on
-# a cold LibreOffice - batched (one soffice start converts a whole chunk, ~1s
-# per file amortised vs ~12s each on-demand). Kicked off at startup.
+import hashlib
+
+
+def _doc_tag(meta):
+    """A short token that CHANGES when a document is updated - built from the
+    version, date and size in its meta - so a re-captured newer file gets a
+    fresh preview instead of the stale cached one (the URL usually stays the
+    same across versions, so the URL alone cannot tell us it changed)."""
+    parts = [p.strip() for p in (meta or "").split("|")]
+    ver = next((p for p in parts if re.fullmatch(r"\d{2}_\d{2}", p)), "")
+    date = next((p for p in parts if re.search(r"[A-Za-z]{3}", p)
+                 and re.search(r"\d{4}", p)), "")
+    size = next((p for p in parts if re.search(r"\d\s*[kmg]?b\b", p, re.I)), "")
+    sig = (ver + "|" + date + "|" + size) or (meta or "")
+    return hashlib.sha1(sig.encode("utf-8", "replace")).hexdigest()[:8]
+
+
+def _preview_files(cache, key, meta):
+    """(png, fail) paths for an item's preview, version-stamped so an updated
+    document renders anew and the stale image is left as an orphan to clean."""
+    stem = re.sub(r"[^a-f0-9]", "", key) + "_" + _doc_tag(meta)
+    return cache / (stem + ".png"), cache / (stem + ".fail")
+
+
+# background pre-render of EVERY document's front page so any user opens an item
+# instantly. Version-aware (see _doc_tag): an updated doc re-renders. Throttled
+# to stay under Infineon's bot-guard; resumable; office batched via LibreOffice.
 PREWARM = {"running": False, "done": 0, "total": 0}
 
 
-def _prewarm_office():
+def _prewarm_docs():
     if PREWARM["running"]:
         return
     PREWARM["running"] = True
@@ -2539,46 +2563,92 @@ def _prewarm_office():
         import tempfile
         import subprocess
         import shutil as _sh
+        # never compete with a live capture: a 7k-file download storm shares
+        # Infineon's bot-guard with the page captures. Wait until the run is
+        # idle, then pre-render. On-demand clicks still render instantly.
+        while runner.RUN_STATE.get("running"):
+            time.sleep(60)
         so = _soffice()
         cache = db.DATA_DIR / "previews"
         cache.mkdir(exist_ok=True)
         con = db.connect()
-        exts = " OR ".join("lower(item_url) LIKE '%%.%s'" % e for e in _OFFICE_EXT)
         rows = con.execute(
-            "SELECT DISTINCT item_key, item_url FROM items"
-            " WHERE item_key<>'' AND (" + exts + ")").fetchall()
+            "SELECT item_key, MIN(item_url) u, MIN(meta) m FROM items"
+            " WHERE item_key<>'' AND item_url<>''"
+            " AND category IN ('documents','design_resources')"
+            " GROUP BY item_key").fetchall()
         con.close()
-        todo = [(r["item_key"], r["item_url"]) for r in rows
-                if not (cache / (re.sub(r"[^a-f0-9]", "", r["item_key"]) + ".png")).exists()
-                and not (cache / (re.sub(r"[^a-f0-9]", "", r["item_key"]) + ".fail")).exists()]
-        PREWARM.update(total=len(todo), done=0)
-        if not so:
-            return
-        CHUNK = 25
-        for i in range(0, len(todo), CHUNK):
-            chunk = todo[i:i + CHUNK]
+        # clean orphans: previews whose (key, version) no longer match any item
+        # (an updated doc's old image, a removed doc) - keeps the cache honest
+        valid = set()
+        for r in rows:
+            png, fail = _preview_files(cache, r["item_key"], r["m"])
+            valid.add(png.name)
+            valid.add(fail.name)
+        for f in cache.glob("*.*"):
+            if f.name not in valid:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+        pdfs, offs = [], []
+        for r in rows:
+            low = (r["u"] or "").lower().split("?")[0]
+            if "/gated/" in low:
+                continue
+            tail = low.rsplit("/", 1)[-1]
+            ext = tail.rsplit(".", 1)[-1] if "." in tail else ""
+            png, fail = _preview_files(cache, r["item_key"], r["m"])
+            if png.exists() or fail.exists():
+                continue
+            if ext == "pdf":
+                pdfs.append((r["item_key"], r["u"], r["m"]))
+            elif ext in _OFFICE_EXT and so:
+                offs.append((r["item_key"], r["u"], r["m"]))
+        PREWARM.update(total=len(pdfs) + len(offs), done=0)
+
+        # PDFs one at a time (fast render, no soffice) - gentle throttle, and
+        # back off hard on a run of failures (a bot-guard 403 storm)
+        misses = 0
+        for key, url, meta in pdfs:
+            png, fail = _preview_files(cache, key, meta)
+            if not png.exists():
+                try:
+                    data = _fetch_bytes(url)
+                    if data.startswith(b"%PDF"):
+                        _pdf_first_png(data, png)
+                        misses = 0
+                    else:
+                        fail.touch()             # gated / not a real pdf
+                except Exception:
+                    misses += 1
+                    if misses and misses % 8 == 0:
+                        time.sleep(90)           # likely rate-limited - cool off
+            PREWARM["done"] += 1
+            time.sleep(0.4)                      # ~2/sec, easy on the server
+
+        for i in range(0, len(offs), 20):
+            chunk = offs[i:i + 20]
             d = tempfile.mkdtemp()
-            by_stem = {}
+            stem = {}
             try:
-                for key, url in chunk:
-                    safe = re.sub(r"[^a-f0-9]", "", key)
-                    low = url.lower().split("?")[0]
-                    ext = low.rsplit(".", 1)[-1]
+                for key, url, meta in chunk:
+                    ext = url.lower().split("?")[0].rsplit(".", 1)[-1]
                     try:
                         data = _fetch_bytes(url)
                     except Exception:
                         continue
+                    png, fail = _preview_files(cache, key, meta)
                     if not (data[:2] == b"PK" or data[:4] == b"\xd0\xcf\x11\xe0"):
-                        (cache / (safe + ".fail")).touch()   # gated / not a file
+                        fail.touch()
                         continue
-                    with open(os.path.join(d, safe + "." + ext), "wb") as f:
+                    s = re.sub(r"[^a-f0-9]", "", key)
+                    with open(os.path.join(d, s + "." + ext), "wb") as f:
                         f.write(data)
-                    by_stem[safe] = key
-                if by_stem:
-                    srcs = [os.path.join(d, s + "." + u.lower().rsplit(".", 1)[-1])
-                            for s, k in by_stem.items()
-                            for u in [dict(chunk)[k]]]
-                    srcs = [p for p in srcs if os.path.exists(p)]
+                    stem[s] = (key, meta)
+                if stem:
+                    srcs = [os.path.join(d, f) for f in os.listdir(d)
+                            if not f.endswith(".pdf")]
                     try:
                         subprocess.run([so, "--headless", "--convert-to", "pdf",
                                         "--outdir", d] + srcs, timeout=300,
@@ -2586,21 +2656,21 @@ def _prewarm_office():
                                        stderr=subprocess.DEVNULL)
                     except Exception:
                         pass
-                    for safe in by_stem:
-                        pdf = os.path.join(d, safe + ".pdf")
-                        out = cache / (safe + ".png")
-                        if os.path.exists(pdf) and not out.exists():
+                    for s, (key, meta) in stem.items():
+                        pdf = os.path.join(d, s + ".pdf")
+                        png, fail = _preview_files(cache, key, meta)
+                        if os.path.exists(pdf):
                             try:
                                 with open(pdf, "rb") as f:
-                                    _pdf_first_png(f.read(), out)
+                                    _pdf_first_png(f.read(), png)
                             except Exception:
-                                (cache / (safe + ".fail")).touch()
-                        elif not out.exists():
-                            (cache / (safe + ".fail")).touch()
+                                fail.touch()
+                        else:
+                            fail.touch()
             finally:
                 _sh.rmtree(d, ignore_errors=True)
-            PREWARM["done"] = min(i + CHUNK, len(todo))
-            time.sleep(1)     # be gentle while a capture run shares the CPU
+            PREWARM["done"] += len(chunk)
+            time.sleep(1)
     finally:
         PREWARM["running"] = False
 
@@ -2609,59 +2679,49 @@ def _prewarm_office():
 def doc_preview_png(key):
     """FRONT PAGE of a document as an image - enough to verify it is the right
     file. Our OWN server fetches it (Infineon refuses cross-origin embedding),
-    renders page 1 and caches the PNG. PDFs render directly; Office files are
-    converted to PDF first via LibreOffice. A file that comes back as an HTML
-    login page (MyInfineon-gated) can never be pictured - it is negative-cached
+    renders page 1 and caches the PNG under a version-stamped name, so an
+    updated document (new date/version) renders fresh. PDFs render directly;
+    Office files convert to PDF via LibreOffice first. A file that comes back as
+    an HTML login page (MyInfineon-gated) can never be pictured - negative-cached
     so the item page shows a clean card instead."""
     cache = db.DATA_DIR / "previews"
     cache.mkdir(exist_ok=True)
-    safe = re.sub(r"[^a-f0-9]", "", key)
-    out = cache / (safe + ".png")
-    fail = cache / (safe + ".fail")
+    con = db.connect()
+    row = con.execute(
+        "SELECT MIN(item_url) u, MIN(meta) m FROM items WHERE item_key=?"
+        " AND category IN ('documents','design_resources')", (key,)).fetchone()
+    con.close()
+    url = (row["u"] if row else "") or ""
+    meta = (row["m"] if row else "") or ""
+    out, fail = _preview_files(cache, key, meta)
     if out.exists():
         return send_file(out, mimetype="image/png")
     if fail.exists():
         abort(404)
-    con = db.connect()
-    row = con.execute(
-        "SELECT item_url FROM items WHERE item_key=?"
-        " AND category IN ('documents','design_resources') LIMIT 1",
-        (key,)).fetchone()
-    con.close()
-    url = (row["item_url"] if row else "") or ""
     low = url.lower().split("?")[0]
     tail = low.rsplit("/", 1)[-1]
     ext = tail.rsplit(".", 1)[-1] if "." in tail else ""
     if "/gated/" in low or ext not in ({"pdf"} | _OFFICE_EXT):
         abort(404)
-    # No converter installed -> do not even fetch: 404 now (card shown), and it
-    # retries automatically once LibreOffice appears (no permanent marker).
     if ext in _OFFICE_EXT and not _soffice():
         abort(404)
     try:
-        import urllib.request
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=40) as resp:
-            data = resp.read(40_000_000)
+        data = _fetch_bytes(url)
         if ext == "pdf":
             pdfdata = data if data.startswith(b"%PDF") else None
         elif data[:2] == b"PK" or data[:4] == b"\xd0\xcf\x11\xe0":
-            pdfdata = _office_to_pdf(data, ext)     # real office file
+            pdfdata = _office_to_pdf(data, ext)
         else:
             pdfdata = None                          # HTML login page = gated
-        if not pdfdata:
-            fail.touch()                            # genuinely un-pictureable
-            abort(404)
-        import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(pdfdata)
-        pil = pdf[0].render(scale=1.6).to_pil()
-        pil.thumbnail((1100, 1400))
-        pil.save(out, "PNG")
-        pdf.close()
+        if pdfdata:
+            _pdf_first_png(pdfdata, out)
+        else:
+            fail.touch()
     except Exception:
-        abort(404)
-    return send_file(out, mimetype="image/png")
+        pass
+    if out.exists():
+        return send_file(out, mimetype="image/png")
+    abort(404)
 
 
 @app.route("/item/<key>")
@@ -2848,7 +2908,7 @@ def history():
 @app.route("/prewarm", methods=["POST"])
 def prewarm():
     if not PREWARM["running"]:
-        threading.Thread(target=_prewarm_office, daemon=True).start()
+        threading.Thread(target=_prewarm_docs, daemon=True).start()
     return jsonify(PREWARM)
 
 
@@ -2857,7 +2917,7 @@ if __name__ == "__main__":
     scheduler.start()
     reschedule()
     # warm the Office previews in the background so item pages open instantly
-    threading.Thread(target=_prewarm_office, daemon=True).start()
+    threading.Thread(target=_prewarm_docs, daemon=True).start()
     print()
     print("  InfineonWatch is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")
