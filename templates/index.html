@@ -164,8 +164,11 @@
   <table>
     <tr>
       <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
-      <th>#</th><th>Page</th><th>Type</th><th>Live</th><th>Status</th>
-      <th>Last captured</th><th>Changes</th>
+      <th>#</th>
+      <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
+      <th>Type</th><th>Live</th><th>Status</th>
+      <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
+      <th>Changes</th>
     </tr>
     {% for u in urls %}
     <tr>
@@ -306,7 +309,29 @@ initTable();
 // panel - no white flash, no scroll jump, no re-running the whole page. Any
 // failure falls back to an ordinary navigation, so it can never get stuck.
 const panel = document.getElementById('trackpanel');
+// Column-header sorting. Toggles direction, drops back to page 1, and re-uses
+// the current filters (they live in the URL) so sorting never clears a filter.
+function sortBy(key) {
+  const p = new URLSearchParams(location.search);
+  const cur = p.get('sort') || 'page';
+  if (key === 'page') p.set('sort', cur === 'page' ? 'page_desc' : 'page');
+  else p.set('sort', cur === 'date' ? 'date_asc' : 'date');
+  p.delete('page');
+  pjax('{{ url_for("index") }}?' + p.toString());
+  return false;
+}
 function pjax(url) {
+  // carry the active sort through filter/pager/chip clicks that don't set one
+  try {
+    const u = new URL(url, location.origin);
+    if (!u.searchParams.has('sort')) {
+      const cur = new URLSearchParams(location.search).get('sort');
+      if (cur && cur !== 'page') {
+        u.searchParams.set('sort', cur);
+        url = u.pathname + '?' + u.searchParams.toString();
+      }
+    }
+  } catch (e) {}
   panel.style.opacity = '0.55';
   fetch(url, {headers: {'X-Requested-With': 'fetch'}})
     .then(r => r.text())

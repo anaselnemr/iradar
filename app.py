@@ -289,6 +289,17 @@ def index():
     statuses = [s for s in request.args.getlist("status") if s in STATUS_FILTERS]
     sel_types = request.args.getlist("ptype")
     attrs = [a for a in request.args.getlist("attr") if a in ATTR_FILTERS]
+    sort = request.args.get("sort", "page")
+    # Sort by page ADDRESS, not title: the URL is the site's own path, so
+    # alphabetical-by-URL keeps the hierarchy grouped ("…/microcontroller/…"
+    # rows sit together) AND a newly added page lands in place immediately -
+    # its URL is known the moment it is added, long before it has a title.
+    order_by = {
+        "page": "u.url COLLATE NOCASE ASC",
+        "page_desc": "u.url COLLATE NOCASE DESC",
+        "date": "u.last_checked IS NULL, u.last_checked DESC",
+        "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
+    }.get(sort, "u.url COLLATE NOCASE ASC")
     try:
         page = max(1, int(request.args.get("page", "1")))
     except ValueError:
@@ -311,10 +322,7 @@ def index():
             AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)
             AS page_title
         FROM urls u {wsql}
-        ORDER BY CASE
-            WHEN u.last_status='changed' AND u.active=1 THEN 0
-            WHEN u.last_status IN ('error', 'rejected') THEN 1
-            ELSE 2 END, u.id
+        ORDER BY {order_by}, u.id
         LIMIT ? OFFSET ?
     """, params + [PER_PAGE, (page - 1) * PER_PAGE]).fetchall()
 
@@ -381,7 +389,7 @@ def index():
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
-                           q=q, page=page, pages=pages,
+                           q=q, page=page, pages=pages, sort=sort,
                            total_match=total_match, counts=counts,
                            per_page=PER_PAGE, ptypes=ptypes,
                            sel_status=statuses, sel_types=sel_types,
