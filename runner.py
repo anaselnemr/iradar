@@ -144,6 +144,24 @@ def canonical_url(page_url, crumbs, final_url):
     return ""
 
 
+def _snapshot_item_count(snap_dir):
+    """How many library items a snapshot's sections.json holds - used to catch
+    a suddenly-empty extraction before it overwrites a populated baseline."""
+    p = Path(snap_dir) / "sections.json"
+    if not p.exists():
+        return 0
+    try:
+        sections = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return -1              # unreadable = don't trigger the empty guard
+    n = 0
+    for cat, items in sections.items():
+        if isinstance(items, list) and cat not in NON_LIBRARY_CATS:
+            n += sum(1 for it in items
+                     if isinstance(it, dict) and (it.get("title") or "").strip())
+    return n
+
+
 def index_items(con, url_id, snap_dir, dead=False):
     """Refresh the searchable item index for a URL from its current snapshot.
 
@@ -366,7 +384,10 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         (res.get("http_status"),
          json.dumps([] if dead else (res.get("breadcrumb") or []),
                     ensure_ascii=False),
-         json.dumps(res.get("flags") or {}, ensure_ascii=False),
+         # a dead page's own furniture (its default hero, error-page table) is
+         # not this page's content - drop the flags too, or they leak into the
+         # type's component superset
+         json.dumps({} if dead else (res.get("flags") or {}), ensure_ascii=False),
          json.dumps([] if dead else (res.get("components") or []),
                     ensure_ascii=False),
          json.dumps([] if dead else (res.get("detail_tabs") or []),
@@ -376,12 +397,17 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
                                        res.get("breadcrumb") or [],
                                        res.get("final_url") or ""),
          url_id))
-    # a design-resource page's level is deterministic from its URL - assign it
-    # at capture so pages reached after any one-time backfill still get typed
-    if row["ptype"] == "Design resources" and not dead:
-        lvl = db.dr_level_for(row["url"])
-        con.execute("UPDATE urls SET level=?, level_src=? WHERE id=?",
-                    (lvl, "inferred" if lvl else "", url_id))
+    # SELF-HEAL at capture: a page that entered without a type gets typed from
+    # its URL, and any URL-derivable level (PTP/EB, DRC/DRF/DRSF) is filled if
+    # missing - so type/level can never silently stay blank for a captured page
+    if not dead:
+        pt, lvl, lsrc = db.type_level_for(row["url"])
+        if pt and not (row["ptype"] or ""):
+            con.execute("UPDATE urls SET ptype=? WHERE id=?", (pt, url_id))
+        if lvl:
+            con.execute("UPDATE urls SET level=?, level_src=?"
+                        " WHERE id=? AND IFNULL(level,'')=''",
+                        (lvl, lsrc, url_id))
     gone, rmsg = _follow_redirect(con, url_id, row["url"],
                                   res.get("final_url") or "")
     if rmsg:
@@ -394,6 +420,26 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         "SELECT * FROM snapshots WHERE url_id=? AND status='ok' AND id<>?"
         " AND dir<>'' AND rejected=0 ORDER BY id DESC LIMIT 1",
         (url_id, new_snap_id)).fetchone()
+
+    # GUARD: a page that had a real library but now extracts NOTHING almost
+    # always means Infineon renamed the markup our selectors depend on - not
+    # that the page truly lost all its content (the text layer would change
+    # too). Refuse to overwrite the good baseline with emptiness: keep the old
+    # snapshot + items, report an error so it is loud and retried. Without this,
+    # one markup change could silently hollow out the library for a whole shape.
+    if prev is not None and not dead:
+        prev_n = con.execute("SELECT COUNT(*) FROM items WHERE url_id=?",
+                             (url_id,)).fetchone()[0]
+        if prev_n >= 5 and _snapshot_item_count(snap_dir) == 0:
+            con.execute("UPDATE urls SET last_checked=?, last_status='error'"
+                        " WHERE id=?", (now, url_id))
+            shutil.rmtree(snap_dir, ignore_errors=True)
+            con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
+            counters["errors"] += 1
+            counters["saved"] += 1
+            print(f"[guard] {row['url']}: {prev_n} items -> 0, extractor likely "
+                  "broke; baseline kept", flush=True)
+            return
 
     if prev is None:
         con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",

@@ -234,6 +234,22 @@ def dr_level_for(url):
     return "DRC" if n <= 1 else "DRF" if n == 2 else "DRSF"
 
 
+def type_level_for(url):
+    """(ptype, level, level_src) fully derivable from a URL - the ONE source of
+    truth used at add time AND re-applied at capture, so a page that somehow
+    entered without a type self-heals. Product/Application LEVELS are left blank
+    (not URL-derivable - they come from the report or the inference engine)."""
+    pt = ptype_for_url(url)
+    lu = (url or "").lower()
+    if pt == "Part":
+        lvl = "EB" if "/evaluation-board/" in lu else "PTP"
+    elif pt == "Design resources":
+        lvl = dr_level_for(url)
+    else:
+        lvl = ""
+    return pt, lvl, ("inferred" if lvl else "")
+
+
 def ptype_for_url(u):
     """The page type a URL belongs to, read from its shape - so a link added
     by hand gets typed exactly like the report-imported ones and every
@@ -279,18 +295,11 @@ def add_urls_labeled(pairs):
                 con.execute("UPDATE urls SET label=? WHERE id=? AND label=''",
                             (label, dup["id"]))
             continue
-        pt = ptype_for_url(u)
-        if pt == "Part":
-            lvl = "EB" if "/evaluation-board/" in u.lower() else "PTP"
-        elif pt == "Design resources":
-            lvl = dr_level_for(u)          # DRC/DRF/DRSF from URL depth
-        else:
-            lvl = ""                       # product/app levels need the report
-        # or the inference engine - not readable from a URL
+        pt, lvl, lsrc = type_level_for(u)
         cur = con.execute(
             "INSERT OR IGNORE INTO urls(url, label, created_at, ptype,"
             " level, level_src) VALUES(?, ?, ?, ?, ?, ?)",
-            (u, label, now_iso(), pt, lvl, "inferred" if lvl else ""))
+            (u, label, now_iso(), pt, lvl, lsrc))
         added += cur.rowcount
     con.commit()
     con.close()

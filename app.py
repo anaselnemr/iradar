@@ -1974,17 +1974,17 @@ def url_set_level(url_id):
     return redirect(url_for("url_detail", url_id=url_id))
 
 
-@app.route("/levels/infer-missing", methods=["POST"])
-def levels_infer_missing():
-    """One click: every level-less Product/Application page gets the
-    three-signal inference; each assignment is reported."""
+def _infer_missing_levels():
+    """Assign a level to every CAPTURED Product/Application page that lacks one,
+    via the three-signal inference. Shared by the manual button and the
+    post-run watcher. Returns (assigned_labels, skipped_count)."""
     con = db.connect()
-    rows = con.execute("SELECT * FROM urls WHERE ptype IN"
-                       " ('Product','Application','Part')"
-                       " AND (level IS NULL OR level='')").fetchall()
+    rows = con.execute(
+        "SELECT * FROM urls WHERE ptype IN ('Product','Application','Part')"
+        " AND IFNULL(level,'')='' AND last_checked IS NOT NULL").fetchall()
     done, skipped = [], 0
     for row in rows:
-        lvl, conf, _why = _infer_level(con, row)
+        lvl, _conf, _why = _infer_level(con, row)
         if lvl:
             con.execute("UPDATE urls SET level=?, level_src='inferred'"
                         " WHERE id=?", (lvl, row["id"]))
@@ -1993,6 +1993,32 @@ def levels_infer_missing():
             skipped += 1
     con.commit()
     con.close()
+    return done, skipped
+
+
+def _post_run_watcher():
+    """After each capture run finishes, auto-infer the levels of any new
+    Product/Application pages - so a freshly-added or newly-reached page gets
+    its PC/PFP/ADP/... shape without waiting for a manual click."""
+    prev = False
+    while True:
+        time.sleep(30)
+        running = runner.RUN_STATE.get("running", False)
+        if prev and not running:
+            try:
+                done, _ = _infer_missing_levels()
+                if done:
+                    print(f"[post-run] inferred {len(done)} level(s)", flush=True)
+            except Exception:
+                pass
+        prev = running
+
+
+@app.route("/levels/infer-missing", methods=["POST"])
+def levels_infer_missing():
+    """One click: every level-less Product/Application page gets the
+    three-signal inference; each assignment is reported."""
+    done, skipped = _infer_missing_levels()
     flash((f"Inferred {len(done)} level(s): " + ", ".join(done[:10])
            + ("…" if len(done) > 10 else "")) if done
           else "Every typed page already has a level.")
@@ -2916,8 +2942,10 @@ if __name__ == "__main__":
     db.init_db()
     scheduler.start()
     reschedule()
-    # warm the Office previews in the background so item pages open instantly
+    # warm the document previews in the background so item pages open instantly
     threading.Thread(target=_prewarm_docs, daemon=True).start()
+    # auto-infer product/application levels after every run
+    threading.Thread(target=_post_run_watcher, daemon=True).start()
     print()
     print("  InfineonWatch is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")
