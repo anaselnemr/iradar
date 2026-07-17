@@ -148,7 +148,9 @@
         {% for c in components %}
           {% if c.key in ('product_table', 'developer_community', 'hero_image') %}
             {% set f = flags.get(c.key) %}
-            {% if not f or not f.exists %}
+            {% if c.key == 'hero_image' and f is none %}
+              <span class="cchip off" style="opacity:.5" title="Not measured yet — this page was captured before hero detection; its next capture fills this in">◌ {{ c.label }}</span>
+            {% elif not f or not f.exists %}
               <span class="cchip off" title="{{ 'No hero image assigned' if c.key == 'hero_image' else 'Not on this page' }}">{{ c.label }}</span>
             {% elif f.has_content %}
               <span class="cchip on" title="{{ 'A page-specific image is assigned' if c.key == 'hero_image' else 'Present, has content' }}">✓ {{ c.label }}</span>

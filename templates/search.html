@@ -49,7 +49,28 @@
   </div>
 </div>
 
-{% if q and cat == 'pages' %}
+{% if q and cat == 'text' %}
+  {% if text_hits %}
+  <div class="card">
+    <h2>In page text <span class="muted" style="font-weight:400">— {{ text_hits|length }} page{{ 's' if text_hits|length != 1 }}</span></h2>
+    <div style="display:flex; flex-direction:column; gap:10px">
+      {% for h in text_hits %}
+      <a class="pagecard" href="{{ url_for('url_detail', url_id=h.id) }}">
+        <div class="pagecard-title">{% if h.level %}<span class="lvl lvl-{{ h.level|lower }}">{{ h.level }}</span> {% endif %}{{ h.title }}
+          <span style="float:right; display:inline-flex; gap:5px">
+            {% for c2 in h.comps %}<span class="badge b-sys" style="font-weight:500">{{ c2 }}</span>{% endfor %}
+          </span>
+        </div>
+        <div class="muted" style="font-size:13px; line-height:1.5; margin:4px 0 3px">{{ h.snip|safe }}</div>
+        <div class="pagecard-url">{{ h.url }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card"><p class="muted" style="margin:0">No page text contains “<b>{{ q }}</b>”.</p></div>
+  {% endif %}
+{% elif q and cat == 'pages' %}
   {% if page_hits %}
   <div class="card">
     <h2>Pages <span class="muted" style="font-weight:400">— {{ page_hits|length }} match{{ 'es' if page_hits|length != 1 }}</span></h2>

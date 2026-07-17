@@ -121,6 +121,9 @@ def init_db():
     -- items table per dashboard load. With it, each check is a single seek.
     CREATE INDEX IF NOT EXISTS idx_items_url_cat ON items(url_id, category);
     CREATE INDEX IF NOT EXISTS idx_snapshots_url ON snapshots(url_id, ts);
+    -- full text of every page's newest snapshot (rowid = url_id), so search
+    -- can look INSIDE the pages, not just at their item titles
+    CREATE VIRTUAL TABLE IF NOT EXISTS page_fts USING fts5(txt);
     CREATE INDEX IF NOT EXISTS idx_changes_url ON changes(url_id, ts);
     """)
     # lightweight migrations for databases created by older versions

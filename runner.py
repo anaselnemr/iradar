@@ -139,6 +139,17 @@ def index_items(con, url_id, snap_dir, dead=False):
     of every retired part page.
     """
     con.execute("DELETE FROM items WHERE url_id=?", (url_id,))
+    # the page's full text rides along: same lifecycle, same dead-page purge
+    con.execute("DELETE FROM page_fts WHERE rowid=?", (url_id,))
+    if not dead:
+        tp = Path(snap_dir) / "text.txt"
+        if tp.exists():
+            try:
+                con.execute("INSERT INTO page_fts(rowid, txt) VALUES(?, ?)",
+                            (url_id, tp.read_text(encoding="utf-8",
+                                                  errors="replace")[:200_000]))
+            except Exception:
+                pass
     p = Path(snap_dir) / "sections.json"
     if dead or not p.exists():
         return

@@ -290,7 +290,8 @@ def _no_navjson(col, label):
 _NAV_FILTER_ATTRS = [
     ("buyopts",   "components",  "view buying options", "buying options"),
     ("pdetails",  "components",  "product details",     "product details"),
-    ("diagrams",  "components",  ("diagram", "diagrams"), "diagram"),
+    ("diagrams",  "components",
+     ("diagram", "diagrams", "block diagram", "block diagrams"), "diagram"),
     ("featured",  "components",  "featured products",   "featured products"),
     ("partners",  "components",  "partner solutions",   "partner solutions"),
     ("register",  "components",  "register product",    "register product"),
@@ -345,7 +346,8 @@ COMPONENTS = [
     ("buying_options",     "View buying options",   "nav",  "view buying options"),
     ("product_details",    "Product details",       "nav",  "product details"),
     # PTP pages label it "Diagrams", application pages "Diagram" - one component
-    ("diagrams",           "Diagram",               "nav",  ("diagram", "diagrams")),
+    ("diagrams",           "Diagram",               "nav",
+     ("diagram", "diagrams", "block diagram", "block diagrams")),
     ("featured_products",  "Featured products",     "nav",  "featured products"),
     ("partner_solutions",  "Partner solutions",     "nav",  "partner solutions"),
     ("register_product",   "Register product",      "nav",  "register product"),
@@ -975,6 +977,7 @@ SEARCH_PILLS = [
     ("videos",       "Videos",
      lambda d: d["cat"] == "videos"
      or (d["cat"] in ("news", "trainings") and _videolike(d))),
+    ("text",         "In page text", None),
     ("pages",        "Pages themselves", None),
 ]
 PILL_FN = {k: f for k, _l, f in SEARCH_PILLS}
@@ -1603,9 +1606,11 @@ def url_detail(url_id):
     etype = _etype(u["ptype"] or "", u["url"], u["level"])
     type_comps = _effective_matrix(con5).get(etype, set())
     con5.close()
+    # hero_image rides on every page ("almost all should have it") even where
+    # its shape has no measurement yet - the chip then says so instead of lying
     comp_rows = [{"key": k, "label": lbl, "exists": k in have}
                  for k, lbl, _kind, _arg in _all_components()
-                 if k in type_comps or k in have]
+                 if k in type_comps or k in have or k == "hero_image"]
 
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
@@ -2182,7 +2187,51 @@ def search_items():
         page_hits = [h[2] for h in sorted(hits.values(),
                                           key=lambda h: (-h[0], -h[1]))][:60]
         total = len(page_hits)
-    if q and cat != "pages":
+    text_hits = []
+    if q and cat == "text":
+        # look INSIDE the pages: FTS over each page's full captured text, and
+        # then say WHICH COMPONENT the words live in by checking the page's
+        # own indexed items for the same tokens
+        from markupsafe import escape as _esc
+        fq = " ".join('"' + t.replace('"', "") + '"'
+                      for t in q.split() if t.strip())
+        try:
+            frows = con.execute(
+                "SELECT rowid AS url_id,"
+                " snippet(page_fts, 0, '[[', ']]', ' … ', 14) AS snip"
+                " FROM page_fts WHERE page_fts MATCH ? LIMIT 60",
+                (fq,)).fetchall()
+        except Exception:
+            frows = []
+        toks = [t.lower() for t in q.split() if len(t) >= 3][:4]
+        lbls = dict(SECTION_LABELS)
+        for fr in frows:
+            u2 = con.execute(
+                "SELECT id, url, level, label,"
+                " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+                "   AND s.status='ok' AND s.page_title<>''"
+                "   ORDER BY s.id DESC LIMIT 1) AS page_title"
+                " FROM urls WHERE id=?", (fr["url_id"],)).fetchone()
+            if not u2:
+                continue
+            comps = []
+            if toks:
+                like = " OR ".join(["lower(title) LIKE ?"] * len(toks))
+                comps = [lbls.get(r2["category"], r2["category"])
+                         for r2 in con.execute(
+                             f"SELECT DISTINCT category FROM items"
+                             f" WHERE url_id=? AND ({like}) LIMIT 3",
+                             [u2["id"]] + [f"%{t}%" for t in toks])]
+            snip = str(_esc(fr["snip"])).replace("[[", "<mark>").replace(
+                "]]", "</mark>")
+            text_hits.append({"id": u2["id"], "url": u2["url"],
+                              "level": u2["level"] or "",
+                              "title": (u2["page_title"] or u2["label"]
+                                        or u2["url"].rstrip("/").rsplit("/", 1)[-1]),
+                              "snip": snip,
+                              "comps": comps or ["page body text"]})
+        total = len(text_hits)
+    if q and cat not in ("pages", "text"):
         keys = _search_keys(con, q, cat, 250)
         if keys:
             marks = ",".join("?" * len(keys))
@@ -2235,6 +2284,7 @@ def search_items():
     return render_template("search.html", q=q, cat=cat,
                            pills=[(k, l) for k, l, _f in SEARCH_PILLS],
                            pill_labels=PILL_LABELS, page_hits=page_hits,
+                           text_hits=text_hits,
                            groups=groups, total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS))
 
