@@ -669,36 +669,49 @@ def _breadcrumbs(con, ptypes):
         # node, and the part sits inside its product instead of beside it.
         # That is the PFP > PSFP > PEFP > PTP chain, from the site's own data.
         path = [c["title"].strip() for c in crumbs]
+        # every crumb carries the live Infineon URL of that level - keep it so a
+        # grouping node can link to the real page it stands for
+        crumb_urls = [(c.get("url") or "").strip() for c in crumbs]
         out.append({"id": r["id"], "url": r["url"], "ptype": r["ptype"],
                     "level": r["level"] or "",
                     "level_name": LEVEL_NAMES.get(r["level"] or "", ""),
-                    "title": r["page_title"] or "", "crumbs": path})
+                    "title": r["page_title"] or "", "crumbs": path,
+                    "crumb_urls": crumb_urls})
     return out
 
 
-def _hierarchy_tree(pages):
+def _hierarchy_tree(pages, tracked=None):
     """Nest pages under their own breadcrumb path.
 
     The site publishes a JSON-LD breadcrumb on every page, and a part's
     breadcrumb ends at its product family - so parts land under their product
     without scraping a parametric table off all 190 product pages. Types whose
     pages have no depth (a flat /part/ list) simply come out flat.
+
+    `tracked` maps a normalised URL to the id of the page we captured for it, so
+    each grouping node can link to its real page (ours if we have it, else the
+    live site) instead of rendering as dead text.
     """
-    root = {"name": "", "children": {}, "pages": [], "count": 0}
+    root = {"name": "", "children": {}, "pages": [], "count": 0, "url": ""}
     for p in pages:
         node = root
         node["count"] += 1
-        for part in p["crumbs"]:
+        crumb_urls = p.get("crumb_urls") or []
+        for i, part in enumerate(p["crumbs"]):
             child = node["children"].get(part)
             if child is None:
-                child = {"name": part, "children": {}, "pages": [], "count": 0}
+                child = {"name": part, "children": {}, "pages": [],
+                         "count": 0, "url": ""}
                 node["children"][part] = child
             node = child
             node["count"] += 1
+            if not node["url"] and i < len(crumb_urls) and crumb_urls[i]:
+                node["url"] = crumb_urls[i]
         node["pages"].append(p)
 
     def freeze(n, depth=0):
         return {"name": n["name"], "count": n["count"], "depth": depth,
+                "url": n.get("url", ""),
                 "pages": sorted(n["pages"], key=lambda x: x["title"] or x["url"]),
                 "children": [freeze(c, depth + 1)
                              for c in sorted(n["children"].values(),
@@ -706,7 +719,27 @@ def _hierarchy_tree(pages):
     tree = freeze(root)
     _live_levels(tree)
     _attach_self_pages(tree)
+    _link_nodes(tree, tracked or {})
     return tree
+
+
+def _norm_url(u):
+    return (u or "").split("#")[0].split("?")[0].rstrip("/").lower()
+
+
+def _link_nodes(node, tracked):
+    """Give each grouping node a link to the real page it stands for. Every
+    breadcrumb crumb carries that level's live Infineon URL: if we captured it,
+    the node links to OUR library (page_id); otherwise it links to the live page
+    (its url). Without this, an intermediate family/category page whose own
+    breadcrumb happens to root elsewhere renders as plain, dead text even though
+    it is a real page we may already track."""
+    if node.get("self_page") is None and node.get("url"):
+        hit = tracked.get(_norm_url(node["url"]))
+        if hit:
+            node["page_id"] = hit
+    for c in node["children"]:
+        _link_nodes(c, tracked)
 
 
 def _norm_node(s):
@@ -772,7 +805,18 @@ def _live_levels(node, depth=0):
     the tree in - and it follows the site rather than a report that can go
     stale. Where it disagrees with the sheet, the live answer is shown.
     """
-    kind = "PTP" if not node["children"] else "PSFP"
+    # the node's OWN level (for its header badge when the node links to a page):
+    # depth 1 category, depth 2 family, a leaf grouping end-family, else sub-family
+    if depth == 0:
+        node["live_level"] = ""
+    elif depth == 1:
+        node["live_level"] = "PC"
+    elif depth == 2:
+        node["live_level"] = "PFP"
+    elif not node["children"]:
+        node["live_level"] = "PEFP"
+    else:
+        node["live_level"] = "PSFP"
     for p in node["pages"]:
         if p.get("ptype") == "Part":
             p["live_level"] = "PTP"
@@ -1422,8 +1466,13 @@ def hierarchy():
         totals[lbl] = con.execute(
             f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})",
             mem).fetchone()[0]
+    # every live page we track, by URL, so a grouping node can link to our
+    # captured library when we have the page it stands for
+    tracked = {_norm_url(r["url"]): r["id"] for r in con.execute(
+        "SELECT id, url FROM urls WHERE active=1"
+        " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')")}
     con.close()
-    tree = _hierarchy_tree(pages)          # also assigns each page's live_level
+    tree = _hierarchy_tree(pages, tracked)  # nests + levels + node links
     # the levels present in this tab, in taxonomy order, for the legend
     order = list(LEVEL_NAMES)
     seen_levels = sorted({p.get("live_level") for p in pages

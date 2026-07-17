@@ -451,6 +451,9 @@ def run_check_background(kind="manual", url_ids=None):
     """Fire-and-forget check in a daemon thread. Returns False if already running."""
     if RUN_STATE["running"]:
         return False
+    # start clean: never inherit a pause/stop flag from a prior run
+    RUN_STATE["paused"] = False
+    RUN_STATE["stopping"] = False
     t = threading.Thread(target=run_check, kwargs={"kind": kind, "url_ids": url_ids},
                          daemon=True)
     t.start()
