@@ -205,12 +205,20 @@ STATUS_FILTERS = {
     "new":       ("Not captured", "u.last_checked IS NULL"),
 }
 
-# properties of the page itself / what we captured from it (AND-combined).
-# Every content attribute gets a Has and a No half, generated together so the
-# two can never drift apart or one be forgotten.
+# What we captured from a page, in two filter groups the dashboard shows
+# separately (all AND-combined). Every attribute gets a Has and a No half,
+# generated together so the two can never drift apart or one be forgotten.
+#   Content    = the actual assets on the page. A video counts wherever it
+#                sits - including a video card inside News & highlights.
+#   Components = the page's own structural sections, each tracked has/not-here.
 #   stem: short, stable key fragment (used in URLs) -> library category, label
 _CONTENT_ATTRS = [
     ("docs",       "documents",        "documents"),
+    ("videos",     "videos",           "videos"),
+]
+# section-content we already index. The nav-only components (Product details,
+# Diagrams, ...) join this group from urls.components once a re-capture fills it.
+_COMPONENT_ATTRS = [
     ("design",     "design_resources", "design resources"),
     ("features",   "features",         "key features"),
     ("benefits",   "benefits",         "benefits"),
@@ -219,7 +227,6 @@ _CONTENT_ATTRS = [
     ("products",   "products",         "related products"),
     ("news",       "news",             "news & highlights"),
     ("trainings",  "trainings",        "trainings & webinars"),
-    ("videos",     "videos",           "videos"),
 ]
 
 ATTR_FILTERS = {
@@ -233,9 +240,16 @@ ATTR_FILTERS = {
                  "(u.last_http IS NOT NULL AND u.last_http >= 400)"
                  " OR u.last_status='blank'"),
 }
-for _stem, _cat, _label in _CONTENT_ATTRS:
+for _stem, _cat, _label in _CONTENT_ATTRS + _COMPONENT_ATTRS:
     ATTR_FILTERS["has" + _stem] = ("Has " + _label, _has(_cat))
     ATTR_FILTERS["no" + _stem] = ("No " + _label, _nohas(_cat))
+# a video is a video wherever it appears - a video card inside News &
+# highlights counts too ("if a video is in the news it should also count").
+_VIDEO_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
+              " AND i.category IN ('videos','news'))")
+ATTR_FILTERS["hasvideos"] = ("Has videos", _VIDEO_SQL)
+ATTR_FILTERS["novideos"] = ("No videos",
+                            "u.last_checked IS NOT NULL AND NOT " + _VIDEO_SQL)
 # presence-only blocks (content itself never stored) - each with its inverse
 ATTR_FILTERS["hastable"] = ("Has products table",
                             _flag("product_table", "exists"))
@@ -249,6 +263,17 @@ ATTR_FILTERS["nocommunity"] = ("No developer community",
                                _noflag("developer_community", "exists"))
 ATTR_FILTERS["hasthreads"] = ("Developer community has threads",
                               _flag("developer_community", "has_content"))
+
+# the two dropdown groups, in display order (Has + No shown together per row).
+# Page-state (Captured/Live/Not live) stays at the top of Content, as before.
+CONTENT_KEYS = ["checked", "live", "notlive"]
+for _stem, _c, _l in _CONTENT_ATTRS:
+    CONTENT_KEYS += ["has" + _stem, "no" + _stem]
+COMPONENT_KEYS = []
+for _stem, _c, _l in _COMPONENT_ATTRS:
+    COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
+COMPONENT_KEYS += ["hastable", "notable", "hastablerows",
+                   "hascommunity", "nocommunity", "hasthreads"]
 
 
 def _bulk_counts(con, filters):
@@ -379,17 +404,25 @@ def index():
     # how many captured pages carry each category - one GROUP BY, indexed
     cat_pages = {r["category"]: r["n"] for r in con.execute(
         "SELECT category, COUNT(DISTINCT url_id) n FROM items GROUP BY category")}
+    # pages with a video anywhere (standalone OR a News & highlights card) -
+    # counted distinctly so a page with both is not double-counted
+    vid_pages = con.execute(
+        "SELECT COUNT(DISTINCT url_id) n FROM items"
+        " WHERE category IN ('videos','news')").fetchone()["n"]
     # status + urls-only attr filters: one bulk pass each
     status_counts = _bulk_counts(con, STATUS_FILTERS)
     attr_counts = _bulk_counts(con, ATTR_FILTERS)
     con.close()
-    # content has/no counts come from cat_pages: has = pages with the category
-    # (identical to the EXISTS filter), no = captured pages without it
+    # content/component has/no counts come from cat_pages: has = pages with the
+    # category (identical to the EXISTS filter), no = captured pages without it
     checked = attr_counts.get("checked", 0)
-    for _stem, _cat, _ in _CONTENT_ATTRS:
+    for _stem, _cat, _ in _CONTENT_ATTRS + _COMPONENT_ATTRS:
         has = cat_pages.get(_cat, 0)
         attr_counts["has" + _stem] = has
         attr_counts["no" + _stem] = checked - has
+    # videos filter spans videos + news cards, so its count must too
+    attr_counts["hasvideos"] = vid_pages
+    attr_counts["novideos"] = checked - vid_pages
 
     # "Not live" = a page serving no real content: a 404/500 OR a blank body.
     notlive_total = status_counts["notlive"] + status_counts["blank"]
@@ -432,6 +465,9 @@ def index():
                            sel_status=statuses, sel_types=sel_types,
                            sel_attrs=attrs, status_filters=STATUS_FILTERS,
                            attr_filters=ATTR_FILTERS,
+                           content_keys=CONTENT_KEYS, component_keys=COMPONENT_KEYS,
+                           sel_content_n=sum(1 for a in attrs if a in CONTENT_KEYS),
+                           sel_comp_n=sum(1 for a in attrs if a in COMPONENT_KEYS),
                            status_counts=status_counts, attr_counts=attr_counts,
                            quick_chips=quick_chips)
 

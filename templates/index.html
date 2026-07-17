@@ -104,11 +104,22 @@
     </details>
 
     <details class="dd" name="filters">
-      <summary>Content{% if sel_attrs %}<span class="fbadge">{{ sel_attrs|length }}</span>{% endif %}</summary>
+      <summary>Content{% if sel_content_n %}<span class="fbadge">{{ sel_content_n }}</span>{% endif %}</summary>
       <div class="panel">
-        {% for key, af in attr_filters.items() %}
+        {% for key in content_keys %}
         <label><input type="checkbox" name="attr" value="{{ key }}"
-                 {% if key in sel_attrs %}checked{% endif %}> {{ af[0] }}
+                 {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
+          <span class="cnt">{{ attr_counts.get(key, 0) }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
+
+    <details class="dd" name="filters">
+      <summary>Components{% if sel_comp_n %}<span class="fbadge">{{ sel_comp_n }}</span>{% endif %}</summary>
+      <div class="panel">
+        {% for key in component_keys %}
+        <label><input type="checkbox" name="attr" value="{{ key }}"
+                 {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
           <span class="cnt">{{ attr_counts.get(key, 0) }}</span></label>
         {% endfor %}
       </div>
