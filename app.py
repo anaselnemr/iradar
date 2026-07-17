@@ -6,6 +6,8 @@ import io
 import json
 import os
 import re
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -14,6 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask import (Flask, Response, abort, flash, jsonify, redirect,
                    render_template, request, send_file, url_for)
+from rapidfuzz import fuzz, process
 
 import compare as cmp
 import db
@@ -1145,10 +1148,108 @@ def settings_view():
                            next_run=next_run_text(), weekdays=WEEKDAYS)
 
 
+# --------------------------------------------------------------------------
+# Typo-tolerant content search. Every distinct item (title + key + category +
+# meta) is cached and scored with rapidfuzz, so a spelling mistake
+# ("aplication note", "datsheet", "optiga tmp") still finds the document. The
+# cache refreshes in a background thread, so a live capture's new items show up
+# within ~a minute and a keystroke never waits on the rebuild.
+_SEARCH_TTL = 60.0
+_search_cache = {"ts": -1e9, "data": [], "titles": [], "building": False}
+
+
+def _rebuild_search_cache():
+    con = db.connect()
+    try:
+        rows = con.execute(
+            "SELECT item_key AS k, MIN(title) AS t, MIN(category) AS c,"
+            " MIN(meta) AS m FROM items"
+            " WHERE category<>'about' AND item_key<>'' GROUP BY item_key"
+        ).fetchall()
+    finally:
+        con.close()
+    data = [{"key": r["k"], "title": r["t"], "cat": r["c"],
+             "meta": r["m"] or "", "tl": (r["t"] or "").lower()} for r in rows]
+    _search_cache.update(ts=time.monotonic(), data=data,
+                         titles=[d["title"] for d in data], building=False)
+
+
+def _choices():
+    """Cached (data, titles) for every distinct item; rebuilt in the background
+    once stale so it never stalls a request after the first build."""
+    if not _search_cache["data"]:
+        _rebuild_search_cache()
+    elif (time.monotonic() - _search_cache["ts"] > _SEARCH_TTL
+          and not _search_cache["building"]):
+        _search_cache["building"] = True
+        threading.Thread(target=_rebuild_search_cache, daemon=True).start()
+    return _search_cache["data"], _search_cache["titles"]
+
+
+def _fuzzy_items(q, cat, limit):
+    """Distinct items ranked by typo-tolerant relevance to q, best first.
+    Exact substring hits always rank above fuzzy ones."""
+    data, titles = _choices()
+    ql = q.strip().lower()
+    if not ql:
+        return []
+    if cat and cat != "all":
+        pairs = [(d, t) for d, t in zip(data, titles) if d["cat"] == cat]
+        data = [p[0] for p in pairs]
+        titles = [p[1] for p in pairs]
+    scored = {}                      # key -> (tier, score, data)
+    for d in data:                   # exact substring: guaranteed, top tier
+        if ql in d["tl"]:
+            scored[d["key"]] = (2, 100, d)
+    # rapidfuzz WRatio forgives spelling mistakes and word reordering
+    for _t, score, i in process.extract(
+            q, titles, scorer=fuzz.WRatio, limit=max(limit * 3, 40),
+            score_cutoff=72, processor=str.lower):
+        d = data[i]
+        scored.setdefault(d["key"], (1, score, d))
+    ranked = sorted(scored.values(),
+                    key=lambda s: (-s[0], -s[1], len(s[2]["title"])))
+    return [s[2] for s in ranked[:limit]]
+
+
+def _pages_for_keys(con, keys):
+    if not keys:
+        return {}
+    marks = ",".join("?" * len(keys))
+    return {r["item_key"]: r["n"] for r in con.execute(
+        f"SELECT item_key, COUNT(DISTINCT url_id) n FROM items"
+        f" WHERE item_key IN ({marks}) GROUP BY item_key", keys)}
+
+
+def _search_keys(con, q, cat, limit):
+    """Ranked item_keys for a query: typo-tolerant title matches first, then
+    any exact substring hit on a title, URL fragment (doc numbers) or meta."""
+    ordered = [d["key"] for d in _fuzzy_items(q, cat, limit)]
+    seen = set(ordered)
+    toks = [t for t in q.lower().split() if len(t) >= 2][:6]
+    if toks:
+        conds, params = [], []
+        for t in toks:
+            conds.append("(lower(i.title) LIKE ? OR lower(i.meta) LIKE ?"
+                         " OR lower(i.item_url) LIKE ?)")
+            params += [f"%{t}%"] * 3
+        catf, catp = "", []
+        if cat and cat != "all":
+            catf, catp = " AND i.category=?", [cat]
+        for r in con.execute(
+                f"SELECT DISTINCT i.item_key AS k FROM items i"
+                f" WHERE i.category<>'about' AND i.item_key<>''"
+                f" AND {' AND '.join(conds)}{catf} LIMIT 500", params + catp):
+            if r["k"] not in seen:
+                seen.add(r["k"])
+                ordered.append(r["k"])
+    return ordered[:limit]
+
+
 @app.route("/search")
 def search_items():
     """Search every captured item (documents, boards, trainings, videos,
-    features...) and show which pages carry it."""
+    features...) and show which pages carry it. Typo-tolerant."""
     q = request.args.get("q", "").strip()
     cat = request.args.get("cat", "all")
     groups, total, cats = [], 0, []
@@ -1160,43 +1261,42 @@ def search_items():
     indexed = con.execute(
         "SELECT COUNT(*) FROM items WHERE category<>'about'").fetchone()[0]
     if q:
-        where = ["(i.title LIKE ? OR i.item_url LIKE ? OR i.meta LIKE ?)",
-                 "i.category<>'about'"]
-        params = [f"%{q}%"] * 3
-        if cat != "all" and cat in cats:
-            where.append("i.category=?")
-            params.append(cat)
-        wsql = "WHERE " + " AND ".join(where)
-        total = con.execute(
-            f"SELECT COUNT(*) FROM items i {wsql}", params).fetchone()[0]
-        rows = con.execute(f"""
-            SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
-                   i.item_key, i.doc_type, u.url AS page_url, u.label,
-                   (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
-                     AND s.status='ok' AND s.page_title<>''
-                     ORDER BY s.id DESC LIMIT 1) AS page_title
-            FROM items i JOIN urls u ON u.id=i.url_id
-            {wsql} ORDER BY i.title LIMIT 2000""", params).fetchall()
-        # one entry per distinct item, listing every page that carries it
-        by_item = {}
-        order = []
+        keys = _search_keys(con, q, cat if cat in cats else "all", 250)
+        if keys:
+            marks = ",".join("?" * len(keys))
+            rows = con.execute(f"""
+                SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
+                       i.item_key, i.doc_type, u.url AS page_url, u.label,
+                       (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
+                         AND s.status='ok' AND s.page_title<>''
+                         ORDER BY s.id DESC LIMIT 1) AS page_title
+                FROM items i JOIN urls u ON u.id=i.url_id
+                WHERE i.item_key IN ({marks})""", keys).fetchall()
+        else:
+            rows = []
+        rank = {k: i for i, k in enumerate(keys)}
+        by_item, order = {}, []
         for r in rows:
-            key = (r["title"].lower(), r["item_url"])
-            if key not in by_item:
-                by_item[key] = {"title": r["title"], "url": r["item_url"],
-                                "category": r["category"], "grp": r["grp"],
-                                "meta": r["meta"], "pages": [],
-                                "item_key": r["item_key"] or runner.item_key(
-                                    r["category"], r["title"], r["item_url"]),
-                                "backend": backend_system(r["category"],
-                                                          r["meta"],
-                                                          r["doc_type"])}
-                order.append(key)
-            by_item[key]["pages"].append(
+            gk = (r["title"].lower(), r["item_url"])
+            if gk not in by_item:
+                by_item[gk] = {"title": r["title"], "url": r["item_url"],
+                               "category": r["category"], "grp": r["grp"],
+                               "meta": r["meta"], "pages": [],
+                               "item_key": r["item_key"],
+                               "rank": rank.get(r["item_key"], 10 ** 9),
+                               "backend": backend_system(r["category"],
+                                                         r["meta"],
+                                                         r["doc_type"])}
+                order.append(gk)
+            else:
+                by_item[gk]["rank"] = min(by_item[gk]["rank"],
+                                          rank.get(r["item_key"], 10 ** 9))
+            by_item[gk]["pages"].append(
                 {"id": r["url_id"], "url": r["page_url"],
                  "title": r["page_title"] or r["label"] or r["page_url"]})
         groups = [by_item[k] for k in order]
-        groups.sort(key=lambda g: -len(g["pages"]))
+        groups.sort(key=lambda g: (g["rank"], -len(g["pages"])))
+        total = sum(len(g["pages"]) for g in groups)
     con.close()
     return render_template("search.html", q=q, cat=cat, cats=cats,
                            groups=groups, total=total, indexed=indexed,
@@ -1205,38 +1305,32 @@ def search_items():
 
 @app.route("/api/suggest")
 def api_suggest():
-    """Type-ahead for content search: real item titles, most-used first."""
+    """Type-ahead for content search: typo-tolerant, best match first."""
     q = request.args.get("q", "").strip()
     if len(q) < 2:
         return jsonify([])
     cat = request.args.get("cat", "all")
-    where = ["i.title LIKE ?", "i.category<>'about'"]
-    params = [f"%{q}%"]
-    if cat != "all":
-        where.append("i.category=?")
-        params.append(cat)
+    raw = _fuzzy_items(q, cat, 30)          # over-fetch; we collapse below
     con = db.connect()
-    # Group by the canonical item identity, not the raw title: the same
-    # document is titled slightly differently across pages ("PSOC™ 4 … MCU
-    # CapSense" vs "… MCU CAPSENSE") and grouping on the literal text listed
-    # each as its own suggestion. item_key folds those together; distinct
-    # language variants keep distinct keys and stay separate.
-    rows = con.execute(
-        "SELECT MIN(i.title) title, MIN(i.category) category, MIN(i.meta) meta,"
-        " COUNT(DISTINCT i.url_id) pages"
-        f" FROM items i WHERE {' AND '.join(where)}"
-        " GROUP BY COALESCE(NULLIF(i.item_key,''), lower(i.title))"
-        " ORDER BY (CASE WHEN MIN(i.title) LIKE ? THEN 0 ELSE 1 END),"
-        " pages DESC, LENGTH(MIN(i.title)) LIMIT 12",
-        params + [f"{q}%"]).fetchall()
+    pages = _pages_for_keys(con, [d["key"] for d in raw])
     con.close()
     labels = dict(SECTION_LABELS)
-    # Show the language so EN/JA/CN variants of one document read as the
-    # distinct files they are, instead of looking like repeats of each other.
-    return jsonify([{"title": r["title"], "cat": r["category"],
-                     "category": labels.get(r["category"], r["category"]),
-                     "lang": _meta_lang(r["meta"]),
-                     "pages": r["pages"]} for r in rows])
+    # Collapse the SAME title in the SAME language (distinct asset URLs of one
+    # document) into a single suggestion so the dropdown does not read as
+    # duplicates; the results page still lists each distinct file. Different
+    # languages stay separate, so EN/JA/CN variants remain visible.
+    by_ident, order = {}, []
+    for d in raw:
+        lang = _meta_lang(d["meta"])
+        ident = (re.sub(r"\s+", " ", d["title"]).strip().lower(), lang, d["cat"])
+        if ident in by_ident:
+            by_ident[ident]["pages"] += pages.get(d["key"], 1)
+            continue
+        by_ident[ident] = {"title": d["title"], "cat": d["cat"],
+                           "category": labels.get(d["cat"], d["cat"]),
+                           "lang": lang, "pages": pages.get(d["key"], 1)}
+        order.append(ident)
+    return jsonify([by_ident[i] for i in order[:10]])
 
 
 def _meta_lang(meta):

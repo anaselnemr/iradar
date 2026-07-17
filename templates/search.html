@@ -122,6 +122,8 @@
       const ic = document.createElement('span');
       ic.className = 'sicon';
       ic.innerHTML = iconFor(it.cat);
+      const col = document.createElement('span');
+      col.className = 'scol';
       const t = document.createElement('span');
       t.className = 'stitle';
       t.textContent = it.title;
@@ -129,7 +131,8 @@
       m.className = 'smeta';
       m.textContent = it.category + (it.lang ? ' · ' + it.lang : '')
                     + ' · ' + it.pages + ' page' + (it.pages === 1 ? '' : 's');
-      b.append(ic, t, m);
+      col.append(t, m);
+      b.append(ic, col);
       b.addEventListener('click', () => { input.value = it.title; close(); form.submit(); });
       box.appendChild(b);
     });

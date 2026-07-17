@@ -3,3 +3,4 @@ playwright>=1.45
 apscheduler>=3.10
 pillow>=10.0
 openpyxl>=3.1
+rapidfuzz>=3.0
