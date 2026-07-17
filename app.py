@@ -1384,7 +1384,7 @@ def _url_trail(tax, title_by_url):
 def _breadcrumbs(con, ptypes):
     marks = ",".join("?" * len(ptypes))
     rows = con.execute(
-        "SELECT id, url, ptype, level, breadcrumb,"
+        "SELECT id, url, ptype, level, level_src, breadcrumb,"
         " NULLIF(title_override,'') AS title_override,"
         " COALESCE(NULLIF(title_override,''),"
         "   (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
@@ -1459,6 +1459,7 @@ def _breadcrumbs(con, ptypes):
             continue
         out.append({"id": r["id"], "url": r["url"], "ptype": r["ptype"],
                     "level": r["level"] or "",
+                    "level_src": r["level_src"] or "",
                     "level_name": LEVEL_NAMES.get(r["level"] or "", ""),
                     "title": r["page_title"] or "", "crumbs": path,
                     "crumb_urls": crumb_urls})
@@ -1611,6 +1612,13 @@ def _live_levels(node, depth=0, product_tree=True):
             # a part page is a PTP; an evaluation board wears its own badge
             p["live_level"] = ("EB" if "/evaluation-board/" in (p.get("url") or "")
                                else "PTP")
+        elif p.get("level_src") in ("manual", "structure") and p.get("level"):
+            # manual is the human's call; structure is the site's own walk,
+            # which knows children we do not track (its tiles), so both beat
+            # the tracked-subtree guess. Never outlined, never overwritten.
+            p["live_level"] = p["level"]
+            p["level_disagrees"] = False
+            continue
         elif depth <= 1:
             p["live_level"] = "PC"
         elif depth == 2:
@@ -2101,6 +2109,87 @@ def url_set_title(url_id):
     return redirect(url_for("url_detail", url_id=url_id))
 
 
+def _tax_norm(u):
+    """A taxonomy URL reduced to its bare site path: scheme/host, query,
+    fragment, trailing slash and /de/ /ja/ language prefixes dropped."""
+    n = (u or "").split("#")[0].split("?")[0].rstrip("/")
+    n = re.sub(r"^https?://[^/]+", "", n).lower()
+    return re.sub(r"^/(de|ja|cn|tw|kr|jp)(?=/)", "", n)
+
+
+def _structure_registry(con):
+    """Every product-taxonomy URL the SITE itself declares: each tracked
+    page's canonical/short URL plus every child tile from the captured
+    category/family navigation modules. The tiles matter: they tell us a page
+    has children even when we do not track those children, so a sub-family is
+    never mistaken for an end family just because our list stops there."""
+    reg = set()
+    for r in con.execute("SELECT url, canonical_url FROM urls WHERE active=1"):
+        for u in (r["url"], r["canonical_url"]):
+            n = _tax_norm(u)
+            if n.startswith("/products/"):
+                reg.add(n)
+    for r in con.execute("SELECT DISTINCT item_url FROM items"
+                         " WHERE category IN ('categories','products')"
+                         " AND item_url<>''"):
+        n = _tax_norm(r["item_url"])
+        if n.startswith("/products/"):
+            reg.add(n)
+    return reg
+
+
+def _rebuild_structure():
+    """Assign levels TOP-DOWN from the site's own structure.
+
+    Walk the taxonomy from the roots: a page's level is its place on the walk
+    (segments under /products/ - 1 category, 2 family, deeper sub-family when
+    the site declares children beneath it, else end family; design resources
+    likewise via dr_level_for). Parts hang off their breadcrumb parent (the
+    OPN table's contents are deliberately not stored), promo pages have no
+    hierarchy, and three things are NEVER touched: manual edits, EB boards,
+    and AFB pages (kinds, not depths). Applications are placed top-down in
+    the tree but keep report/manual levels - the calibration shows URL depth
+    cannot split AOP from ASP (depth 2 is 19 AOP / 9 ASP), so writing depth
+    there would corrupt data. Returns (changed, filled, kept_manual)."""
+    con = db.connect()
+    reg = _structure_registry(con)
+    changed, filled, kept = [], [], 0
+    for r in con.execute("SELECT id, url, canonical_url, ptype, level,"
+                         " level_src FROM urls WHERE active=1"
+                         " AND ptype IN ('Product','Design resources')"):
+        cur, src = r["level"] or "", r["level_src"] or ""
+        if src == "manual":
+            kept += 1
+            continue
+        tax = _tax_norm(r["canonical_url"] or r["url"])
+        if r["ptype"] == "Product":
+            if not tax.startswith("/products/"):
+                continue
+            s = [x for x in tax[len("/products/"):].split("/") if x]
+            if not s:
+                continue
+            if len(s) == 1:
+                calc = "PC"
+            elif len(s) == 2:
+                calc = "PFP"
+            else:
+                calc = "PSFP" if any(x.startswith(tax + "/") for x in reg) \
+                    else "PEFP"
+        else:
+            calc = db.dr_level_for(r["canonical_url"] or r["url"])
+            if not calc:
+                continue
+        if calc == cur:
+            continue
+        con.execute("UPDATE urls SET level=?, level_src='structure'"
+                    " WHERE id=?", (calc, r["id"]))
+        (filled if not cur else changed).append(
+            f"#{r['id']} {cur or '·'}→{calc}")
+    con.commit()
+    con.close()
+    return changed, filled, kept
+
+
 def _infer_missing_levels():
     """Assign a level to every CAPTURED Product/Application page that lacks one,
     via the three-signal inference. Shared by the manual button and the
@@ -2141,6 +2230,12 @@ def _post_run_watcher():
         running = runner.RUN_STATE.get("running", False)
         if prev and not running:
             try:
+                # structure first (deterministic, from the site's own walk),
+                # inference after for what structure cannot place (apps/parts)
+                chg, fill, _kept = _rebuild_structure()
+                if chg or fill:
+                    print(f"[post-run] structure: {len(chg)} corrected,"
+                          f" {len(fill)} filled", flush=True)
                 done, _ = _infer_missing_levels()
                 if done:
                     print(f"[post-run] inferred {len(done)} level(s)", flush=True)

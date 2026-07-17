@@ -34,12 +34,12 @@
     · <details class="lvledit">
         <summary title="Level: {{ level_names.get(u.level, 'none') }} — source: {{ u.level_src or 'not set' }}. Click to change.">
           {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}">{{ u.level }}</span>{% else %}<span class="badge b-off">no level</span>{% endif %}
-          <span class="lvlsrc">{{ {'report':'report','inferred':'auto','manual':'edited'}.get(u.level_src, '') }}</span>
+          <span class="lvlsrc">{{ {'report':'report','inferred':'auto','manual':'edited','structure':'site walk'}.get(u.level_src, '') }}</span>
           <span class="lvlpen">✎</span>
         </summary>
         <form method="post" action="{{ url_for('url_set_level', url_id=u.id) }}" class="lvlmenu">
           <div class="lvlmenu-head">Page level
-            <span>source: <b>{{ {'report':'the report','inferred':'auto-detected','manual':'your edit'}.get(u.level_src, 'not set') }}</b></span>
+            <span>source: <b>{{ {'report':'the report','inferred':'auto-detected','manual':'your edit','structure':'the site structure walk'}.get(u.level_src, 'not set') }}</b></span>
           </div>
           <button name="level" value="auto" class="lvlopt lvlopt-auto">
             <span class="lvlopt-ic">✨</span>
