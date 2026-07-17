@@ -81,13 +81,14 @@
         <input type="text" name="windchill_search_url" value="{{ s.windchill_search_url }}"
                placeholder="e.g. https://windchill.infineon.com/…/search?keyword={q}">
       </label>
-      <label style="display:block; margin-top:10px">AEM author URL (pages)
+      <label style="display:block; margin-top:10px">AEM author URL (pages) — <code>{path}</code> = the page's public path
         <input type="text" name="aem_author_url" value="{{ s.aem_author_url }}"
-               placeholder="https://author.infineon.com/sites.html/content/ifx/en">
+               placeholder="https://author.infineon.com/editor.html/content/ifx/en{path}.html">
       </label>
       <p class="muted" style="font-size:12.5px; margin-top:12px">
-        The AEM badge on every tracked page appends the page's public path to
-        this base (…/content/ifx/en<b>/products/…</b>). Name extraction for
+        The AEM badge on every tracked page opens the author editor:
+        <code>{path}</code> is replaced by the page's public path
+        (…/content/ifx/en<b>/products/…</b>.html). Name extraction for
         assets: videos use the URL's last segment; images the part before the
         first dot; gated documents drop the trailing _id and language; public
         documents drop the extension and language.</p>

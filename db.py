@@ -23,8 +23,9 @@ DEFAULT_SETTINGS = {
     # in Settings -> Backends so a changed link is a ten-second fix.
     "dam_search_url": "",
     "windchill_search_url": "",
-    # AEM author console: the page's public path slots in right after /en
-    "aem_author_url": "https://author.infineon.com/sites.html/content/ifx/en",
+    # AEM author editor: '{path}' = the page's public path (after /en), the
+    # editor wants a trailing .html - all of it editable in Settings
+    "aem_author_url": "https://author.infineon.com/editor.html/content/ifx/en{path}.html",
     # one regex per line; matching image URLs are ignored when comparing.
     # Default: auto-generated video-player thumbnails (load flakily, not real
     # page content - removing a video still shows up via the text layer).

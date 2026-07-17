@@ -224,7 +224,7 @@
         {% endif %}
         <br>
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
-        {% if settings.aem_author_url %}<a class="badge b-sys" href="{{ settings.aem_author_url }}{{ u.url|urlpath }}" target="_blank" title="Open this page in the AEM author console">AEM</a>{% endif %}
+        {% if settings.aem_author_url %}<a class="badge b-sys" href="{{ u.url|aemlink(settings.aem_author_url) }}" target="_blank" title="Open this page in the AEM author console">AEM</a>{% endif %}
         {% if u.redirect_from %}
         <span class="badge b-redir" title="A listed address 301-redirected here, so the list now tracks the destination — not the stale link.&#10;Redirected from: {{ u.redirect_from }}">↪ redirect</span>
         {% endif %}

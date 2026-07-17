@@ -894,14 +894,19 @@ def backend_system(category, meta, doc_type=None):
         _norm_doc_type(doc_type or document_type_of(meta)), "")
 
 
-@app.template_filter("urlpath")
-def _urlpath(u):
-    """Path of a full URL, no trailing slash - the piece that slots into the
-    AEM author console after /content/ifx/en."""
+@app.template_filter("aemlink")
+def _aemlink(page_url, base):
+    """The AEM author link for a public page. '{path}' in the editable base
+    marks where the page's public path goes - so the editor's trailing .html
+    lives in the setting, not in code: editor.html/content/ifx/en{path}.html"""
+    base = (base or "").strip()
     try:
-        return urlsplit(u or "").path.rstrip("/")
+        path = urlsplit(page_url or "").path.rstrip("/")
     except Exception:
+        path = ""
+    if not base or not path:
         return ""
+    return base.replace("{path}", path) if "{path}" in base else base + path
 
 
 def document_type_of(meta):
