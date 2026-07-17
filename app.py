@@ -309,8 +309,6 @@ def index():
         "page_desc": "u.url COLLATE NOCASE DESC",
         "date": "u.last_checked IS NULL, u.last_checked DESC",
         "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
-        "num": "u.id ASC",              # the '#' column - add order (chronological)
-        "num_desc": "u.id DESC",
     }.get(sort, "u.url COLLATE NOCASE ASC")
     # a page added within the last week wears a NEW badge (created_at is UTC)
     from datetime import timedelta as _td
@@ -333,6 +331,13 @@ def index():
     bulk_days = {r["d"] for r in con.execute(
         "SELECT substr(created_at,1,10) d, COUNT(*) n FROM urls"
         " WHERE created_at IS NOT NULL GROUP BY d HAVING n > 50")}
+    # The "#" shown is a 1..N ALPHABETICAL rank, not the raw database id: #1 is
+    # the alphabetically-first page and the whole column renumbers itself the
+    # moment a page is added (the real id/PK never changes - it still keys the
+    # checkboxes and links, so nothing downstream breaks).
+    ranks = {r["id"]: r["seq"] for r in con.execute(
+        "SELECT id, ROW_NUMBER() OVER (ORDER BY url COLLATE NOCASE, id) AS seq"
+        " FROM urls")}
     urls = con.execute(f"""
         SELECT u.*,
           (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
@@ -398,20 +403,20 @@ def index():
         {"kind": "status", "key": "blank", "label": "Blank page",
          "n": status_counts["blank"]},
         {"kind": "status", "key": "changed", "label": "Changed",
-         "n": status_counts["changed"]},
+         "n": status_counts["changed"], "always": True},
         {"kind": "status", "key": "unchanged", "label": "Unchanged",
-         "n": status_counts["unchanged"]},
+         "n": status_counts["unchanged"], "always": True},
         {"kind": "status", "key": "rejected", "label": "Awaiting fix",
          "n": status_counts["rejected"]},
         {"kind": "status", "key": "error", "label": "Errors",
          "n": status_counts["error"]},
-    ) if c["n"]]
+    ) if c["n"] or c.get("always")]
 
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            q=q, page=page, pages=pages, sort=sort,
-                           new_cutoff=new_cutoff, bulk_days=bulk_days,
+                           new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
                            total_match=total_match, counts=counts,
                            per_page=PER_PAGE, ptypes=ptypes,
                            sel_status=statuses, sel_types=sel_types,

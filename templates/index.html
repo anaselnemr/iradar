@@ -164,7 +164,7 @@
   <table>
     <tr>
       <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
-      <th><a href="#" class="sorth" onclick="return sortBy('num')" title="Sort by add order (#, chronological)">#{% if sort=='num' %} ↑{% elif sort=='num_desc' %} ↓{% endif %}</a></th>
+      <th><a href="#" class="sorth" onclick="return sortBy('page')" title="# is each page's alphabetical position (1, 2, 3…) — click to order by it">#</a></th>
       <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
       <th>Type</th><th>Live</th><th>Status</th>
       <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
@@ -173,7 +173,7 @@
     {% for u in urls %}
     <tr>
       <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
-      <td class="muted">{{ u.id }}</td>
+      <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
       <td class="urlcell">
         {% if u.page_title %}
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
@@ -318,7 +318,6 @@ function sortBy(key) {
   const p = new URLSearchParams(location.search);
   const cur = p.get('sort') || 'page';
   if (key === 'page') p.set('sort', cur === 'page' ? 'page_desc' : 'page');
-  else if (key === 'num') p.set('sort', cur === 'num' ? 'num_desc' : 'num');
   else p.set('sort', cur === 'date' ? 'date_asc' : 'date');
   p.delete('page');
   pjax('{{ url_for("index") }}?' + p.toString());
@@ -366,12 +365,17 @@ panel.addEventListener('submit', (e) => {
 panel.addEventListener('click', (e) => {
   const a = e.target.closest('a');
   if (!a) return;
+  const href = a.getAttribute('href');
+  // Leave JS-action links alone (e.g. "Select all N matching", href="#" with
+  // its own onclick). Treating them as navigations reloaded the panel and wiped
+  // the selection - that was the "select all 4112 crashes".
+  if (!href || href === '#' || href.charAt(0) === '#' || a.hasAttribute('onclick')) return;
   let u; try { u = new URL(a.href, location.origin); } catch (_) { return; }
   // only links that stay on this dashboard (filters, chips, pager) - never a
   // row's link out to a page's library
   if (u.pathname === '{{ url_for("index") }}' && u.origin === location.origin) {
     e.preventDefault();
-    pjax(a.getAttribute('href') || a.href);
+    pjax(href);
   }
 });
 window.addEventListener('popstate', () => pjax(location.pathname + location.search));
