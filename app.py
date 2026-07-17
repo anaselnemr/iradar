@@ -395,26 +395,29 @@ def index():
     notlive_total = status_counts["notlive"] + status_counts["blank"]
     # quick chips: the handful of filters worth one-click access, shown only
     # when they actually match something. status kind links ?status=, attr ?attr=
+    # NB: the field is "vals", NOT "keys" - a chip is a dict, and `c.keys` in a
+    # Jinja template resolves to dict.keys (the method), which silently broke
+    # every chip URL. Ordered by what needs you: attention, health, then states.
     quick_chips = [c for c in (
-        # ordered by what needs you: attention first, then health, then states.
-        # "Not live" folds 404s and blank pages into one filter (dead+blank).
-        {"kind": "status", "keys": ["changed"], "label": "Changed",
+        {"kind": "status", "vals": ["changed"], "label": "Changed",
          "n": status_counts["changed"], "always": True, "tone": "warn"},
-        {"kind": "status", "keys": ["rejected"], "label": "Awaiting fix",
+        {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
          "n": status_counts["rejected"], "tone": "warn"},
-        {"kind": "status", "keys": ["notlive", "blank"], "label": "Not live",
+        {"kind": "status", "vals": ["notlive", "blank"], "label": "Not live",
          "n": notlive_total, "tone": "bad"},
-        {"kind": "status", "keys": ["error"], "label": "Capture error",
+        {"kind": "status", "vals": ["blank"], "label": "Blank page",
+         "n": status_counts["blank"], "tone": "bad"},
+        {"kind": "status", "vals": ["error"], "label": "Capture error",
          "n": status_counts["error"], "tone": "bad"},
-        {"kind": "attr", "keys": ["live"], "label": "Live",
+        {"kind": "attr", "vals": ["live"], "label": "Live",
          "n": attr_counts["live"], "tone": "good"},
-        {"kind": "status", "keys": ["unchanged"], "label": "Unchanged",
+        {"kind": "status", "vals": ["unchanged"], "label": "Unchanged",
          "n": status_counts["unchanged"], "always": True},
-        {"kind": "status", "keys": ["baseline"], "label": "Baseline",
+        {"kind": "status", "vals": ["baseline"], "label": "Baseline",
          "n": status_counts["baseline"]},
-        {"kind": "status", "keys": ["new"], "label": "Not captured",
+        {"kind": "status", "vals": ["new"], "label": "Not captured",
          "n": status_counts["new"]},
-        {"kind": "status", "keys": ["paused"], "label": "Paused",
+        {"kind": "status", "vals": ["paused"], "label": "Paused",
          "n": status_counts["paused"]},
     ) if c["n"] or c.get("always")]
 

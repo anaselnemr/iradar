@@ -124,11 +124,11 @@
     <span class="muted" style="font-size:12px; align-self:center; margin-right:3px">Quick filters:</span>
     {% for c in quick_chips %}
       {% if c.kind == 'status' %}
-      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if sel_status == c.keys and not sel_types and not sel_attrs }}"
-         href="{{ url_for('index', status=c.keys, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
+      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if sel_status == c.vals and not sel_types and not sel_attrs }}"
+         href="{{ url_for('index', status=c.vals, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
       {% else %}
-      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if sel_attrs == c.keys and not sel_types and not sel_status }}"
-         href="{{ url_for('index', attr=c.keys, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
+      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if sel_attrs == c.vals and not sel_types and not sel_status }}"
+         href="{{ url_for('index', attr=c.vals, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
       {% endif %}
     {% endfor %}
     {% if sel_status or sel_types or sel_attrs or q %}
