@@ -370,6 +370,9 @@
   .pal { position: fixed; inset: 0; z-index: 200; background: rgba(10, 14, 25, .45);
          backdrop-filter: blur(2px); display: flex; align-items: flex-start;
          justify-content: center; padding-top: 11vh; }
+  /* display:flex above would defeat the hidden attribute - restate it, or the
+     palette sits open over every page on load */
+  .pal[hidden] { display: none; }
   .pal-box { width: min(660px, 92vw); background: var(--panel);
              border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
              box-shadow: 0 24px 70px rgba(0, 0, 0, .35); }
