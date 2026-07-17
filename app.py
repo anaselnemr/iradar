@@ -894,6 +894,16 @@ def backend_system(category, meta, doc_type=None):
         _norm_doc_type(doc_type or document_type_of(meta)), "")
 
 
+@app.template_filter("urlpath")
+def _urlpath(u):
+    """Path of a full URL, no trailing slash - the piece that slots into the
+    AEM author console after /content/ifx/en."""
+    try:
+        return urlsplit(u or "").path.rstrip("/")
+    except Exception:
+        return ""
+
+
 def document_type_of(meta):
     """Fallback only: the first meta field is the Type column by convention.
     Prefer the captured doc_type - position is what a "New" badge broke."""
@@ -1375,7 +1385,8 @@ def url_detail(url_id):
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
-                           components=comp_rows, price=(u["price"] or ""))
+                           components=comp_rows, price=(u["price"] or ""),
+                           settings=_settings_now)
 
 
 @app.route("/change/<int:change_id>")
@@ -1610,7 +1621,7 @@ def settings_view():
         for key in ("frequency", "weekday", "hour", "concurrency",
                     "visual_threshold", "height_threshold", "ignore_patterns",
                     "ignore_image_patterns", "dam_search_url",
-                    "windchill_search_url"):
+                    "windchill_search_url", "aem_author_url"):
             if key in request.form:
                 db.set_setting(key, request.form[key].strip())
         reschedule()
