@@ -48,6 +48,13 @@
       <div class="muted" style="text-align:center; margin-top:6px">Full-page screenshot — click to open</div>
     </div>
     <div>
+      {% if price %}
+      <div style="margin:0 0 12px; padding:9px 12px; border:1px solid rgba(128,128,128,.28); border-radius:8px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap">
+        <span class="muted" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em">Price</span>
+        <span style="font-weight:600">{{ price }}</span>
+        <span class="muted" style="font-size:11.5px">— text only, from the buying-options block</span>
+      </div>
+      {% endif %}
       {% if cat_tree %}
       {% macro tree(nodes) %}
         <ul class="cattree">
@@ -87,24 +94,51 @@
       </li>
       {% endmacro %}
 
-      {#- presence-only blocks: recorded as booleans, contents deliberately not
-          captured (they churn constantly and would swamp the change feed) -#}
-      {% if flags %}
-      {% macro flagrow(label, f) %}
+      {#- Every trackable component, marked present or "not on this page". The
+          two whose contents we deliberately don't capture (products table,
+          developer community - they churn and would swamp the change feed)
+          keep their richer present/empty state from the flags. -#}
+      {% if components %}
+      <div class="flagbox">
+        <div class="flagrow" style="border:0; font-weight:600; padding-bottom:2px">
+          <span>Components</span>
+          <span class="muted" style="font-weight:400; font-size:12px">
+            {{ components|selectattr('exists')|list|length }} of {{ components|length }} on this page</span>
+        </div>
+        {% for c in components %}
         <div class="flagrow">
-          <span>{{ label }}</span>
-          {% if not f or not f.exists %}
-            <span class="badge b-off">not on this page</span>
-          {% elif f.has_content %}
-            <span class="badge b-live">present, has content</span>
+          <span>{{ c.label }}</span>
+          {% if c.key in ('product_table', 'developer_community') %}
+            {% set f = flags.get(c.key) %}
+            {% if not f or not f.exists %}
+              <span class="badge b-off">not on this page</span>
+            {% elif f.has_content %}
+              <span class="badge b-live">present, has content</span>
+            {% else %}
+              <span class="badge b-new">present but empty</span>
+            {% endif %}
+          {% elif c.exists %}
+            <span class="badge b-live">present</span>
           {% else %}
-            <span class="badge b-new">present but empty</span>
+            <span class="badge b-off">not on this page</span>
           {% endif %}
         </div>
-      {% endmacro %}
+        {% endfor %}
+      </div>
+      {% elif flags %}
+      {#- fallback while the route that supplies `components` isn't loaded yet
+          (a re-capture is running, so the app can't be restarted): keep the
+          original two-flag box rather than showing nothing. -#}
       <div class="flagbox">
-        {{ flagrow('Products table', flags.get('product_table')) }}
-        {{ flagrow('Developer community', flags.get('developer_community')) }}
+        {% for key, label in [('product_table','Products table'), ('developer_community','Developer community')] %}
+        {% set f = flags.get(key) %}
+        <div class="flagrow">
+          <span>{{ label }}</span>
+          {% if not f or not f.exists %}<span class="badge b-off">not on this page</span>
+          {% elif f.has_content %}<span class="badge b-live">present, has content</span>
+          {% else %}<span class="badge b-new">present but empty</span>{% endif %}
+        </div>
+        {% endfor %}
       </div>
       {% endif %}
 

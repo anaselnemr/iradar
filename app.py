@@ -275,6 +275,109 @@ for _stem, _c, _l in _COMPONENT_ATTRS:
 COMPONENT_KEYS += ["hastable", "notable", "hastablerows",
                    "hascommunity", "nocommunity", "hasthreads"]
 
+# The canonical component registry - the ONE list of trackable components and,
+# for each, how we know it is present on a page:
+#   "cat"  -> the page has library items in this category
+#   "flag" -> urls.flags[block].exists is true
+#   "nav"  -> this label appears in the page's own section-nav (urls.components)
+# Body-section components (cat/flag) cover every page type; the nav-only ones
+# are the structural sections PTP/EB pages expose that are not library content.
+#   key, label, kind, arg
+COMPONENTS = [
+    ("overview",           "Overview",              "cat",  "overview"),
+    ("about",              "About",                 "cat",  "about"),
+    ("documents",          "Documents",             "cat",  "documents"),
+    ("design_resources",   "Design resources",      "cat",  "design_resources"),
+    ("features",           "Key features",          "cat",  "features"),
+    ("benefits",           "Benefits",              "cat",  "benefits"),
+    ("applications",       "Applications",          "cat",  "applications"),
+    ("categories",         "Browse by category",    "cat",  "categories"),
+    ("products",           "Related products",      "cat",  "products"),
+    ("news",               "News & highlights",     "cat",  "news"),
+    ("trainings",          "Trainings & webinars",  "cat",  "trainings"),
+    ("videos",             "Videos",                "cat",  "videos"),
+    ("product_table",      "Products table",        "flag", "product_table"),
+    ("developer_community","Developer community",   "flag", "developer_community"),
+    ("buying_options",     "View buying options",   "nav",  "view buying options"),
+    ("product_details",    "Product details",       "nav",  "product details"),
+    ("diagrams",           "Diagrams",              "nav",  "diagrams"),
+    ("featured_products",  "Featured products",     "nav",  "featured products"),
+    ("partner_solutions",  "Partner solutions",     "nav",  "partner solutions"),
+    ("register_product",   "Register product",      "nav",  "register product"),
+    ("view_products",      "View products",         "nav",  "view products"),
+    ("bom",                "Bill of material",      "nav",  "bill of material"),
+]
+COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
+# category name -> component key, for turning captured categories into components
+_CAT_TO_COMP = {arg: key for key, _l, kind, arg in COMPONENTS if kind == "cat"}
+
+
+def _page_component_set(components_json, flags, cat_present):
+    """The set of component keys PRESENT on one page, from its three signals:
+    captured categories (a set of category names), flags dict, and the nav
+    labels stored in urls.components (JSON)."""
+    try:
+        nav = {s.lower() for s in json.loads(components_json or "[]")}
+    except Exception:
+        nav = set()
+    have = set()
+    for key, _label, kind, arg in COMPONENTS:
+        if kind == "cat" and arg in cat_present:
+            have.add(key)
+        elif kind == "flag" and (flags.get(arg) or {}).get("exists"):
+            have.add(key)
+        elif kind == "nav" and arg in nav:
+            have.add(key)
+    return have
+
+
+def _components_for_type(con):
+    """{ptype: set(component_key)} - which components actually appear on at
+    least one captured page of each type. This is the data-driven seed for the
+    settings matrix and the 'not on this page' rows, and the prune is simply:
+    a component that is not in a type's set never showed up, so drop it there.
+    Manual settings overrides (added/removed) are layered on top by the caller."""
+    out = {}
+    for r in con.execute(
+            "SELECT DISTINCT u.ptype, i.category FROM urls u"
+            " JOIN items i ON i.url_id=u.id WHERE u.ptype<>''"):
+        key = _CAT_TO_COMP.get(r["category"])
+        if key:
+            out.setdefault(r["ptype"], set()).add(key)
+    for r in con.execute("SELECT ptype, flags FROM urls"
+                         " WHERE ptype<>'' AND flags NOT IN ('', '{}')"):
+        try:
+            fl = json.loads(r["flags"])
+        except Exception:
+            continue
+        for block in ("product_table", "developer_community"):
+            if (fl.get(block) or {}).get("exists"):
+                out.setdefault(r["ptype"], set()).add(block)
+    for r in con.execute("SELECT ptype, components FROM urls"
+                         " WHERE ptype<>'' AND components NOT IN ('', '[]')"):
+        try:
+            labels = {s.lower() for s in json.loads(r["components"])}
+        except Exception:
+            continue
+        for key, _l, kind, arg in COMPONENTS:
+            if kind == "nav" and arg in labels:
+                out.setdefault(r["ptype"], set()).add(key)
+    return out
+
+
+_COMP_TYPE_CACHE = {"t": 0.0, "data": None}
+
+
+def _components_for_type_cached(con, ttl=120):
+    """_components_for_type rescans every item row, so cache it briefly - the
+    per-type set barely moves during a run, and this keeps page views cheap
+    while the re-capture writes underneath."""
+    now = time.time()
+    if _COMP_TYPE_CACHE["data"] is None or now - _COMP_TYPE_CACHE["t"] > ttl:
+        _COMP_TYPE_CACHE["data"] = _components_for_type(con)
+        _COMP_TYPE_CACHE["t"] = now
+    return _COMP_TYPE_CACHE["data"]
+
 
 def _bulk_counts(con, filters):
     """{key: count} in ONE pass, for filters whose SQL touches only the urls
@@ -1058,9 +1161,24 @@ def url_detail(url_id):
                 groups = [(g, by_group[g]) for g in order]
             library.append({"label": label, "items": items, "groups": groups,
                             "cat": cat})
+
+    # Components this page carries, plus the ones its page type normally has
+    # but this page lacks (shown "not on this page", like the flag rows). This
+    # page's own categories come from its sections; the type set is data-driven.
+    this_cats = {cat for cat in _CAT_TO_COMP
+                 if sections and sections.get(cat)}
+    have = _page_component_set(u["components"], flags, this_cats)
+    con5 = db.connect()
+    type_comps = _components_for_type_cached(con5).get(u["ptype"] or "", set())
+    con5.close()
+    comp_rows = [{"key": k, "label": lbl, "exists": k in have}
+                 for k, lbl, _kind, _arg in COMPONENTS
+                 if k in have or k in type_comps]
+
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
-                           redirect_to=redirect_to, flags=flags)
+                           redirect_to=redirect_to, flags=flags,
+                           components=comp_rows, price=(u["price"] or ""))
 
 
 @app.route("/change/<int:change_id>")
