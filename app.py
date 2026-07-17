@@ -417,8 +417,10 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
 # the levels that are their own page SHAPE: each gets its own component
 # superset - a PC hub is not built like a PEFP end family, an ADP directory
 # not like an ASP solution page. Order = display order in the matrix.
-_LEVEL_TYPES = ("PC", "PFP", "PSFP", "PEFP", "ADP", "AOP", "ASP", "AFB")
+_LEVEL_TYPES = ("PC", "PFP", "PSFP", "PEFP", "ADP", "AOP", "ASP", "AFB",
+                "DRC", "DRF", "DRSF")
 ETYPE_ORDER = ["PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
+               "DRC", "DRF", "DRSF",
                "ADP", "AOP", "ASP", "AFB",
                "Product", "Application", "Design resources", "Promo"]
 
@@ -455,7 +457,8 @@ def _infer_level(con, row):
         lvl = "EB" if "/evaluation-board/" in url else "PTP"
         return lvl, 1.0, "part pages are typed by their URL"
     scheme = (PRODUCT_LEVELS if ptype == "Product"
-              else APP_LEVELS if ptype == "Application" else ())
+              else APP_LEVELS if ptype == "Application"
+              else DR_LEVELS if ptype == "Design resources" else ())
     if not scheme:
         return "", 0.0, f"the {ptype or 'untyped'} type has no level scheme"
 
@@ -1275,10 +1278,16 @@ LEVEL_NAMES = {
     "PTP": "Part type page", "EB": "Evaluation board",
     "ADP": "Application division", "AOP": "Application overview",
     "ASP": "Application solution", "AFB": "Application focus",
+    "DRC": "Design resource category", "DRF": "Design resource family",
+    "DRSF": "Design resource sub-family",
 }
 # the levels that belong to the application taxonomy (report-sourced, never
 # from URL depth - the sheet is the authority for where an app page sits)
 APP_LEVELS = ("ADP", "AOP", "ASP", "AFB")
+# design-resource page types, from the design system (Components Design
+# resources.txt): Category > Family > Sub-Family. No report ground-truth, so
+# assigned by URL depth and correctable in the level editor.
+DR_LEVELS = ("DRC", "DRF", "DRSF")
 # page types that share one tree, in the order their levels nest
 MERGED_TABS = [("Products & parts", ["Product", "Part"])]
 

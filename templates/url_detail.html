@@ -11,6 +11,7 @@
     · Status: {{ u.last_status or 'not checked' }}
     {% set scheme = {'Product': ['PC','PFP','PSFP','PEFP'],
                      'Application': ['ADP','AOP','ASP','AFB'],
+                     'Design resources': ['DRC','DRF','DRSF'],
                      'Part': ['PTP','EB']}.get(u.ptype) %}
     {% if scheme %}
     · <details class="lvledit">
