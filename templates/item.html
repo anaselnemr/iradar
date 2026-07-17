@@ -49,8 +49,14 @@
       {% elif item.preview_kind == 'zip' %}
         <div style="display:inline-flex; gap:14px; align-items:center; border:1px dashed var(--line); border-radius:12px; padding:14px 20px">
           <span style="font-size:26px">🗜️</span>
-          <span><b>ZIP archive</b> — no inline preview possible<br>
+          <span><b>{{ item.preview_src or 'ZIP' }} archive</b> — no inline preview possible<br>
             <span class="muted" style="font-size:12.5px">{{ item.meta or 'download to inspect the contents' }}</span></span>
+        </div>
+      {% elif item.preview_kind == 'file' %}
+        <div style="display:inline-flex; gap:14px; align-items:center; border:1px dashed var(--line); border-radius:12px; padding:14px 20px">
+          <span style="font-size:26px">📄</span>
+          <span><b>{{ item.preview_src }} file</b> — no inline preview for this format<br>
+            <span class="muted" style="font-size:12.5px">{{ item.meta or 'open with ↗ below' }}</span></span>
         </div>
       {% elif item.preview_kind == 'gated' %}
         <div style="display:inline-flex; gap:14px; align-items:center; border:1px dashed var(--line); border-radius:12px; padding:14px 20px">

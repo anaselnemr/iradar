@@ -1144,8 +1144,9 @@ def _aemlink(page_url, base):
     return base.replace("{path}", path) if "{path}" in base else base + path
 
 
-_OFFICE_EXT = {"ppt", "pptx", "doc", "docx", "xls", "xlsx"}
+_OFFICE_EXT = {"ppt", "pptx", "doc", "docx", "xls", "xlsx", "xlsm"}
 _IMG_EXT = {"svg", "png", "jpg", "jpeg", "gif", "webp"}
+_ARCHIVE_EXT = {"zip", "gz", "tgz", "xz", "bz2", "rar", "7z"}
 
 
 def doc_preview(url):
@@ -1170,8 +1171,12 @@ def doc_preview(url):
     if ext in _OFFICE_EXT:
         return ("office", "https://view.officeapps.live.com/op/embed.aspx?src="
                 + urlquote(u, safe=""))
-    if ext == "zip":
-        return "zip", ""
+    if ext in _ARCHIVE_EXT:
+        return "zip", ext.upper()
+    # web pages (php/cfm/html/aspx tool links) get no card - they are links,
+    # not files. Every other real FILE gets an honest type card.
+    if ext and ext not in ("php", "cfm", "html", "htm", "aspx", "jsp"):
+        return "file", ext.upper()
     return "", ""
 
 
