@@ -1130,12 +1130,18 @@ SECTIONS_JS = r"""
   });
   out.detail_tabs = Array.from(dt);
 
-  // Price (component pages): the buying-options / pricing block, TEXT ONLY - to
-  // be shown on the page like overview/features, not as its own object.
+  // Price (component pages): the buying-options block, TEXT ONLY - to be
+  // shown on the page like overview/features, not as its own object. The
+  // price-container carries the WHOLE story - unit price, stock AND the
+  // volume-pricing range - where the narrower product-price div stops at the
+  // unit price. Button labels are not price text and get stripped.
   let priceTxt = '';
-  const pe = document.querySelector('[class*="buyingoption" i], [class*="buying-option" i], '
-    + '[class*="pricing" i], [class*="product-price" i], [class*="unitprice" i]');
-  if (pe) priceTxt = (pe.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  const pe = document.querySelector('[class*="price-container" i]')
+    || document.querySelector('[class*="buyingoption" i], [class*="buying-option" i], '
+       + '[class*="pricing" i], [class*="product-price" i], [class*="unitprice" i]');
+  if (pe) priceTxt = (pe.innerText || '').replace(/\s+/g, ' ')
+    .replace(/Add to Cart|View distributor'?s? inventory|Buy online|Log ?in to myInfineon|Contact sales/gi, '')
+    .replace(/\s+/g, ' ').trim().slice(0, 500);
   out.price = priceTxt;
 
   return out;
