@@ -56,7 +56,7 @@
     <div style="display:flex; flex-direction:column; gap:10px">
       {% for h in text_hits %}
       <a class="pagecard" href="{{ url_for('url_detail', url_id=h.id) }}">
-        <div class="pagecard-title">{% if h.level %}<span class="lvl lvl-{{ h.level|lower }}">{{ h.level }}</span> {% endif %}{{ h.title }}
+        <div class="pagecard-title">{% if h.level %}<span class="lvl lvl-{{ h.level|lower }}">{{ h.level }}</span> {% endif %}{{ h.title|clean_title }}
           <span style="float:right; display:inline-flex; gap:5px">
             {% for c2 in h.comps %}<span class="badge b-sys" style="font-weight:500">{{ c2 }}</span>{% endfor %}
           </span>
@@ -77,7 +77,7 @@
     <div class="pagegrid">
       {% for p in page_hits %}
       <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
-        <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title }}</div>
+        <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
         <div class="pagecard-url">{{ p.url }}</div>
       </a>
       {% endfor %}

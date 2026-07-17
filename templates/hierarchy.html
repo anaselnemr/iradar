@@ -12,7 +12,7 @@
 {% macro leaf(p) %}
   <div class="tleaf">
     {{ badge(p) }}
-    <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
+    <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ (p.title|clean_title) or p.url }}</a>
     <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
   </div>
 {% endmacro %}

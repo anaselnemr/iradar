@@ -49,7 +49,7 @@
     <div class="pagegrid">
       {% for p in plist %}
       <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
-        <div class="pagecard-title">{{ p.title or p.url }}</div>
+        <div class="pagecard-title">{{ (p.title|clean_title) or p.url }}</div>
         <div class="pagecard-url">{{ p.url }}</div>
         {% if p.grp %}<div class="muted" style="font-size:12px; margin-top:6px">in {{ p.grp }}</div>{% endif %}
       </a>
