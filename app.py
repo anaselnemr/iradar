@@ -727,7 +727,7 @@ def _breadcrumbs(con, ptypes):
     return out
 
 
-def _hierarchy_tree(pages, tracked=None):
+def _hierarchy_tree(pages, tracked=None, product_tree=True):
     """Nest pages under their own breadcrumb path.
 
     The site publishes a JSON-LD breadcrumb on every page, and a part's
@@ -764,7 +764,7 @@ def _hierarchy_tree(pages, tracked=None):
                              for c in sorted(n["children"].values(),
                                              key=lambda c: c["name"])]}
     tree = freeze(root)
-    _live_levels(tree)
+    _live_levels(tree, product_tree=product_tree)
     _attach_self_pages(tree)
     _link_nodes(tree, tracked or {})
     return tree
@@ -834,24 +834,24 @@ def _attach_self_pages(node):
         _attach_self_pages(c)
 
 
-def _live_levels(node, depth=0):
-    """Work out each page's level from the LIVE tree it actually sits in,
-    rather than taking the sheet's word for it.
+def _live_levels(node, depth=0, product_tree=True):
+    """Work out each page's level from the LIVE tree it actually sits in.
 
-        depth 1                     product category
-        depth 2                     product family
-        no child nodes below it     product end family
-        anything in between         product sub-family
-        a part page                 part type page
+        depth 1  product category   depth 2  product family
+        leaf     end family         between  sub-family     a part  part type
 
-    A part shares its product's node (their breadcrumbs meet there), so a
-    product with parts is still an end family - the parts are pages on it, not
-    branches under it.
-
-    Recomputed from whatever has been captured, so it sharpens as the run fills
-    the tree in - and it follows the site rather than a report that can go
-    stale. Where it disagrees with the sheet, the live answer is shown.
+    The PC/PFP/PSFP/PEFP/PTP scheme is PRODUCTS ONLY. Design resources,
+    applications and promo pages are not product families, so on those trees no
+    level badge is assigned (applications get their own scheme once defined).
     """
+    if not product_tree:
+        node["live_level"] = ""
+        for p in node["pages"]:
+            p["live_level"] = ""
+            p["level_disagrees"] = False
+        for c in node["children"]:
+            _live_levels(c, depth + 1, product_tree)
+        return
     # the node's OWN level (for its header badge when the node links to a page):
     # depth 1 category, depth 2 family, a leaf grouping end-family, else sub-family
     if depth == 0:
@@ -878,7 +878,7 @@ def _live_levels(node, depth=0):
         p["level_disagrees"] = bool(
             p.get("level") and p["live_level"] != p["level"])
     for c in node["children"]:
-        _live_levels(c, depth + 1)
+        _live_levels(c, depth + 1, product_tree)
 
 
 def _redirect_target(snap_dir, url):
@@ -1294,13 +1294,19 @@ def _choices():
     return _search_cache["data"], _search_cache["titles"]
 
 
-def _fuzzy_items(q, cat, limit):
+def _fuzzy_items(q, cat, limit, exclude=None):
     """Distinct items ranked by typo-tolerant relevance to q, best first.
-    Exact substring hits always rank above fuzzy ones."""
+    Exact substring hits always rank above fuzzy ones. `exclude` drops whole
+    categories (e.g. 'overview' from the type-ahead - it is page text, not an
+    asset you jump to)."""
     data, titles = _choices()
     ql = q.strip().lower()
     if not ql:
         return []
+    if exclude:
+        pairs = [(d, t) for d, t in zip(data, titles) if d["cat"] not in exclude]
+        data = [p[0] for p in pairs]
+        titles = [p[1] for p in pairs]
     if cat and cat != "all":
         pairs = [(d, t) for d, t in zip(data, titles) if d["cat"] == cat]
         data = [p[0] for p in pairs]
@@ -1362,12 +1368,15 @@ def search_items():
     cat = request.args.get("cat", "all")
     groups, total, cats = [], 0, []
     con = db.connect()
-    # 'about' is tracked for text comparison only - never surfaced (user's call)
+    # 'about' is tracked for text comparison only - never surfaced. 'overview'
+    # is a page's own text, not an asset type, so it is not a category pill and
+    # not counted as an indexed item - but it stays searchable in the results.
     cats = [r["category"] for r in con.execute(
-        "SELECT category, COUNT(*) n FROM items WHERE category<>'about'"
+        "SELECT category, COUNT(*) n FROM items"
+        " WHERE category NOT IN ('about','overview')"
         " GROUP BY category ORDER BY n DESC")]
-    indexed = con.execute(
-        "SELECT COUNT(*) FROM items WHERE category<>'about'").fetchone()[0]
+    indexed = con.execute("SELECT COUNT(*) FROM items"
+                          " WHERE category NOT IN ('about','overview')").fetchone()[0]
     if q:
         keys = _search_keys(con, q, cat if cat in cats else "all", 250)
         if keys:
@@ -1418,7 +1427,9 @@ def api_suggest():
     if len(q) < 2:
         return jsonify([])
     cat = request.args.get("cat", "all")
-    raw = _fuzzy_items(q, cat, 30)          # over-fetch; we collapse below
+    # overview is a page's own text, not an asset to jump to - keep it out of
+    # the type-ahead (it still shows in full search results)
+    raw = _fuzzy_items(q, cat, 30, exclude={"overview"})
     con = db.connect()
     pages = _pages_for_keys(con, [d["key"] for d in raw])
     con.close()
@@ -1524,7 +1535,10 @@ def hierarchy():
         "SELECT id, url FROM urls WHERE active=1"
         " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')")}
     con.close()
-    tree = _hierarchy_tree(pages, tracked)  # nests + levels + node links
+    # PC/PFP/… levels are a product taxonomy - only badge them on the product
+    # tree; design resources, applications and promo have no such levels.
+    product_tree = any(m in ("Product", "Part") for m in members)
+    tree = _hierarchy_tree(pages, tracked, product_tree)
     # the levels present in this tab, in taxonomy order, for the legend
     order = list(LEVEL_NAMES)
     seen_levels = sorted({p.get("live_level") for p in pages
