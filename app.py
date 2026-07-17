@@ -829,6 +829,93 @@ SECTION_LABELS = [
     ("images", "Images"),
 ]
 
+# ---- the search page's pills: the user's fixed taxonomy, not raw categories.
+# A pill is (key, label, match-fn over a cached item row); fn None = special
+# ("all" = every item, "pages" = the tracked pages themselves).
+def _doclike_url(u):
+    u = (u or "").lower()
+    return u.endswith(".pdf") or "/gated/" in u or "/documents/" in u
+
+
+def _videolike(d):
+    r"""A news/trainings item that is actually a video: a media URL or a
+    duration (\d:\d\d) in its meta."""
+    u = (d.get("url") or "").lower()
+    return (".mp4" in u or "/is/content/" in u
+            or bool(re.search(r"\d+:\d{2}", d.get("meta") or "")))
+
+
+SEARCH_PILLS = [
+    ("all",          "Everything",                None),
+    ("design",       "Design resources & boards",
+     lambda d: d["cat"] == "design_resources"),
+    ("docs",         "Documents",
+     lambda d: d["cat"] == "documents"
+     or (d["cat"] == "design_resources" and _doclike_url(d.get("url")))),
+    ("images",       "Images", lambda d: d["cat"] == "images"),
+    ("features",     "Key features", lambda d: d["cat"] == "features"),
+    ("benefits",     "Benefits", lambda d: d["cat"] == "benefits"),
+    ("applications", "Applications", lambda d: d["cat"] == "applications"),
+    ("products",     "Related products", lambda d: d["cat"] == "products"),
+    ("videos",       "Videos",
+     lambda d: d["cat"] == "videos"
+     or (d["cat"] in ("news", "trainings") and _videolike(d))),
+    ("pages",        "Pages themselves", None),
+]
+PILL_FN = {k: f for k, _l, f in SEARCH_PILLS}
+PILL_LABELS = {k: l for k, l, _f in SEARCH_PILLS}
+# categories each pill can live in - lets the SQL fallback prefilter
+PILL_SQL_CATS = {
+    "design": ("design_resources",), "docs": ("documents", "design_resources"),
+    "images": ("images",), "features": ("features",), "benefits": ("benefits",),
+    "applications": ("applications",), "products": ("products",),
+    "videos": ("videos", "news", "trainings"),
+}
+# old links used raw category names - keep them working
+_LEGACY_PILL = {"documents": "docs", "design_resources": "design",
+                "news": "videos", "trainings": "videos"}
+
+
+def _norm_pill(cat):
+    cat = (cat or "all").strip()
+    if cat in PILL_FN:
+        return cat
+    return _LEGACY_PILL.get(cat, "all")
+
+
+_TM_RE = re.compile("[™®©]")   # (tm) (r) (c)
+
+
+def _searchable(t):
+    """One normal form for search: lowercase, trademark marks gone, and every
+    dash/underscore/dot/slash a space - so 'psoc 6' finds both the page titled
+    'PSOC(tm) 6' and the url .../psoc-6-m4-mcu, and 'asic hero image' finds
+    asic-hero-image.png."""
+    t = _TM_RE.sub("", (t or "").lower())
+    t = re.sub(r"[-_/.:]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+# an image whose title is this junk gets a readable one from its URL instead
+_JUNK_TITLES = {"", "name", "image", "img", "logo", "icon", "banner",
+                "picture", "photo", "thumbnail"}
+
+
+def pretty_image_title(title, url):
+    """Images should read like documents: 'Asic Hero Image', not
+    'asic-hero-image.png:asset-680-2x1'. Real alt-text titles stay."""
+    t = (title or "").strip()
+    if t.lower() in _JUNK_TITLES or len(t) < 3:
+        seg = asset_name("images", url)
+        nice = re.sub(r"[-_]+", " ", seg).strip().title()
+        return nice or t or "Image"
+    if " " not in t and re.search(r"[-_]", t):
+        # a slug posing as a title: application-product-carousel-image
+        nice = re.sub(r"[-_]+", " ", re.sub(r"\.[a-z0-9:]+$", "", t,
+                                            flags=re.I)).strip().title()
+        return nice or t
+    return t
+
 
 # --------------------------------------------------------------------------
 # Where an asset lives in the backend (from Infineon's DAM/SAMI migration
@@ -1751,15 +1838,35 @@ def _rebuild_search_cache():
     try:
         rows = con.execute(
             "SELECT item_key AS k, MIN(title) AS t, MIN(category) AS c,"
-            " MIN(meta) AS m FROM items"
+            " MIN(meta) AS m, MIN(item_url) AS u,"
+            " COUNT(DISTINCT url_id) AS n FROM items"
             " WHERE category<>'about' AND item_key<>'' GROUP BY item_key"
         ).fetchall()
     finally:
         con.close()
-    data = [{"key": r["k"], "title": r["t"], "cat": r["c"],
-             "meta": r["m"] or "", "tl": (r["t"] or "").lower()} for r in rows]
+    data = []
+    for r in rows:
+        cat, title, url = r["c"], r["t"] or "", r["u"] or ""
+        if cat == "images":
+            # site chrome - the spinner, logos, partner carousels that ride on
+            # every page - is not page content and never belongs in search
+            if r["n"] > 100:
+                continue
+            title = pretty_image_title(title, url)
+        # searching works on title OR url: the url's last segment, de-dashed,
+        # joins the searchable string ("asic hero image png asset 680 2x1")
+        slug = ""
+        if url:
+            try:
+                slug = urlsplit(url).path.rsplit("/", 1)[-1]
+            except Exception:
+                slug = ""
+        data.append({"key": r["k"], "title": title, "cat": cat,
+                     "meta": r["m"] or "", "url": url,
+                     "tl": title.lower(),
+                     "sl": _searchable(title + " " + slug)})
     _search_cache.update(ts=time.monotonic(), data=data,
-                         titles=[d["title"] for d in data], building=False)
+                         titles=[d["sl"] for d in data], building=False)
 
 
 def _choices():
@@ -1780,24 +1887,25 @@ def _fuzzy_items(q, cat, limit, exclude=None):
     categories (e.g. 'overview' from the type-ahead - it is page text, not an
     asset you jump to)."""
     data, titles = _choices()
-    ql = q.strip().lower()
+    ql = _searchable(q)
     if not ql:
         return []
     if exclude:
         pairs = [(d, t) for d, t in zip(data, titles) if d["cat"] not in exclude]
         data = [p[0] for p in pairs]
         titles = [p[1] for p in pairs]
-    if cat and cat != "all":
-        pairs = [(d, t) for d, t in zip(data, titles) if d["cat"] == cat]
+    fn = PILL_FN.get(_norm_pill(cat))
+    if fn:
+        pairs = [(d, t) for d, t in zip(data, titles) if fn(d)]
         data = [p[0] for p in pairs]
         titles = [p[1] for p in pairs]
     scored = {}                      # key -> (tier, score, data)
-    for d in data:                   # exact substring: guaranteed, top tier
-        if ql in d["tl"]:
+    for d in data:                   # exact substring on title OR url: top tier
+        if ql in d["sl"]:
             scored[d["key"]] = (2, 100, d)
     # rapidfuzz WRatio forgives spelling mistakes and word reordering
     for _t, score, i in process.extract(
-            q, titles, scorer=fuzz.WRatio, limit=max(limit * 3, 40),
+            ql, titles, scorer=fuzz.WRatio, limit=max(limit * 3, 40),
             score_cutoff=72, processor=str.lower):
         d = data[i]
         scored.setdefault(d["key"], (1, score, d))
@@ -1828,8 +1936,11 @@ def _search_keys(con, q, cat, limit):
                          " OR lower(i.item_url) LIKE ?)")
             params += [f"%{t}%"] * 3
         catf, catp = "", []
-        if cat and cat != "all":
-            catf, catp = " AND i.category=?", [cat]
+        pill_cats = PILL_SQL_CATS.get(_norm_pill(cat))
+        if pill_cats:
+            catf = (" AND i.category IN ("
+                    + ",".join("?" * len(pill_cats)) + ")")
+            catp = list(pill_cats)
         for r in con.execute(
                 f"SELECT DISTINCT i.item_key AS k FROM items i"
                 f" WHERE i.category<>'about' AND i.item_key<>''"
@@ -1845,20 +1956,37 @@ def search_items():
     """Search every captured item (documents, boards, trainings, videos,
     features...) and show which pages carry it. Typo-tolerant."""
     q = request.args.get("q", "").strip()
-    cat = request.args.get("cat", "all")
-    groups, total, cats = [], 0, []
+    cat = _norm_pill(request.args.get("cat", "all"))
+    groups, total, page_hits = [], 0, []
     con = db.connect()
     # 'about' is tracked for text comparison only - never surfaced. 'overview'
-    # is a page's own text, not an asset type, so it is not a category pill and
-    # not counted as an indexed item - but it stays searchable in the results.
-    cats = [r["category"] for r in con.execute(
-        "SELECT category, COUNT(*) n FROM items"
-        " WHERE category NOT IN ('about','overview')"
-        " GROUP BY category ORDER BY n DESC")]
+    # is a page's own text, not an asset type - it stays searchable under
+    # Everything but is no pill of its own.
     indexed = con.execute("SELECT COUNT(*) FROM items"
                           " WHERE category NOT IN ('about','overview')").fetchone()[0]
-    if q:
-        keys = _search_keys(con, q, cat if cat in cats else "all", 250)
+    if q and cat == "pages":
+        # the tracked pages themselves: typo-tolerant over title AND url
+        prows = con.execute(
+            "SELECT id, url, label, ptype, level,"
+            " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+            "   AND s.status='ok' AND s.page_title<>''"
+            "   ORDER BY s.id DESC LIMIT 1) AS page_title FROM urls").fetchall()
+        pdata = [{"id": r["id"], "url": r["url"], "level": r["level"] or "",
+                  "title": (r["page_title"] or r["label"]
+                            or r["url"].rstrip("/").rsplit("/", 1)[-1]),
+                  "sl": _searchable((r["page_title"] or r["label"] or "")
+                                    + " " + r["url"])} for r in prows]
+        ql = _searchable(q)
+        hits = {d["id"]: (2, 100, d) for d in pdata if ql in d["sl"]}
+        for _t, score, i in process.extract(
+                ql, [d["sl"] for d in pdata], scorer=fuzz.WRatio, limit=80,
+                score_cutoff=72, processor=str.lower):
+            hits.setdefault(pdata[i]["id"], (1, score, pdata[i]))
+        page_hits = [h[2] for h in sorted(hits.values(),
+                                          key=lambda h: (-h[0], -h[1]))][:60]
+        total = len(page_hits)
+    if q and cat != "pages":
+        keys = _search_keys(con, q, cat, 250)
         if keys:
             marks = ",".join("?" * len(keys))
             rows = con.execute(f"""
@@ -1874,11 +2002,17 @@ def search_items():
         rank = {k: i for i, k in enumerate(keys)}
         by_item, order = {}, []
         _sset = db.get_settings()       # backend search URLs, read once
+        _pfn = PILL_FN.get(cat)
         for r in rows:
+            if _pfn and not _pfn({"cat": r["category"], "url": r["item_url"],
+                                  "meta": r["meta"]}):
+                continue
             gk = (r["title"].lower(), r["item_url"])
             if gk not in by_item:
                 _bk = backend_system(r["category"], r["meta"], r["doc_type"])
-                by_item[gk] = {"title": r["title"], "url": r["item_url"],
+                _ttl = (pretty_image_title(r["title"], r["item_url"])
+                        if r["category"] == "images" else r["title"])
+                by_item[gk] = {"title": _ttl, "url": r["item_url"],
                                "category": r["category"], "grp": r["grp"],
                                "meta": r["meta"], "pages": [],
                                "item_key": r["item_key"],
@@ -1900,7 +2034,9 @@ def search_items():
         groups.sort(key=lambda g: (g["rank"], -len(g["pages"])))
         total = sum(len(g["pages"]) for g in groups)
     con.close()
-    return render_template("search.html", q=q, cat=cat, cats=cats,
+    return render_template("search.html", q=q, cat=cat,
+                           pills=[(k, l) for k, l, _f in SEARCH_PILLS],
+                           pill_labels=PILL_LABELS, page_hits=page_hits,
                            groups=groups, total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS))
 
@@ -1911,7 +2047,7 @@ def api_suggest():
     q = request.args.get("q", "").strip()
     if len(q) < 2:
         return jsonify([])
-    cat = request.args.get("cat", "all")
+    cat = _norm_pill(request.args.get("cat", "all"))
     # overview is a page's own text, not an asset to jump to - keep it out of
     # the type-ahead (it still shows in full search results)
     raw = _fuzzy_items(q, cat, 30, exclude={"overview"})

@@ -11,3 +11,5 @@ __pycache__/
 # QA run logs (the tooling is tracked, its output is not)
 qa/*.jsonl
 qa/*.log
+
+cloudflared.exe

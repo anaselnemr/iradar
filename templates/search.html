@@ -41,22 +41,34 @@
     <input type="hidden" name="cat" value="{{ cat }}">
     <button>Search</button>
   </form>
-  {% if cats %}
   <div class="pills">
-    <a class="pill {{ 'pill-on' if cat == 'all' }}"
-       href="{{ url_for('search_items', q=q or None, cat='all') }}">Everything</a>
-    {% for c in cats %}
-    <a class="pill {{ 'pill-on' if cat == c }}"
-       href="{{ url_for('search_items', q=q or None, cat=c) }}">{{ labels.get(c, c) }}</a>
+    {% for k, lbl in pills %}
+    <a class="pill {{ 'pill-on' if cat == k }}"
+       href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}</a>
     {% endfor %}
   </div>
-  {% endif %}
 </div>
 
-{% if q %}
+{% if q and cat == 'pages' %}
+  {% if page_hits %}
+  <div class="card">
+    <h2>Pages <span class="muted" style="font-weight:400">— {{ page_hits|length }} match{{ 'es' if page_hits|length != 1 }}</span></h2>
+    <div class="pagegrid">
+      {% for p in page_hits %}
+      <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
+        <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title }}</div>
+        <div class="pagecard-url">{{ p.url }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card"><p class="muted" style="margin:0">No tracked page matches “<b>{{ q }}</b>”.</p></div>
+  {% endif %}
+{% elif q %}
   {% if not groups %}
   <div class="card">
-    <p class="muted" style="margin:0">Nothing matches “<b>{{ q }}</b>”{% if cat != 'all' %} in {{ labels.get(cat, cat) }}{% endif %}.
+    <p class="muted" style="margin:0">Nothing matches “<b>{{ q }}</b>”{% if cat != 'all' %} in {{ pill_labels.get(cat, cat) }}{% endif %}.
       {% if indexed == 0 %}<br>The index fills as pages are captured — the first run is still going.{% endif %}
     </p>
   </div>

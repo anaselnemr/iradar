@@ -21,6 +21,13 @@
     </div>
     <h1 style="margin:10px 0 8px">{{ item.title }}</h1>
     {% if item.meta %}<div class="muted" style="font-size:14px">{{ item.meta }}</div>{% endif %}
+    {% if item.category == 'images' and item.url %}
+      <div style="margin:14px 0 4px">
+        <a href="{{ item.url }}" target="_blank" title="Open the full-size image">
+          <img src="{{ item.url }}" alt="{{ item.title }}" loading="lazy"
+               style="max-width:min(460px,100%); max-height:300px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:6px"></a>
+      </div>
+    {% endif %}
     {% if item.url %}
       <p style="margin:14px 0 0"><a href="{{ item.url }}" target="_blank" class="liveurl">{{ item.url }}</a></p>
     {% else %}
