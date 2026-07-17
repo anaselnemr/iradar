@@ -940,7 +940,8 @@ def _doclike_url(u):
 # design-resources groups whose members ARE documents by type - PCB design
 # data and simulation models sit on Infineon's own document-type sheet
 _DOC_TYPED_GRP = re.compile(
-    r"^(pcb design data|simulation models?|documents?)$", re.I)
+    r"^(pcb design data|simulation models?|documents?|development tools)$",
+    re.I)
 
 
 def _doc_typed(d):
@@ -1078,17 +1079,22 @@ for _t in WINDCHILL_DOC_TYPES:
     DOC_TYPE_SYSTEM[_norm_doc_type(_t)] = "Windchill"
 
 
-def backend_system(category, meta, doc_type=None):
+def backend_system(category, meta, doc_type=None, grp=None):
     """DAM / Windchill / '' (type not on the migration sheet).
 
     Per document, never per page: one product page carries a datasheet
-    (Windchill) and a product brief (DAM) side by side.
+    (Windchill) and a product brief (DAM) side by side. Design-resources
+    items whose group is a document type (Development tools, PCB design
+    data, Simulation models) are documents living in Windchill - per the
+    user's own mapping.
 
     doc_type is the row's own Type column, captured as its own field. The meta
     fallback exists only for snapshots taken before that was stored.
     """
     if category in ALWAYS_DAM:
         return "DAM"
+    if category == "design_resources":
+        return "Windchill" if _DOC_TYPED_GRP.match((grp or "").strip()) else ""
     if category != "documents":
         return ""
     return DOC_TYPE_SYSTEM.get(
@@ -1565,7 +1571,8 @@ def url_detail(url_id):
                     it["item_key"] = runner.item_key(cat, it.get("title", ""),
                                                      it.get("url", ""))
                     it["backend"] = backend_system(cat, it.get("meta", ""),
-                                                   it.get("dtype"))
+                                                   it.get("dtype"),
+                                                   it.get("group"))
                     it["aname"] = asset_name(cat, it.get("url", ""))
                     it["bsearch"] = backend_search_link(
                         it["backend"], it["aname"], _settings_now)
@@ -2199,7 +2206,8 @@ def search_items():
                 continue
             gk = (r["title"].lower(), r["item_url"])
             if gk not in by_item:
-                _bk = backend_system(r["category"], r["meta"], r["doc_type"])
+                _bk = backend_system(r["category"], r["meta"], r["doc_type"],
+                                     r["grp"])
                 _ttl = (pretty_image_title(r["title"], r["item_url"])
                         if r["category"] == "images" else r["title"])
                 by_item[gk] = {"title": _ttl, "url": r["item_url"],
@@ -2299,7 +2307,7 @@ def item_detail(key):
     # the richest meta wins: the same item can be listed tersely on one page
     meta = max((r["meta"] or "" for r in rows), key=len)
     dtype = next((r["doc_type"] for r in rows if r["doc_type"]), "")
-    _bk = backend_system(first["category"], meta, dtype)
+    _bk = backend_system(first["category"], meta, dtype, first["grp"])
     _aname = asset_name(first["category"], first["item_url"])
     item = {"title": first["title"], "url": first["item_url"],
             "category": first["category"], "grp": first["grp"], "meta": meta,
@@ -2336,12 +2344,16 @@ def hierarchy():
     counts, totals = {}, {}
     for lbl, mem in tabs:
         marks = ",".join("?" * len(mem))
+        # dead pages are not part of any tree - keep them out of the
+        # "x of y" numbers too, or the counts promise pages the tree lacks
         counts[lbl] = con.execute(
             f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})"
-            " AND breadcrumb NOT IN ('','[]') AND breadcrumb IS NOT NULL",
+            " AND breadcrumb NOT IN ('','[]') AND breadcrumb IS NOT NULL"
+            " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
             mem).fetchone()[0]
         totals[lbl] = con.execute(
-            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})",
+            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})"
+            " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
             mem).fetchone()[0]
     # every live page we track, by URL, so a grouping node can link to our
     # captured library when we have the page it stands for
