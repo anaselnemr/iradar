@@ -246,12 +246,25 @@ def _run_check_inner(kind, url_ids):
     concurrency = max(1, int(settings.get("concurrency", 4)))
 
     con = db.connect()
+    # Work the queue in NEED order, not id order: a page never captured has
+    # no library at all (highest priority), a baseline page has only its first
+    # capture, a failed page (blank/error) has no good current state - all of
+    # those beat re-checking a page we already know is unchanged. Dead pages
+    # come last: a 404 re-check is the least urgent thing in the run.
+    priority = ("CASE WHEN last_checked IS NULL THEN 0"
+                " WHEN IFNULL(last_status,'')='baseline' THEN 1"
+                " WHEN IFNULL(last_status,'') IN ('blank','error') THEN 2"
+                " WHEN IFNULL(last_status,'')='notlive' THEN 4"
+                " ELSE 3 END")
     if url_ids:
         marks = ",".join("?" * len(url_ids))
         urls = con.execute(
-            f"SELECT * FROM urls WHERE active=1 AND id IN ({marks})", url_ids).fetchall()
+            f"SELECT * FROM urls WHERE active=1 AND id IN ({marks})"
+            f" ORDER BY {priority}, id", url_ids).fetchall()
     else:
-        urls = con.execute("SELECT * FROM urls WHERE active=1 ORDER BY id").fetchall()
+        urls = con.execute(
+            f"SELECT * FROM urls WHERE active=1"
+            f" ORDER BY {priority}, id").fetchall()
     con.close()
 
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,

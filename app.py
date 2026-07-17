@@ -739,6 +739,13 @@ def index():
     comp_pending = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1"
         " AND (components IS NULL OR components='')").fetchone()[0]
+    # pages that still NEED a capture (never checked / baseline-only / failed)
+    # - the set the "check pending first" button runs, and the front of the
+    # queue when checking everything
+    pending_total = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1 AND (last_checked IS NULL"
+        " OR IFNULL(last_status,'') IN ('baseline','blank','error'))"
+    ).fetchone()[0]
     ptypes_raw = con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
         " ORDER BY n DESC").fetchall()
@@ -814,6 +821,7 @@ def index():
                            q=q, page=page, pages=pages, sort=sort,
                            new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
                            notlive_total=notlive_total, comp_pending=comp_pending,
+                           pending_total=pending_total,
                            level_names=LEVEL_NAMES,
                            total_match=total_match, counts=counts,
                            per_page=PER_PAGE, ptypes=ptypes,
@@ -1963,6 +1971,18 @@ def run_now():
         con.close()
         if not ids:
             flash("Every page has been checked already — nothing to resume.")
+            return redirect(url_for("index"))
+    elif request.form.get("pending") == "1" or request.args.get("pending") == "1":
+        # only the pages that still NEED a capture: never checked, baseline
+        # (one capture only), or failed (blank/error). Skips every page whose
+        # current library is already known-good.
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls WHERE active=1 AND (last_checked IS NULL"
+            " OR IFNULL(last_status,'') IN ('baseline','blank','error'))")]
+        con.close()
+        if not ids:
+            flash("No pending pages — everything has a checked, current library.")
             return redirect(url_for("index"))
     elif (request.form.get("pending_components") == "1"
           or request.args.get("pending_components") == "1"):

@@ -10,11 +10,20 @@
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
-        <button {% if state.running %}disabled style="opacity:.5"{% endif %}>▶ Check all pages</button>
+        <button {% if state.running %}disabled style="opacity:.5"{% endif %}
+                title="Checks every page — in NEED order: never-captured first, then baseline, then failed (blank/error), then the rest; dead pages last">▶ Check all pages</button>
       </form>
       <button class="iconbtn" onclick="location.reload()" title="Refresh this page">⟳</button>
-      {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 and not state.running %}
+      {% if pending_total > 0 and not state.running %}
       <div style="margin-top:7px">
+        <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
+          <input type="hidden" name="pending" value="1">
+          <button class="linkbtn" title="Only pages that still NEED a capture: never checked{{ ' (' ~ counts.fresh ~ ')' if counts.fresh }}, baseline-only or failed — skips every page already known unchanged. Never-captured go first.">or just the {{ pending_total }} pending (new → baseline → failed)</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 and not state.running %}
+      <div style="margin-top:5px">
         <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
           <input type="hidden" name="only_new" value="1">
           <button class="linkbtn" title="Capture only pages never checked before">or capture just the {{ counts.fresh }} not-yet-captured</button>
