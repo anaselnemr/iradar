@@ -67,10 +67,12 @@
 
     <div class="pane" id="pane-backends">
       <p class="muted" style="margin-top:0; max-width:62ch">Where your assets
-        live. Paste each system's <b>search page URL</b> and every image, video
-        and document gets a one-click "find it in the backend" link — built
-        from the asset name in its URL. Write <code>{q}</code> where the name
-        belongs; without it the name is appended to the end.</p>
+        live. Paste each system's <b>search page URL</b> and the DAM/Windchill
+        badges become one-click links. Two modes: with <code>{q}</code> in the
+        URL, the asset name is injected straight into the search. Without
+        <code>{q}</code> (Infineon's DAM keeps queries out of its URL), the
+        click opens the search page <b>and copies the asset name</b> — paste,
+        Enter, done.</p>
       <label style="display:block">DAM search URL
         <input type="text" name="dam_search_url" value="{{ s.dam_search_url }}"
                placeholder="e.g. https://dam.infineon.com/search/?q={q}">

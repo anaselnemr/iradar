@@ -11,8 +11,8 @@
       {% if item.grp %}<span class="badge b-new">{{ item.grp }}</span>{% endif %}
       {% if item.doc_type %}<span class="badge b-new">{{ item.doc_type }}</span>{% endif %}
       {% if item.bsearch %}
-        <a class="badge b-sys" href="{{ item.bsearch }}" target="_blank"
-           title="Open {{ item.backend }} search for '{{ item.asset_name }}'">{{ item.backend }}</a>
+        <a class="badge b-sys" href="{{ item.bsearch }}" target="_blank" data-aname="{{ item.asset_name }}"
+           title="Opens {{ item.backend }} search and copies '{{ item.asset_name }}' — just paste">{{ item.backend }}</a>
       {% elif item.backend %}
         <span class="badge b-sys" title="Where this asset lives in your backend">{{ item.backend }}</span>
       {% elif item.category == 'documents' %}

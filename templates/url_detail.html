@@ -89,7 +89,7 @@
           <a href="{{ url_for('item_detail', key=it.item_key) }}" title="Every page this is assigned to">{{ it.title or it.url }}</a>
         {% else %}{{ it.title }}{% endif %}
         {% if it.url %}<a href="{{ it.url }}" target="_blank" class="liveurl" title="Open the item itself">↗</a>{% endif %}
-        {% if it.bsearch %}<a class="badge b-sys" href="{{ it.bsearch }}" target="_blank" title="Search {{ it.backend }} for this asset">{{ it.backend }}</a>{% elif it.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ it.backend }}</span>{% endif %}
+        {% if it.bsearch %}<a class="badge b-sys" href="{{ it.bsearch }}" target="_blank" data-aname="{{ it.aname }}" title="Opens {{ it.backend }} search and copies the asset name — just paste">{{ it.backend }}</a>{% elif it.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ it.backend }}</span>{% endif %}
         {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
       </li>
       {% endmacro %}

@@ -933,8 +933,10 @@ def asset_name(category, url):
 def backend_search_link(backend, name, settings):
     """The backend's search page for this asset, built from the EDITABLE
     settings URL (Settings -> Backends) so a changed DAM/Windchill link is a
-    ten-second fix, not a code change. '{q}' marks where the name goes; a URL
-    without it gets the name appended."""
+    ten-second fix, not a code change. '{q}' marks where the name goes. A URL
+    WITHOUT '{q}' opens as-is - for backends like Infineon's AEM omnisearch
+    that keep the query out of the URL entirely; there the click also copies
+    the asset name, so it is one paste away."""
     if not name or not backend:
         return ""
     key = {"DAM": "dam_search_url",
@@ -942,8 +944,7 @@ def backend_search_link(backend, name, settings):
     base = (settings.get(key) or "").strip() if key else ""
     if not base:
         return ""
-    q = urlquote(name, safe="")
-    return base.replace("{q}", q) if "{q}" in base else base + q
+    return base.replace("{q}", urlquote(name, safe=""))
 
 
 def _load_sections(snap_dir):
@@ -1337,9 +1338,9 @@ def url_detail(url_id):
                                                      it.get("url", ""))
                     it["backend"] = backend_system(cat, it.get("meta", ""),
                                                    it.get("dtype"))
+                    it["aname"] = asset_name(cat, it.get("url", ""))
                     it["bsearch"] = backend_search_link(
-                        it["backend"], asset_name(cat, it.get("url", "")),
-                        _settings_now)
+                        it["backend"], it["aname"], _settings_now)
             groups = []
             if any(i.get("group") for i in items):
                 order = []
@@ -1867,6 +1868,8 @@ def search_items():
                                "item_key": r["item_key"],
                                "rank": rank.get(r["item_key"], 10 ** 9),
                                "backend": _bk,
+                               "aname": asset_name(r["category"],
+                                                   r["item_url"]),
                                "bsearch": backend_search_link(
                                    _bk, asset_name(r["category"],
                                                    r["item_url"]), _sset)}

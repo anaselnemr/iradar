@@ -475,6 +475,37 @@
       setTimeout(function () { t.remove(); }, 320);
     }, 4600 + i * 500);
   });
+  function showToast(msg) {
+    var c = document.getElementById("toasts");
+    if (!c) { c = document.createElement("div"); c.id = "toasts"; document.body.appendChild(c); }
+    var d = document.createElement("div");
+    d.className = "flash"; d.textContent = msg; d.title = "Click to dismiss";
+    d.onclick = function () { d.remove(); };
+    c.appendChild(d);
+    setTimeout(function () { d.classList.add("out"); setTimeout(function () { d.remove(); }, 320); }, 3600);
+  }
+  function copyText(t) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
+    // http over the LAN is not a secure context - use the legacy path there
+    var ta = document.createElement("textarea");
+    ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    ta.remove();
+    return Promise.resolve();
+  }
+  // a backend badge (DAM / Windchill) opens the backend's search page AND
+  // copies the asset name - the backend keeps queries out of its URL, so
+  // paste-and-enter is the fastest possible handoff
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a.b-sys[data-aname]");
+    if (!a) return;
+    var n = a.getAttribute("data-aname");
+    if (!n) return;
+    copyText(n).then(function () {
+      showToast("Copied “" + n + "” — paste it into the " + a.textContent.trim() + " search");
+    });
+  });
 
   function toggleTheme() {
     var root = document.documentElement;
