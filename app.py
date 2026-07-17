@@ -49,6 +49,16 @@ def _require_login():
             {"WWW-Authenticate": 'Basic realm="InfineonWatch", charset="UTF-8"'})
 
 
+@app.after_request
+def _no_cache(resp):
+    # The pages are dynamic and the JS/CSS is inlined in them, so a browser that
+    # cached an old page keeps running old code (that read as "select-all still
+    # broken" after a fix). Tell it to always revalidate the HTML.
+    if resp.mimetype == "text/html":
+        resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    return resp
+
+
 URL_RE = re.compile(r"https?://[^\s\"',;<>]+")
 
 
@@ -299,7 +309,13 @@ def index():
         "page_desc": "u.url COLLATE NOCASE DESC",
         "date": "u.last_checked IS NULL, u.last_checked DESC",
         "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
+        "num": "u.id ASC",              # the '#' column - add order (chronological)
+        "num_desc": "u.id DESC",
     }.get(sort, "u.url COLLATE NOCASE ASC")
+    # a page added within the last week wears a NEW badge (created_at is UTC)
+    from datetime import timedelta as _td
+    new_cutoff = ((datetime.now(timezone.utc) - _td(days=7))
+                  .strftime("%Y-%m-%d %H:%M:%S"))
     try:
         page = max(1, int(request.args.get("page", "1")))
     except ValueError:
@@ -312,6 +328,11 @@ def index():
         f"SELECT COUNT(*) FROM urls u {wsql}", params).fetchone()[0]
     pages = max(1, -(-total_match // PER_PAGE))
     page = min(page, pages)
+    # days on which a big batch was imported (the initial ~4k load) are NOT
+    # "new pages you added" - only badge NEW for small, individual additions
+    bulk_days = {r["d"] for r in con.execute(
+        "SELECT substr(created_at,1,10) d, COUNT(*) n FROM urls"
+        " WHERE created_at IS NOT NULL GROUP BY d HAVING n > 50")}
     urls = con.execute(f"""
         SELECT u.*,
           (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
@@ -390,6 +411,7 @@ def index():
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            q=q, page=page, pages=pages, sort=sort,
+                           new_cutoff=new_cutoff, bulk_days=bulk_days,
                            total_match=total_match, counts=counts,
                            per_page=PER_PAGE, ptypes=ptypes,
                            sel_status=statuses, sel_types=sel_types,

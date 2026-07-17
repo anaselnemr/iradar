@@ -164,7 +164,7 @@
   <table>
     <tr>
       <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
-      <th>#</th>
+      <th><a href="#" class="sorth" onclick="return sortBy('num')" title="Sort by add order (#, chronological)">#{% if sort=='num' %} ↑{% elif sort=='num_desc' %} ↓{% endif %}</a></th>
       <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
       <th>Type</th><th>Live</th><th>Status</th>
       <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
@@ -179,6 +179,9 @@
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
         {% else %}
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink provisional" title="Provisional name — the real page title appears once the page is captured">{{ (u.label or u.url.rstrip('/').rsplit('/', 1)[-1]) | pretty_slug }}</a>
+        {% endif %}
+        {% if u.created_at and u.created_at >= new_cutoff and u.created_at[:10] not in bulk_days %}
+        <span class="badge b-newpg" title="Added {{ u.created_at|localtime }} — new within the last 7 days">NEW</span>
         {% endif %}
         <br>
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
@@ -315,6 +318,7 @@ function sortBy(key) {
   const p = new URLSearchParams(location.search);
   const cur = p.get('sort') || 'page';
   if (key === 'page') p.set('sort', cur === 'page' ? 'page_desc' : 'page');
+  else if (key === 'num') p.set('sort', cur === 'num' ? 'num_desc' : 'num');
   else p.set('sort', cur === 'date' ? 'date_asc' : 'date');
   p.delete('page');
   pjax('{{ url_for("index") }}?' + p.toString());
