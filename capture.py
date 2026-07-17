@@ -334,7 +334,7 @@ SECTIONS_JS = r"""
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
                overview: [], applications: [], about: [], categories: [],
-               products: [], breadcrumb: [], images: []};
+               products: [], partners: [], breadcrumb: [], images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -1075,6 +1075,29 @@ SECTIONS_JS = r"""
       has_content: !!comm && !/there are no questions/i.test(commTxt)
     }
   };
+
+  // Partner solutions: every partner card is an OBJECT like a document -
+  // name (from the logo's alt text), the partner's link, and the assigned
+  // logo image for previewing.
+  const pysec = document.querySelector('#partner-solutions, [class*="partner-solution" i]');
+  if (pysec) {
+    const seenP = new Set();
+    pysec.querySelectorAll('img').forEach(img => {
+      const alt = (img.alt || '').replace(/\s+/g, ' ').trim();
+      let root = img.closest('a[href]');
+      if (!root) root = img.closest('[class*="card" i], li, [class*="col" i]') || img.parentElement;
+      const a = (root.matches && root.matches('a[href]')) ? root
+        : (root.querySelector ? root.querySelector('a[href]') : null);
+      let name = alt.replace(/\s*logo\s*$/i, '').trim();
+      const rootTxt = (root.innerText || '').replace(/\s+/g, ' ').trim();
+      if (!name) name = rootTxt.slice(0, 80);
+      if (!name || seenP.has(name.toLowerCase())) return;
+      seenP.add(name.toLowerCase());
+      out.partners.push({title: name.slice(0, 120), url: a ? a.href : '',
+                         meta: (rootTxt && rootTxt !== name) ? rootTxt.slice(0, 200) : '',
+                         img: (img.currentSrc || img.src || '').slice(0, 400)});
+    });
+  }
 
   // The hero/stage image: the big image beside or behind the title at the
   // top of the page (its class differs per page type - hero, stage, banner,

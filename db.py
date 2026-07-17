@@ -164,6 +164,8 @@ def init_db():
     _ensure_column(con, "urls", "components", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "detail_tabs", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "price", "TEXT DEFAULT ''")
+    # the image ASSIGNED to an item (a partner's logo) - previewable
+    _ensure_column(con, "items", "img", "TEXT DEFAULT ''")
     # stable id for "this exact item, wherever it appears" - a document lives
     # on many pages and needs one page of its own
     _ensure_column(con, "items", "item_key", "TEXT DEFAULT ''")

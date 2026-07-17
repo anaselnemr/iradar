@@ -184,7 +184,8 @@ def index_items(con, url_id, snap_dir, dead=False):
                          title[:300], (it.get("url") or "")[:600],
                          (it.get("meta") or "")[:260],
                          item_key(cat, title, it.get("url") or ""),
-                         (it.get("dtype") or "")[:80]))
+                         (it.get("dtype") or "")[:80],
+                         (it.get("img") or "")[:400]))
     if rows:
         # drop byte-identical repeats (a page can list the same card twice).
         # Only fully-identical rows collapse - a language variant differs in
@@ -192,7 +193,7 @@ def index_items(con, url_id, snap_dir, dead=False):
         rows = list(dict.fromkeys(rows))
         con.executemany(
             "INSERT INTO items(url_id, category, grp, title, item_url, meta,"
-            " item_key, doc_type) VALUES(?,?,?,?,?,?,?,?)", rows)
+            " item_key, doc_type, img) VALUES(?,?,?,?,?,?,?,?,?)", rows)
 
 
 def _prune_snapshot(con, snap_row):

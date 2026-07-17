@@ -937,6 +937,7 @@ SECTION_LABELS = [
     ("trainings", "Trainings & webinars"),
     ("videos", "Videos"),
     ("news", "News & highlights"),
+    ("partners", "Partner solutions"),
     ("images", "Images"),
 ]
 
@@ -1141,6 +1142,37 @@ def _aemlink(page_url, base):
             or re.search(r"_[0-9a-f]{8}-[0-9a-f]{4}-", low)):
         return ""
     return base.replace("{path}", path) if "{path}" in base else base + path
+
+
+_OFFICE_EXT = {"ppt", "pptx", "doc", "docx", "xls", "xlsx"}
+_IMG_EXT = {"svg", "png", "jpg", "jpeg", "gif", "webp"}
+
+
+def doc_preview(url):
+    """(kind, src) for previewing a file in the browser: pdf/txt render
+    natively in an iframe, images inline, Office files through Microsoft's
+    public embed viewer (the file URL is passed to view.officeapps.live.com -
+    public assets only), zips get a file card, gated documents a lock."""
+    u = (url or "").split("#")[0]
+    low = u.lower()
+    if not u:
+        return "", ""
+    if "/gated/" in low:
+        return "gated", ""
+    tail = low.split("?")[0].rsplit("/", 1)[-1]
+    ext = tail.rsplit(".", 1)[-1] if "." in tail else ""
+    if ext == "pdf":
+        return "pdf", u
+    if ext in _IMG_EXT:
+        return "img", u
+    if ext == "txt":
+        return "txt", u
+    if ext in _OFFICE_EXT:
+        return ("office", "https://view.officeapps.live.com/op/embed.aspx?src="
+                + urlquote(u, safe=""))
+    if ext == "zip":
+        return "zip", ""
+    return "", ""
 
 
 def document_type_of(meta):
@@ -2432,9 +2464,14 @@ def item_detail(key):
     dtype = next((r["doc_type"] for r in rows if r["doc_type"]), "")
     _bk = backend_system(first["category"], meta, dtype, first["grp"])
     _aname = asset_name(first["category"], first["item_url"])
+    _img = next((r["img"] for r in rows if r["img"]), "")
+    _pk, _psrc = ("", "")
+    if first["category"] in ("documents", "design_resources"):
+        _pk, _psrc = doc_preview(first["item_url"])
     item = {"title": first["title"], "url": first["item_url"],
             "category": first["category"], "grp": first["grp"], "meta": meta,
-            "backend": _bk, "asset_name": _aname,
+            "backend": _bk, "asset_name": _aname, "img": _img,
+            "preview_kind": _pk, "preview_src": _psrc,
             "bsearch": backend_search_link(_bk, _aname, db.get_settings()),
             "doc_type": (dtype or document_type_of(meta))
             if first["category"] == "documents" else "",
