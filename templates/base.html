@@ -95,9 +95,16 @@
                      list-style: none; display: flex; align-items: center;
                      gap: 8px; }
   .tnode > summary::-webkit-details-marker { display: none; }
-  .tnode > summary::before { content: "▸"; color: var(--muted);
-                             font-size: 11px; transition: transform .15s; }
+  /* a fixed-width toggle slot on EVERY row (arrow for expandable nodes, empty
+     for leaves) so siblings always start at the same x - a leaf and a node
+     line up exactly, no offset from the arrow */
+  .tnode > summary::before { content: "▸"; display: inline-block; width: 12px;
+                             text-align: center; flex-shrink: 0;
+                             color: var(--muted); font-size: 11px;
+                             transition: transform .15s; }
   .tnode[open] > summary::before { transform: rotate(90deg); }
+  .tleaf::before { content: ""; display: inline-block; width: 12px;
+                   flex-shrink: 0; }
   .tnode > summary:hover { background: var(--hover); }
   .tname { font-weight: 600; }
   .tcount { font-size: 11.5px; color: var(--muted); background: var(--hover);
