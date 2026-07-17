@@ -304,10 +304,12 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         return
 
     counters["ok"] += 1
-    # A page the site itself serves as 404/500 is not "captured fine": it still
-    # gets a snapshot (so a revival shows up as a change) but reads as not live
-    # and stays out of the library index.
-    dead = (res.get("http_status") or 0) >= 400
+    # A page the site itself serves as gone (404/410) is not "captured fine":
+    # it still gets a snapshot (so a revival shows up as a change) but reads as
+    # not live and stays out of the library index. ONLY those two codes count -
+    # a 403/429/5xx is the CDN blocking US or hiccuping, not the page's state
+    # (capture already refuses those; this guard keeps the rule if one slips).
+    dead = (res.get("http_status") or 0) in (404, 410)
     # A 404 page publishes a breadcrumb too ("Home > Error Pages > Page Not
     # Found") and it would sit in the product tree as if it were a product.
     # An error page's own furniture is not this page's hierarchy, the same
@@ -415,8 +417,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
 
         # A page that JUST died is the most important change there is, so it
         # stays 'changed' (the Live column reports the 404); only a steady dead
-        # page reads as 'notlive'.
-        dead_now = (vres.get("http_status") or 0) >= 400
+        # page reads as 'notlive'. Gone means 404/410 - never a block code.
+        dead_now = (vres.get("http_status") or 0) in (404, 410)
         if confirmed:
             counters["changed"] += 1
             change_dir = db.CHANGE_DIR / str(url_id) / ts_label

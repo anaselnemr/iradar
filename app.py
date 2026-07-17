@@ -231,14 +231,15 @@ _COMPONENT_ATTRS = [
 
 ATTR_FILTERS = {
     "checked":  ("Captured", "u.last_checked IS NOT NULL"),
-    # "live" means a visitor gets the page: a 2xx with an empty body does not
-    # count, so blank pages are excluded here and counted as not live below.
+    # "live" means a visitor gets the page. A blank body is its own state (not
+    # live, not dead - it gets its own filter), and a blocked/erroring capture
+    # is UNKNOWN, not dead: only 404/410 - the server saying "gone" - count as
+    # not live. A 403/429/5xx is the CDN blocking us, never a page state.
     "live":     ("Live (HTTP OK)",
-                 "u.last_http IS NOT NULL AND u.last_http < 400"
-                 " AND IFNULL(u.last_status,'') <> 'blank'"),
-    "notlive":  ("Not live (404/500/blank)",
-                 "(u.last_http IS NOT NULL AND u.last_http >= 400)"
-                 " OR u.last_status='blank'"),
+                 "u.last_http IS NOT NULL AND u.last_http NOT IN (404, 410)"
+                 " AND IFNULL(u.last_status,'') NOT IN ('blank', 'error')"),
+    "notlive":  ("Not live (404)",
+                 "u.last_http IN (404, 410)"),
 }
 for _stem, _cat, _label in _CONTENT_ATTRS + _COMPONENT_ATTRS:
     ATTR_FILTERS["has" + _stem] = ("Has " + _label, _has(_cat))
@@ -574,10 +575,9 @@ def index():
           SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS paused,
           SUM(CASE WHEN last_checked IS NULL THEN 1 ELSE 0 END) AS fresh,
           SUM(CASE WHEN last_status='blank' THEN 1 ELSE 0 END) AS blank,
-          -- a page serving an empty body is not reachable content either,
-          -- so it belongs in the same headline number as the 404s
-          SUM(CASE WHEN (last_http IS NOT NULL AND last_http>=400)
-                        OR last_status='blank' THEN 1 ELSE 0 END) AS notlive
+          -- not live = the server says GONE (404/410). Blank bodies and
+          -- blocked captures (403/429/5xx) are their own states, never this
+          SUM(CASE WHEN last_http IN (404, 410) THEN 1 ELSE 0 END) AS notlive
         FROM urls""").fetchone()
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
@@ -623,8 +623,9 @@ def index():
     attr_counts["hasvideos"] = vid_pages
     attr_counts["novideos"] = checked - vid_pages
 
-    # "Not live" = a page serving no real content: a 404/500 OR a blank body.
-    notlive_total = status_counts["notlive"] + status_counts["blank"]
+    # "Not live" = the server answers 4xx. A blank page is its own state,
+    # counted separately - not folded in here.
+    notlive_total = status_counts["notlive"]
     # quick chips: the handful of filters worth one-click access, shown only
     # when they actually match something. status kind links ?status=, attr ?attr=
     # NB: the field is "vals", NOT "keys" - a chip is a dict, and `c.keys` in a
@@ -635,7 +636,7 @@ def index():
          "n": status_counts["changed"], "always": True, "tone": "warn"},
         {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
          "n": status_counts["rejected"], "tone": "warn"},
-        {"kind": "status", "vals": ["notlive", "blank"], "label": "Not live",
+        {"kind": "status", "vals": ["notlive"], "label": "Not live",
          "n": notlive_total, "tone": "bad"},
         {"kind": "status", "vals": ["blank"], "label": "Blank page",
          "n": status_counts["blank"], "tone": "bad"},

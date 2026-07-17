@@ -41,6 +41,11 @@ INJECT_JS = None
 # The runner keys the "serves a blank page" state off this, so it lives here
 # as one constant rather than as a magic string duplicated across modules.
 BLANK_RENDER = "blank render"
+# HTTP answers that describe the CONNECTION, not the page: bot-guard blocks and
+# server hiccups. These must never be recorded as a page's state - the capture
+# retries with backoff and otherwise fails as an error (retried next run).
+BLOCKED_TRANSIENT = "blocked/transient"
+TRANSIENT_HTTP = {403, 408, 425, 429, 500, 502, 503, 504}
 
 
 # Many Infineon cards are React components whose anchors carry NO href at all
@@ -1457,6 +1462,27 @@ async def capture_one(browser, url, out_dir):
                 await page.wait_for_timeout(2000)
         if last_exc is not None:
             raise last_exc
+        # A 403/429/5xx is the CDN's bot-guard or a hiccup, NOT the page's
+        # state: 65 healthy evaluation boards were once branded "not live" by a
+        # single 403 burst. Back off and renavigate - blocks lift in seconds.
+        # Only 404/410 pass through: "gone" is a real page state to record.
+        for backoff_ms in (10_000, 25_000):
+            if resp is None or resp.status not in TRANSIENT_HTTP:
+                break
+            print(f"  [blocked] HTTP {resp.status} on {url[:60]} - "
+                  f"retrying in {backoff_ms // 1000}s", flush=True)
+            await page.wait_for_timeout(backoff_ms)
+            try:
+                resp = await page.goto(url, wait_until="load",
+                                       timeout=NAV_TIMEOUT_MS) or resp
+            except Exception:
+                pass                       # keep the previous resp; loop decides
+        if resp is not None and resp.status in TRANSIENT_HTTP:
+            # Refuse to record this as the page's state. The capture fails as
+            # an error: the runner keeps the previous good baseline and the
+            # page is retried next run - a block must never poison the library.
+            raise Exception(f"{BLOCKED_TRANSIENT}: HTTP {resp.status} "
+                            f"(CDN block / server hiccup, not the page's state)")
         result["http_status"] = resp.status if resp else None
         # Where the SERVER sent us, read from the navigation response and not
         # from page.url later on. By then this capture has clicked every tab

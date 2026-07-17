@@ -6,7 +6,7 @@
     <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">Pages tracked</div></div>
     <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages with a change waiting for you"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">To review</div></a>
     <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Captured</div></div>
-    <a class="stat statlink" href="{{ url_for('index', status=['notlive','blank']) }}" title="404/500 pages and blank pages — anything not serving real content"><div class="n" style="color:{{ '#dc2626' if notlive_total else '#16a34a' }}">{{ notlive_total }}</div><div class="l">Not live</div></a>
+    <a class="stat statlink" href="{{ url_for('index', status=['notlive']) }}" title="Pages the server answers 404 for — blank pages are counted separately"><div class="n" style="color:{{ '#dc2626' if notlive_total else '#16a34a' }}">{{ notlive_total }}</div><div class="l">Not live</div></a>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
