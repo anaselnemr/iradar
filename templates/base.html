@@ -375,6 +375,15 @@
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent);
                          cursor: pointer; }
   .badge.aem-off { opacity: .4; cursor: not-allowed; filter: grayscale(1); }
+  .lvledit { display: inline-block; position: relative; }
+  .lvledit > summary { list-style: none; cursor: pointer; display: inline-flex;
+                       gap: 5px; align-items: center; }
+  .lvledit > summary::-webkit-details-marker { display: none; }
+  .lvlsrc { font-size: 10.5px; opacity: .65; }
+  .lvlform { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0;
+             background: var(--panel); border: 1px solid var(--line);
+             border-radius: 10px; padding: 10px; display: flex; gap: 8px;
+             box-shadow: 0 12px 30px rgba(0,0,0,.18); white-space: nowrap; }
 
   /* header buttons (theme, palette) */
   .hbtn { background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.16);

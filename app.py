@@ -417,6 +417,94 @@ def _etype(ptype, url, level=""):
     return ptype
 
 
+PRODUCT_LEVELS = ("PC", "PFP", "PSFP", "PEFP")
+
+
+def _infer_level(con, row):
+    """Work out a page's level from three independent signals and say why.
+
+    1. SIBLINGS (weight 3): pages sharing the same parent URL - the strongest
+       look-alike evidence (air-purifiers sits among five ASPs).
+    2. HIERARCHY DEPTH (weight 1): the level distribution of same-type pages
+       at the same breadcrumb depth.
+    3. COMPONENT FINGERPRINT (weight 2): Jaccard similarity of the page's own
+       component set against each level's superset - same content, same look.
+
+    Returns (level, confidence 0..1, evidence-text). Parts are typed by URL.
+    """
+    ptype, url = row["ptype"], row["url"]
+    if ptype == "Part":
+        lvl = "EB" if "/evaluation-board/" in url else "PTP"
+        return lvl, 1.0, "part pages are typed by their URL"
+    scheme = (PRODUCT_LEVELS if ptype == "Product"
+              else APP_LEVELS if ptype == "Application" else ())
+    if not scheme:
+        return "", 0.0, f"the {ptype or 'untyped'} type has no level scheme"
+
+    peers = con.execute(
+        "SELECT id, url, level, breadcrumb FROM urls"
+        " WHERE ptype=? AND level<>'' AND id<>?", (ptype, row["id"])).fetchall()
+
+    def crumb_depth(bc):
+        try:
+            return len([c for c in json.loads(bc or "[]") if c.get("title")])
+        except Exception:
+            return 0
+
+    votes = {l: 0.0 for l in scheme}
+    why = []
+    # 1) siblings
+    parent = url.rstrip("/").rsplit("/", 1)[0] + "/"
+    sibs = [p for p in peers if p["url"].startswith(parent)
+            and "/" not in p["url"][len(parent):].rstrip("/")]
+    if sibs:
+        w = 3.0 * min(1.0, len(sibs) / 3.0)   # one sibling is a hint, not proof
+        for l in scheme:
+            n = sum(1 for p in sibs if p["level"] == l)
+            votes[l] += w * n / len(sibs)
+        top = max(scheme, key=lambda l: sum(1 for p in sibs if p["level"] == l))
+        why.append(f"{len(sibs)} sibling(s), mostly {top}")
+    # 2) depth peers
+    d = crumb_depth(row["breadcrumb"])
+    if d:
+        dp = [p for p in peers if crumb_depth(p["breadcrumb"]) == d]
+        if dp:
+            for l in scheme:
+                votes[l] += 1.0 * sum(1 for p in dp if p["level"] == l) / len(dp)
+            why.append(f"depth-{d} peers lean "
+                       + max(scheme, key=lambda l: sum(
+                           1 for p in dp if p["level"] == l)))
+    # 3) component fingerprint vs each level's superset
+    cats = {r["category"] for r in con.execute(
+        "SELECT DISTINCT category FROM items WHERE url_id=?", (row["id"],))}
+    try:
+        flags = json.loads(row["flags"] or "{}")
+    except Exception:
+        flags = {}
+    have = _page_component_set(row["components"], row["detail_tabs"], flags,
+                               {c for c in _CAT_TO_COMP if c in cats})
+    sups = _components_for_type(con)
+    best_j = ("", 0.0)
+    for l in scheme:
+        sup = sups.get(l) or set()
+        if not sup:
+            continue
+        j = len(have & sup) / (len(have | sup) or 1)
+        votes[l] += 2.0 * j
+        if j > best_j[1]:
+            best_j = (l, j)
+    if best_j[0]:
+        why.append(f"components fit {best_j[0]} ({best_j[1]:.0%})")
+
+    ranked = sorted(votes.items(), key=lambda kv: -kv[1])
+    if not ranked or ranked[0][1] <= 0:
+        return "", 0.0, "no evidence available yet (page not captured?)"
+    best, top = ranked[0]
+    second = ranked[1][1] if len(ranked) > 1 else 0.0
+    conf = (top - second) / (top or 1)
+    return best, round(conf, 2), "; ".join(why)
+
+
 def _component_counts(con):
     """{etype: {component_key: n_pages}} - on how many captured pages of each
     (effective) type each component actually appears. The union of a type's
@@ -1478,7 +1566,7 @@ def url_detail(url_id):
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
                            components=comp_rows, price=(u["price"] or ""),
-                           settings=_settings_now)
+                           settings=_settings_now, level_names=LEVEL_NAMES)
 
 
 @app.route("/change/<int:change_id>")
@@ -1723,6 +1811,63 @@ def settings_view():
                            next_run=next_run_text(), weekdays=WEEKDAYS)
 
 
+@app.route("/url/<int:url_id>/level", methods=["POST"])
+def url_set_level(url_id):
+    """Edit a page's level: an explicit pick is 'manual', 'auto' runs the
+    sibling/hierarchy/fingerprint inference, empty clears it."""
+    con = db.connect()
+    row = con.execute("SELECT * FROM urls WHERE id=?", (url_id,)).fetchone()
+    if not row:
+        con.close()
+        abort(404)
+    want = (request.form.get("level") or "").strip()
+    valid = set(LEVEL_NAMES) | {""}
+    if want == "auto":
+        lvl, conf, why = _infer_level(con, row)
+        if lvl:
+            con.execute("UPDATE urls SET level=?, level_src='inferred'"
+                        " WHERE id=?", (lvl, url_id))
+            con.commit()
+            flash(f"Inferred {lvl} ({conf:.0%} confidence) — {why}")
+        else:
+            flash(f"Could not infer a level: {why}")
+    elif want in valid:
+        con.execute("UPDATE urls SET level=?, level_src=? WHERE id=?",
+                    (want, "manual" if want else "", url_id))
+        con.commit()
+        flash(("Level set to " + want + " (manual).") if want
+              else "Level cleared.")
+    con.close()
+    return redirect(url_for("url_detail", url_id=url_id))
+
+
+@app.route("/levels/infer-missing", methods=["POST"])
+def levels_infer_missing():
+    """One click: every level-less Product/Application page gets the
+    three-signal inference; each assignment is reported."""
+    con = db.connect()
+    rows = con.execute("SELECT * FROM urls WHERE ptype IN"
+                       " ('Product','Application','Part')"
+                       " AND (level IS NULL OR level='')").fetchall()
+    done, skipped = [], 0
+    for row in rows:
+        lvl, conf, _why = _infer_level(con, row)
+        if lvl:
+            con.execute("UPDATE urls SET level=?, level_src='inferred'"
+                        " WHERE id=?", (lvl, row["id"]))
+            done.append(f"{row['url'].rsplit('/', 1)[-1]}→{lvl}")
+        else:
+            skipped += 1
+    con.commit()
+    con.close()
+    flash((f"Inferred {len(done)} level(s): " + ", ".join(done[:10])
+           + ("…" if len(done) > 10 else "")) if done
+          else "Every typed page already has a level.")
+    if skipped:
+        flash(f"{skipped} page(s) had no evidence yet (not captured).")
+    return redirect(request.referrer or url_for("settings_components"))
+
+
 @app.route("/settings/components", methods=["GET", "POST"])
 def settings_components():
     """The page-type x component matrix: which components each page type is
@@ -1741,6 +1886,10 @@ def settings_components():
     pending = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1"
         " AND (components IS NULL OR components='')").fetchone()[0]
+    missing_levels = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE ptype IN"
+        " ('Product','Application','Part')"
+        " AND (level IS NULL OR level='')").fetchone()[0]
     con.close()
     # per-type max count, for the heatmap tint (each column self-normalises)
     maxn = {t: max(list(counts.get(t, {}).values()) or [1]) for t in types}
@@ -1820,7 +1969,8 @@ def settings_components():
                            comps=_all_components(), types=types,
                            matrix=matrix, counts=counts, saved=saved, maxn=maxn,
                            custom_keys={c[0] for c in _custom_components()},
-                           pending=pending, state=runner.RUN_STATE)
+                           pending=pending, missing_levels=missing_levels,
+                           state=runner.RUN_STATE)
 
 
 # --------------------------------------------------------------------------

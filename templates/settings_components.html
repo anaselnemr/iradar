@@ -11,6 +11,15 @@
   saved yet</b> — the grid shows what the captured data says today.{% endif %}
 </p>
 
+{% if missing_levels %}
+<div class="card" style="padding:10px 14px; border-left:3px solid #f59e0b; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+  <span><b>{{ missing_levels }}</b> page{{ 's' if missing_levels != 1 }} have no level (shape) yet.</span>
+  <form method="post" action="{{ url_for('levels_infer_missing') }}" style="display:inline">
+    <button class="btn btn-ghost">Infer them automatically</button>
+  </form>
+  <span class="muted" style="font-size:12px">siblings + hierarchy depth + component fingerprint; every page's level stays editable on its own page</span>
+</div>
+{% endif %}
 {% if state.running %}
 <div class="card" style="padding:10px 14px; border-left:3px solid #f59e0b">
   A capture run is in progress ({{ state.done }}/{{ state.total }}) — counts

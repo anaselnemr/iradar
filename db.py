@@ -137,6 +137,11 @@ def init_db():
     # Never inferred from URL depth - the sheet has PEFPs at 2, 3, 4 and 5
     # path segments, so depth says nothing about level.
     _ensure_column(con, "urls", "level", "TEXT DEFAULT ''")
+    # where the level came from: report (the source sheet), inferred (the
+    # sibling/hierarchy/fingerprint algorithm) or manual (the user's own edit)
+    _ensure_column(con, "urls", "level_src", "TEXT DEFAULT ''")
+    con.execute("UPDATE urls SET level_src='report'"
+                " WHERE level<>'' AND IFNULL(level_src,'')=''")
     # the page's own JSON-LD breadcrumb, kept on the row so the per-type
     # hierarchy is one query rather than 4,145 file reads
     _ensure_column(con, "urls", "breadcrumb", "TEXT DEFAULT ''")
