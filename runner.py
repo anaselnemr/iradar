@@ -214,6 +214,37 @@ def index_items(con, url_id, snap_dir, dead=False):
             " item_key, doc_type, img) VALUES(?,?,?,?,?,?,?,?,?)", rows)
 
 
+def _write_page_meta(con, url_id, page_url, res, dead):
+    """Write every page-derived urls column from ONE capture result.
+
+    Used by the first capture AND the verify re-capture, so the metadata
+    (breadcrumb/flags/components/tabs/price/canonical) always describes the
+    same capture the library items came from. Before this was shared, a
+    dead<->alive flap between the two captures left the columns describing
+    one state and the items another.
+
+    A dead page's own furniture (error-page hero, its breadcrumb "Home >
+    Error Pages") is not this page's content - everything empties, or the
+    404 furniture leaks into the hierarchy and the type's component superset.
+    """
+    con.execute(
+        "UPDATE urls SET last_http=?, breadcrumb=?, flags=?, components=?,"
+        " detail_tabs=?, price=?, canonical_url=? WHERE id=?",
+        (res.get("http_status"),
+         json.dumps([] if dead else (res.get("breadcrumb") or []),
+                    ensure_ascii=False),
+         json.dumps({} if dead else (res.get("flags") or {}), ensure_ascii=False),
+         json.dumps([] if dead else (res.get("components") or []),
+                    ensure_ascii=False),
+         json.dumps([] if dead else (res.get("detail_tabs") or []),
+                    ensure_ascii=False),
+         "" if dead else (res.get("price") or ""),
+         "" if dead else canonical_url(page_url,
+                                       res.get("breadcrumb") or [],
+                                       res.get("final_url") or ""),
+         url_id))
+
+
 def _prune_snapshot(con, snap_row):
     """Delete a snapshot's files+row if no flagged change references it."""
     ref = con.execute(
@@ -391,25 +422,26 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
     # Found") and it would sit in the product tree as if it were a product.
     # An error page's own furniture is not this page's hierarchy, the same
     # reason its images stay out of the library index.
-    con.execute(
-        "UPDATE urls SET last_http=?, breadcrumb=?, flags=?, components=?,"
-        " detail_tabs=?, price=?, canonical_url=? WHERE id=?",
-        (res.get("http_status"),
-         json.dumps([] if dead else (res.get("breadcrumb") or []),
-                    ensure_ascii=False),
-         # a dead page's own furniture (its default hero, error-page table) is
-         # not this page's content - drop the flags too, or they leak into the
-         # type's component superset
-         json.dumps({} if dead else (res.get("flags") or {}), ensure_ascii=False),
-         json.dumps([] if dead else (res.get("components") or []),
-                    ensure_ascii=False),
-         json.dumps([] if dead else (res.get("detail_tabs") or []),
-                    ensure_ascii=False),
-         "" if dead else (res.get("price") or ""),
-         "" if dead else canonical_url(row["url"],
-                                       res.get("breadcrumb") or [],
-                                       res.get("final_url") or ""),
-         url_id))
+    _write_page_meta(con, url_id, row["url"], res, dead)
+    # CANONICAL DEDUP at capture: the long address only becomes known NOW
+    # (from the page's own breadcrumb), so a short link and its long twin can
+    # both have been added. The moment the canonical is known, drop a twin
+    # that was never captured - it would only capture this same page again.
+    # A captured twin is left alone: it holds history, and if the site 301s
+    # one name to the other the redirect logic collapses them safely.
+    if not dead:
+        cu = con.execute("SELECT canonical_url FROM urls WHERE id=?",
+                         (url_id,)).fetchone()
+        cu = (cu["canonical_url"] or "").rstrip("/") if cu else ""
+        if cu:
+            twin = con.execute(
+                "SELECT id FROM urls WHERE id<>? AND last_checked IS NULL"
+                " AND rtrim(url,'/')=?", (url_id, cu)).fetchone()
+            if twin:
+                con.execute("DELETE FROM urls WHERE id=?", (twin["id"],))
+                con.execute("DELETE FROM page_fts WHERE rowid=?", (twin["id"],))
+                print(f"dedup: dropped never-captured twin #{twin['id']}"
+                      f" ({cu}) - same page as {row['url']}", flush=True)
     # SELF-HEAL at capture: a page that entered without a type gets typed from
     # its URL, and any URL-derivable level (PTP/EB, DRC/DRF/DRSF) is filled if
     # missing - so type/level can never silently stay blank for a captured page
@@ -528,8 +560,10 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
             shutil.rmtree(s["new1_dir"], ignore_errors=True)
             con.execute("DELETE FROM snapshots WHERE id=?", (s["new1_id"],))
             confirm_id, confirm_dir = vsnap_id, vdir
-            con.execute("UPDATE urls SET last_http=? WHERE id=?",
-                        (vres.get("http_status"), url_id))
+            # the verify capture is the one the library will describe - point
+            # every derived column at IT, not at the superseded first capture
+            _write_page_meta(con, url_id, row["url"], vres,
+                             (vres.get("http_status") or 0) in (404, 410))
 
         # A page that JUST died is the most important change there is, so it
         # stays 'changed' (the Live column reports the 404); only a steady dead

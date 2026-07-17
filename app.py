@@ -598,6 +598,36 @@ def _effective_matrix(con):
     return _components_for_type(con)
 
 
+def _matrix_autojoin():
+    """Keep a SAVED component matrix learning: any component the live data now
+    shows on a type but the saved matrix lacks is ADDED (a new section Infineon
+    starts publishing must not stay invisible just because the matrix was saved
+    before it existed). Removals stay manual - only a human prunes. Returns the
+    list of 'etype+key' additions."""
+    raw = (db.get_settings().get("component_matrix") or "").strip()
+    if not raw:
+        return []            # no saved matrix - live union already rules
+    try:
+        stored = json.loads(raw)
+        if not (isinstance(stored, dict) and any(stored.values())):
+            return []
+    except Exception:
+        return []
+    con = db.connect()
+    live = _components_for_type(con)
+    con.close()
+    added = []
+    for et, keys in live.items():
+        have = set(stored.get(et) or [])
+        new = keys - have
+        if new:
+            stored[et] = sorted(have | new)
+            added += [f"{et}+{k}" for k in sorted(new)]
+    if added:
+        db.set_setting("component_matrix", json.dumps(stored))
+    return added
+
+
 def _bulk_counts(con, filters):
     """{key: count} in ONE pass, for filters whose SQL touches only the urls
     row. Deriving these by hand is how Dead-page/Blank-page came to show 0
@@ -860,6 +890,8 @@ def urls_bulk():
     con = db.connect()
     if action == "delete":
         con.execute(f"DELETE FROM urls WHERE id IN ({marks})", ids)
+        # FTS has no FK cascade - purge with the rows (see urls_delete)
+        con.execute(f"DELETE FROM page_fts WHERE rowid IN ({marks})", ids)
         con.commit()
         for uid in ids:
             shutil.rmtree(db.SNAP_DIR / str(uid), ignore_errors=True)
@@ -893,6 +925,11 @@ def urls_bulk():
 def urls_add():
     urls = extract_urls(request.form.get("urls", ""))
     added, skipped = db.add_urls(urls)
+    if added:
+        # a new Product/Design-resources URL can be leveled from its URL alone
+        # - run the structure walk NOW so the page wears its level from the
+        # moment it appears, not after the next run happens to finish
+        _rebuild_structure()
     flash(f"Added {added} URL(s). {skipped} duplicate(s)/invalid skipped.")
     return redirect(url_for("index"))
 
@@ -909,6 +946,8 @@ def urls_upload():
         flash(f"Could not read file: {exc}")
         return redirect(url_for("index"))
     added, skipped = db.add_urls(urls)
+    if added:
+        _rebuild_structure()   # same rule as single add: level at add time
     flash(f"File contained {len(urls)} URL(s): added {added}, skipped {skipped} duplicate(s).")
     return redirect(url_for("index"))
 
@@ -918,6 +957,10 @@ def urls_delete(url_id):
     import shutil
     con = db.connect()
     con.execute("DELETE FROM urls WHERE id=?", (url_id,))
+    # page_fts is an FTS5 virtual table - no FK cascade reaches it, and url ids
+    # are not AUTOINCREMENT, so a reused id would inherit the deleted page's
+    # text in search. Purge it with the row.
+    con.execute("DELETE FROM page_fts WHERE rowid=?", (url_id,))
     con.commit()
     con.close()
     shutil.rmtree(db.SNAP_DIR / str(url_id), ignore_errors=True)
@@ -1892,8 +1935,17 @@ def change_resolve(change_id):
                     (c["new_snapshot_id"],))
         con.execute("UPDATE urls SET last_status='rejected' WHERE id=?",
                     (c["url_id"],))
-        flash("Rejected — the old version stays the baseline. The page will be "
-              "flagged again on the next check until the website matches it.")
+        # The library/search index was already refreshed from the new capture
+        # AT CAPTURE TIME - leaving it would show the very content the reject
+        # just declared wrong. Restore items + full-text from the snapshot the
+        # reject says is the truth.
+        old = con.execute("SELECT dir FROM snapshots WHERE id=?",
+                          (c["old_snapshot_id"],)).fetchone()
+        if old and old["dir"] and Path(old["dir"]).exists():
+            runner.index_items(con, c["url_id"], old["dir"])
+        flash("Rejected — the old version stays the baseline (library and "
+              "search restored to it). The page will be flagged again on the "
+              "next check until the website matches it.")
     else:
         remaining = con.execute(
             "SELECT COUNT(*) FROM changes WHERE url_id=? AND reviewed=0",
@@ -2259,6 +2311,11 @@ def _post_run_watcher():
                 done, _ = _infer_missing_levels()
                 if done:
                     print(f"[post-run] inferred {len(done)} level(s)", flush=True)
+                joined = _matrix_autojoin()
+                if joined:
+                    print(f"[post-run] matrix learned {len(joined)} new"
+                          f" component slot(s): {', '.join(joined[:6])}"
+                          + ("…" if len(joined) > 6 else ""), flush=True)
             except Exception:
                 pass
         prev = running
