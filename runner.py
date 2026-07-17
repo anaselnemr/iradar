@@ -107,6 +107,19 @@ def _follow_redirect(con, url_id, old_url, final_url):
         return True, f"{old_url} redirects to already-tracked {final_url} - removed"
     con.execute("UPDATE urls SET url=?, redirect_from=? WHERE id=?",
                 (final_url, old_url, url_id))
+    # the destination can be a DIFFERENT KIND of page (a retired part often
+    # 301s to the evaluation-board finder - a design-resources page). Keeping
+    # the old type would dress a finder tool up as a PTP, so re-type the row
+    # from the new URL's shape and drop a level that no longer applies.
+    new_pt = db.ptype_for_url(final_url)
+    cur = con.execute("SELECT ptype FROM urls WHERE id=?",
+                      (url_id,)).fetchone()
+    if new_pt and cur and cur["ptype"] != new_pt:
+        fl = final_url.lower()
+        lvl = ("EB" if "/evaluation-board/" in fl
+               else "PTP" if "/part/" in fl else "") if new_pt == "Part" else ""
+        con.execute("UPDATE urls SET ptype=?, level=?, level_src=? WHERE id=?",
+                    (new_pt, lvl, "inferred" if lvl else "", url_id))
     return False, f"{old_url} -> {final_url} (list repointed)"
 
 
