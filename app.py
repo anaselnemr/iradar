@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote as urlquote, urlsplit
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -900,6 +900,52 @@ def document_type_of(meta):
     return (meta or "").split("|")[0].strip()
 
 
+# trailing language token on document slugs (…-usermanual-EN) - dropped so the
+# backend search finds the asset, not one translation of it
+_LANG_SUFFIX = re.compile(
+    r"-(en|de|ja|jp|cn|zh|tw|ko|kr|fr|it|es|pt|ru)$", re.I)
+
+
+def asset_name(category, url):
+    """The name to search the backend for, read from the asset's own URL.
+
+    videos:  the last path segment as-is
+             …/is/content/infineon/security-solutions-…-optiga-tpm
+    images:  last segment, before the first '.' (rendition params follow)
+             …/asic-hero-image.png:asset-680-2x1?qlt=… -> asic-hero-image
+    gated documents:  last segment, '_<uuid>' cut, language dropped
+             …/gated/…-applicationnotes-en_4c53… -> …-applicationnotes
+    public documents: last segment, extension and language dropped
+             …/documents/10/44/…-usermanual-en.pdf -> …-usermanual
+    """
+    if not url:
+        return ""
+    seg = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+    seg = seg.split(":", 1)[0]                     # image rendition suffix
+    if category == "documents" and "/gated/" in url:
+        seg = seg.split("_", 1)[0]                 # uuid rides after '_'
+    seg = seg.split(".", 1)[0]                     # extension / .png:…
+    if category == "documents":
+        seg = _LANG_SUFFIX.sub("", seg)
+    return seg
+
+
+def backend_search_link(backend, name, settings):
+    """The backend's search page for this asset, built from the EDITABLE
+    settings URL (Settings -> Backends) so a changed DAM/Windchill link is a
+    ten-second fix, not a code change. '{q}' marks where the name goes; a URL
+    without it gets the name appended."""
+    if not name or not backend:
+        return ""
+    key = {"DAM": "dam_search_url",
+           "Windchill": "windchill_search_url"}.get(backend)
+    base = (settings.get(key) or "").strip() if key else ""
+    if not base:
+        return ""
+    q = urlquote(name, safe="")
+    return base.replace("{q}", q) if "{q}" in base else base + q
+
+
 def _load_sections(snap_dir):
     p = Path(snap_dir) / "sections.json"
     if not p.exists():
@@ -1275,6 +1321,7 @@ def url_detail(url_id):
         flags = {}
 
     library = []
+    _settings_now = db.get_settings()   # backend search URLs, read once
     if sections:
         for cat, label in SECTION_LABELS:
             if cat == "categories":
@@ -1290,6 +1337,9 @@ def url_detail(url_id):
                                                      it.get("url", ""))
                     it["backend"] = backend_system(cat, it.get("meta", ""),
                                                    it.get("dtype"))
+                    it["bsearch"] = backend_search_link(
+                        it["backend"], asset_name(cat, it.get("url", "")),
+                        _settings_now)
             groups = []
             if any(i.get("group") for i in items):
                 order = []
@@ -1558,7 +1608,8 @@ def settings_view():
     if request.method == "POST":
         for key in ("frequency", "weekday", "hour", "concurrency",
                     "visual_threshold", "height_threshold", "ignore_patterns",
-                    "ignore_image_patterns"):
+                    "ignore_image_patterns", "dam_search_url",
+                    "windchill_search_url"):
             if key in request.form:
                 db.set_setting(key, request.form[key].strip())
         reschedule()
@@ -1805,17 +1856,20 @@ def search_items():
             rows = []
         rank = {k: i for i, k in enumerate(keys)}
         by_item, order = {}, []
+        _sset = db.get_settings()       # backend search URLs, read once
         for r in rows:
             gk = (r["title"].lower(), r["item_url"])
             if gk not in by_item:
+                _bk = backend_system(r["category"], r["meta"], r["doc_type"])
                 by_item[gk] = {"title": r["title"], "url": r["item_url"],
                                "category": r["category"], "grp": r["grp"],
                                "meta": r["meta"], "pages": [],
                                "item_key": r["item_key"],
                                "rank": rank.get(r["item_key"], 10 ** 9),
-                               "backend": backend_system(r["category"],
-                                                         r["meta"],
-                                                         r["doc_type"])}
+                               "backend": _bk,
+                               "bsearch": backend_search_link(
+                                   _bk, asset_name(r["category"],
+                                                   r["item_url"]), _sset)}
                 order.append(gk)
             else:
                 by_item[gk]["rank"] = min(by_item[gk]["rank"],
@@ -1900,9 +1954,12 @@ def item_detail(key):
     # the richest meta wins: the same item can be listed tersely on one page
     meta = max((r["meta"] or "" for r in rows), key=len)
     dtype = next((r["doc_type"] for r in rows if r["doc_type"]), "")
+    _bk = backend_system(first["category"], meta, dtype)
+    _aname = asset_name(first["category"], first["item_url"])
     item = {"title": first["title"], "url": first["item_url"],
             "category": first["category"], "grp": first["grp"], "meta": meta,
-            "backend": backend_system(first["category"], meta, dtype),
+            "backend": _bk, "asset_name": _aname,
+            "bsearch": backend_search_link(_bk, _aname, db.get_settings()),
             "doc_type": (dtype or document_type_of(meta))
             if first["category"] == "documents" else "",
             "label": dict(SECTION_LABELS).get(first["category"],

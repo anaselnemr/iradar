@@ -9,6 +9,7 @@
     <button type="button" class="seg-b on" data-pane="schedule" onclick="segGo(this)">Schedule</button>
     <button type="button" class="seg-b" data-pane="sensitivity" onclick="segGo(this)">Sensitivity</button>
     <button type="button" class="seg-b" data-pane="components" onclick="segGo(this)">Components</button>
+    <button type="button" class="seg-b" data-pane="backends" onclick="segGo(this)">Backends</button>
     <button type="button" class="seg-b" data-pane="access" onclick="segGo(this)">Access</button>
   </div>
 
@@ -64,6 +65,26 @@
       <a class="btn" href="{{ url_for('settings_components') }}">Open the component matrix →</a>
     </div>
 
+    <div class="pane" id="pane-backends">
+      <p class="muted" style="margin-top:0; max-width:62ch">Where your assets
+        live. Paste each system's <b>search page URL</b> and every image, video
+        and document gets a one-click "find it in the backend" link — built
+        from the asset name in its URL. Write <code>{q}</code> where the name
+        belongs; without it the name is appended to the end.</p>
+      <label style="display:block">DAM search URL
+        <input type="text" name="dam_search_url" value="{{ s.dam_search_url }}"
+               placeholder="e.g. https://dam.infineon.com/search/?q={q}">
+      </label>
+      <label style="display:block; margin-top:10px">Windchill search URL
+        <input type="text" name="windchill_search_url" value="{{ s.windchill_search_url }}"
+               placeholder="e.g. https://windchill.infineon.com/…/search?keyword={q}">
+      </label>
+      <p class="muted" style="font-size:12.5px; margin-top:12px">
+        Name extraction: videos use the URL's last segment; images the part
+        before the first dot; gated documents drop the trailing _id and
+        language; public documents drop the extension and language.</p>
+    </div>
+
     <div class="pane" id="pane-access">
       <p class="muted" style="margin-top:0; max-width:60ch">Who can reach this
         dashboard, and from where.</p>
@@ -104,6 +125,7 @@
     // Save applies to the form fields (schedule + sensitivity); hide it on the
     // info-only panes so it can't read as "save my access settings"
     var info = btn.dataset.pane === "components" || btn.dataset.pane === "access";
+    if (btn.dataset.pane === "backends") info = false;   // backends ARE saved fields
     document.getElementById("savebar").style.display = info ? "none" : "";
     location.hash = btn.dataset.pane;
   }

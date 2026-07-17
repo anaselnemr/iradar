@@ -18,6 +18,18 @@
     </div>
     <h1 style="margin:10px 0 8px">{{ item.title }}</h1>
     {% if item.meta %}<div class="muted" style="font-size:14px">{{ item.meta }}</div>{% endif %}
+    {% if item.bsearch %}
+      <p style="margin:12px 0 0">
+        <a class="btn btn-ghost" href="{{ item.bsearch }}" target="_blank"
+           title="Search {{ item.backend }} for '{{ item.asset_name }}'">Find in {{ item.backend }} → </a>
+        <span class="muted" style="font-size:12px; margin-left:8px">asset name: <code>{{ item.asset_name }}</code></span>
+      </p>
+    {% elif item.backend and item.asset_name %}
+      <p class="muted" style="margin:12px 0 0; font-size:12.5px">
+        Asset name <code>{{ item.asset_name }}</code> — set the {{ item.backend }}
+        search URL in <a href="{{ url_for('settings_view') }}#backends">Settings → Backends</a>
+        to link straight to it.</p>
+    {% endif %}
     {% if item.url %}
       <p style="margin:14px 0 0"><a href="{{ item.url }}" target="_blank" class="liveurl">{{ item.url }}</a></p>
     {% else %}

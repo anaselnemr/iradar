@@ -19,6 +19,10 @@ DEFAULT_SETTINGS = {
     # one regex per line; matching text lines are ignored.
     # Default: relative timestamps ("13 days ago") change daily by themselves.
     "ignore_patterns": r"^\d+ (day|hour|minute|week|month|year)s? ago$",
+    # backend search pages: '{q}' marks where the asset name goes. Editable
+    # in Settings -> Backends so a changed link is a ten-second fix.
+    "dam_search_url": "",
+    "windchill_search_url": "",
     # one regex per line; matching image URLs are ignored when comparing.
     # Default: auto-generated video-player thumbnails (load flakily, not real
     # page content - removing a video still shows up via the text layer).
