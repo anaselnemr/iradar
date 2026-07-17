@@ -29,20 +29,22 @@
     {% endif %}
     {% if item.preview_kind %}
       <div style="margin:14px 0 4px">
-      {% if item.preview_kind == 'pdf' %}
+      {% if item.preview_kind in ('pdf', 'office') %}
         <a href="{{ item.url }}" target="_blank" title="Open the full document">
           <img src="{{ url_for('doc_preview_png', key=item_key) }}" alt="First page of {{ item.title }}" loading="lazy"
                style="max-width:min(420px,100%); max-height:540px; border:1px solid var(--line); border-radius:10px; background:#fff"
                onerror="this.parentElement.style.display='none'; document.getElementById('pv-fail').style.display='';"></a>
-        <div class="muted" style="font-size:12px; margin-top:5px">Front page only — click it to open the full document.</div>
-        <div id="pv-fail" style="display:none" class="muted">Preview could not be generated — open the file with ↗ below.</div>
+        <div class="muted" style="font-size:12px; margin-top:5px">Front page only — click it to open the full {{ item.preview_src|lower if item.preview_kind == 'office' else 'document' }}.</div>
+        <div id="pv-fail" style="display:none; margin-top:6px">
+          <div style="display:inline-flex; gap:14px; align-items:center; border:1px dashed var(--line); border-radius:12px; padding:14px 20px">
+            <span style="font-size:24px">{{ '📊' if item.preview_kind == 'office' else '📄' }}</span>
+            <span><b>{{ item.preview_src if item.preview_kind == 'office' else 'Document' }}</b> — no picture could be made<br>
+              <span class="muted" style="font-size:12.5px">it is MyInfineon-gated, or the file could not be reached — open it with ↗ below</span></span>
+          </div>
+        </div>
       {% elif item.preview_kind == 'txt' %}
         <iframe src="{{ item.preview_src }}" loading="lazy"
                 style="width:100%; max-width:860px; height:380px; border:1px solid var(--line); border-radius:10px; background:#fff"></iframe>
-      {% elif item.preview_kind == 'office' %}
-        <iframe src="{{ item.preview_src }}" loading="lazy"
-                style="width:100%; max-width:860px; height:480px; border:1px solid var(--line); border-radius:10px; background:#fff"></iframe>
-        <div class="muted" style="font-size:12px; margin-top:5px">Previewed through Microsoft's public Office viewer (works for public files only).</div>
       {% elif item.preview_kind == 'img' %}
         <a href="{{ item.url }}" target="_blank"><img src="{{ item.preview_src }}" alt="{{ item.title }}" loading="lazy"
              style="max-width:min(460px,100%); max-height:300px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:6px"></a>

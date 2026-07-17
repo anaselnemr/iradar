@@ -1169,8 +1169,10 @@ def doc_preview(url):
     if ext == "txt":
         return "txt", u
     if ext in _OFFICE_EXT:
-        return ("office", "https://view.officeapps.live.com/op/embed.aspx?src="
-                + urlquote(u, safe=""))
+        # rendered to a front-page IMAGE by our own server (LibreOffice ->
+        # PDF -> PNG), not an interactive/external embed. The label rides
+        # along for the fallback card when no image can be made.
+        return "office", ext.upper()
     if ext in _ARCHIVE_EXT:
         return "zip", ext.upper()
     # web pages (php/cfm/html/aspx tool links) get no card - they are links,
@@ -2446,17 +2448,64 @@ def _meta_lang(meta):
     return ""
 
 
+def _soffice():
+    """Path to LibreOffice's headless converter, or None. It is what turns an
+    Office file into a PDF we can render - the only reliable local way to make
+    a picture of ppt/doc/xls (old binary formats included)."""
+    import shutil
+    cands = [shutil.which("soffice"), shutil.which("soffice.exe"),
+             r"C:\Program Files\LibreOffice\program\soffice.exe",
+             r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"]
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    return None
+
+
+def _office_to_pdf(data, ext):
+    """Office bytes -> PDF bytes via LibreOffice headless, or None."""
+    so = _soffice()
+    if not so:
+        return None
+    import tempfile
+    import subprocess
+    d = tempfile.mkdtemp()
+    try:
+        src = os.path.join(d, "in." + ext)
+        with open(src, "wb") as f:
+            f.write(data)
+        subprocess.run([so, "--headless", "--convert-to", "pdf",
+                        "--outdir", d, src], timeout=120,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pdf = os.path.join(d, "in.pdf")
+        if os.path.exists(pdf):
+            with open(pdf, "rb") as f:
+                return f.read()
+        return None
+    except Exception:
+        return None
+    finally:
+        import shutil as _sh
+        _sh.rmtree(d, ignore_errors=True)
+
+
 @app.route("/docpreview/<key>.png")
 def doc_preview_png(key):
-    """FRONT PAGE of a PDF as an image - enough to verify it is the right
-    document. Infineon's servers refuse cross-origin embedding, so the SERVER
-    fetches the file (no browser rules apply there), renders page 1 with
-    pdfium, and caches the PNG. Gated files never reach here (no login)."""
+    """FRONT PAGE of a document as an image - enough to verify it is the right
+    file. Our OWN server fetches it (Infineon refuses cross-origin embedding),
+    renders page 1 and caches the PNG. PDFs render directly; Office files are
+    converted to PDF first via LibreOffice. A file that comes back as an HTML
+    login page (MyInfineon-gated) can never be pictured - it is negative-cached
+    so the item page shows a clean card instead."""
     cache = db.DATA_DIR / "previews"
     cache.mkdir(exist_ok=True)
-    out = cache / (re.sub(r"[^a-f0-9]", "", key) + ".png")
+    safe = re.sub(r"[^a-f0-9]", "", key)
+    out = cache / (safe + ".png")
+    fail = cache / (safe + ".fail")
     if out.exists():
         return send_file(out, mimetype="image/png")
+    if fail.exists():
+        abort(404)
     con = db.connect()
     row = con.execute(
         "SELECT item_url FROM items WHERE item_key=?"
@@ -2464,18 +2513,32 @@ def doc_preview_png(key):
         (key,)).fetchone()
     con.close()
     url = (row["item_url"] if row else "") or ""
-    if not url.lower().split("?")[0].endswith(".pdf") or "/gated/" in url.lower():
+    low = url.lower().split("?")[0]
+    tail = low.rsplit("/", 1)[-1]
+    ext = tail.rsplit(".", 1)[-1] if "." in tail else ""
+    if "/gated/" in low or ext not in ({"pdf"} | _OFFICE_EXT):
+        abort(404)
+    # No converter installed -> do not even fetch: 404 now (card shown), and it
+    # retries automatically once LibreOffice appears (no permanent marker).
+    if ext in _OFFICE_EXT and not _soffice():
         abort(404)
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = resp.read(30_000_000)
-        if not data.startswith(b"%PDF"):
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            data = resp.read(40_000_000)
+        if ext == "pdf":
+            pdfdata = data if data.startswith(b"%PDF") else None
+        elif data[:2] == b"PK" or data[:4] == b"\xd0\xcf\x11\xe0":
+            pdfdata = _office_to_pdf(data, ext)     # real office file
+        else:
+            pdfdata = None                          # HTML login page = gated
+        if not pdfdata:
+            fail.touch()                            # genuinely un-pictureable
             abort(404)
         import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(data)
+        pdf = pdfium.PdfDocument(pdfdata)
         pil = pdf[0].render(scale=1.6).to_pil()
         pil.thumbnail((1100, 1400))
         pil.save(out, "PNG")
