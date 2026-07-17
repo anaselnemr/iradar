@@ -456,9 +456,11 @@ def _infer_level(con, row):
     if ptype == "Part":
         lvl = "EB" if "/evaluation-board/" in url else "PTP"
         return lvl, 1.0, "part pages are typed by their URL"
+    if ptype == "Design resources":
+        lvl = _dr_level_for(url)
+        return (lvl, 1.0, "design-resource page type from its URL depth")             if lvl else ("", 0.0, "not a design-resource hierarchy page")
     scheme = (PRODUCT_LEVELS if ptype == "Product"
-              else APP_LEVELS if ptype == "Application"
-              else DR_LEVELS if ptype == "Design resources" else ())
+              else APP_LEVELS if ptype == "Application" else ())
     if not scheme:
         return "", 0.0, f"the {ptype or 'untyped'} type has no level scheme"
 
@@ -1288,6 +1290,19 @@ APP_LEVELS = ("ADP", "AOP", "ASP", "AFB")
 # resources.txt): Category > Family > Sub-Family. No report ground-truth, so
 # assigned by URL depth and correctable in the level editor.
 DR_LEVELS = ("DRC", "DRF", "DRSF")
+# only pages inside these hierarchies are DR type-pages. A softwaretools tool
+# page or the homepage is Design-resources by sheet, but not a hierarchy page,
+# so it wears no level (user: "these don't get any tags").
+_DR_ROOTS = ("/design-resources/", "/design-support/")
+
+
+def _dr_level_for(url):
+    root = next((r for r in _DR_ROOTS if r in (url or "")), None)
+    if not root:
+        return ""                      # not a hierarchy page -> no level
+    segs = url.split(root, 1)[1].rstrip("/").split("/")
+    n = len([x for x in segs if x])
+    return "DRC" if n <= 1 else "DRF" if n == 2 else "DRSF"
 # page types that share one tree, in the order their levels nest
 MERGED_TABS = [("Products & parts", ["Product", "Part"])]
 
@@ -1468,9 +1483,12 @@ def _live_levels(node, depth=0, product_tree=True):
     pages have no levels at all.
     """
     if not product_tree:
+        # applications and design resources carry their own stored levels
+        # (ADP/AOP/ASP/AFB, DRC/DRF/DRSF) - show them in the tree too
+        _own = set(APP_LEVELS) | set(DR_LEVELS)
         node["live_level"] = ""
         for p in node["pages"]:
-            p["live_level"] = p["level"] if p.get("level") in APP_LEVELS else ""
+            p["live_level"] = p["level"] if p.get("level") in _own else ""
             p["level_disagrees"] = False
         for c in node["children"]:
             _live_levels(c, depth + 1, product_tree)
