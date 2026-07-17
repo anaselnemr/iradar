@@ -1118,6 +1118,18 @@ def resume_run():
     return jsonify({"ok": True, "paused": False})
 
 
+@app.route("/stop", methods=["POST"])
+def stop_run():
+    """End a running capture for good: in-flight pages finish and are saved,
+    nothing new starts, and the run finalises. Everything captured so far is
+    kept (each page was committed as it completed)."""
+    if not runner.RUN_STATE.get("running"):
+        return jsonify({"ok": False})
+    runner.RUN_STATE["stopping"] = True
+    runner.RUN_STATE["paused"] = False       # release any hold so it can wind down
+    return jsonify({"ok": True, "stopping": True})
+
+
 @app.route("/status")
 def status():
     import time as _time

@@ -32,7 +32,11 @@
         <b id="run-eta" style="color:var(--accent)"></b>
       </span>
       <span id="run-paused" style="display:none; color:#d97706; font-weight:600">⏸ paused</span>
-      <button id="run-pause" class="linkbtn" type="button" style="margin-left:auto" onclick="togglePause()">⏸ Pause</button>
+      <span id="run-stopping" style="display:none; color:#dc2626; font-weight:600">⏹ ending…</span>
+      <span style="margin-left:auto; display:inline-flex; gap:8px">
+        <button id="run-pause" class="linkbtn" type="button" onclick="togglePause()">⏸ Pause</button>
+        <button id="run-stop" class="linkbtn" type="button" onclick="stopRun()" style="color:#dc2626">⏹ End check</button>
+      </span>
     </div>
     <div class="muted" style="margin-top:4px"><span id="run-msg" style="font-size:12px"></span></div>
     <div class="progress"><div id="run-bar" style="width:0%"></div></div>
@@ -343,6 +347,7 @@ function fmtEta(sec) {
 }
 let sawRunning = {{ 'true' if state.running else 'false' }};
 let isPaused = {{ 'true' if state.paused else 'false' }};
+let isStopping = {{ 'true' if state.stopping else 'false' }};
 async function togglePause() {
   const btn = document.getElementById('run-pause');
   btn.disabled = true;
@@ -354,12 +359,27 @@ async function togglePause() {
   } catch (e) {}
   btn.disabled = false;
 }
+async function stopRun() {
+  if (!confirm('End this check now? Pages already captured are kept; the rest will be skipped. You can start a new check anytime.')) return;
+  const btn = document.getElementById('run-stop');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/stop', {method: 'POST'});
+    const s = await r.json();
+    isStopping = !!s.stopping;
+    reflectPause();
+  } catch (e) {}
+}
 function reflectPause() {
   const btn = document.getElementById('run-pause');
   const tag = document.getElementById('run-paused');
+  const stag = document.getElementById('run-stopping');
+  const sbtn = document.getElementById('run-stop');
   if (!btn) return;
   btn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
-  if (tag) tag.style.display = isPaused ? 'inline' : 'none';
+  if (tag) tag.style.display = (isPaused && !isStopping) ? 'inline' : 'none';
+  if (stag) stag.style.display = isStopping ? 'inline' : 'none';
+  if (isStopping) { btn.disabled = true; if (sbtn) sbtn.disabled = true; }
 }
 async function poll() {
   try {
@@ -368,6 +388,7 @@ async function poll() {
     if (s.running) {
       sawRunning = true;
       isPaused = !!s.paused;
+      isStopping = !!s.stopping;
       box.style.display = 'block';
       document.getElementById('run-done').textContent = s.done;
       document.getElementById('run-total').textContent = s.total;

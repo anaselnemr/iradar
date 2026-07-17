@@ -1833,7 +1833,8 @@ async def _selftest(browser):
         await page.close()
 
 
-async def capture_all(jobs, concurrency=4, progress=None, pause_check=None):
+async def capture_all(jobs, concurrency=4, progress=None, pause_check=None,
+                      stop_check=None):
     """Capture many URLs. jobs = [(url, out_dir), ...]. Returns list of result dicts.
 
     The browser is restarted every PAGES_PER_BROWSER pages to keep memory flat
@@ -1842,10 +1843,16 @@ async def capture_all(jobs, concurrency=4, progress=None, pause_check=None):
     pause_check, if given, is a zero-arg callable polled before each capture: a
     truthy return holds the worker (no new page starts) until it clears, so the
     dashboard's Pause button stops the run without killing in-flight captures.
+
+    stop_check, if given, ends the run: no new browser batch launches and any
+    not-yet-started page is skipped, so Stop takes effect within one in-flight
+    page. Everything already captured stays saved (the caller commits per page).
     """
     results = []
     async with async_playwright() as pw:
         for batch_start in range(0, len(jobs), PAGES_PER_BROWSER):
+            if stop_check and stop_check():
+                break
             batch = jobs[batch_start:batch_start + PAGES_PER_BROWSER]
             browser = await pw.chromium.launch(
                 headless=True,
@@ -1860,8 +1867,14 @@ async def capture_all(jobs, concurrency=4, progress=None, pause_check=None):
                 # instead of blocking a resume; the capture itself can't be
                 # interrupted mid-flight, so pause takes effect within one page.
                 while pause_check and pause_check():
+                    if stop_check and stop_check():
+                        return None
                     await asyncio.sleep(1)
+                if stop_check and stop_check():
+                    return None            # Stop requested: skip this page
                 async with sem:
+                    if stop_check and stop_check():
+                        return None
                     res = await capture_one(browser, url, out_dir)
                     if progress:
                         progress(res)
@@ -1869,9 +1882,11 @@ async def capture_all(jobs, concurrency=4, progress=None, pause_check=None):
 
             batch_results = await asyncio.gather(
                 *(run_job(u, d) for u, d in batch))
-            results.extend(batch_results)
+            results.extend(r for r in batch_results if r is not None)
             try:
                 await browser.close()
             except Exception:
                 pass
+            if stop_check and stop_check():
+                break
     return results

@@ -24,6 +24,7 @@ RUN_LOCK = threading.Lock()
 RUN_STATE = {
     "running": False,
     "paused": False,
+    "stopping": False,
     "kind": "",
     "total": 0,
     "done": 0,
@@ -170,6 +171,8 @@ def run_check(kind="manual", url_ids=None):
         return _run_check_inner(kind, url_ids)
     finally:
         RUN_STATE["running"] = False
+        RUN_STATE["paused"] = False
+        RUN_STATE["stopping"] = False
         RUN_LOCK.release()
 
 
@@ -187,9 +190,9 @@ def _run_check_inner(kind, url_ids):
         urls = con.execute("SELECT * FROM urls WHERE active=1 ORDER BY id").fetchall()
     con.close()
 
-    RUN_STATE.update(running=True, kind=kind, total=len(urls), done=0,
-                     changed=0, errors=0, started=db.now_iso(),
-                     started_ts=time.time(), message="")
+    RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
+                     total=len(urls), done=0, saved=0, changed=0, errors=0,
+                     started=db.now_iso(), started_ts=time.time(), message="")
     if not urls:
         RUN_STATE["message"] = "No active URLs to check."
         return {"total": 0, "ok": 0, "changed": 0, "errors": 0}
@@ -241,23 +244,31 @@ def _run_check_inner(kind, url_ids):
     def paused():
         return bool(RUN_STATE.get("paused"))
 
+    def stopping():
+        return bool(RUN_STATE.get("stopping"))
+
     asyncio.run(capture.capture_all(jobs, concurrency=concurrency,
-                                    progress=progress, pause_check=paused))
+                                    progress=progress, pause_check=paused,
+                                    stop_check=stopping))
 
     # Suspected changes are re-captured once, all together, and flagged only if
     # the difference survives (real edits persist; first-load flakes vanish).
-    if suspects:
+    # A user-requested stop skips this pass - everything captured is already saved.
+    if suspects and not stopping():
         _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id)
 
     ok, changed, errors = counters["ok"], counters["changed"], counters["errors"]
+    stopped = stopping()
     con.execute("UPDATE runs SET finished=?, ok=?, changed=?, errors=? WHERE id=?",
                 (db.now_iso(), ok, changed, errors, run_id))
     con.commit()
     con.close()
 
     RUN_STATE.update(changed=changed, errors=errors, last_finished=db.now_iso(),
-                     message="finished")
-    return {"total": len(urls), "ok": ok, "changed": changed, "errors": errors}
+                     message=f"stopped early - {ok + errors} of {len(urls)} captured"
+                             if stopped else "finished")
+    return {"total": len(urls), "ok": ok, "changed": changed, "errors": errors,
+            "stopped": stopped}
 
 
 def _handle_result(con, res, row, ts_label, counters, suspects):

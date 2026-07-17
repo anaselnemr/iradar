@@ -97,7 +97,22 @@
       <p class="muted" style="margin-top:0">This type is flat — its pages sit at
         the top level of the site with no parent path of their own.</p>
     {% endif %}
+    <p class="muted" style="font-size:12.5px; margin:0 0 8px">
+      A number badge is how many pages sit under that group. The pages
+      themselves are the entries with no badge — expand a group to reach them.
+    </p>
+    {% if tree.children %}
+    <div style="display:flex; gap:8px; margin-bottom:10px">
+      <button type="button" class="linkbtn" onclick="setAllTree(true)">⊕ Expand all pages</button>
+      <button type="button" class="linkbtn" onclick="setAllTree(false)">⊖ Collapse all</button>
+    </div>
+    {% endif %}
     <div class="tree">{{ node(tree) }}</div>
   {% endif %}
 </div>
+<script>
+  function setAllTree(open) {
+    document.querySelectorAll('.tree details').forEach(function (d) { d.open = open; });
+  }
+</script>
 {% endblock %}
