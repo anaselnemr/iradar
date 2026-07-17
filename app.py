@@ -659,10 +659,14 @@ def index():
         "date": "u.last_checked IS NULL, u.last_checked DESC",
         "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
     }.get(sort, "u.url COLLATE NOCASE ASC")
-    # a page added within the last week wears a NEW badge (created_at is UTC)
+    # a page added within the last week wears a NEW badge (created_at is UTC).
+    # new_badge_since is the user's reset watermark: pages added before it are
+    # old content belatedly uploaded and never wear the badge; later adds do.
     from datetime import timedelta as _td
     new_cutoff = ((datetime.now(timezone.utc) - _td(days=7))
                   .strftime("%Y-%m-%d %H:%M:%S"))
+    new_cutoff = max(new_cutoff,
+                     (db.get_settings().get("new_badge_since") or ""))
     try:
         page = max(1, int(request.args.get("page", "1")))
     except ValueError:
