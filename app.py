@@ -24,6 +24,11 @@ import runner
 
 app = Flask(__name__)
 app.secret_key = "infineonwatch-local-only"
+# Re-read templates from disk on every render, so tweaks to the HTML/CSS in
+# templates/ take effect on a browser refresh WITHOUT restarting the server
+# (a restart would interrupt an in-process capture run). Negligible overhead.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 # Optional HTTP Basic Auth for when the dashboard is exposed through a public
 # tunnel. Credentials come from the environment (DASH_USER / DASH_PASS) so they
