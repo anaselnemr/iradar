@@ -4,11 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}InfineonWatch{% endblock %}</title>
+<script>
+  // apply the saved theme BEFORE first paint so dark mode never flashes white
+  (function () {
+    var t = localStorage.getItem("theme");
+    if (t === "dark") document.documentElement.dataset.theme = "dark";
+  })();
+</script>
 <style>
   :root {
     --bg: #f4f6f8; --card: #ffffff; --ink: #1a2332; --muted: #64748b;
     --accent: #b7002d; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
-    --line: #e2e8f0;
+    --line: #e2e8f0; --hover: #f8fafc; --panel: #ffffff;
+    color-scheme: light;
+  }
+  [data-theme="dark"] {
+    --bg: #0b1220; --card: #101a2d; --ink: #e2e8f0; --muted: #8ea0b8;
+    --accent: #ff5c7a; --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+    --line: #1d2a44; --hover: #16233c; --panel: #0f1930;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
@@ -31,7 +45,7 @@
        font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; }
   td { padding: 9px 10px; border-bottom: 1px solid var(--line);
        vertical-align: middle; }
-  tr:hover td { background: #f8fafc; }
+  tr:hover td { background: var(--hover); }
   a { color: #0f5bd7; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
            font-size: 12px; font-weight: 600; white-space: nowrap; }
@@ -64,7 +78,7 @@
               grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
   .pagecard { display: block; border: 1px solid var(--line); border-radius: 9px;
               padding: 11px 13px; text-decoration: none; color: inherit;
-              background: #fff; transition: border-color .15s, box-shadow .15s; }
+              background: var(--panel); color: var(--ink); transition: border-color .15s, box-shadow .15s; }
   .pagecard:hover { border-color: var(--accent);
                     box-shadow: 0 2px 10px rgba(0,0,0,.06); }
   .pagecard-title { font-weight: 600; font-size: 14px; margin-bottom: 3px;
@@ -82,14 +96,14 @@
   .tnode > summary::before { content: "▸"; color: var(--muted);
                              font-size: 11px; transition: transform .15s; }
   .tnode[open] > summary::before { transform: rotate(90deg); }
-  .tnode > summary:hover { background: #f1f5f9; }
+  .tnode > summary:hover { background: var(--hover); }
   .tname { font-weight: 600; }
-  .tcount { font-size: 11.5px; color: var(--muted); background: #f1f5f9;
+  .tcount { font-size: 11.5px; color: var(--muted); background: var(--hover);
             border-radius: 999px; padding: 1px 8px; }
   .tbody { margin-left: 13px; padding-left: 11px;
            border-left: 1px solid var(--line); }
   .tleaf { padding: 4px 6px; display: flex; gap: 8px; align-items: center; }
-  .tleaf:hover { background: #f8fafc; border-radius: 5px; }
+  .tleaf:hover { background: var(--hover); border-radius: 5px; }
   /* Infineon's own page levels: PC > PFP > PSFP > PEFP > PTP */
   .lvl { font-size: 10.5px; font-weight: 700; letter-spacing: .4px;
          border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
@@ -111,7 +125,7 @@
      and each row is two lines: title on top, category / language / pages below */
   .suggest { position: absolute; top: calc(100% + 6px); left: 0; right: auto;
              min-width: min(560px, 92vw); max-width: 92vw; max-height: 72vh;
-             overflow-y: auto; background: #fff; border: 1px solid var(--line);
+             overflow-y: auto; background: var(--panel); border: 1px solid var(--line);
              border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.17);
              z-index: 40; display: none; }
   .suggest.on { display: block; }
@@ -119,7 +133,7 @@
                     width: 100%; padding: 12px 17px; cursor: pointer;
                     box-sizing: border-box; border-bottom: 1px solid var(--line); }
   .suggest button:last-child { border-bottom: 0; }
-  .suggest button:hover, .suggest button.sel { background: #eef2ff; }
+  .suggest button:hover, .suggest button.sel { background: var(--hover); }
   .suggest .sicon { flex-shrink: 0; display: flex; }
   .suggest .scol { display: flex; flex-direction: column; gap: 3px;
                    min-width: 0; flex: 1 1 auto; }
@@ -136,13 +150,13 @@
                    flex-wrap: wrap; }
   .hit-title-row .ticon { width: 19px; height: 19px; }
   .b-new      { background: #e2e8f0; color: #475569; }
-  .b-off      { background: #f1f5f9; color: #94a3b8; }
+  .b-off      { background: var(--hover); color: var(--muted); }
   button, .btn { background: var(--accent); border: 0; color: #fff;
         padding: 8px 16px; border-radius: 7px; font-size: 14px;
         font-weight: 600; cursor: pointer; text-decoration: none;
         display: inline-block; }
   button:hover, .btn:hover { filter: brightness(1.12); }
-  .btn-ghost { background: #fff; color: var(--ink);
+  .btn-ghost { background: var(--panel); color: var(--ink);
                border: 1px solid var(--line); }
   .btn-sm { padding: 4px 10px; font-size: 12.5px; }
   textarea, input[type=text], input[type=number], select {
@@ -166,7 +180,7 @@
   .diff { font-family: Consolas, monospace; font-size: 13px;
           border: 1px solid var(--line); border-radius: 8px;
           overflow-x: auto; margin-bottom: 14px; }
-  .diff .h { background: #f1f5f9; color: var(--muted); padding: 4px 12px;
+  .diff .h { background: var(--hover); color: var(--muted); padding: 4px 12px;
              font-size: 12px; border-bottom: 1px solid var(--line); }
   .diff .l { padding: 2px 12px; white-space: pre-wrap; word-break: break-word; }
   .diff .add { background: #dcfce7; }
@@ -212,14 +226,14 @@
   .dd { position: relative; }
   .dd > summary { list-style: none; cursor: pointer; padding: 9px 14px;
                   border: 1px solid var(--line); border-radius: 8px;
-                  background: #fff; font-size: 14px; user-select: none;
+                  background: var(--panel); font-size: 14px; user-select: none;
                   white-space: nowrap; }
   .dd > summary::-webkit-details-marker { display: none; }
   .dd > summary::after { content: " ▾"; color: var(--muted); }
   .dd[open] > summary { border-color: var(--muted); }
   .dd .panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0;
                min-width: 250px; max-height: 330px; overflow: auto;
-               background: #fff; border: 1px solid var(--line);
+               background: var(--panel); border: 1px solid var(--line);
                border-radius: 10px; padding: 7px;
                box-shadow: 0 12px 32px rgba(15, 23, 42, .14); }
   .dd .panel label { display: flex; gap: 9px; align-items: center;
@@ -343,6 +357,45 @@
            justify-content: center; margin-top: 14px; }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent);
                          cursor: pointer; }
+  /* header buttons (theme, palette) */
+  .hbtn { background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.16);
+          color: #e2e8f0; border-radius: 8px; padding: 6px 11px; cursor: pointer;
+          font-size: 13.5px; display: inline-flex; gap: 7px; align-items: center; }
+  .hbtn:hover { background: rgba(255,255,255,.17); }
+  .hkey { font-size: 10.5px; border: 1px solid rgba(255,255,255,.28);
+          border-radius: 5px; padding: 1px 5px; opacity: .8;
+          font-family: Consolas, monospace; }
+
+  /* command palette */
+  .pal { position: fixed; inset: 0; z-index: 200; background: rgba(10, 14, 25, .45);
+         backdrop-filter: blur(2px); display: flex; align-items: flex-start;
+         justify-content: center; padding-top: 11vh; }
+  .pal-box { width: min(660px, 92vw); background: var(--panel);
+             border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+             box-shadow: 0 24px 70px rgba(0, 0, 0, .35); }
+  .pal-box input { width: 100%; border: 0; outline: 0; background: transparent;
+                   color: var(--ink); font-size: 17px; padding: 17px 20px;
+                   border-bottom: 1px solid var(--line); }
+  .pal-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
+  .pal-row { display: block; width: 100%; text-align: left; background: none;
+             border: 0; border-radius: 8px; padding: 9px 13px; cursor: pointer;
+             color: var(--ink); font-size: 14px; }
+  .pal-row.sel, .pal-row:hover { background: var(--hover); }
+  .pal-t { display: block; overflow: hidden; text-overflow: ellipsis;
+           white-space: nowrap; }
+  .pal-m { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .pal-all { color: var(--accent); font-weight: 600; }
+  .pal-empty { color: var(--muted); font-size: 13.5px; padding: 16px 14px; }
+  .pal-foot { border-top: 1px solid var(--line); color: var(--muted);
+              font-size: 11.5px; padding: 8px 16px; }
+
+  /* live run progress bar */
+  .runprog { height: 7px; border-radius: 999px; background: var(--hover);
+             overflow: hidden; margin-top: 9px; }
+  .runprog i { display: block; height: 100%; width: 0;
+               border-radius: inherit; transition: width .6s ease;
+               background: linear-gradient(90deg, var(--accent), #ff8f6b);
+               box-shadow: 0 0 10px rgba(255, 92, 122, .45); }
 </style>
 </head>
 <body>
@@ -355,6 +408,11 @@
     <a href="{{ url_for('history') }}">Run history</a>
     <a href="{{ url_for('settings_view') }}">Settings</a>
   </nav>
+  <div style="margin-left:auto; display:flex; gap:10px; align-items:center">
+    <button type="button" class="hbtn" onclick="openPalette()" title="Search everything (Ctrl+K)">
+      🔍 <span class="hkey">Ctrl K</span></button>
+    <button type="button" class="hbtn" id="themebtn" onclick="toggleTheme()" title="Light / dark mode">🌙</button>
+  </div>
 </header>
 <main>
   {% with messages = get_flashed_messages() %}
@@ -362,5 +420,94 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
+{# ---- command palette: Ctrl+K from anywhere ---- #}
+<div id="pal" class="pal" hidden>
+  <div class="pal-box" role="dialog" aria-label="Search everything">
+    <input id="pal-in" type="text" placeholder="Search documents, boards, videos, pages…"
+           autocomplete="off" spellcheck="false">
+    <div id="pal-list" class="pal-list"></div>
+    <div class="pal-foot">↑↓ choose · Enter open · Esc close</div>
+  </div>
+</div>
+<script>
+  function toggleTheme() {
+    var root = document.documentElement;
+    var dark = root.dataset.theme === "dark";
+    if (dark) { delete root.dataset.theme; localStorage.setItem("theme", "light"); }
+    else { root.dataset.theme = "dark"; localStorage.setItem("theme", "dark"); }
+    var b = document.getElementById("themebtn");
+    if (b) b.textContent = dark ? "🌙" : "☀️";
+  }
+  (function () {
+    var b = document.getElementById("themebtn");
+    if (b && document.documentElement.dataset.theme === "dark") b.textContent = "☀️";
+  })();
+
+  var palSel = -1, palItems = [], palTimer = null;
+  function openPalette() {
+    var p = document.getElementById("pal");
+    p.hidden = false;
+    var i = document.getElementById("pal-in");
+    i.value = ""; renderPal([]); i.focus();
+  }
+  function closePalette() { document.getElementById("pal").hidden = true; }
+  function palGo(q) { location.href = "{{ url_for('search_items') }}?q=" + encodeURIComponent(q); }
+  function renderPal(items) {
+    palItems = items; palSel = items.length ? 0 : -1;
+    var box = document.getElementById("pal-list");
+    var q = document.getElementById("pal-in").value.trim();
+    var html = items.map(function (it, i) {
+      return '<button type="button" class="pal-row' + (i === palSel ? ' sel' : '') +
+        '" onmouseenter="palSel=' + i + ';paintPal()" onclick="palGo(palItems[' + i + '].title)">' +
+        '<span class="pal-t">' + esc(it.title) + '</span>' +
+        '<span class="pal-m">' + esc(it.category) + (it.lang ? ' · ' + esc(it.lang) : '') +
+        ' · on ' + it.pages + ' page' + (it.pages === 1 ? '' : 's') + '</span></button>';
+    }).join("");
+    if (q.length >= 2) {
+      html += '<button type="button" class="pal-row pal-all" onclick="palGo(' +
+              "document.getElementById('pal-in').value)\">See all results for “" + esc(q) + '”…</button>';
+    }
+    box.innerHTML = html || '<div class="pal-empty">Type at least 2 characters…</div>';
+  }
+  function paintPal() {
+    var rows = document.querySelectorAll("#pal-list .pal-row");
+    rows.forEach(function (r, i) { r.classList.toggle("sel", i === palSel); });
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  document.addEventListener("keydown", function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      var p = document.getElementById("pal");
+      if (p.hidden) openPalette(); else closePalette();
+      return;
+    }
+    var p = document.getElementById("pal");
+    if (p.hidden) return;
+    if (e.key === "Escape") { closePalette(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); if (palItems.length) { palSel = (palSel + 1) % palItems.length; paintPal(); } }
+    else if (e.key === "ArrowUp") { e.preventDefault(); if (palItems.length) { palSel = (palSel - 1 + palItems.length) % palItems.length; paintPal(); } }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      if (palSel >= 0 && palItems[palSel]) palGo(palItems[palSel].title);
+      else palGo(document.getElementById("pal-in").value);
+    }
+  });
+  document.getElementById("pal").addEventListener("click", function (e) {
+    if (e.target === this) closePalette();
+  });
+  document.getElementById("pal-in").addEventListener("input", function () {
+    var q = this.value.trim();
+    clearTimeout(palTimer);
+    if (q.length < 2) { renderPal([]); return; }
+    palTimer = setTimeout(function () {
+      fetch("{{ url_for('api_suggest') }}?q=" + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (items) { renderPal(items); })
+        .catch(function () {});
+    }, 160);
+  });
+</script>
 </body>
 </html>

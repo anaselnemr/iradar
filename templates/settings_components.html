@@ -31,7 +31,7 @@
     <thead>
       <tr>
         <th class="cm-first">Component</th>
-        {% for t in types %}<th>{{ 'PTP / EB' if t == 'Part' else t }}</th>{% endfor %}
+        {% for t in types %}<th>{{ t }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
@@ -48,7 +48,11 @@
         </td>
         {% for t in types %}
         {% set n = counts.get(t, {}).get(key, 0) %}
-        <td class="cm-cell {{ 'cm-on' if key in matrix.get(t, ()) }} {{ 'cm-zero' if not n }}">
+        {# heatmap: each column self-normalises to its own max, so the shape of
+           every page type reads at a glance #}
+        {% set heat = (n / maxn.get(t, 1) * 0.30) if n else 0 %}
+        <td class="cm-cell {{ 'cm-zero' if not n }}"
+            {% if heat %}style="background: rgba(16, 185, 129, {{ '%.3f'|format(heat) }})"{% endif %}>
           <label>
             <input type="checkbox" name="cell|{{ t }}|{{ key }}" value="1"
                    {% if key in matrix.get(t, ()) %}checked{% endif %}>

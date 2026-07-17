@@ -475,6 +475,7 @@ function reflectPause() {
   if (stag) stag.style.display = isStopping ? 'inline' : 'none';
   if (isStopping) { btn.disabled = true; if (sbtn) sbtn.disabled = true; }
 }
+let rateHist = [];
 async function poll() {
   try {
     const r = await fetch('/status'); const s = await r.json();
@@ -506,7 +507,16 @@ async function poll() {
         if (bar) bar.style.background = '#d97706';
       } else {
         if (verb) verb.textContent = 'Capturing';
-        document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
+        // live throughput from the last ~3 min of polls, shown with the ETA
+        rateHist.push({t: Date.now(), done: s.done});
+        rateHist = rateHist.filter(x => Date.now() - x.t < 180000);
+        let eta = fmtEta(s.eta_s);
+        if (rateHist.length > 2) {
+          const a = rateHist[0], b = rateHist[rateHist.length - 1];
+          const perMin = (b.done - a.done) / ((b.t - a.t) / 60000);
+          if (perMin > 0) eta += ' · ' + perMin.toFixed(1) + ' pages/min';
+        }
+        document.getElementById('run-eta').textContent = eta;
         document.getElementById('run-msg').textContent = s.message || '';
         if (bar) bar.style.background = '';
       }

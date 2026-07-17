@@ -94,37 +94,54 @@
       </li>
       {% endmacro %}
 
-      {#- Every trackable component, marked present or "not on this page". The
-          two whose contents we deliberately don't capture (products table,
-          developer community - they churn and would swamp the change feed)
-          keep their richer present/empty state from the flags. -#}
+      {#- ONE unified list per page type: every component any page of this type
+          carries, as chips - solid = on this page, ghost = not on this page.
+          The two whose contents we deliberately don't capture (products table,
+          developer community) keep their richer present/empty state. -#}
       {% if components %}
-      <div class="flagbox">
-        <div class="flagrow" style="border:0; font-weight:600; padding-bottom:2px">
+      <div class="compbox">
+        <div class="comphead">
           <span>Components</span>
-          <span class="muted" style="font-weight:400; font-size:12px">
-            {{ components|selectattr('exists')|list|length }} of {{ components|length }} on this page</span>
+          <span class="muted">{{ components|selectattr('exists')|list|length }} of
+            {{ components|length }} this page type carries are on this page</span>
         </div>
+        <div class="compchips">
         {% for c in components %}
-        <div class="flagrow">
-          <span>{{ c.label }}</span>
           {% if c.key in ('product_table', 'developer_community') %}
             {% set f = flags.get(c.key) %}
             {% if not f or not f.exists %}
-              <span class="badge b-off">not on this page</span>
+              <span class="cchip off" title="Not on this page">{{ c.label }}</span>
             {% elif f.has_content %}
-              <span class="badge b-live">present, has content</span>
+              <span class="cchip on" title="Present, has content">✓ {{ c.label }}</span>
             {% else %}
-              <span class="badge b-new">present but empty</span>
+              <span class="cchip mid" title="Present but empty">◐ {{ c.label }}</span>
             {% endif %}
           {% elif c.exists %}
-            <span class="badge b-live">present</span>
+            <span class="cchip on" title="Present on this page">✓ {{ c.label }}</span>
           {% else %}
-            <span class="badge b-off">not on this page</span>
+            <span class="cchip off" title="Not on this page — other {{ u.ptype }} pages have it">{{ c.label }}</span>
           {% endif %}
-        </div>
         {% endfor %}
+        </div>
       </div>
+      <style>
+        .compbox { border: 1px solid var(--line); border-radius: 10px;
+                   padding: 12px 14px; margin-bottom: 14px; }
+        .comphead { display: flex; gap: 10px; align-items: baseline;
+                    font-weight: 600; margin-bottom: 9px; }
+        .comphead .muted { font-weight: 400; font-size: 12px; }
+        .compchips { display: flex; flex-wrap: wrap; gap: 7px; }
+        .cchip { font-size: 12.5px; border-radius: 999px; padding: 4px 11px;
+                 border: 1px solid transparent; white-space: nowrap; }
+        .cchip.on  { background: rgba(16,185,129,.13); color: #059669;
+                     border-color: rgba(16,185,129,.35); font-weight: 600; }
+        [data-theme="dark"] .cchip.on { color: #34d399; }
+        .cchip.mid { background: rgba(245,158,11,.12); color: #b45309;
+                     border-color: rgba(245,158,11,.4); }
+        [data-theme="dark"] .cchip.mid { color: #fbbf24; }
+        .cchip.off { border: 1px dashed var(--line); color: var(--muted);
+                     opacity: .75; }
+      </style>
       {% elif flags %}
       {#- fallback while the route that supplies `components` isn't loaded yet
           (a re-capture is running, so the app can't be restarted): keep the

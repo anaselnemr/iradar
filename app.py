@@ -389,35 +389,48 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
     return have
 
 
+def _etype(ptype, url):
+    """The page type the COMPONENT MODEL keys on. The report's 'Part' sheet is
+    two genuinely different page shapes - a part type page and an evaluation
+    board - so they are separate types here: an EB must never be told it is
+    missing Diagrams just because PTPs have them."""
+    if ptype == "Part":
+        return "Evaluation board" if "/evaluation-board/" in (url or "") else "PTP"
+    return ptype
+
+
 def _component_counts(con):
-    """{ptype: {component_key: n_pages}} - on how many captured pages of each
-    type each component actually appears. This is the data-driven seed for the
-    settings matrix, the counts shown in its cells, and the prune is simply:
-    count 0 for a type = never showed up there, so drop it. Manual settings
-    edits are layered on top (the stored matrix wins once saved)."""
+    """{etype: {component_key: n_pages}} - on how many captured pages of each
+    (effective) type each component actually appears. The union of a type's
+    keys IS its unified component list: the largest set seen across all pages
+    of that type, which every page of the type is then measured against. Also
+    the data-driven seed for the settings matrix and the prune (count 0 for a
+    type = never showed up there). Manual settings edits are layered on top
+    (the stored matrix wins once saved)."""
     comps = _all_components()
     out = {}
 
-    def bump(ptype, key):
-        out.setdefault(ptype, {})[key] = out.setdefault(ptype, {}).get(key, 0) + 1
+    def bump(etype, key):
+        out.setdefault(etype, {})[key] = out.setdefault(etype, {}).get(key, 0) + 1
 
+    cats_by_url = {}
+    for r in con.execute("SELECT DISTINCT url_id, category FROM items"):
+        cats_by_url.setdefault(r["url_id"], set()).add(r["category"])
     for r in con.execute(
-            "SELECT u.ptype, i.category, COUNT(DISTINCT u.id) n FROM urls u"
-            " JOIN items i ON i.url_id=u.id WHERE u.ptype<>''"
-            " GROUP BY u.ptype, i.category"):
-        key = _CAT_TO_COMP.get(r["category"])
-        if key:
-            out.setdefault(r["ptype"], {})[key] = r["n"]
-    for r in con.execute(
-            "SELECT ptype, flags, components, detail_tabs FROM urls"
+            "SELECT id, ptype, url, flags, components, detail_tabs FROM urls"
             " WHERE ptype<>'' AND last_checked IS NOT NULL"):
+        et = _etype(r["ptype"], r["url"])
+        for cat in cats_by_url.get(r["id"], ()):
+            key = _CAT_TO_COMP.get(cat)
+            if key:
+                bump(et, key)
         try:
             fl = json.loads(r["flags"] or "{}")
         except Exception:
             fl = {}
         for block in ("product_table", "developer_community"):
             if (fl.get(block) or {}).get("exists"):
-                bump(r["ptype"], block)
+                bump(et, block)
         def _loadset(j):
             try:
                 return {s.lower() for s in json.loads(j or "[]")}
@@ -426,7 +439,7 @@ def _component_counts(con):
         nav, tabs = _loadset(r["components"]), _loadset(r["detail_tabs"])
         for key, _l, kind, arg in comps:
             if (kind == "nav" and arg in nav) or (kind == "tab" and arg in tabs):
-                bump(r["ptype"], key)
+                bump(et, key)
     return out
 
 
@@ -439,10 +452,12 @@ def _components_for_type(con):
 
 def _effective_matrix(con):
     """The page-type x component matrix the app answers from: the user's saved
-    settings matrix when one exists, else the data-driven seed. {ptype: set(key)}."""
+    settings matrix when one exists, else the data-driven seed. {etype: set(key)}.
+    An empty stored dict does NOT count as saved - an accidental '{}' once
+    blanked every type's unified list and un-unified the url pages."""
     try:
         stored = json.loads(db.get_settings().get("component_matrix") or "")
-        if isinstance(stored, dict):
+        if isinstance(stored, dict) and any(stored.values()):
             return {t: set(v) for t, v in stored.items()}
     except Exception:
         pass
@@ -1266,20 +1281,22 @@ def url_detail(url_id):
             library.append({"label": label, "items": items, "groups": groups,
                             "cat": cat})
 
-    # Components this page carries, plus the ones its page type normally has
-    # but this page lacks (shown "not on this page", like the flag rows). This
-    # page's own categories come from its sections; the expected set for the
-    # type comes from the settings matrix (or the data until one is saved).
+    # ONE unified component list per page type: the union of every component
+    # ever seen on any page of this type (PTP and Evaluation board are separate
+    # types). Every page of the type shows that same list - each entry present
+    # here or "not on this page" - so pages of a type always read alike. The
+    # union comes from the settings matrix once saved, else from the data.
     this_cats = {cat for cat in _CAT_TO_COMP
                  if sections and sections.get(cat)}
     have = _page_component_set(u["components"], u["detail_tabs"], flags,
                                this_cats)
     con5 = db.connect()
-    type_comps = _effective_matrix(con5).get(u["ptype"] or "", set())
+    etype = _etype(u["ptype"] or "", u["url"])
+    type_comps = _effective_matrix(con5).get(etype, set())
     con5.close()
     comp_rows = [{"key": k, "label": lbl, "exists": k in have}
                  for k, lbl, _kind, _arg in _all_components()
-                 if k in have or k in type_comps]
+                 if k in type_comps or k in have]
 
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
@@ -1537,13 +1554,18 @@ def settings_components():
     deleted, and Prune unchecks everything that appears on zero pages."""
     con = db.connect()
     counts = _component_counts(con)
-    types = [r["ptype"] for r in con.execute(
-        "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>''"
-        " GROUP BY ptype ORDER BY n DESC")]
+    types = []
+    for r in con.execute("SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>''"
+                         " GROUP BY ptype ORDER BY n DESC"):
+        # the matrix speaks effective types: Part is PTP + Evaluation board
+        types += (["PTP", "Evaluation board"] if r["ptype"] == "Part"
+                  else [r["ptype"]])
     pending = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1"
         " AND (components IS NULL OR components='')").fetchone()[0]
     con.close()
+    # per-type max count, for the heatmap tint (each column self-normalises)
+    maxn = {t: max(list(counts.get(t, {}).values()) or [1]) for t in types}
 
     if request.method == "POST":
         action = request.form.get("action", "save")
@@ -1568,11 +1590,16 @@ def settings_components():
                       if c[0] != key]
             db.set_setting("custom_components",
                            json.dumps(stored, ensure_ascii=False))
-            # drop it from the saved matrix too
+            # drop it from the saved matrix too - but ONLY if one is actually
+            # saved: writing '{}' here once overrode the data-driven matrix
+            # with "no type has any component" and un-unified every url page
             try:
-                m = json.loads(db.get_settings().get("component_matrix") or "{}")
-                m = {t: [k for k in v if k != key] for t, v in m.items()}
-                db.set_setting("component_matrix", json.dumps(m))
+                raw = (db.get_settings().get("component_matrix") or "").strip()
+                if raw:
+                    m = json.loads(raw)
+                    if isinstance(m, dict) and m:
+                        m = {t: [k for k in v if k != key] for t, v in m.items()}
+                        db.set_setting("component_matrix", json.dumps(m))
             except Exception:
                 pass
             flash("Component removed.")
@@ -1613,7 +1640,7 @@ def settings_components():
     saved = bool((db.get_settings().get("component_matrix") or "").strip())
     return render_template("settings_components.html",
                            comps=_all_components(), types=types,
-                           matrix=matrix, counts=counts, saved=saved,
+                           matrix=matrix, counts=counts, saved=saved, maxn=maxn,
                            custom_keys={c[0] for c in _custom_components()},
                            pending=pending, state=runner.RUN_STATE)
 
