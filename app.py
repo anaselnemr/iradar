@@ -2441,6 +2441,45 @@ def _meta_lang(meta):
     return ""
 
 
+@app.route("/docpreview/<key>.png")
+def doc_preview_png(key):
+    """FRONT PAGE of a PDF as an image - enough to verify it is the right
+    document. Infineon's servers refuse cross-origin embedding, so the SERVER
+    fetches the file (no browser rules apply there), renders page 1 with
+    pdfium, and caches the PNG. Gated files never reach here (no login)."""
+    cache = db.DATA_DIR / "previews"
+    cache.mkdir(exist_ok=True)
+    out = cache / (re.sub(r"[^a-f0-9]", "", key) + ".png")
+    if out.exists():
+        return send_file(out, mimetype="image/png")
+    con = db.connect()
+    row = con.execute(
+        "SELECT item_url FROM items WHERE item_key=?"
+        " AND category IN ('documents','design_resources') LIMIT 1",
+        (key,)).fetchone()
+    con.close()
+    url = (row["item_url"] if row else "") or ""
+    if not url.lower().split("?")[0].endswith(".pdf") or "/gated/" in url.lower():
+        abort(404)
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read(30_000_000)
+        if not data.startswith(b"%PDF"):
+            abort(404)
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(data)
+        pil = pdf[0].render(scale=1.6).to_pil()
+        pil.thumbnail((1100, 1400))
+        pil.save(out, "PNG")
+        pdf.close()
+    except Exception:
+        abort(404)
+    return send_file(out, mimetype="image/png")
+
+
 @app.route("/item/<key>")
 def item_detail(key):
     """One real-world item - a document, video, image, board - and every page
@@ -2489,7 +2528,7 @@ def item_detail(key):
     for p in pages:
         by_type.setdefault(p["ptype"] or "Other", []).append(p)
     con.close()
-    return render_template("item.html", item=item, pages=pages,
+    return render_template("item.html", item=item, pages=pages, item_key=key,
                            by_type=sorted(by_type.items()))
 
 

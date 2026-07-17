@@ -29,10 +29,16 @@
     {% endif %}
     {% if item.preview_kind %}
       <div style="margin:14px 0 4px">
-      {% if item.preview_kind in ('pdf', 'txt') %}
+      {% if item.preview_kind == 'pdf' %}
+        <a href="{{ item.url }}" target="_blank" title="Open the full document">
+          <img src="{{ url_for('doc_preview_png', key=item_key) }}" alt="First page of {{ item.title }}" loading="lazy"
+               style="max-width:min(420px,100%); max-height:540px; border:1px solid var(--line); border-radius:10px; background:#fff"
+               onerror="this.parentElement.style.display='none'; document.getElementById('pv-fail').style.display='';"></a>
+        <div class="muted" style="font-size:12px; margin-top:5px">Front page only — click it to open the full document.</div>
+        <div id="pv-fail" style="display:none" class="muted">Preview could not be generated — open the file with ↗ below.</div>
+      {% elif item.preview_kind == 'txt' %}
         <iframe src="{{ item.preview_src }}" loading="lazy"
-                style="width:100%; max-width:860px; height:480px; border:1px solid var(--line); border-radius:10px; background:#fff"></iframe>
-        <div class="muted" style="font-size:12px; margin-top:5px">Inline preview — if it stays blank, the server refused embedding: open the file with ↗ below.</div>
+                style="width:100%; max-width:860px; height:380px; border:1px solid var(--line); border-radius:10px; background:#fff"></iframe>
       {% elif item.preview_kind == 'office' %}
         <iframe src="{{ item.preview_src }}" loading="lazy"
                 style="width:100%; max-width:860px; height:480px; border:1px solid var(--line); border-radius:10px; background:#fff"></iframe>
