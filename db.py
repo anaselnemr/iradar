@@ -219,6 +219,21 @@ def strip_lang(url):
     return _LANG_SEG.sub(r"\1\3", (url or "").strip())
 
 
+_DR_ROOTS = ("/design-resources/", "/design-support/")
+
+
+def dr_level_for(url):
+    """Design-resource page level from its URL: the hierarchy depth under
+    /design-resources/ or /design-support/. 1 seg = Category (a landing page
+    with the category grid), 2 = Family, 3+ = Sub-Family. A softwaretools tool
+    page or the homepage is not a hierarchy page -> no level."""
+    root = next((r for r in _DR_ROOTS if r in (url or "")), None)
+    if not root:
+        return ""
+    n = len([x for x in url.split(root, 1)[1].rstrip("/").split("/") if x])
+    return "DRC" if n <= 1 else "DRF" if n == 2 else "DRSF"
+
+
 def ptype_for_url(u):
     """The page type a URL belongs to, read from its shape - so a link added
     by hand gets typed exactly like the report-imported ones and every

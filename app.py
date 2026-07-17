@@ -1293,16 +1293,8 @@ DR_LEVELS = ("DRC", "DRF", "DRSF")
 # only pages inside these hierarchies are DR type-pages. A softwaretools tool
 # page or the homepage is Design-resources by sheet, but not a hierarchy page,
 # so it wears no level (user: "these don't get any tags").
-_DR_ROOTS = ("/design-resources/", "/design-support/")
-
-
 def _dr_level_for(url):
-    root = next((r for r in _DR_ROOTS if r in (url or "")), None)
-    if not root:
-        return ""                      # not a hierarchy page -> no level
-    segs = url.split(root, 1)[1].rstrip("/").split("/")
-    n = len([x for x in segs if x])
-    return "DRC" if n <= 1 else "DRF" if n == 2 else "DRSF"
+    return db.dr_level_for(url)
 # page types that share one tree, in the order their levels nest
 MERGED_TABS = [("Products & parts", ["Product", "Part"])]
 

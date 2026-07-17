@@ -376,6 +376,12 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
                                        res.get("breadcrumb") or [],
                                        res.get("final_url") or ""),
          url_id))
+    # a design-resource page's level is deterministic from its URL - assign it
+    # at capture so pages reached after any one-time backfill still get typed
+    if row["ptype"] == "Design resources" and not dead:
+        lvl = db.dr_level_for(row["url"])
+        con.execute("UPDATE urls SET level=?, level_src=? WHERE id=?",
+                    (lvl, "inferred" if lvl else "", url_id))
     gone, rmsg = _follow_redirect(con, url_id, row["url"],
                                   res.get("final_url") or "")
     if rmsg:
