@@ -2257,13 +2257,17 @@ def search_items():
         # then say WHICH COMPONENT the words live in by checking the page's
         # own indexed items for the same tokens
         from markupsafe import escape as _esc
-        fq = " ".join('"' + t.replace('"', "") + '"'
+        # prefix matching: 'eval' also finds evaluation / EVAL_24V - generous
+        # like a substring title search; the POSITIONAL attribution then names
+        # whichever section each matching line actually sits in
+        fq = " ".join('"' + t.replace('"', "") + '"*'
                       for t in q.split() if t.strip())
         try:
             frows = con.execute(
                 "SELECT rowid AS url_id,"
                 " snippet(page_fts, 0, '[[', ']]', ' … ', 14) AS snip"
-                " FROM page_fts WHERE page_fts MATCH ? LIMIT 60",
+                " FROM page_fts WHERE page_fts MATCH ?"
+                " ORDER BY rank LIMIT 60",
                 (fq,)).fetchall()
         except Exception:
             frows = []
@@ -2304,8 +2308,8 @@ def search_items():
                         pass
                 lines = trow["txt"].splitlines()
                 lows = [l.strip().lower() for l in lines]
-                pats = [re.compile(r"(?<![a-z0-9])" + re.escape(t)
-                                   + r"(?![a-z0-9])") for t in toks]
+                pats = [re.compile(r"(?<![a-z0-9])" + re.escape(t))
+                        for t in toks]   # prefix, mirroring the FTS query
                 _weak = {"overview", "about"}   # also sub-tab names inside panes
                 for i, ll in enumerate(lows):
                     if len(comps) >= 3:
