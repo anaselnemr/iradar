@@ -21,6 +21,14 @@
         </form>
       </div>
       {% endif %}
+      {% if comp_pending and not state.running %}
+      <div style="margin-top:5px">
+        <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
+          <input type="hidden" name="pending_components" value="1">
+          <button class="linkbtn" title="Continue the component pass: only pages that have not been through component detection yet">resume component pass ({{ comp_pending }} left)</button>
+        </form>
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -201,6 +209,7 @@
       <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
       <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
       <td class="urlcell">
+        {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span> {% endif %}
         {% if u.page_title %}
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
         {% else %}

@@ -264,6 +264,38 @@ ATTR_FILTERS["nocommunity"] = ("No developer community",
 ATTR_FILTERS["hasthreads"] = ("Developer community has threads",
                               _flag("developer_community", "has_content"))
 
+# Components read from the page's own section-nav / Product-details sub-tabs
+# (urls.components / urls.detail_tabs, filled by the component re-capture).
+# "No X" is guarded on the column being non-empty: '' = the page has not been
+# through component detection yet (unknown is not the same as absent), while
+# '[]' = detection ran and found none, which IS a real "No".
+def _navjson(col, label):
+    return (f"(u.{col} IS NOT NULL AND u.{col}<>''"
+            f" AND instr(lower(u.{col}), '\"{label}\"') > 0)")
+
+
+def _no_navjson(col, label):
+    return (f"u.{col} IS NOT NULL AND u.{col}<>''"
+            f" AND instr(lower(u.{col}), '\"{label}\"') = 0")
+
+
+_NAV_FILTER_ATTRS = [
+    ("buyopts",   "components",  "view buying options", "buying options"),
+    ("pdetails",  "components",  "product details",     "product details"),
+    ("diagrams",  "components",  "diagrams",            "diagrams"),
+    ("featured",  "components",  "featured products",   "featured products"),
+    ("partners",  "components",  "partner solutions",   "partner solutions"),
+    ("register",  "components",  "register product",    "register product"),
+    ("viewprod",  "components",  "view products",       "view products"),
+    ("bom",       "components",  "bill of material",    "bill of material"),
+    ("parametrics", "detail_tabs", "parametrics",       "parametrics"),
+    ("ordering",  "detail_tabs", "ordering",            "ordering"),
+    ("descr",     "detail_tabs", "description",         "description tab"),
+]
+for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
+    ATTR_FILTERS["has" + _stem] = ("Has " + _disp, _navjson(_col, _lbl))
+    ATTR_FILTERS["no" + _stem] = ("No " + _disp, _no_navjson(_col, _lbl))
+
 # the two dropdown groups, in display order (Has + No shown together per row).
 # Page-state (Captured/Live/Not live) stays at the top of Content, as before.
 CONTENT_KEYS = ["checked", "live", "notlive"]
@@ -274,12 +306,15 @@ for _stem, _c, _l in _COMPONENT_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
 COMPONENT_KEYS += ["hastable", "notable", "hastablerows",
                    "hascommunity", "nocommunity", "hasthreads"]
+for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
+    COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
 
 # The canonical component registry - the ONE list of trackable components and,
 # for each, how we know it is present on a page:
 #   "cat"  -> the page has library items in this category
 #   "flag" -> urls.flags[block].exists is true
 #   "nav"  -> this label appears in the page's own section-nav (urls.components)
+#   "tab"  -> this label appears in the Product-details sub-tabs (urls.detail_tabs)
 # Body-section components (cat/flag) cover every page type; the nav-only ones
 # are the structural sections PTP/EB pages expose that are not library content.
 #   key, label, kind, arg
@@ -306,77 +341,111 @@ COMPONENTS = [
     ("register_product",   "Register product",      "nav",  "register product"),
     ("view_products",      "View products",         "nav",  "view products"),
     ("bom",                "Bill of material",      "nav",  "bill of material"),
+    ("parametrics",        "Parametrics",           "tab",  "parametrics"),
+    ("ordering",           "Ordering",              "tab",  "ordering"),
+    ("description",        "Description",           "tab",  "description"),
 ]
 COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
 # category name -> component key, for turning captured categories into components
 _CAT_TO_COMP = {arg: key for key, _l, kind, arg in COMPONENTS if kind == "cat"}
 
 
-def _page_component_set(components_json, flags, cat_present):
-    """The set of component keys PRESENT on one page, from its three signals:
-    captured categories (a set of category names), flags dict, and the nav
-    labels stored in urls.components (JSON)."""
+def _custom_components():
+    """User-added components from the settings matrix - detected by their label
+    appearing in the page's own section-nav, same as the built-in nav kind."""
     try:
-        nav = {s.lower() for s in json.loads(components_json or "[]")}
+        rows = json.loads(db.get_settings().get("custom_components") or "[]")
     except Exception:
-        nav = set()
+        rows = []
+    return [(r["key"], r["label"], "nav", r["label"].lower())
+            for r in rows if isinstance(r, dict) and r.get("key") and r.get("label")]
+
+
+def _all_components():
+    return COMPONENTS + _custom_components()
+
+
+def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
+    """The set of component keys PRESENT on one page, from its four signals:
+    captured categories (a set of category names), the Product-details sub-tabs,
+    flags dict, and the nav labels stored in urls.components (JSON)."""
+    def _loadset(j):
+        try:
+            return {s.lower() for s in json.loads(j or "[]")}
+        except Exception:
+            return set()
+    nav, tabs = _loadset(components_json), _loadset(detail_tabs_json)
     have = set()
-    for key, _label, kind, arg in COMPONENTS:
+    for key, _label, kind, arg in _all_components():
         if kind == "cat" and arg in cat_present:
             have.add(key)
         elif kind == "flag" and (flags.get(arg) or {}).get("exists"):
             have.add(key)
         elif kind == "nav" and arg in nav:
             have.add(key)
+        elif kind == "tab" and arg in tabs:
+            have.add(key)
     return have
 
 
-def _components_for_type(con):
-    """{ptype: set(component_key)} - which components actually appear on at
-    least one captured page of each type. This is the data-driven seed for the
-    settings matrix and the 'not on this page' rows, and the prune is simply:
-    a component that is not in a type's set never showed up, so drop it there.
-    Manual settings overrides (added/removed) are layered on top by the caller."""
+def _component_counts(con):
+    """{ptype: {component_key: n_pages}} - on how many captured pages of each
+    type each component actually appears. This is the data-driven seed for the
+    settings matrix, the counts shown in its cells, and the prune is simply:
+    count 0 for a type = never showed up there, so drop it. Manual settings
+    edits are layered on top (the stored matrix wins once saved)."""
+    comps = _all_components()
     out = {}
+
+    def bump(ptype, key):
+        out.setdefault(ptype, {})[key] = out.setdefault(ptype, {}).get(key, 0) + 1
+
     for r in con.execute(
-            "SELECT DISTINCT u.ptype, i.category FROM urls u"
-            " JOIN items i ON i.url_id=u.id WHERE u.ptype<>''"):
+            "SELECT u.ptype, i.category, COUNT(DISTINCT u.id) n FROM urls u"
+            " JOIN items i ON i.url_id=u.id WHERE u.ptype<>''"
+            " GROUP BY u.ptype, i.category"):
         key = _CAT_TO_COMP.get(r["category"])
         if key:
-            out.setdefault(r["ptype"], set()).add(key)
-    for r in con.execute("SELECT ptype, flags FROM urls"
-                         " WHERE ptype<>'' AND flags NOT IN ('', '{}')"):
+            out.setdefault(r["ptype"], {})[key] = r["n"]
+    for r in con.execute(
+            "SELECT ptype, flags, components, detail_tabs FROM urls"
+            " WHERE ptype<>'' AND last_checked IS NOT NULL"):
         try:
-            fl = json.loads(r["flags"])
+            fl = json.loads(r["flags"] or "{}")
         except Exception:
-            continue
+            fl = {}
         for block in ("product_table", "developer_community"):
             if (fl.get(block) or {}).get("exists"):
-                out.setdefault(r["ptype"], set()).add(block)
-    for r in con.execute("SELECT ptype, components FROM urls"
-                         " WHERE ptype<>'' AND components NOT IN ('', '[]')"):
-        try:
-            labels = {s.lower() for s in json.loads(r["components"])}
-        except Exception:
-            continue
-        for key, _l, kind, arg in COMPONENTS:
-            if kind == "nav" and arg in labels:
-                out.setdefault(r["ptype"], set()).add(key)
+                bump(r["ptype"], block)
+        def _loadset(j):
+            try:
+                return {s.lower() for s in json.loads(j or "[]")}
+            except Exception:
+                return set()
+        nav, tabs = _loadset(r["components"]), _loadset(r["detail_tabs"])
+        for key, _l, kind, arg in comps:
+            if (kind == "nav" and arg in nav) or (kind == "tab" and arg in tabs):
+                bump(r["ptype"], key)
     return out
 
 
-_COMP_TYPE_CACHE = {"t": 0.0, "data": None}
+def _components_for_type(con):
+    """{ptype: set(component_key)} - which components appear on at least one
+    captured page of each type (derived from the counts)."""
+    return {t: {k for k, n in d.items() if n}
+            for t, d in _component_counts(con).items()}
 
 
-def _components_for_type_cached(con, ttl=120):
-    """_components_for_type rescans every item row, so cache it briefly - the
-    per-type set barely moves during a run, and this keeps page views cheap
-    while the re-capture writes underneath."""
-    now = time.time()
-    if _COMP_TYPE_CACHE["data"] is None or now - _COMP_TYPE_CACHE["t"] > ttl:
-        _COMP_TYPE_CACHE["data"] = _components_for_type(con)
-        _COMP_TYPE_CACHE["t"] = now
-    return _COMP_TYPE_CACHE["data"]
+def _effective_matrix(con):
+    """The page-type x component matrix the app answers from: the user's saved
+    settings matrix when one exists, else the data-driven seed. {ptype: set(key)}."""
+    try:
+        stored = json.loads(db.get_settings().get("component_matrix") or "")
+        if isinstance(stored, dict):
+            return {t: set(v) for t, v in stored.items()}
+    except Exception:
+        pass
+    return _components_for_type(con)
 
 
 def _bulk_counts(con, filters):
@@ -415,8 +484,20 @@ def _url_filter(q, statuses, ptypes, attrs):
         where.append("(" + " OR ".join(picked) + ")")
     types = [t for t in ptypes if t]
     if types:
-        where.append("u.ptype IN (" + ",".join("?" * len(types)) + ")")
-        params += types
+        # "Part" is split into two selectable types by URL shape: PTP (/part/)
+        # and Evaluation board (/evaluation-board/). They are the same report
+        # sheet (ptype='Part'), so the split lives here, not in the data.
+        tconds = []
+        for t in types:
+            if t == "PTP":
+                tconds.append("(u.ptype='Part' AND u.url LIKE '%/part/%')")
+            elif t == "Evaluation board":
+                tconds.append(
+                    "(u.ptype='Part' AND u.url LIKE '%/evaluation-board/%')")
+            else:
+                tconds.append("u.ptype=?")
+                params.append(t)
+        where.append("(" + " OR ".join(tconds) + ")")
     for a in attrs:
         if a in ATTR_FILTERS:
             where.append("(" + ATTR_FILTERS[a][1] + ")")
@@ -501,9 +582,24 @@ def index():
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
         "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
-    ptypes = con.execute(
+    comp_pending = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1"
+        " AND (components IS NULL OR components='')").fetchone()[0]
+    ptypes_raw = con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
         " ORDER BY n DESC").fetchall()
+    # the Part sheet is two kinds of page - offer them as their own types
+    ptypes = []
+    for r in ptypes_raw:
+        if r["ptype"] == "Part":
+            n_ptp = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
+                                " AND url LIKE '%/part/%'").fetchone()[0]
+            n_eb = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
+                               " AND url LIKE '%/evaluation-board/%'").fetchone()[0]
+            ptypes.append({"ptype": "PTP", "n": n_ptp})
+            ptypes.append({"ptype": "Evaluation board", "n": n_eb})
+        else:
+            ptypes.append({"ptype": r["ptype"], "n": r["n"]})
     # how many captured pages carry each category - one GROUP BY, indexed
     cat_pages = {r["category"]: r["n"] for r in con.execute(
         "SELECT category, COUNT(DISTINCT url_id) n FROM items GROUP BY category")}
@@ -562,7 +658,8 @@ def index():
                            next_run=next_run_text(), settings=db.get_settings(),
                            q=q, page=page, pages=pages, sort=sort,
                            new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
-                           notlive_total=notlive_total,
+                           notlive_total=notlive_total, comp_pending=comp_pending,
+                           level_names=LEVEL_NAMES,
                            total_match=total_match, counts=counts,
                            per_page=PER_PAGE, ptypes=ptypes,
                            sel_status=statuses, sel_types=sel_types,
@@ -801,10 +898,13 @@ def _cats_present_for_type(con, ptype):
 LEVEL_NAMES = {
     "PC": "Product category", "PFP": "Product family",
     "PSFP": "Product sub-family", "PEFP": "Product end family",
-    "PTP": "Part type page",
+    "PTP": "Part type page", "EB": "Evaluation board",
     "ADP": "Application division", "AOP": "Application overview",
     "ASP": "Application solution", "AFB": "Application focus",
 }
+# the levels that belong to the application taxonomy (report-sourced, never
+# from URL depth - the sheet is the authority for where an app page sits)
+APP_LEVELS = ("ADP", "AOP", "ASP", "AFB")
 # page types that share one tree, in the order their levels nest
 MERGED_TABS = [("Products & parts", ["Product", "Part"])]
 
@@ -979,14 +1079,15 @@ def _live_levels(node, depth=0, product_tree=True):
         depth 1  product category   depth 2  product family
         leaf     end family         between  sub-family     a part  part type
 
-    The PC/PFP/PSFP/PEFP/PTP scheme is PRODUCTS ONLY. Design resources,
-    applications and promo pages are not product families, so on those trees no
-    level badge is assigned (applications get their own scheme once defined).
+    The PC/PFP/PSFP/PEFP/PTP scheme is PRODUCTS ONLY. Applications wear their
+    own ADP > AOP > ASP / AFB scheme, taken from the report's Page Type column
+    (never URL depth - the sheet is the authority). Design resources and promo
+    pages have no levels at all.
     """
     if not product_tree:
         node["live_level"] = ""
         for p in node["pages"]:
-            p["live_level"] = ""
+            p["live_level"] = p["level"] if p.get("level") in APP_LEVELS else ""
             p["level_disagrees"] = False
         for c in node["children"]:
             _live_levels(c, depth + 1, product_tree)
@@ -1005,7 +1106,9 @@ def _live_levels(node, depth=0, product_tree=True):
         node["live_level"] = "PSFP"
     for p in node["pages"]:
         if p.get("ptype") == "Part":
-            p["live_level"] = "PTP"
+            # a part page is a PTP; an evaluation board wears its own badge
+            p["live_level"] = ("EB" if "/evaluation-board/" in (p.get("url") or "")
+                               else "PTP")
         elif depth <= 1:
             p["live_level"] = "PC"
         elif depth == 2:
@@ -1164,15 +1267,17 @@ def url_detail(url_id):
 
     # Components this page carries, plus the ones its page type normally has
     # but this page lacks (shown "not on this page", like the flag rows). This
-    # page's own categories come from its sections; the type set is data-driven.
+    # page's own categories come from its sections; the expected set for the
+    # type comes from the settings matrix (or the data until one is saved).
     this_cats = {cat for cat in _CAT_TO_COMP
                  if sections and sections.get(cat)}
-    have = _page_component_set(u["components"], flags, this_cats)
+    have = _page_component_set(u["components"], u["detail_tabs"], flags,
+                               this_cats)
     con5 = db.connect()
-    type_comps = _components_for_type_cached(con5).get(u["ptype"] or "", set())
+    type_comps = _effective_matrix(con5).get(u["ptype"] or "", set())
     con5.close()
     comp_rows = [{"key": k, "label": lbl, "exists": k in have}
-                 for k, lbl, _kind, _arg in COMPONENTS
+                 for k, lbl, _kind, _arg in _all_components()
                  if k in have or k in type_comps]
 
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
@@ -1339,8 +1444,20 @@ def run_now():
         if not ids:
             flash("Every page has been checked already — nothing to resume.")
             return redirect(url_for("index"))
+    elif (request.form.get("pending_components") == "1"
+          or request.args.get("pending_components") == "1"):
+        # resume the component pass: pages not yet captured with component
+        # detection. '' = never ran (the marker); '[]' = ran, page has no nav.
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls WHERE active=1"
+            " AND (components IS NULL OR components='')")]
+        con.close()
+        if not ids:
+            flash("Component detection has run on every page already.")
+            return redirect(url_for("index"))
     if runner.run_check_background(kind="manual", url_ids=ids):
-        flash(f"Checking {len(ids)} not-yet-checked page(s)…" if ids
+        flash(f"Checking {len(ids)} pending page(s)…" if ids
               else "Check started - progress is shown below.")
     else:
         flash("A check is already running.")
@@ -1408,6 +1525,96 @@ def settings_view():
         return redirect(url_for("settings_view"))
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS)
+
+
+@app.route("/settings/components", methods=["GET", "POST"])
+def settings_components():
+    """The page-type x component matrix: which components each page type is
+    expected to carry. Seeded from the captured data (cell counts show how many
+    pages of the type actually have the component); every cell is editable, a
+    custom component can be added (detected by its section-nav label) or
+    deleted, and Prune unchecks everything that appears on zero pages."""
+    con = db.connect()
+    counts = _component_counts(con)
+    types = [r["ptype"] for r in con.execute(
+        "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>''"
+        " GROUP BY ptype ORDER BY n DESC")]
+    pending = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1"
+        " AND (components IS NULL OR components='')").fetchone()[0]
+    con.close()
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        if action == "add_custom":
+            label = (request.form.get("label") or "").strip()[:60]
+            if label:
+                customs = _custom_components()
+                key = "custom_" + re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+                if key not in {c[0] for c in customs} and key not in COMPONENT_BY_KEY:
+                    stored = [{"key": c[0], "label": c[1]} for c in customs]
+                    stored.append({"key": key, "label": label})
+                    db.set_setting("custom_components",
+                                   json.dumps(stored, ensure_ascii=False))
+                    flash(f"Added component “{label}” — it is detected by that "
+                          "label appearing in a page's own section navigation.")
+                else:
+                    flash("That component already exists.")
+            return redirect(url_for("settings_components"))
+        if action.startswith("del_custom"):
+            key = action.split(":", 1)[1] if ":" in action else ""
+            stored = [{"key": c[0], "label": c[1]} for c in _custom_components()
+                      if c[0] != key]
+            db.set_setting("custom_components",
+                           json.dumps(stored, ensure_ascii=False))
+            # drop it from the saved matrix too
+            try:
+                m = json.loads(db.get_settings().get("component_matrix") or "{}")
+                m = {t: [k for k in v if k != key] for t, v in m.items()}
+                db.set_setting("component_matrix", json.dumps(m))
+            except Exception:
+                pass
+            flash("Component removed.")
+            return redirect(url_for("settings_components"))
+        if action == "prune":
+            # after the run: a component that appears on ZERO pages of a type
+            # never showed up there - drop it from that type's expected list
+            con = db.connect()
+            matrix = _effective_matrix(con)
+            con.close()
+            removed = []
+            for t in list(matrix):
+                for k in list(matrix[t]):
+                    if not counts.get(t, {}).get(k):
+                        matrix[t].discard(k)
+                        lbl = next((c[1] for c in _all_components()
+                                    if c[0] == k), k)
+                        removed.append(f"{lbl} ({t})")
+            db.set_setting("component_matrix",
+                           json.dumps({t: sorted(v) for t, v in matrix.items()}))
+            flash(("Pruned " + str(len(removed)) + " never-seen pairing(s): "
+                   + ", ".join(removed[:12])
+                   + ("…" if len(removed) > 12 else "")) if removed
+                  else "Nothing to prune — every expected component appears somewhere.")
+            return redirect(url_for("settings_components"))
+        # default: save the whole grid as drawn
+        matrix = {}
+        for t in types:
+            matrix[t] = [c[0] for c in _all_components()
+                         if request.form.get(f"cell|{t}|{c[0]}")]
+        db.set_setting("component_matrix", json.dumps(matrix))
+        flash("Component matrix saved — the url pages now answer from it.")
+        return redirect(url_for("settings_components"))
+
+    con = db.connect()
+    matrix = _effective_matrix(con)
+    con.close()
+    saved = bool((db.get_settings().get("component_matrix") or "").strip())
+    return render_template("settings_components.html",
+                           comps=_all_components(), types=types,
+                           matrix=matrix, counts=counts, saved=saved,
+                           custom_keys={c[0] for c in _custom_components()},
+                           pending=pending, state=runner.RUN_STATE)
 
 
 # --------------------------------------------------------------------------
