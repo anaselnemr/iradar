@@ -2207,25 +2207,66 @@ def search_items():
                 (fq,)).fetchall()
         except Exception:
             frows = []
-        toks = [t.lower() for t in q.split() if len(t) >= 3][:4]
-        lbls = dict(SECTION_LABELS)
+        toks = [t.lower() for t in q.split() if len(t) >= 2][:4]
+        # section headings we can anchor a match to: the standard sections plus
+        # whatever THIS page's own nav and Product-details tabs are named
+        _BASE_HEADS = {"parametrics", "ordering", "description", "features",
+                       "key features", "benefits", "documents",
+                       "design resources", "technical documents", "diagrams",
+                       "diagram", "partner solutions", "developer community",
+                       "news & highlights", "related products", "overview",
+                       "about", "trainings & webinars", "videos",
+                       "view buying options", "featured products",
+                       "register product", "boards & designs"}
         for fr in frows:
             u2 = con.execute(
-                "SELECT id, url, level, label,"
+                "SELECT id, url, level, label, components, detail_tabs,"
                 " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
                 "   AND s.status='ok' AND s.page_title<>''"
                 "   ORDER BY s.id DESC LIMIT 1) AS page_title"
                 " FROM urls WHERE id=?", (fr["url_id"],)).fetchone()
             if not u2:
                 continue
+            # WHERE in the page do the matched words sit? Walk the page's own
+            # text: each match line, then upward to the nearest section
+            # heading. Token match, not substring - 'eval' must never claim a
+            # Benefits bullet that merely says 'evaluation'.
             comps = []
-            if toks:
-                like = " OR ".join(["lower(title) LIKE ?"] * len(toks))
-                comps = [lbls.get(r2["category"], r2["category"])
-                         for r2 in con.execute(
-                             f"SELECT DISTINCT category FROM items"
-                             f" WHERE url_id=? AND ({like}) LIMIT 3",
-                             [u2["id"]] + [f"%{t}%" for t in toks])]
+            trow = con.execute("SELECT txt FROM page_fts WHERE rowid=?",
+                               (u2["id"],)).fetchone()
+            if trow and toks:
+                heads = set(_BASE_HEADS)
+                for col in ("components", "detail_tabs"):
+                    try:
+                        heads |= {str(x).strip().lower()
+                                  for x in json.loads(u2[col] or "[]")}
+                    except Exception:
+                        pass
+                lines = trow["txt"].splitlines()
+                lows = [l.strip().lower() for l in lines]
+                pats = [re.compile(r"(?<![a-z0-9])" + re.escape(t)
+                                   + r"(?![a-z0-9])") for t in toks]
+                _weak = {"overview", "about"}   # also sub-tab names inside panes
+                for i, ll in enumerate(lows):
+                    if len(comps) >= 3:
+                        break
+                    if not any(pt.search(ll) for pt in pats):
+                        continue
+                    for j in range(i, -1, -1):
+                        cand = lows[j]
+                        if cand in heads and len(cand) < 40:
+                            nice = lines[j].strip()
+                            if cand in _weak:
+                                # an Overview/About right under a real section
+                                # heading is that section's first TAB, not the
+                                # page's Overview - prefer the section
+                                for k in range(j - 1, max(-1, j - 9), -1):
+                                    if lows[k] in heads and lows[k] not in _weak:
+                                        nice = lines[k].strip()
+                                        break
+                            if nice not in comps:
+                                comps.append(nice)
+                            break
             snip = str(_esc(fr["snip"])).replace("[[", "<mark>").replace(
                 "]]", "</mark>")
             text_hits.append({"id": u2["id"], "url": u2["url"],
