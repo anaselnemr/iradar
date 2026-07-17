@@ -370,6 +370,8 @@ def index():
          "n": status_counts["blank"]},
         {"kind": "status", "key": "changed", "label": "Changed",
          "n": status_counts["changed"]},
+        {"kind": "status", "key": "unchanged", "label": "Unchanged",
+         "n": status_counts["unchanged"]},
         {"kind": "status", "key": "rejected", "label": "Awaiting fix",
          "n": status_counts["rejected"]},
         {"kind": "status", "key": "error", "label": "Errors",

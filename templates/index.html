@@ -6,7 +6,7 @@
     <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">Pages tracked</div></div>
     <div class="stat"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">To review</div></div>
     <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Captured</div></div>
-    <div class="stat"><div class="n" style="color:{{ '#dc2626' if (counts.errors or 0) + (counts.notlive or 0) else '#16a34a' }}">{{ (counts.errors or 0) + (counts.notlive or 0) }}</div><div class="l">Errors / not live</div></div>
+    <div class="stat"><div class="n" style="color:{{ '#dc2626' if (counts.notlive or 0) else '#16a34a' }}">{{ counts.notlive or 0 }}</div><div class="l">Not live / Blank page</div></div>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
@@ -27,7 +27,7 @@
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <div class="muted" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
       <span>
-        Capturing <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>
+        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>
         · <b><span id="run-saved">0</span></b> saved
         <b id="run-eta" style="color:var(--accent)"></b>
       </span>
@@ -260,28 +260,44 @@ function selectAllMatching() {
   } else { am.value = '1'; }
   refreshCount();
 }
-// row-selection wiring, re-run after an in-place filter swap replaces the rows
+// Row selection via DELEGATION on document, so "select all" and row ticks keep
+// working after the tracked-pages panel is swapped in place by a filter - no
+// per-element re-binding that could silently go stale.
 let lastClickedBox = null;
-function initTable() {
-  const rowBoxes = Array.from(document.querySelectorAll('.rowsel'));
-  lastClickedBox = null;
-  rowBoxes.forEach(cb => cb.addEventListener('click', (e) => {
-    if (e.shiftKey && lastClickedBox && lastClickedBox !== cb) {
-      const a = rowBoxes.indexOf(lastClickedBox), b = rowBoxes.indexOf(cb);
-      rowBoxes.slice(Math.min(a, b), Math.max(a, b) + 1)
-        .forEach(x => x.checked = cb.checked);
-    }
-    lastClickedBox = cb;
-    document.getElementById('all-matching').value = '0';
-    refreshCount();
-  }));
+function syncSelall() {
   const selall = document.getElementById('selall');
-  if (selall) selall.addEventListener('change', () => {
-    document.getElementById('all-matching').value = '0';
-    document.querySelectorAll('.rowsel').forEach(cb => cb.checked = selall.checked);
-    refreshCount();
-  });
+  if (!selall) return;
+  const boxes = Array.from(document.querySelectorAll('.rowsel'));
+  const on = boxes.filter(c => c.checked).length;
+  selall.checked = on > 0 && on === boxes.length;
+  selall.indeterminate = on > 0 && on < boxes.length;
 }
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!t) return;
+  if (t.id === 'selall') {
+    const am = document.getElementById('all-matching'); if (am) am.value = '0';
+    document.querySelectorAll('.rowsel').forEach(cb => { cb.checked = t.checked; });
+    refreshCount();
+  } else if (t.classList && t.classList.contains('rowsel')) {
+    const am = document.getElementById('all-matching'); if (am) am.value = '0';
+    syncSelall();
+    refreshCount();
+  }
+});
+document.addEventListener('click', (e) => {
+  const cb = e.target;
+  if (!cb || !cb.classList || !cb.classList.contains('rowsel')) return;
+  if (e.shiftKey && lastClickedBox && lastClickedBox !== cb) {
+    const boxes = Array.from(document.querySelectorAll('.rowsel'));
+    const a = boxes.indexOf(lastClickedBox), b = boxes.indexOf(cb);
+    if (a >= 0 && b >= 0)
+      boxes.slice(Math.min(a, b), Math.max(a, b) + 1)
+           .forEach(x => { x.checked = cb.checked; });
+  }
+  lastClickedBox = cb;
+});
+function initTable() { lastClickedBox = null; syncSelall(); }
 initTable();
 
 // Filter in place instead of a full page reload. Every filter control (the
@@ -393,11 +409,32 @@ async function poll() {
       document.getElementById('run-done').textContent = s.done;
       document.getElementById('run-total').textContent = s.total;
       document.getElementById('run-saved').textContent = s.saved != null ? s.saved : '—';
-      document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
-      document.getElementById('run-msg').textContent = s.message || '';
+      const verb = document.getElementById('run-verb');
+      const bar = document.getElementById('run-bar');
+      // When pausing/ending, a page already mid-capture can't be interrupted,
+      // so a few in-progress pages finish first. Say so plainly instead of
+      // showing live URLs tick by - that's what read as "it won't stop".
+      if (isStopping) {
+        if (verb) verb.textContent = 'Ending —';
+        document.getElementById('run-eta').textContent = '';
+        document.getElementById('run-msg').textContent =
+          'Finishing the pages already in progress, then it stops (up to ~1–2 min). Everything captured is kept.';
+        if (bar) bar.style.background = '#dc2626';
+      } else if (isPaused) {
+        if (verb) verb.textContent = 'Paused —';
+        document.getElementById('run-eta').textContent = '';
+        document.getElementById('run-msg').textContent =
+          'Finishing the pages already in progress, then it holds. Press Resume to continue.';
+        if (bar) bar.style.background = '#d97706';
+      } else {
+        if (verb) verb.textContent = 'Capturing';
+        document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
+        document.getElementById('run-msg').textContent = s.message || '';
+        if (bar) bar.style.background = '';
+      }
       reflectPause();
       const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
-      document.getElementById('run-bar').style.width = pct + '%';
+      bar.style.width = pct + '%';
       setTimeout(poll, 2000);
     } else if (sawRunning) {
       location.reload();
