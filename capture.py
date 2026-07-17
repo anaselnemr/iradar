@@ -926,7 +926,11 @@ SECTIONS_JS = r"""
 
   // Applications: linked application areas / use-case lists
   for (const h of document.querySelectorAll('h1,h2,h3,h4')) {
-    if (isPageChrome(h) || h.closest('.designresource-component, [id^="ds-"]')) continue;
+    // .tab-comp is the About widget: an "Applications" TAB inside it is About
+    // content, not the page's Applications section (user rule). Tab labels
+    // generally are never section headings.
+    if (isPageChrome(h) || h.closest(
+        '.designresource-component, [id^="ds-"], .tab-comp, [role="tablist"]')) continue;
     const ht = (h.textContent || '').replace(/\s+/g, ' ').trim();
     if (!/^applications?$/i.test(ht) || out.applications.length) continue;
     const c = containerFor(h);
