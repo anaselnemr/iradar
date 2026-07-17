@@ -214,6 +214,27 @@ def strip_lang(url):
     return _LANG_SEG.sub(r"\1\3", (url or "").strip())
 
 
+def ptype_for_url(u):
+    """The page type a URL belongs to, read from its shape - so a link added
+    by hand gets typed exactly like the report-imported ones and every
+    type-driven rule (shapes, badges, components) applies from day one."""
+    u = (u or "").lower()
+    host = u.split("//", 1)[-1].split("/", 1)[0]
+    path = "/" + u.split("//", 1)[-1].split("/", 1)[-1] if "/" in u.split("//", 1)[-1] else "/"
+    if "softwaretools.infineon.com" in host:
+        return "Design resources"
+    for prefix, t in (("/part/", "Part"), ("/evaluation-board/", "Part"),
+                      ("/products/", "Product"),
+                      ("/applications/", "Application"),
+                      ("/application/", "Application"),
+                      ("/design-resources/", "Design resources"),
+                      ("/gated/", "Promo"), ("/document-promo/", "Promo"),
+                      ("/promo", "Promo")):
+        if path.startswith(prefix):
+            return t
+    return ""
+
+
 def add_urls_labeled(pairs):
     """Insert (url, label) pairs. Language-prefixed infineon URLs are
     normalised first, and a URL matching an existing row's url OR its stored
@@ -238,9 +259,13 @@ def add_urls_labeled(pairs):
                 con.execute("UPDATE urls SET label=? WHERE id=? AND label=''",
                             (label, dup["id"]))
             continue
+        pt = ptype_for_url(u)
+        lvl = ("EB" if "/evaluation-board/" in u.lower()
+               else "PTP" if "/part/" in u.lower() else "") if pt == "Part" else ""
         cur = con.execute(
-            "INSERT OR IGNORE INTO urls(url, label, created_at) VALUES(?, ?, ?)",
-            (u, label, now_iso()))
+            "INSERT OR IGNORE INTO urls(url, label, created_at, ptype,"
+            " level, level_src) VALUES(?, ?, ?, ?, ?, ?)",
+            (u, label, now_iso(), pt, lvl, "inferred" if lvl else ""))
         added += cur.rowcount
     con.commit()
     con.close()
