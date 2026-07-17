@@ -110,6 +110,27 @@ def _follow_redirect(con, url_id, old_url, final_url):
     return False, f"{old_url} -> {final_url} (list repointed)"
 
 
+def canonical_url(page_url, crumbs, final_url):
+    """The page's LONG address - its true place in the hierarchy - even when
+    the tracked link is shortened or language-prefixed. The page's own
+    breadcrumb ends with itself carrying that full URL; it counts only when
+    its final path segment matches the page's (a part's crumb ends at its
+    family - not this page, so not its canonical). Falls back to the redirect
+    target when the server sent us elsewhere."""
+    def seg(u):
+        return (u or "").split("#")[0].rstrip("/").rsplit("/", 1)[-1].lower()
+    own = seg(page_url)
+    for c in reversed(crumbs if isinstance(crumbs, list) else []):
+        cu = (c.get("url") or "").strip() if isinstance(c, dict) else ""
+        if cu and "infineon.com" in cu and seg(cu) == own:
+            cu = cu.split("#")[0].rstrip("/")
+            return "" if cu == page_url.rstrip("/") else cu
+    fu = (final_url or "").split("#")[0].rstrip("/")
+    if fu and fu != page_url.rstrip("/"):
+        return fu
+    return ""
+
+
 def index_items(con, url_id, snap_dir, dead=False):
     """Refresh the searchable item index for a URL from its current snapshot.
 
@@ -316,7 +337,7 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
     # reason its images stay out of the library index.
     con.execute(
         "UPDATE urls SET last_http=?, breadcrumb=?, flags=?, components=?,"
-        " detail_tabs=?, price=? WHERE id=?",
+        " detail_tabs=?, price=?, canonical_url=? WHERE id=?",
         (res.get("http_status"),
          json.dumps([] if dead else (res.get("breadcrumb") or []),
                     ensure_ascii=False),
@@ -325,7 +346,11 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
                     ensure_ascii=False),
          json.dumps([] if dead else (res.get("detail_tabs") or []),
                     ensure_ascii=False),
-         "" if dead else (res.get("price") or ""), url_id))
+         "" if dead else (res.get("price") or ""),
+         "" if dead else canonical_url(row["url"],
+                                       res.get("breadcrumb") or [],
+                                       res.get("final_url") or ""),
+         url_id))
     gone, rmsg = _follow_redirect(con, url_id, row["url"],
                                   res.get("final_url") or "")
     if rmsg:

@@ -31,7 +31,8 @@
       </details>
     {% endif %}
     {% if u.last_http %} · <span class="badge {{ 'b-live' if u.last_http < 400 else 'b-error' }}">HTTP {{ u.last_http }}</span>{% endif %}
-    {% if settings and settings.aem_author_url %} · {% if u.ptype == 'Part' %}<span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from product data — there is no AEM-authored page to open">AEM</span>{% else %}<a class="badge b-sys" href="{{ u.url|aemlink(settings.aem_author_url) }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
+    {% if settings and settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %} · <span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from product data — there is no AEM-authored page to open">AEM</span>{% elif aurl %} · <a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
+    {% if u.canonical_url %} · <span class="muted" style="font-size:12px" title="The page's long/canonical address from its own breadcrumb — used for duplicate detection, search and the AEM link">long URL: <a href="{{ u.canonical_url }}" target="_blank">{{ u.canonical_url }}</a></span>{% endif %}
   </div>
   {% if redirect_to %}
   {# the listed address is not the page that answered: say so plainly, or the

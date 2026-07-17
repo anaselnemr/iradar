@@ -603,8 +603,9 @@ def _url_filter(q, statuses, ptypes, attrs):
     """
     where, params = [], []
     if q:
-        where.append("(u.url LIKE ? OR u.label LIKE ?)")
-        params += [f"%{q}%", f"%{q}%"]
+        where.append("(u.url LIKE ? OR u.label LIKE ?"
+                     " OR u.canonical_url LIKE ?)")
+        params += [f"%{q}%"] * 3
     picked = ["(" + STATUS_FILTERS[s][1] + ")"
               for s in statuses if s in STATUS_FILTERS]
     if picked:
@@ -1072,14 +1073,20 @@ def backend_system(category, meta, doc_type=None):
 @app.template_filter("aemlink")
 def _aemlink(page_url, base):
     """The AEM author link for a public page. '{path}' in the editable base
-    marks where the page's public path goes - so the editor's trailing .html
-    lives in the setting, not in code: editor.html/content/ifx/en{path}.html"""
+    marks where the page's hierarchy path goes. The path comes from the LONG
+    (canonical) URL the caller hands in - the breadcrumb's own address - never
+    a shortened link; a language prefix (/de/, /ja/) is dropped because the
+    author tree is language-masters/en. Pages living off www.infineon.com
+    (softwaretools, …) get no link at all: their authoring is different."""
     base = (base or "").strip()
+    u = db.strip_lang(page_url or "")
     try:
-        path = urlsplit(page_url or "").path.rstrip("/")
+        parts = urlsplit(u)
+        host, path = parts.netloc.lower(), parts.path.rstrip("/")
     except Exception:
-        path = ""
-    if not base or not path:
+        host, path = "", ""
+    if not base or not path or host not in ("www.infineon.com",
+                                            "infineon.com"):
         return ""
     return base.replace("{path}", path) if "{path}" in base else base + path
 
@@ -2117,7 +2124,7 @@ def search_items():
     if q and cat == "pages":
         # the tracked pages themselves: typo-tolerant over title AND url
         prows = con.execute(
-            "SELECT id, url, label, ptype, level,"
+            "SELECT id, url, canonical_url, label, ptype, level,"
             " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
             "   AND s.status='ok' AND s.page_title<>''"
             "   ORDER BY s.id DESC LIMIT 1) AS page_title FROM urls").fetchall()
@@ -2125,7 +2132,9 @@ def search_items():
                   "title": (r["page_title"] or r["label"]
                             or r["url"].rstrip("/").rsplit("/", 1)[-1]),
                   "sl": _searchable((r["page_title"] or r["label"] or "")
-                                    + " " + r["url"])} for r in prows]
+                                    + " " + r["url"] + " "
+                                    + (r["canonical_url"] or ""))}
+                 for r in prows]
         ql = _searchable(q)
         hits = {d["id"]: (2, 100, d) for d in pdata if ql in d["sl"]}
         for _t, score, i in process.extract(

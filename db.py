@@ -1,4 +1,5 @@
 """SQLite database layer for InfineonWatch."""
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,6 +138,10 @@ def init_db():
     # Never inferred from URL depth - the sheet has PEFPs at 2, 3, 4 and 5
     # path segments, so depth says nothing about level.
     _ensure_column(con, "urls", "level", "TEXT DEFAULT ''")
+    # the page's long/canonical URL (from its own breadcrumb): the true
+    # hierarchy address behind a shortened or language-prefixed link. Used to
+    # refuse duplicates at add time, by search, and to build author links.
+    _ensure_column(con, "urls", "canonical_url", "TEXT DEFAULT ''")
     # where the level came from: report (the source sheet), inferred (the
     # sibling/hierarchy/fingerprint algorithm) or manual (the user's own edit)
     _ensure_column(con, "urls", "level_src", "TEXT DEFAULT ''")
@@ -197,25 +202,46 @@ def add_urls(url_list):
     return add_urls_labeled([(u, "") for u in url_list])
 
 
+# infineon.com language mirrors (/de/, /ja/, …) are the SAME page - always
+# track the language-less address, never both
+_LANG_SEG = re.compile(
+    r"^(https?://(?:www\.)?infineon\.com)/"
+    r"(de|ja|jp|cn|zh|tw|ko|kr|fr|it|es|pt|ru)(/|$)", re.I)
+
+
+def strip_lang(url):
+    """https://www.infineon.com/de/x -> https://www.infineon.com/x"""
+    return _LANG_SEG.sub(r"\1\3", (url or "").strip())
+
+
 def add_urls_labeled(pairs):
-    """Insert (url, label) pairs, ignoring duplicate URLs. A label is also
-    backfilled onto an existing URL that has none. Returns (added, skipped)."""
+    """Insert (url, label) pairs. Language-prefixed infineon URLs are
+    normalised first, and a URL matching an existing row's url OR its stored
+    canonical (long) URL is refused as a duplicate. A label is backfilled onto
+    an existing URL that has none. Returns (added, skipped)."""
     con = connect()
     added = 0
     total = 0
     for u, label in pairs:
-        u = (u or "").strip()
+        u = strip_lang((u or "").strip())
         label = (label or "").strip()[:200]
         if not u:
             continue
         total += 1
+        bare = u.rstrip("/")
+        dup = con.execute(
+            "SELECT id FROM urls WHERE rtrim(url,'/')=?"
+            " OR (canonical_url<>'' AND rtrim(canonical_url,'/')=?)",
+            (bare, bare)).fetchone()
+        if dup:
+            if label:
+                con.execute("UPDATE urls SET label=? WHERE id=? AND label=''",
+                            (label, dup["id"]))
+            continue
         cur = con.execute(
             "INSERT OR IGNORE INTO urls(url, label, created_at) VALUES(?, ?, ?)",
             (u, label, now_iso()))
         added += cur.rowcount
-        if cur.rowcount == 0 and label:
-            con.execute("UPDATE urls SET label=? WHERE url=? AND label=''",
-                        (label, u))
     con.commit()
     con.close()
     return added, total - added
