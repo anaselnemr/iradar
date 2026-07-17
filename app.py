@@ -1385,8 +1385,10 @@ def _breadcrumbs(con, ptypes):
     marks = ",".join("?" * len(ptypes))
     rows = con.execute(
         "SELECT id, url, ptype, level, breadcrumb,"
-        " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
-        "   AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)"
+        " NULLIF(title_override,'') AS title_override,"
+        " COALESCE(NULLIF(title_override,''),"
+        "   (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+        "     AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1))"
         "   AS page_title"
         f" FROM urls WHERE active=1 AND ptype IN ({marks})"
         " AND breadcrumb NOT IN ('', '[]') AND breadcrumb IS NOT NULL"
@@ -2081,6 +2083,24 @@ def url_set_level(url_id):
     return redirect(url_for("url_detail", url_id=url_id))
 
 
+@app.route("/url/<int:url_id>/title", methods=["POST"])
+def url_set_title(url_id):
+    """Override a page's display name (kept on the url row, so it survives
+    re-capture and shows everywhere the name appears). Empty clears it and the
+    page's own captured <title> takes over again."""
+    con = db.connect()
+    if not con.execute("SELECT 1 FROM urls WHERE id=?", (url_id,)).fetchone():
+        con.close()
+        abort(404)
+    name = " ".join((request.form.get("title") or "").split())[:200]
+    con.execute("UPDATE urls SET title_override=? WHERE id=?", (name, url_id))
+    con.commit()
+    con.close()
+    flash(f"Name set to “{name}”." if name
+          else "Custom name cleared — the page's own title shows again.")
+    return redirect(url_for("url_detail", url_id=url_id))
+
+
 def _infer_missing_levels():
     """Assign a level to every CAPTURED Product/Application page that lacks one,
     via the three-signal inference. Shared by the manual button and the
@@ -2399,9 +2419,10 @@ def search_items():
         # the tracked pages themselves: typo-tolerant over title AND url
         prows = con.execute(
             "SELECT id, url, canonical_url, label, ptype, level,"
-            " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
-            "   AND s.status='ok' AND s.page_title<>''"
-            "   ORDER BY s.id DESC LIMIT 1) AS page_title FROM urls").fetchall()
+            " COALESCE(NULLIF(title_override,''),"
+            "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+            "    AND s.status='ok' AND s.page_title<>''"
+            "    ORDER BY s.id DESC LIMIT 1)) AS page_title FROM urls").fetchall()
         pdata = [{"id": r["id"], "url": r["url"], "level": r["level"] or "",
                   "title": (r["page_title"] or r["label"]
                             or r["url"].rstrip("/").rsplit("/", 1)[-1]),
@@ -2452,9 +2473,10 @@ def search_items():
         for fr in frows:
             u2 = con.execute(
                 "SELECT id, url, level, label, components, detail_tabs,"
-                " (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
-                "   AND s.status='ok' AND s.page_title<>''"
-                "   ORDER BY s.id DESC LIMIT 1) AS page_title"
+                " COALESCE(NULLIF(title_override,''),"
+                "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+                "    AND s.status='ok' AND s.page_title<>''"
+                "    ORDER BY s.id DESC LIMIT 1)) AS page_title"
                 " FROM urls WHERE id=?", (fr["url_id"],)).fetchone()
             if not u2:
                 continue
@@ -2514,9 +2536,10 @@ def search_items():
             rows = con.execute(f"""
                 SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
                        i.item_key, i.doc_type, u.url AS page_url, u.label,
-                       (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
-                         AND s.status='ok' AND s.page_title<>''
-                         ORDER BY s.id DESC LIMIT 1) AS page_title
+                       COALESCE(NULLIF(u.title_override,''),
+                         (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
+                           AND s.status='ok' AND s.page_title<>''
+                           ORDER BY s.id DESC LIMIT 1)) AS page_title
                 FROM items i JOIN urls u ON u.id=i.url_id
                 WHERE i.item_key IN ({marks})""", keys).fetchall()
         else:

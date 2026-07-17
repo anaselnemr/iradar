@@ -145,6 +145,11 @@ def init_db():
     # hierarchy address behind a shortened or language-prefixed link. Used to
     # refuse duplicates at add time, by search, and to build author links.
     _ensure_column(con, "urls", "canonical_url", "TEXT DEFAULT ''")
+    # a manual display-name override for a page whose own <title> reads poorly
+    # (the homepage titles itself "Semiconductor & System Solutions"; we'd
+    # rather show "Infineon"). Wins over the captured page_title everywhere the
+    # name is shown, and survives re-capture since it lives on the url row.
+    _ensure_column(con, "urls", "title_override", "TEXT DEFAULT ''")
     # where the level came from: report (the source sheet), inferred (the
     # sibling/hierarchy/fingerprint algorithm) or manual (the user's own edit)
     _ensure_column(con, "urls", "level_src", "TEXT DEFAULT ''")

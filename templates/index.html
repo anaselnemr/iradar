@@ -220,7 +220,9 @@
       <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
       <td class="urlcell">
         {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span> {% endif %}
-        {% if u.page_title %}
+        {% if u.title_override %}
+          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Custom name — its own page title is “{{ u.page_title | clean_title }}”">{{ u.title_override }}</a>
+        {% elif u.page_title %}
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
         {% else %}
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink provisional" title="Provisional name — the real page title appears once the page is captured">{{ (u.label or u.url.rstrip('/').rsplit('/', 1)[-1]) | pretty_slug }}</a>

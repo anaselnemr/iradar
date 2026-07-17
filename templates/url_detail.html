@@ -3,10 +3,27 @@
 {% block content %}
 <p><a href="{{ url_for('index') }}">← Dashboard</a></p>
 <div class="card">
-  {% set disp = (latest.page_title if latest and latest.page_title else u.label) | clean_title %}
+  {% set disp = u.title_override or ((latest.page_title if latest and latest.page_title else u.label) | clean_title) %}
   <h1 style="font-size:17px; word-break:break-all">
     {% if disp %}{{ disp }}<br><span class="muted" style="font-weight:400; font-size:14px">{% endif %}<a href="{{ u.url }}" target="_blank">{{ u.url }}</a>{% if disp %}</span>{% endif %}
   </h1>
+  <details class="lvledit" style="display:inline-block; margin:-4px 0 8px">
+    <summary title="Rename this page's display name"><span class="lvlpen">✎</span> <span style="font-size:12px" class="muted">rename{% if u.title_override %} · custom name{% endif %}</span></summary>
+    <form method="post" action="{{ url_for('url_set_title', url_id=u.id) }}" class="lvlmenu" style="padding:12px; min-width:280px">
+      <div class="lvlmenu-head">Display name
+        <span>{{ 'custom' if u.title_override else 'from the page title' }}</span>
+      </div>
+      <input type="text" name="title" value="{{ u.title_override }}" maxlength="200"
+             placeholder="{{ (latest.page_title if latest and latest.page_title else u.url) | clean_title }}"
+             style="width:100%; margin:8px 0; padding:7px 9px">
+      <div style="display:flex; gap:8px; justify-content:flex-end">
+        <button type="submit" class="linkbtn" style="font-weight:600">Save name</button>
+      </div>
+      <p class="muted" style="font-size:11.5px; margin:8px 0 0; max-width:40ch">
+        Shown everywhere instead of the captured page title, and it survives
+        re-capture. Leave empty to restore the page's own title.</p>
+    </form>
+  </details>
   <div class="muted">Added {{ u.created_at|localtime }} · Last checked: {{ u.last_checked|localtime }}
     · Status: {{ u.last_status or 'not checked' }}
     {% set scheme = {'Product': ['PC','PFP','PSFP','PEFP'],
