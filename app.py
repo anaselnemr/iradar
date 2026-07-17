@@ -1315,6 +1315,72 @@ def _hierarchy_tabs(con):
     return tabs
 
 
+def _url_ancestor(a, b):
+    """True when path `a` is `b` itself or a segment-wise ancestor of it.
+
+    Segment-wise so /microcontroller/legacy never counts as an ancestor of
+    /microcontroller/legacy-mcus. Query/fragment and trailing slash are
+    ignored; comparison is case-insensitive.
+    """
+    norm = lambda u: (u or "").split("#")[0].split("?")[0].rstrip("/").lower()
+    a, b = norm(a), norm(b)
+    return bool(a) and (a == b or b.startswith(a + "/"))
+
+
+_PROD_ROOT = "/products/"
+
+
+def _product_url(u):
+    """The URL if it addresses a product taxonomy node (a non-empty path under
+    /products/), else ''. Original case is preserved for linking."""
+    n = (u or "").split("#")[0].split("?")[0].rstrip("/")
+    i = n.lower().find(_PROD_ROOT)
+    return n if (i != -1 and n[i + len(_PROD_ROOT):]) else ""
+
+
+def _taxonomy_url(ptype, url, crumb_urls):
+    """The product-taxonomy URL whose path segments define this page's place.
+
+    A product's own URL IS its address (/products/cat/family/...). A part's URL
+    is flat (/part/CY8C20110-LDX2I), so its place is the deepest product URL in
+    its breadcrumb - the family it belongs to. Everything else (applications,
+    design resources) keeps its own trail and returns ''.
+    """
+    if ptype == "Product":
+        return _product_url(url)
+    if ptype == "Part":
+        best = ""
+        for u in crumb_urls:
+            pu = _product_url(u)
+            if pu and len(pu) > len(best):
+                best = pu
+        return best
+    return ""
+
+
+def _url_trail(tax, title_by_url):
+    """Rebuild an ordered (titles, urls) trail from a taxonomy URL's segments.
+
+    The site's breadcrumb is unreliable - it both DROPS real ancestors and
+    SPLICES in cross-links that are not on the URL path - so the same family
+    lands at different depths and renders two or three times at two or three
+    levels. The URL path is the one consistent signal, so the product tree is
+    built from it; breadcrumb text only supplies each node's display name
+    (harvested across every page), falling back to the prettified segment.
+    """
+    m = re.search(r"(?i)(.*?/products)/(.+)", tax)
+    if not m:
+        return [], []
+    base, rest = m.group(1), m.group(2)
+    path, urls, acc = [], [], base
+    for seg in [s for s in rest.split("/") if s]:
+        acc = acc + "/" + seg
+        title = title_by_url.get(_norm_url(acc)) or seg.replace("-", " ").strip().title()
+        path.append(title)
+        urls.append(acc)
+    return path, urls
+
+
 def _breadcrumbs(con, ptypes):
     marks = ",".join("?" * len(ptypes))
     rows = con.execute(
@@ -1329,25 +1395,66 @@ def _breadcrumbs(con, ptypes):
         # otherwise appear in the product hierarchy as though it were a product
         " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
         list(ptypes)).fetchall()
-    out = []
+    # Pass 1 - parse every breadcrumb once and harvest a clean display name for
+    # each taxonomy URL seen anywhere, so a node the current page's own crumb
+    # dropped can still be named when we rebuild the trail from the URL. The
+    # page's OWN title wins for its OWN url (canonical), else the first crumb
+    # text seen. Titles are stored suffix-stripped ("... | Infineon" removed).
+    parsed, title_by_url = [], {}
     for r in rows:
         try:
             crumbs = json.loads(r["breadcrumb"])
         except Exception:
-            continue
+            crumbs = []
         crumbs = [c for c in crumbs if c.get("title")
                   and c["title"].strip().lower() != "home"]
+        parsed.append((r, crumbs))
+        for c in crumbs:
+            u = _norm_url(c.get("url") or "")
+            t = _norm_node(c.get("title") or "").strip()
+            if u and t:
+                title_by_url.setdefault(u, c["title"].strip())
+        own = _norm_url(r["url"])
+        if own and r["page_title"]:
+            title_by_url[own] = re.sub(
+                r"\s*[|–-]\s*Infineon Technologies\s*$", "",
+                r["page_title"]).strip()
+
+    out = []
+    for r, crumbs in parsed:
         if not crumbs:
             continue
         # The full crumb path is the page's address in the taxonomy, self
         # included. A product's breadcrumb ends with itself, and a part's ends
         # with the product family it belongs to - so both land on the SAME
         # node, and the part sits inside its product instead of beside it.
-        # That is the PFP > PSFP > PEFP > PTP chain, from the site's own data.
         path = [c["title"].strip() for c in crumbs]
         # every crumb carries the live Infineon URL of that level - keep it so a
         # grouping node can link to the real page it stands for
         crumb_urls = [(c.get("url") or "").strip() for c in crumbs]
+        # --- structure from the URL, not the breadcrumb ------------------
+        # Infineon's breadcrumb is unreliable for products: it DROPS real
+        # ancestors (a part shows "Microcontroller > CAPSENSE controllers",
+        # skipping Sensing controllers) AND SPLICES in cross-links off the URL
+        # path ("... > Legacy MCUs > Sensing controllers ..."). Either way the
+        # same family lands at different depths and renders two or three times
+        # at two or three levels. The URL path is the one consistent signal, so
+        # rebuild the whole product/part trail from the taxonomy URL's segments;
+        # breadcrumb text only names the nodes. Applications (report-driven
+        # levels) and design resources keep their own trail, lightly pruned of
+        # phantom cross-links.
+        tax = _taxonomy_url(r["ptype"], r["url"], crumb_urls)
+        if tax:
+            path, crumb_urls = _url_trail(tax, title_by_url)
+        else:
+            anchor = next((u for u in reversed(crumb_urls) if u), "")
+            if anchor:
+                keep = [i for i, u in enumerate(crumb_urls)
+                        if not u or _url_ancestor(u, anchor)]
+                path = [path[i] for i in keep]
+                crumb_urls = [crumb_urls[i] for i in keep]
+        if not path:
+            continue
         out.append({"id": r["id"], "url": r["url"], "ptype": r["ptype"],
                     "level": r["level"] or "",
                     "level_name": LEVEL_NAMES.get(r["level"] or "", ""),
@@ -1979,9 +2086,17 @@ def _infer_missing_levels():
     via the three-signal inference. Shared by the manual button and the
     post-run watcher. Returns (assigned_labels, skipped_count)."""
     con = db.connect()
+    # Only pages we actually CAPTURED (a live, non-dead snapshot). Inference
+    # reads siblings/breadcrumb/components off the real page, so a dead page
+    # (404 'notlive', or a 'blank' shell) has nothing to infer from - guessing
+    # a level for a page we could not open would be fabrication. Type and the
+    # URL-depth levels (DR/Part) are assigned deterministically elsewhere and
+    # are unaffected by this filter.
     rows = con.execute(
         "SELECT * FROM urls WHERE ptype IN ('Product','Application','Part')"
-        " AND IFNULL(level,'')='' AND last_checked IS NOT NULL").fetchall()
+        " AND IFNULL(level,'')='' AND last_checked IS NOT NULL"
+        " AND IFNULL(last_status,'') NOT IN ('notlive','blank')"
+        " AND IFNULL(last_http,200) NOT IN (404,410)").fetchall()
     done, skipped = [], 0
     for row in rows:
         lvl, _conf, _why = _infer_level(con, row)
