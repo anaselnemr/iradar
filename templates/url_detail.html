@@ -16,17 +16,33 @@
     · <details class="lvledit">
         <summary title="Level: {{ level_names.get(u.level, 'none') }} — source: {{ u.level_src or 'not set' }}. Click to change.">
           {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}">{{ u.level }}</span>{% else %}<span class="badge b-off">no level</span>{% endif %}
-          <span class="lvlsrc">{{ {'report':'report','inferred':'auto','manual':'edited'}.get(u.level_src, '') }}</span> ✎
+          <span class="lvlsrc">{{ {'report':'report','inferred':'auto','manual':'edited'}.get(u.level_src, '') }}</span>
+          <span class="lvlpen">✎</span>
         </summary>
-        <form method="post" action="{{ url_for('url_set_level', url_id=u.id) }}" class="lvlform">
-          <select name="level">
-            <option value="auto">Auto — infer from siblings, hierarchy & components</option>
-            {% for l in scheme %}
-            <option value="{{ l }}" {% if u.level == l %}selected{% endif %}>{{ l }} — {{ level_names.get(l, '') }}</option>
-            {% endfor %}
-            <option value="">(clear)</option>
-          </select>
-          <button>Save</button>
+        <form method="post" action="{{ url_for('url_set_level', url_id=u.id) }}" class="lvlmenu">
+          <div class="lvlmenu-head">Page level
+            <span>source: <b>{{ {'report':'the report','inferred':'auto-detected','manual':'your edit'}.get(u.level_src, 'not set') }}</b></span>
+          </div>
+          <button name="level" value="auto" class="lvlopt lvlopt-auto">
+            <span class="lvlopt-ic">✨</span>
+            <span class="lvlopt-tx"><b>Auto-detect</b>
+              <small>siblings, hierarchy &amp; components decide — shows its reasoning</small></span>
+          </button>
+          <div class="lvlmenu-sep"></div>
+          {% for l in scheme %}
+          <button name="level" value="{{ l }}" class="lvlopt {{ 'cur' if u.level == l }}">
+            <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+            <span class="lvlopt-tx"><b>{{ level_names.get(l, l) }}</b></span>
+            {% if u.level == l %}<span class="lvlopt-check">✓</span>{% endif %}
+          </button>
+          {% endfor %}
+          {% if u.level %}
+          <div class="lvlmenu-sep"></div>
+          <button name="level" value="" class="lvlopt lvlopt-clear">
+            <span class="lvlopt-ic">✕</span>
+            <span class="lvlopt-tx"><b>Clear level</b></span>
+          </button>
+          {% endif %}
         </form>
       </details>
     {% endif %}
