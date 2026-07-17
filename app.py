@@ -389,13 +389,24 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
     return have
 
 
-def _etype(ptype, url):
-    """The page type the COMPONENT MODEL keys on. The report's 'Part' sheet is
-    two genuinely different page shapes - a part type page and an evaluation
-    board - so they are separate types here: an EB must never be told it is
-    missing Diagrams just because PTPs have them."""
+# the levels that are their own page SHAPE: each gets its own component
+# superset - a PC hub is not built like a PEFP end family, an ADP directory
+# not like an ASP solution page. Order = display order in the matrix.
+_LEVEL_TYPES = ("PC", "PFP", "PSFP", "PEFP", "ADP", "AOP", "ASP", "AFB")
+ETYPE_ORDER = ["PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
+               "ADP", "AOP", "ASP", "AFB",
+               "Product", "Application", "Design resources", "Promo"]
+
+
+def _etype(ptype, url, level=""):
+    """The page type the COMPONENT MODEL keys on - one superset per SHAPE:
+    products by their level (PC/PFP/PSFP/PEFP), parts split into PTP and
+    Evaluation board, applications by their level (ADP/AOP/ASP/AFB). A page
+    with no level falls back to its sheet type."""
     if ptype == "Part":
         return "Evaluation board" if "/evaluation-board/" in (url or "") else "PTP"
+    if (level or "") in _LEVEL_TYPES:
+        return level
     return ptype
 
 
@@ -417,9 +428,9 @@ def _component_counts(con):
     for r in con.execute("SELECT DISTINCT url_id, category FROM items"):
         cats_by_url.setdefault(r["url_id"], set()).add(r["category"])
     for r in con.execute(
-            "SELECT id, ptype, url, flags, components, detail_tabs FROM urls"
-            " WHERE ptype<>'' AND last_checked IS NOT NULL"):
-        et = _etype(r["ptype"], r["url"])
+            "SELECT id, ptype, url, level, flags, components, detail_tabs"
+            " FROM urls WHERE ptype<>'' AND last_checked IS NOT NULL"):
+        et = _etype(r["ptype"], r["url"], r["level"])
         for cat in cats_by_url.get(r["id"], ()):
             key = _CAT_TO_COMP.get(cat)
             if key:
@@ -1291,7 +1302,7 @@ def url_detail(url_id):
     have = _page_component_set(u["components"], u["detail_tabs"], flags,
                                this_cats)
     con5 = db.connect()
-    etype = _etype(u["ptype"] or "", u["url"])
+    etype = _etype(u["ptype"] or "", u["url"], u["level"])
     type_comps = _effective_matrix(con5).get(etype, set())
     con5.close()
     comp_rows = [{"key": k, "label": lbl, "exists": k in have}
@@ -1554,12 +1565,12 @@ def settings_components():
     deleted, and Prune unchecks everything that appears on zero pages."""
     con = db.connect()
     counts = _component_counts(con)
-    types = []
-    for r in con.execute("SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>''"
-                         " GROUP BY ptype ORDER BY n DESC"):
-        # the matrix speaks effective types: Part is PTP + Evaluation board
-        types += (["PTP", "Evaluation board"] if r["ptype"] == "Part"
-                  else [r["ptype"]])
+    # the matrix speaks effective types - one column per page SHAPE: product
+    # levels, PTP/EB, application levels - in taxonomy order
+    present = {_etype(r["ptype"], r["url"], r["level"]) for r in con.execute(
+        "SELECT ptype, url, level FROM urls WHERE ptype<>''")}
+    types = ([t for t in ETYPE_ORDER if t in present]
+             + sorted(present - set(ETYPE_ORDER)))
     pending = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1"
         " AND (components IS NULL OR components='')").fetchone()[0]
