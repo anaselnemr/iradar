@@ -280,8 +280,13 @@ def add_urls_labeled(pairs):
                             (label, dup["id"]))
             continue
         pt = ptype_for_url(u)
-        lvl = ("EB" if "/evaluation-board/" in u.lower()
-               else "PTP" if "/part/" in u.lower() else "") if pt == "Part" else ""
+        if pt == "Part":
+            lvl = "EB" if "/evaluation-board/" in u.lower() else "PTP"
+        elif pt == "Design resources":
+            lvl = dr_level_for(u)          # DRC/DRF/DRSF from URL depth
+        else:
+            lvl = ""                       # product/app levels need the report
+        # or the inference engine - not readable from a URL
         cur = con.execute(
             "INSERT OR IGNORE INTO urls(url, label, created_at, ptype,"
             " level, level_src) VALUES(?, ?, ?, ?, ?, ?)",
