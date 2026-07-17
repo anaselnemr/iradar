@@ -930,8 +930,11 @@ SECTION_LABELS = [
 # A pill is (key, label, match-fn over a cached item row); fn None = special
 # ("all" = every item, "pages" = the tracked pages themselves).
 def _doclike_url(u):
+    """The document DELIVERY systems - a /gated/ whitepaper or an item served
+    from the /documents/ store IS a document. A bare .pdf extension is NOT
+    enough: format is not type (user's rule)."""
     u = (u or "").lower()
-    return u.endswith(".pdf") or "/gated/" in u or "/documents/" in u
+    return "/gated/" in u or "/documents/" in u
 
 
 # design-resources groups whose members ARE documents by type - PCB design
@@ -941,12 +944,10 @@ _DOC_TYPED_GRP = re.compile(
 
 
 def _doc_typed(d):
-    """A design-resources item that is a DOCUMENT by its type: its group is a
-    document type (PCB design data, Simulation models) or its file format is
-    PDF (meta reads 'PDF | version | lang | size | date')."""
-    if _DOC_TYPED_GRP.match((d.get("grp") or "").strip()):
-        return True
-    return (d.get("meta") or "").split("|")[0].strip().upper() == "PDF"
+    """A design-resources item that is a DOCUMENT by its TYPE - its group is a
+    document type (PCB design data, Simulation models). Format is never the
+    criterion: a PDF or ZIP in a tools pane stays a tool (user's rule)."""
+    return bool(_DOC_TYPED_GRP.match((d.get("grp") or "").strip()))
 
 
 def _videolike(d):
