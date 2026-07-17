@@ -25,7 +25,7 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+  body { margin: 0; font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
          background: var(--bg); color: var(--ink); font-size: 15px; }
   header { background: #1a2332; color: #fff; padding: 14px 28px;
            display: flex; align-items: center; gap: 24px; }
@@ -36,7 +36,8 @@
   header nav a:hover { color: #fff; }
   main { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
   .card { background: var(--card); border: 1px solid var(--line);
-          border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+          border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
   h1 { font-size: 22px; margin: 0 0 14px; }
   h2 { font-size: 17px; margin: 0 0 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -44,6 +45,7 @@
        padding: 8px 10px; border-bottom: 2px solid var(--line);
        font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; }
   td { padding: 9px 10px; border-bottom: 1px solid var(--line);
+       font-variant-numeric: tabular-nums;
        vertical-align: middle; }
   tr:hover td { background: var(--hover); }
   a { color: #0f5bd7; }
@@ -101,7 +103,12 @@
   .tcount { font-size: 11.5px; color: var(--muted); background: var(--hover);
             border-radius: 999px; padding: 1px 8px; }
   .tbody { margin-left: 13px; padding-left: 11px;
-           border-left: 1px solid var(--line); }
+           border-left: 1px solid var(--line);
+           transition: border-color .15s; }
+  .tnode:hover > .tbody { border-left-color: var(--muted); }
+  .tnode[open] > .tbody { animation: treeopen .16s ease; }
+  @keyframes treeopen { from { opacity: 0; transform: translateY(-3px); }
+                        to { opacity: 1; transform: none; } }
   .tleaf { padding: 4px 6px; display: flex; gap: 8px; align-items: center; }
   .tleaf:hover { background: var(--hover); border-radius: 5px; }
   /* Infineon's own page levels: PC > PFP > PSFP > PEFP > PTP */
@@ -162,6 +169,16 @@
   textarea, input[type=text], input[type=number], select {
         width: 100%; padding: 9px 11px; border: 1px solid var(--line);
         border-radius: 7px; font-size: 14px; font-family: inherit; }
+  #toasts { position: fixed; top: 16px; right: 16px; z-index: 300;
+            display: flex; flex-direction: column; gap: 8px;
+            max-width: min(420px, 90vw); }
+  #toasts .flash { margin: 0; box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+                   animation: toastin .22s ease; cursor: pointer;
+                   border-radius: 10px; }
+  #toasts .flash.out { opacity: 0; transform: translateX(12px);
+                       transition: opacity .3s, transform .3s; }
+  @keyframes toastin { from { opacity: 0; transform: translateX(16px); }
+                       to { opacity: 1; transform: none; } }
   .flash { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
            padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; }
   .muted { color: var(--muted); font-size: 13px; }
@@ -392,6 +409,18 @@
   .pal-foot { border-top: 1px solid var(--line); color: var(--muted);
               font-size: 11.5px; padding: 8px 16px; }
 
+  /* one clean line above tables: count left, compact pager right */
+  .tabletop { display: flex; align-items: center; gap: 12px; margin: 10px 0 8px; }
+  .pgr { margin-left: auto; display: inline-flex; align-items: center;
+         border: 1px solid var(--line); border-radius: 8px; padding: 2px;
+         background: var(--panel); }
+  .pgb { padding: 2px 11px; border-radius: 6px; text-decoration: none;
+         color: var(--ink); font-size: 15px; line-height: 1.35; }
+  .pgb:hover { background: var(--hover); }
+  .pgb.dis { opacity: .3; pointer-events: none; }
+  .pgn { font-size: 12.5px; color: var(--muted); padding: 0 8px;
+         font-variant-numeric: tabular-nums; }
+
   /* live run progress bar */
   .runprog { height: 7px; border-radius: 999px; background: var(--hover);
              overflow: hidden; margin-top: 9px; }
@@ -419,7 +448,11 @@
 </header>
 <main>
   {% with messages = get_flashed_messages() %}
-    {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% if messages %}
+    <div id="toasts">
+      {% for m in messages %}<div class="flash" title="Click to dismiss">✓ {{ m }}</div>{% endfor %}
+    </div>
+    {% endif %}
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
@@ -434,6 +467,15 @@
   </div>
 </div>
 <script>
+  // toasts: slide in, auto-dismiss, click to dismiss
+  document.querySelectorAll("#toasts .flash").forEach(function (t, i) {
+    t.addEventListener("click", function () { t.remove(); });
+    setTimeout(function () {
+      t.classList.add("out");
+      setTimeout(function () { t.remove(); }, 320);
+    }, 4600 + i * 500);
+  });
+
   function toggleTheme() {
     var root = document.documentElement;
     var dark = root.dataset.theme === "dark";

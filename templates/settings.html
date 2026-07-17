@@ -1,62 +1,117 @@
 {% extends "base.html" %}
 {% block title %}Settings — InfineonWatch{% endblock %}
 {% block content %}
-<div class="card" style="max-width:640px">
+<div class="card" style="max-width:680px">
   <h1>Settings</h1>
+
+  {# segmented nav: one form, four panes - switching tabs never loses input #}
+  <div class="seg" role="tablist">
+    <button type="button" class="seg-b on" data-pane="schedule" onclick="segGo(this)">Schedule</button>
+    <button type="button" class="seg-b" data-pane="sensitivity" onclick="segGo(this)">Sensitivity</button>
+    <button type="button" class="seg-b" data-pane="components" onclick="segGo(this)">Components</button>
+    <button type="button" class="seg-b" data-pane="access" onclick="segGo(this)">Access</button>
+  </div>
+
   <form method="post">
-    <h2>Schedule</h2>
-    <p class="muted">Next automatic check: <b>{{ next_run }}</b>. The app must be
-      running (START.bat window open) for scheduled checks to fire. You can always
-      use "Run check now" on the dashboard.</p>
-    <label>Check frequency
-      <select name="frequency">
-        <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
-        <option value="bidaily" {% if s.frequency=='bidaily' %}selected{% endif %}>Every 2 days</option>
-        <option value="weekly"  {% if s.frequency=='weekly' %}selected{% endif %}>Weekly</option>
-      </select>
-    </label>
-    <div class="grid2" style="margin-top:10px">
-      <label>Day (for weekly)
-        <select name="weekday">
-          {% for d in weekdays %}<option value="{{ d }}" {% if s.weekday==d %}selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
+    <div class="pane on" id="pane-schedule">
+      <p class="muted">Next automatic check: <b>{{ next_run }}</b>. The app must be
+        running (START.bat window open) for scheduled checks to fire. You can always
+        use "Run check now" on the dashboard.</p>
+      <label>Check frequency
+        <select name="frequency">
+          <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
+          <option value="bidaily" {% if s.frequency=='bidaily' %}selected{% endif %}>Every 2 days</option>
+          <option value="weekly"  {% if s.frequency=='weekly' %}selected{% endif %}>Weekly</option>
         </select>
       </label>
-      <label>Hour of day (0–23, local time)
-        <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}">
+      <div class="grid2" style="margin-top:10px">
+        <label>Day (for weekly)
+          <select name="weekday">
+            {% for d in weekdays %}<option value="{{ d }}" {% if s.weekday==d %}selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Hour of day (0–23, local time)
+          <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}">
+        </label>
+      </div>
+      <label style="display:block; margin-top:16px">Parallel browser tabs (8 is safe on this machine; higher = faster but heavier)
+        <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
       </label>
     </div>
 
-    <h2 style="margin-top:22px">Performance</h2>
-    <label>Parallel browser tabs (3–6 recommended; higher = faster but heavier)
-      <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
-    </label>
-
-    <h2 style="margin-top:22px">Sensitivity</h2>
-    <div class="grid2">
-      <label>Visual change threshold (% of pixels)
-        <input type="text" name="visual_threshold" value="{{ s.visual_threshold }}">
+    <div class="pane" id="pane-sensitivity">
+      <div class="grid2">
+        <label>Visual change threshold (% of pixels)
+          <input type="text" name="visual_threshold" value="{{ s.visual_threshold }}">
+        </label>
+        <label>Page height change threshold (px)
+          <input type="number" name="height_threshold" value="{{ s.height_threshold }}">
+        </label>
+      </div>
+      <label style="display:block; margin-top:10px">Ignore text lines matching these patterns (one per line, e.g. <code>^\d+ results$</code>)
+        <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
       </label>
-      <label>Page height change threshold (px)
-        <input type="number" name="height_threshold" value="{{ s.height_threshold }}">
+      <label style="display:block; margin-top:10px">Ignore image URLs matching these patterns (one per line — default excludes flaky auto-generated video-player thumbnails)
+        <textarea name="ignore_image_patterns" rows="2">{{ s.ignore_image_patterns }}</textarea>
       </label>
     </div>
-    <label style="display:block; margin-top:10px">Ignore text lines matching these patterns (one per line, e.g. <code>^\d+ results$</code>)
-      <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
-    </label>
-    <label style="display:block; margin-top:10px">Ignore image URLs matching these patterns (one per line — default excludes flaky auto-generated video-player thumbnails)
-      <textarea name="ignore_image_patterns" rows="2">{{ s.ignore_image_patterns }}</textarea>
-    </label>
-    <div style="margin-top:16px"><button>Save settings</button></div>
+
+    <div class="pane" id="pane-components">
+      <p class="muted" style="margin-top:0; max-width:60ch">The editable matrix of
+        which components (Product details, Documents, Diagrams, …) each page shape
+        is expected to carry — with live counts per cell, custom components, and
+        the prune step.</p>
+      <a class="btn" href="{{ url_for('settings_components') }}">Open the component matrix →</a>
+    </div>
+
+    <div class="pane" id="pane-access">
+      <p class="muted" style="margin-top:0; max-width:60ch">Who can reach this
+        dashboard, and from where.</p>
+      <div class="flagrow"><span>Sign-in</span>
+        <span class="badge b-live">HTTP Basic Auth — on for every page</span></div>
+      <div class="flagrow"><span>Public link</span>
+        <span class="badge b-off">closed — local network only</span></div>
+      <div class="flagrow"><span>This laptop</span>
+        <span class="muted" style="font-size:13px">http://127.0.0.1:5000</span></div>
+      <p class="muted" style="font-size:12.5px; margin-top:12px">
+        Credentials live only in the server's environment (DASH_USER / DASH_PASS),
+        never in the pages or in git. Changing them needs an app restart; clearing
+        both turns the login off for local use.</p>
+    </div>
+
+    <div style="margin-top:18px" id="savebar"><button>Save settings</button></div>
   </form>
 </div>
 
-<div class="card" style="display:flex; align-items:center; gap:14px; flex-wrap:wrap">
-  <div>
-    <h2 style="margin:0 0 4px">Components per page type</h2>
-    <p class="muted" style="margin:0; max-width:64ch">The editable matrix of
-      which components (Product details, Documents, Diagrams, …) each page type
-      is expected to carry — with live counts, custom components, and pruning.</p>
-  </div>
-  <a class="btn" style="margin-left:auto" href="{{ url_for('settings_components') }}">Open the matrix →</a>
-</div>
+<style>
+  .seg { display: inline-flex; background: var(--hover); border: 1px solid var(--line);
+         border-radius: 10px; padding: 3px; gap: 2px; margin: 2px 0 18px; }
+  .seg-b { border: 0; background: none; color: var(--muted); padding: 7px 16px;
+           border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600; }
+  .seg-b:hover { color: var(--ink); }
+  .seg-b.on { background: var(--card); color: var(--ink);
+              box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+  .pane { display: none; }
+  .pane.on { display: block; animation: paneIn .14s ease; }
+  @keyframes paneIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
+</style>
+<script>
+  function segGo(btn) {
+    document.querySelectorAll(".seg-b").forEach(function (b) { b.classList.toggle("on", b === btn); });
+    document.querySelectorAll(".pane").forEach(function (p) {
+      p.classList.toggle("on", p.id === "pane-" + btn.dataset.pane);
+    });
+    // Save applies to the form fields (schedule + sensitivity); hide it on the
+    // info-only panes so it can't read as "save my access settings"
+    var info = btn.dataset.pane === "components" || btn.dataset.pane === "access";
+    document.getElementById("savebar").style.display = info ? "none" : "";
+    location.hash = btn.dataset.pane;
+  }
+  // deep-link: /settings#sensitivity opens that tab
+  (function () {
+    var h = location.hash.replace("#", "");
+    var btn = document.querySelector('.seg-b[data-pane="' + h + '"]');
+    if (btn) segGo(btn);
+  })();
+</script>
 {% endblock %}

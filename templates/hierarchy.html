@@ -116,18 +116,71 @@
       A number badge is how many pages sit under that group. The pages
       themselves are the entries with no badge — expand a group to reach them.
     </p>
-    {% if tree.children %}
-    <div style="display:flex; gap:8px; margin-bottom:10px">
+    <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center; flex-wrap:wrap">
+      <input id="treefilter" type="text" oninput="tfChange()"
+             placeholder="Filter this tree — type a product, board or family name…"
+             style="flex:1; min-width:230px">
+      <span id="tfcount" class="muted" style="font-size:12px"></span>
+      {% if tree.children %}
       <button type="button" class="linkbtn" onclick="setAllTree(true)">⊕ Expand all pages</button>
       <button type="button" class="linkbtn" onclick="setAllTree(false)">⊖ Collapse all</button>
+      {% endif %}
     </div>
-    {% endif %}
     <div class="tree">{{ node(tree) }}</div>
   {% endif %}
 </div>
 <script>
   function setAllTree(open) {
     document.querySelectorAll('.tree details').forEach(function (d) { d.open = open; });
+  }
+
+  // live-prune the tree to branches matching the query, auto-expanding them
+  var tfTimer = null;
+  function tfChange() {
+    clearTimeout(tfTimer);
+    tfTimer = setTimeout(filterTree, 120);
+  }
+  function filterTree() {
+    var q = document.getElementById('treefilter').value.trim().toLowerCase();
+    var tree = document.querySelector('.tree');
+    var count = document.getElementById('tfcount');
+    if (!tree) return;
+    if (!q) {
+      tree.querySelectorAll('.tleaf, .tnode').forEach(function (el) { el.style.display = ''; });
+      count.textContent = '';
+      return;
+    }
+    function reveal(el) {
+      el.querySelectorAll('.tleaf, .tnode').forEach(function (e) { e.style.display = ''; });
+      el.querySelectorAll('.tnode').forEach(function (n) { n.open = true; });
+    }
+    var hits = 0;
+    function walk(container) {
+      var any = false;
+      Array.prototype.forEach.call(container.children, function (child) {
+        if (child.classList && child.classList.contains('tleaf')) {
+          var hit = child.textContent.toLowerCase().indexOf(q) !== -1;
+          child.style.display = hit ? '' : 'none';
+          if (hit) hits++;
+          any = any || hit;
+        } else if (child.classList && child.classList.contains('tnode')) {
+          var summary = child.querySelector(':scope > summary');
+          var body = child.querySelector(':scope > .tbody');
+          var selfHit = summary && summary.textContent.toLowerCase().indexOf(q) !== -1;
+          var childHit = body ? walk(body) : false;
+          var show = selfHit || childHit;
+          child.style.display = show ? '' : 'none';
+          if (show) child.open = true;
+          if (selfHit) { hits++; if (body) reveal(body); }
+          any = any || show;
+        } else if (child.children && child.children.length) {
+          any = walk(child) || any;
+        }
+      });
+      return any;
+    }
+    walk(tree);
+    count.textContent = hits ? hits + ' match' + (hits === 1 ? '' : 'es') : 'no matches';
   }
 </script>
 {% endblock %}
