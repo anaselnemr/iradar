@@ -25,12 +25,16 @@
   </div>
 
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
-    <div class="muted" style="margin-top:10px">
-      Capturing <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>
-      · <b><span id="run-saved">0</span></b> saved
-      <b id="run-eta" style="color:var(--accent)"></b>
-      &nbsp;·&nbsp; <span id="run-msg" style="font-size:12px"></span>
+    <div class="muted" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+      <span>
+        Capturing <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>
+        · <b><span id="run-saved">0</span></b> saved
+        <b id="run-eta" style="color:var(--accent)"></b>
+      </span>
+      <span id="run-paused" style="display:none; color:#d97706; font-weight:600">⏸ paused</span>
+      <button id="run-pause" class="linkbtn" type="button" style="margin-left:auto" onclick="togglePause()">⏸ Pause</button>
     </div>
+    <div class="muted" style="margin-top:4px"><span id="run-msg" style="font-size:12px"></span></div>
     <div class="progress"><div id="run-bar" style="width:0%"></div></div>
   </div>
   {% if last_run and last_run.finished and not state.running %}
@@ -171,6 +175,9 @@
         {% endif %}
         <br>
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
+        {% if u.redirect_from %}
+        <span class="badge b-redir" title="A listed address 301-redirected here, so the list now tracks the destination — not the stale link.&#10;Redirected from: {{ u.redirect_from }}">↪ redirect</span>
+        {% endif %}
       </td>
       <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
       <td>
@@ -335,18 +342,39 @@ function fmtEta(sec) {
   return h ? ` · ≈ ${h}h ${m}m left` : ` · ≈ ${m}m left`;
 }
 let sawRunning = {{ 'true' if state.running else 'false' }};
+let isPaused = {{ 'true' if state.paused else 'false' }};
+async function togglePause() {
+  const btn = document.getElementById('run-pause');
+  btn.disabled = true;
+  try {
+    const r = await fetch(isPaused ? '/resume' : '/pause', {method: 'POST'});
+    const s = await r.json();
+    isPaused = !!s.paused;
+    reflectPause();
+  } catch (e) {}
+  btn.disabled = false;
+}
+function reflectPause() {
+  const btn = document.getElementById('run-pause');
+  const tag = document.getElementById('run-paused');
+  if (!btn) return;
+  btn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+  if (tag) tag.style.display = isPaused ? 'inline' : 'none';
+}
 async function poll() {
   try {
     const r = await fetch('/status'); const s = await r.json();
     const box = document.getElementById('runbox');
     if (s.running) {
       sawRunning = true;
+      isPaused = !!s.paused;
       box.style.display = 'block';
       document.getElementById('run-done').textContent = s.done;
       document.getElementById('run-total').textContent = s.total;
       document.getElementById('run-saved').textContent = s.saved != null ? s.saved : '—';
       document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
       document.getElementById('run-msg').textContent = s.message || '';
+      reflectPause();
       const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
       document.getElementById('run-bar').style.width = pct + '%';
       setTimeout(poll, 2000);

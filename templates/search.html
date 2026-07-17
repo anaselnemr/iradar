@@ -2,6 +2,26 @@
 {% block title %}Search content — InfineonWatch{% endblock %}
 {% block content %}
 
+{# One recognisable icon per content type — a single source shared by the
+   server-rendered results below and the JS suggestion dropdown. Stroke uses
+   currentColor so each icon themes itself. #}
+{% set ICONS = {
+  "documents": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>',
+  "videos": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>',
+  "images": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>',
+  "design_resources": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>',
+  "trainings": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 3 6 3s6-2 6-3v-5"/></svg>',
+  "news": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13v16H5a1 1 0 0 1-1-1V4z"/><path d="M17 8h3v9a2 2 0 0 1-2 2"/><path d="M7 8h7M7 12h7M7 16h4"/></svg>',
+  "features": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6.6 7 .6-5.3 4.6 1.6 6.8L12 17l-6.9 3.5 1.6-6.8L1.4 9.2l7-.6L12 2z"/></svg>',
+  "benefits": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
+  "applications": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  "products": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
+  "categories": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>',
+  "overview": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+  "_default": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.6-7.6V4h9.2l8.4 8.4a2 2 0 0 1 0 1z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>'
+} %}
+{% macro ticon(cat) %}{{ ICONS.get(cat, ICONS['_default'])|safe }}{% endmacro %}
+
 <div class="hero">
   <h1>Search everything we captured</h1>
   <p class="muted" style="margin:0">Documents, boards, tools, trainings, videos,
@@ -46,7 +66,10 @@
     {% for g in groups %}
     <div class="rescard">
       <div class="hit-head">
-        <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
+        <span class="hit-title-row">
+          {{ ticon(g.category) }}
+          <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
+        </span>
         <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
         <span class="badge {{ 'b-changed' if g.pages|length > 1 else 'b-unchanged' }}">{{ g.pages|length }} page{{ 's' if g.pages|length > 1 }}</span>
         {% if g.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ g.backend }}</span>{% endif %}
@@ -82,6 +105,8 @@
   const box = document.getElementById('suggest');
   const form = document.getElementById('sform');
   if (!input || !box) return;
+  const ICONS = {{ ICONS|tojson }};
+  const iconFor = (c) => ICONS[c] || ICONS._default;
   const cat = form.querySelector('input[name=cat]').value || 'all';
   let items = [], sel = -1, timer = null, lastQ = null;
 
@@ -94,13 +119,17 @@
       b.type = 'button';
       b.setAttribute('role', 'option');
       if (i === sel) b.className = 'sel';
+      const ic = document.createElement('span');
+      ic.className = 'sicon';
+      ic.innerHTML = iconFor(it.cat);
       const t = document.createElement('span');
       t.className = 'stitle';
       t.textContent = it.title;
       const m = document.createElement('span');
       m.className = 'smeta';
-      m.textContent = it.category + ' · ' + it.pages + ' page' + (it.pages === 1 ? '' : 's');
-      b.append(t, m);
+      m.textContent = it.category + (it.lang ? ' · ' + it.lang : '')
+                    + ' · ' + it.pages + ' page' + (it.pages === 1 ? '' : 's');
+      b.append(ic, t, m);
       b.addEventListener('click', () => { input.value = it.title; close(); form.submit(); });
       box.appendChild(b);
     });

@@ -136,6 +136,9 @@ def init_db():
     # presence/emptiness of blocks whose CONTENT we deliberately do not store
     # (parametric OPN table, developer community) - booleans only
     _ensure_column(con, "urls", "flags", "TEXT DEFAULT ''")
+    # when a listed address 301'd here, the address it came from - so the row
+    # can wear a "redirect" sign: we track the destination, not the stale link
+    _ensure_column(con, "urls", "redirect_from", "TEXT DEFAULT ''")
     # stable id for "this exact item, wherever it appears" - a document lives
     # on many pages and needs one page of its own
     _ensure_column(con, "items", "item_key", "TEXT DEFAULT ''")

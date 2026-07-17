@@ -1833,11 +1833,15 @@ async def _selftest(browser):
         await page.close()
 
 
-async def capture_all(jobs, concurrency=4, progress=None):
+async def capture_all(jobs, concurrency=4, progress=None, pause_check=None):
     """Capture many URLs. jobs = [(url, out_dir), ...]. Returns list of result dicts.
 
     The browser is restarted every PAGES_PER_BROWSER pages to keep memory flat
     on large (3-4k URL) runs.
+
+    pause_check, if given, is a zero-arg callable polled before each capture: a
+    truthy return holds the worker (no new page starts) until it clears, so the
+    dashboard's Pause button stops the run without killing in-flight captures.
     """
     results = []
     async with async_playwright() as pw:
@@ -1852,6 +1856,11 @@ async def capture_all(jobs, concurrency=4, progress=None):
             sem = asyncio.Semaphore(concurrency)
 
             async def run_job(url, out_dir):
+                # Hold OUTSIDE the semaphore so a paused worker frees its slot
+                # instead of blocking a resume; the capture itself can't be
+                # interrupted mid-flight, so pause takes effect within one page.
+                while pause_check and pause_check():
+                    await asyncio.sleep(1)
                 async with sem:
                     res = await capture_one(browser, url, out_dir)
                     if progress:

@@ -1,35 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Hierarchy — InfineonWatch{% endblock %}
 
+{# one page's level badge — shared by leaves and node headers #}
+{% macro badge(p) %}
+  {%- if p.live_level %}
+  <span class="lvl lvl-{{ p.live_level|lower }}{{ ' lvl-diff' if p.level_disagrees }}"
+        title="{{ level_names.get(p.live_level, '') }} — read from the live structure{% if p.level_disagrees %}. The source report calls this {{ p.level }} ({{ level_names.get(p.level, '') }}){% endif %}">{{ p.live_level }}</span>
+  {%- endif %}
+{% endmacro %}
+
+{% macro leaf(p) %}
+  <div class="tleaf">
+    {{ badge(p) }}
+    <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
+    <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
+  </div>
+{% endmacro %}
+
 {% macro node(n) %}
   {% if n.name %}
-  <details class="tnode" {% if n.depth < 2 %}open{% endif %}>
-    <summary>
-      <span class="tname">{{ n.name }}</span>
-      <span class="tcount">{{ n.count }}</span>
-    </summary>
-    <div class="tbody">
-      {% for c in n.children %}{{ node(c) }}{% endfor %}
-      {% for p in n.pages %}
-        <div class="tleaf">
-          {%- if p.live_level %}
-          <span class="lvl lvl-{{ p.live_level|lower }}{{ ' lvl-diff' if p.level_disagrees }}"
-                title="{{ level_names.get(p.live_level, '') }} — read from the live structure{% if p.level_disagrees %}. The source report calls this {{ p.level }} ({{ level_names.get(p.level, '') }}){% endif %}">{{ p.live_level }}</span>
-          {%- endif %}
-          <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
-          <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
-        </div>
-      {% endfor %}
-    </div>
-  </details>
+    {% if n.children or n.pages %}
+    <details class="tnode" {% if n.depth < 2 %}open{% endif %}>
+      <summary>
+        {% if n.self_page %}
+          {{ badge(n.self_page) }}
+          <a class="tname titlelink" href="{{ url_for('url_detail', url_id=n.self_page.id) }}">{{ n.name }}</a>
+          <a class="liveurl" href="{{ n.self_page.url }}" target="_blank" title="Open on infineon.com">↗</a>
+        {% else %}
+          <span class="tname">{{ n.name }}</span>
+        {% endif %}
+        <span class="tcount">{{ n.count }}</span>
+      </summary>
+      <div class="tbody">
+        {% for c in n.children %}{{ node(c) }}{% endfor %}
+        {% for p in n.pages %}{{ leaf(p) }}{% endfor %}
+      </div>
+    </details>
+    {% elif n.self_page %}
+      {# node is purely its own page, nothing beneath it — a leaf with a badge #}
+      {{ leaf(n.self_page) }}
+    {% endif %}
   {% else %}
     {% for c in n.children %}{{ node(c) }}{% endfor %}
-    {% for p in n.pages %}
-      <div class="tleaf">
-        <a class="titlelink" href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title or p.url }}</a>
-        <a class="liveurl" href="{{ p.url }}" target="_blank" title="Open on infineon.com">↗</a>
-      </div>
-    {% endfor %}
+    {% for p in n.pages %}{{ leaf(p) }}{% endfor %}
   {% endif %}
 {% endmacro %}
 

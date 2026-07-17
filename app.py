@@ -677,7 +677,53 @@ def _hierarchy_tree(pages):
                                              key=lambda c: c["name"])]}
     tree = freeze(root)
     _live_levels(tree)
+    _attach_self_pages(tree)
     return tree
+
+
+def _norm_node(s):
+    """Node/page name reduced to its bare identity for matching."""
+    s = re.sub(r"\s+", " ", (s or "")).strip().lower()
+    for suf in (" | infineon technologies", " – infineon technologies",
+                " - infineon technologies"):
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+    return s.strip()
+
+
+def _attach_self_pages(node):
+    """Let a navigation node BE its own page instead of repeating it inside.
+
+    A product family's breadcrumb ends at itself, so the Microcontroller page
+    lands in the "Microcontroller" node's own page list while its sub-products
+    also branch beneath it. Rendered naively that shows a "Microcontroller"
+    folder with a "Microcontroller | Infineon Technologies" leaf inside - the
+    same name twice. Here the family/category page is lifted onto the node
+    (badge + link on the folder header) and removed from the leaf list. Parts
+    are never a node's identity: they are real items that live on it, so they
+    stay as leaves.
+    """
+    self_page = None
+    nn = _norm_node(node["name"])
+    non_part = [p for p in node["pages"] if p.get("ptype") != "Part"]
+    if non_part:
+        # a family/category page whose breadcrumb ends at this node - its title
+        # may be truncated or carry a suffix, so fall back to the first one
+        exact = [p for p in non_part if _norm_node(p.get("title") or "") == nn]
+        self_page = (exact or non_part)[0]
+    else:
+        # No family page here. A Part is a node's identity ONLY when its name
+        # IS the node's (a standalone tool page whose breadcrumb terminates at
+        # itself, e.g. "Evaluation Board Finder"). A genuine part terminates at
+        # its FAMILY node, whose name differs, so it correctly stays a leaf.
+        exact_part = [p for p in node["pages"]
+                      if _norm_node(p.get("title") or "") == nn]
+        self_page = exact_part[0] if exact_part else None
+    if self_page is not None:
+        node["pages"] = [p for p in node["pages"] if p is not self_page]
+    node["self_page"] = self_page
+    for c in node["children"]:
+        _attach_self_pages(c)
 
 
 def _live_levels(node, depth=0):
@@ -1028,6 +1074,22 @@ def run_now():
     return redirect(url_for("index"))
 
 
+@app.route("/pause", methods=["POST"])
+def pause_run():
+    """Hold a running capture: in-flight pages finish, no new ones start."""
+    if not runner.RUN_STATE.get("running"):
+        return jsonify({"ok": False, "paused": False})
+    runner.RUN_STATE["paused"] = True
+    return jsonify({"ok": True, "paused": True})
+
+
+@app.route("/resume", methods=["POST"])
+def resume_run():
+    """Release a paused capture so workers pick up where they left off."""
+    runner.RUN_STATE["paused"] = False
+    return jsonify({"ok": True, "paused": False})
+
+
 @app.route("/status")
 def status():
     import time as _time
@@ -1134,17 +1196,38 @@ def api_suggest():
         where.append("i.category=?")
         params.append(cat)
     con = db.connect()
+    # Group by the canonical item identity, not the raw title: the same
+    # document is titled slightly differently across pages ("PSOC™ 4 … MCU
+    # CapSense" vs "… MCU CAPSENSE") and grouping on the literal text listed
+    # each as its own suggestion. item_key folds those together; distinct
+    # language variants keep distinct keys and stay separate.
     rows = con.execute(
-        "SELECT i.title, i.category, COUNT(DISTINCT i.url_id) pages"
+        "SELECT MIN(i.title) title, MIN(i.category) category, MIN(i.meta) meta,"
+        " COUNT(DISTINCT i.url_id) pages"
         f" FROM items i WHERE {' AND '.join(where)}"
-        " GROUP BY i.title, i.category"
-        " ORDER BY (CASE WHEN i.title LIKE ? THEN 0 ELSE 1 END), pages DESC,"
-        " LENGTH(i.title) LIMIT 12", params + [f"{q}%"]).fetchall()
+        " GROUP BY COALESCE(NULLIF(i.item_key,''), lower(i.title))"
+        " ORDER BY (CASE WHEN MIN(i.title) LIKE ? THEN 0 ELSE 1 END),"
+        " pages DESC, LENGTH(MIN(i.title)) LIMIT 12",
+        params + [f"{q}%"]).fetchall()
     con.close()
     labels = dict(SECTION_LABELS)
-    return jsonify([{"title": r["title"],
+    # Show the language so EN/JA/CN variants of one document read as the
+    # distinct files they are, instead of looking like repeats of each other.
+    return jsonify([{"title": r["title"], "cat": r["category"],
                      "category": labels.get(r["category"], r["category"]),
+                     "lang": _meta_lang(r["meta"]),
                      "pages": r["pages"]} for r in rows])
+
+
+def _meta_lang(meta):
+    """The 2-letter language tag a document's meta carries (EN/JA/CN…), or ''.
+    Meta reads 'Application note | PDF | Public | JA | 09_00 | …', so the tag is
+    the lone two-letter all-caps pipe token."""
+    for tok in (meta or "").split("|"):
+        t = tok.strip()
+        if len(t) == 2 and t.isalpha() and t.isupper():
+            return t
+    return ""
 
 
 @app.route("/item/<key>")

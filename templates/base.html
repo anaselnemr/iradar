@@ -42,6 +42,7 @@
   .notice     { background: #fffbeb; border: 1px solid #fde68a; color: #78350f;
                 border-radius: 8px; padding: 10px 12px; font-size: 14px; }
   .b-sys      { background: #ede9fe; color: #5b21b6; }
+  .b-redir    { background: #fef3c7; color: #92400e; cursor: help; }
   .flagbox    { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
   .flagrow    { display: flex; align-items: center; gap: 8px; font-size: 13px;
                 border: 1px solid var(--line); border-radius: 8px;
@@ -105,14 +106,21 @@
              border-radius: 9px; box-shadow: 0 8px 26px rgba(0,0,0,.12);
              z-index: 40; overflow: hidden; display: none; }
   .suggest.on { display: block; }
-  .suggest button { all: unset; display: flex; justify-content: space-between;
-                    gap: 10px; align-items: center; width: 100%;
-                    padding: 9px 13px; cursor: pointer; font-size: 14px;
+  .suggest button { all: unset; display: flex;
+                    gap: 11px; align-items: center; width: 100%;
+                    padding: 11px 15px; cursor: pointer; font-size: 15px;
                     box-sizing: border-box; }
   .suggest button:hover, .suggest button.sel { background: #eef2ff; }
   .suggest .stitle { overflow: hidden; text-overflow: ellipsis;
-                     white-space: nowrap; }
+                     white-space: nowrap; flex: 1 1 auto; }
   .suggest .smeta { font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+  /* type icons — inherit text colour, so they work in both themes */
+  .ticon { width: 17px; height: 17px; flex-shrink: 0; display: inline-block;
+           vertical-align: -3px; color: var(--accent); }
+  .suggest .ticon { color: var(--muted); }
+  .hit-title-row { display: flex; align-items: center; gap: 9px;
+                   flex-wrap: wrap; }
+  .hit-title-row .ticon { width: 19px; height: 19px; }
   .b-new      { background: #e2e8f0; color: #475569; }
   .b-off      { background: #f1f5f9; color: #94a3b8; }
   button, .btn { background: var(--accent); border: 0; color: #fff;
@@ -214,11 +222,14 @@
   .hero { background: linear-gradient(180deg, #ffffff, #f8fafc);
           border: 1px solid var(--line); border-radius: 14px;
           padding: 26px 26px 22px; margin-bottom: 18px; }
-  .hero h1 { font-size: 26px; margin: 0 0 6px; }
-  .bigsearch { display: flex; gap: 10px; margin-top: 16px; }
-  .bigsearch input[type=text] { font-size: 17px; padding: 13px 16px;
-                                border-radius: 10px; }
-  .bigsearch button { padding: 12px 22px; border-radius: 10px; font-size: 15px; }
+  .hero h1 { font-size: 28px; margin: 0 0 6px; }
+  .bigsearch { display: flex; gap: 12px; margin-top: 18px; }
+  .bigsearch .sugwrap { display: flex; }
+  .bigsearch input[type=text] { font-size: 20px; padding: 18px 20px;
+                                border-radius: 13px; width: 100%;
+                                box-sizing: border-box; }
+  .bigsearch button { padding: 16px 30px; border-radius: 13px; font-size: 17px;
+                      font-weight: 600; }
   .pills { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
   .pill { padding: 5px 13px; border-radius: 999px; border: 1px solid var(--line);
           background: #fff; color: var(--ink); font-size: 12.5px;
