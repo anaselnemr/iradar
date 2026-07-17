@@ -103,6 +103,18 @@ def init_db():
         errors INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+    -- every AUTOMATIC level change, so hierarchy assignments are auditable:
+    -- the user can see exactly what moved, when, and why - and that nothing
+    -- moved at all on a run where the site's structure did not change
+    CREATE TABLE IF NOT EXISTS level_log(
+        id INTEGER PRIMARY KEY,
+        ts TEXT,
+        url_id INTEGER NOT NULL REFERENCES urls(id) ON DELETE CASCADE,
+        old_level TEXT DEFAULT '',
+        new_level TEXT DEFAULT '',
+        src TEXT DEFAULT '',
+        why TEXT DEFAULT ''
+    );
     -- searchable index of every library item of every page's current snapshot
     CREATE TABLE IF NOT EXISTS items(
         id INTEGER PRIMARY KEY,

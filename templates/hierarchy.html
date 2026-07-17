@@ -86,6 +86,27 @@
       <span class="muted" style="font-size:12px; margin-right:8px">{{ level_names.get(l, '') }}</span>
     {% endfor %}
   </div>
+  {% if level_log %}
+  <details style="margin-top:10px">
+    <summary class="muted" style="cursor:pointer; font-size:12.5px">
+      Structure log — the last {{ level_log|length }} automatic level change{{ 's' if level_log|length != 1 }}
+      (empty after a run = nothing moved)</summary>
+    <div style="margin-top:8px; max-height:260px; overflow:auto; font-size:12.5px">
+      <table style="width:100%; border-collapse:collapse">
+        {% for e in level_log %}
+        <tr style="border-top:1px solid var(--line)">
+          <td class="muted" style="padding:4px 8px 4px 0; white-space:nowrap">{{ e.ts|localtime }}</td>
+          <td style="padding:4px 8px 4px 0"><a class="titlelink" href="{{ url_for('url_detail', url_id=e.url_id) }}">{{ e.url.replace('https://www.infineon.com','') }}</a></td>
+          <td style="padding:4px 8px 4px 0; white-space:nowrap">
+            {% if e.old_level %}<span class="lvl lvl-{{ e.old_level|lower }}">{{ e.old_level }}</span>{% else %}<span class="muted">·</span>{% endif %}
+            → <span class="lvl lvl-{{ e.new_level|lower }}">{{ e.new_level }}</span></td>
+          <td class="muted" style="padding:4px 0">{{ e.why }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </details>
+  {% endif %}
   <p class="muted" style="font-size:12.5px; margin:10px 0 0">
     Levels are read from the live structure, not from the source report.
     {% if disagreements %}

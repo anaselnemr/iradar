@@ -1534,6 +1534,8 @@ def _breadcrumbs(con, ptypes):
         # otherwise appear in the product hierarchy as though it were a product
         " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
         list(ptypes)).fetchall()
+    # children of a page the site MOVED follow it to its new home in the tree
+    aliases = _redirect_aliases(con)
     # Pass 1 - parse every breadcrumb once and harvest a clean display name for
     # each taxonomy URL seen anywhere, so a node the current page's own crumb
     # dropped can still be named when we rebuild the trail from the URL. The
@@ -1584,6 +1586,10 @@ def _breadcrumbs(con, ptypes):
         # phantom cross-links.
         tax = _taxonomy_url(r["ptype"], r["url"], crumb_urls)
         if tax:
+            if aliases:
+                # keep it absolute - tree nodes link to the live site
+                tax = ("https://www.infineon.com"
+                       + _apply_aliases(_tax_norm(tax), aliases))
             path, crumb_urls = _url_trail(tax, title_by_url)
         else:
             anchor = next((u for u in reversed(crumb_urls) if u), "")
@@ -2275,7 +2281,41 @@ def _tax_norm(u):
     return re.sub(r"^/(de|ja|cn|tw|kr|jp)(?=/)", "", n)
 
 
-def _structure_registry(con):
+def _redirect_aliases(con):
+    """{old_taxonomy_path: new_path} for every page the site MOVED (the
+    redirect repoint keeps the old address in redirect_from). Children whose
+    URLs still live under the old path follow the page to its new home -
+    in the tree and in the level walk alike - instead of dangling under an
+    address that no longer answers."""
+    out = {}
+    for r in con.execute("SELECT url, canonical_url, redirect_from FROM urls"
+                         " WHERE IFNULL(redirect_from,'')<>''"):
+        old = _tax_norm(r["redirect_from"])
+        new = _tax_norm(r["canonical_url"] or r["url"])
+        if (old.startswith("/products/") and new.startswith("/products/")
+                and old != new):
+            out[old] = new
+    return out
+
+
+def _apply_aliases(path, aliases):
+    """Rewrite a taxonomy path whose prefix the site moved elsewhere
+    (longest moved prefix wins)."""
+    if not aliases:
+        return path
+    for old in sorted(aliases, key=len, reverse=True):
+        if path == old or path.startswith(old + "/"):
+            return aliases[old] + path[len(old):]
+    return path
+
+
+def _log_level(con, url_id, old, new, src, why):
+    con.execute("INSERT INTO level_log(ts, url_id, old_level, new_level,"
+                " src, why) VALUES(?,?,?,?,?,?)",
+                (db.now_iso(), url_id, old or "", new or "", src, why))
+
+
+def _structure_registry(con, aliases=None):
     """Every product-taxonomy URL the SITE itself declares: each tracked
     page's canonical/short URL plus every child tile from the captured
     category/family navigation modules. The tiles matter: they tell us a page
@@ -2286,13 +2326,13 @@ def _structure_registry(con):
         for u in (r["url"], r["canonical_url"]):
             n = _tax_norm(u)
             if n.startswith("/products/"):
-                reg.add(n)
+                reg.add(_apply_aliases(n, aliases))
     for r in con.execute("SELECT DISTINCT item_url FROM items"
                          " WHERE category IN ('categories','products')"
                          " AND item_url<>''"):
         n = _tax_norm(r["item_url"])
         if n.startswith("/products/"):
-            reg.add(n)
+            reg.add(_apply_aliases(n, aliases))
     return reg
 
 
@@ -2310,7 +2350,8 @@ def _rebuild_structure():
     cannot split AOP from ASP (depth 2 is 19 AOP / 9 ASP), so writing depth
     there would corrupt data. Returns (changed, filled, kept_manual)."""
     con = db.connect()
-    reg = _structure_registry(con)
+    aliases = _redirect_aliases(con)
+    reg = _structure_registry(con, aliases)
     changed, filled, kept = [], [], 0
     for r in con.execute("SELECT id, url, canonical_url, ptype, level,"
                          " level_src FROM urls WHERE active=1"
@@ -2319,7 +2360,8 @@ def _rebuild_structure():
         if src == "manual":
             kept += 1
             continue
-        tax = _tax_norm(r["canonical_url"] or r["url"])
+        tax = _apply_aliases(_tax_norm(r["canonical_url"] or r["url"]),
+                             aliases)
         if r["ptype"] == "Product":
             if not tax.startswith("/products/"):
                 continue
@@ -2327,20 +2369,26 @@ def _rebuild_structure():
             if not s:
                 continue
             if len(s) == 1:
-                calc = "PC"
+                calc, why = "PC", "site walk: 1 segment under /products/"
             elif len(s) == 2:
-                calc = "PFP"
+                calc, why = "PFP", "site walk: 2 segments under /products/"
+            elif any(x.startswith(tax + "/") for x in reg):
+                calc = "PSFP"
+                why = (f"site walk: {len(s)} segments, the site declares"
+                       " children beneath it")
             else:
-                calc = "PSFP" if any(x.startswith(tax + "/") for x in reg) \
-                    else "PEFP"
+                calc = "PEFP"
+                why = f"site walk: {len(s)} segments, dead end (no children)"
         else:
             calc = db.dr_level_for(r["canonical_url"] or r["url"])
             if not calc:
                 continue
+            why = "design-resources depth"
         if calc == cur:
             continue
         con.execute("UPDATE urls SET level=?, level_src='structure'"
                     " WHERE id=?", (calc, r["id"]))
+        _log_level(con, r["id"], cur, calc, "structure", why)
         (filled if not cur else changed).append(
             f"#{r['id']} {cur or '·'}→{calc}")
     con.commit()
@@ -2366,10 +2414,12 @@ def _infer_missing_levels():
         " AND IFNULL(last_http,200) NOT IN (404,410)").fetchall()
     done, skipped = [], 0
     for row in rows:
-        lvl, _conf, _why = _infer_level(con, row)
+        lvl, conf, why = _infer_level(con, row)
         if lvl:
             con.execute("UPDATE urls SET level=?, level_src='inferred'"
                         " WHERE id=?", (lvl, row["id"]))
+            _log_level(con, row["id"], row["level"] or "", lvl, "inferred",
+                       f"{conf:.0%} confidence — {why}")
             done.append(f"{row['url'].rsplit('/', 1)[-1]}→{lvl}")
         else:
             skipped += 1
@@ -3229,6 +3279,13 @@ def hierarchy():
     tracked = {_norm_url(r["url"]): r["id"] for r in con.execute(
         "SELECT id, url FROM urls WHERE active=1"
         " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')")}
+    # the audit trail: every automatic level assignment, newest first, so
+    # "did anything move?" is a glance, not a guess. Empty after a run means
+    # exactly that - the site's structure did not change.
+    level_log = con.execute("""
+        SELECT l.ts, l.old_level, l.new_level, l.src, l.why, l.url_id,
+               u.url FROM level_log l JOIN urls u ON u.id=l.url_id
+        ORDER BY l.id DESC LIMIT 30""").fetchall()
     con.close()
     # PC/PFP/… levels are a product taxonomy - only badge them on the product
     # tree; design resources, applications and promo have no such levels.
@@ -3244,7 +3301,7 @@ def hierarchy():
                            counts=counts, total=totals.get(sel, 0),
                            shown=len(pages), levels=seen_levels,
                            level_names=LEVEL_NAMES,
-                           disagreements=disagreements)
+                           disagreements=disagreements, level_log=level_log)
 
 
 @app.route("/export.xlsx")
