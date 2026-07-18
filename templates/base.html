@@ -16,12 +16,21 @@
     --bg: #fafafc; --card: #ffffff; --ink: #1c1b22; --muted: #6e6d7a;
     --accent: #5e6ad2; --ok: #16a34a; --warn: #ea580c; --err: #dc2626;
     --line: #e4e4eb; --hover: #f4f4f8; --panel: #ffffff;
+    /* filled buttons only. A TOKEN, not a darker selector: the dark theme used
+       to restate this as [data-theme="dark"] button, which outranks .iconbtn
+       and .linkbtn and painted every one of them solid indigo. */
+    --btn: var(--accent); --btn-ink: #ffffff;
+    --link: #5e6ad2;
     color-scheme: light;
   }
   [data-theme="dark"] {
     --bg: #000000; --card: #0d0d11; --ink: #ededf2; --muted: #9a99a5;
     --accent: #818cf8; --ok: #4ade80; --warn: #fb923c; --err: #f87171;
     --line: #232329; --hover: #17171c; --panel: #101014;
+    /* the light accent is too pale to carry white text, so filled buttons keep
+       the deeper indigo while everything else uses the brighter --accent */
+    --btn: #5e6ad2; --btn-ink: #ffffff;
+    --link: #a5b4fc;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -175,7 +184,7 @@
   .hit-title-row .ticon { width: 19px; height: 19px; }
   .b-new      { background: #e2e8f0; color: #475569; }
   .b-off      { background: var(--hover); color: var(--muted); }
-  button, .btn { background: var(--accent); border: 0; color: #fff;
+  button, .btn { background: var(--btn); border: 0; color: var(--btn-ink);
         padding: 8px 16px; border-radius: 7px; font-size: 14px;
         font-weight: 600; cursor: pointer; text-decoration: none;
         display: inline-block; }
@@ -249,7 +258,7 @@
   /* sits inline beside a heading, so it matches the text rather than the toolbar */
   h2 > .iconbtn { width: 26px; height: 26px; font-size: 13px; vertical-align: 2px;
                   margin-left: 6px; }
-  .linkbtn { background: none; border: 0; color: #5e6ad2; font-size: 13px;
+  .linkbtn { background: none; border: 0; color: var(--link); font-size: 13px;
              cursor: pointer; padding: 0; text-decoration: underline; }
   /* the partial-run options: available, but not standing open under the
      main button where a count that never reaches zero would nag every load */
@@ -260,13 +269,24 @@
                        border: 1px solid transparent; }
   .runmore > summary::-webkit-details-marker { display: none; }
   .runmore > summary::after { content: "▾"; font-size: 10px; }
-  .runmore > summary:hover { color: var(--ink); border-color: var(--line);
+  .runmore > summary:hover,
+  .runmore[open] > summary { color: var(--ink); border-color: var(--line);
                              background: var(--hover); }
+  .runmore > summary:focus { outline: none; }
+  .runmore > summary:focus-visible { outline: 2px solid var(--accent);
+                                     outline-offset: 1px; }
   .runmore-menu { position: absolute; z-index: 40; top: calc(100% + 5px); right: 0;
-                  min-width: 250px; text-align: left; background: var(--panel);
+                  min-width: 260px; text-align: left; background: var(--panel);
                   border: 1px solid var(--line); border-radius: 10px;
-                  box-shadow: 0 10px 26px rgba(0,0,0,.13); padding: 9px 12px;
-                  display: flex; flex-direction: column; gap: 8px; }
+                  box-shadow: 0 10px 26px rgba(0,0,0,.13); padding: 5px;
+                  display: flex; flex-direction: column; gap: 1px; }
+  /* rows in a menu, not loose hyperlinks: the underlined indigo default read
+     as raw markup once there were several of them stacked up */
+  .runmore-menu .linkbtn { display: block; width: 100%; text-align: left;
+                           padding: 7px 10px; border-radius: 6px;
+                           color: var(--ink); text-decoration: none;
+                           font-weight: 500; font-size: 13px; }
+  .runmore-menu .linkbtn:hover { background: var(--hover); color: var(--accent); }
   .quickchips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
   details.addbox summary { cursor: pointer; font-weight: 600; font-size: 15px;
                            color: var(--ink); list-style: none; }
@@ -531,8 +551,9 @@
   [data-theme="dark"] a { color: #a5b4fc; }
   [data-theme="dark"] .pagecard-url { color: #a5b4fc; }
   [data-theme="dark"] .liveurl { color: #a5b4fc !important; }
-  [data-theme="dark"] .linkbtn { color: #a5b4fc; }
-  [data-theme="dark"] button, [data-theme="dark"] .btn { background: #5e6ad2; }
+  /* filled-button colour is the --btn token now. Restating it here as
+     [data-theme="dark"] button outranked .iconbtn/.linkbtn and painted every
+     icon and link button solid indigo in dark mode. */
   [data-theme="dark"] .chip-bad b  { color: #f87171; }
   [data-theme="dark"] .chip-warn b { color: #fb923c; }
   [data-theme="dark"] .chip-good b { color: #34d399; }
