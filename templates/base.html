@@ -57,7 +57,7 @@
   .b-error    { background: #fee2e2; color: #991b1b; }
   .notice     { background: #fffbeb; border: 1px solid #fde68a; color: #78350f;
                 border-radius: 8px; padding: 10px 12px; font-size: 14px; }
-  .b-sys      { background: #e0f2fe; color: #0369a1; }
+  .b-sys      { background: #0369a1; color: #fff; }
   .b-redir    { background: #fef3c7; color: #92400e; cursor: help; }
   .sorth { cursor: pointer; color: inherit; text-decoration: none;
            user-select: none; white-space: nowrap; }
@@ -128,20 +128,20 @@
   @media (prefers-reduced-motion: reduce) {
     ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
   }
-  .lvl-home { background: #0a8276; color: #fff; }
+  .lvl-home { background: var(--ink); color: var(--card); }
   .lvl-pc   { background: #1e293b; color: #fff; }
   .lvl-pfp  { background: #1d4ed8; color: #fff; }
   .lvl-psfp { background: #3b82f6; color: #fff; }
   .lvl-pefp { background: #93c5fd; color: #0f2b5b; }
   .lvl-ptp  { background: #e0e7ff; color: #3730a3; }
   .lvl-eb   { background: #fde68a; color: #713f12; }
-  .lvl-adp  { background: #065f46; color: #fff; }
-  .lvl-aop  { background: #059669; color: #fff; }
-  .lvl-asp  { background: #6ee7b7; color: #064e3b; }
-  .lvl-afb  { background: #d1fae5; color: #065f46; }
-  .lvl-drc  { background: #155e75; color: #fff; }
-  .lvl-drf  { background: #0891b2; color: #fff; }
-  .lvl-drsf { background: #a5f3fc; color: #155e75; }
+  .lvl-adp  { background: #4c1d95; color: #fff; }
+  .lvl-aop  { background: #7c3aed; color: #fff; }
+  .lvl-asp  { background: #a78bfa; color: #2e1065; }
+  .lvl-afb  { background: #ede9fe; color: #5b21b6; }
+  .lvl-drc  { background: #115e59; color: #fff; }
+  .lvl-drf  { background: #0d9488; color: #fff; }
+  .lvl-drsf { background: #ccfbf1; color: #115e59; }
 
   /* --- search type-ahead --- */
   .sugwrap { position: relative; }
@@ -500,7 +500,7 @@
   [data-theme="dark"] .b-rejected  { background: rgba(248,113,113,.16); color: #f87171; }
   [data-theme="dark"] .b-live      { background: rgba(52,211,153,.14); color: #34d399; }
   [data-theme="dark"] .b-type      { background: rgba(129,140,248,.16); color: #a5b4fc; }
-  [data-theme="dark"] .b-sys       { background: rgba(56,189,248,.16); color: #7dd3fc; }
+  [data-theme="dark"] .b-sys       { background: rgba(2,132,199,.3); color: #7dd3fc; border: 1px solid rgba(125,211,252,.35); }
   [data-theme="dark"] .b-redir     { background: rgba(251,191,36,.16); color: #fbbf24; }
   [data-theme="dark"] .b-new       { background: rgba(154,154,154,.16); color: #bdbdbd; }
   [data-theme="dark"] .notice      { background: rgba(251,191,36,.09);
@@ -519,15 +519,15 @@
   [data-theme="dark"] .chip-good b { color: #34d399; }
   [data-theme="dark"] .chip-on.chip-bad b, [data-theme="dark"] .chip-on.chip-warn b,
   [data-theme="dark"] .chip-on.chip-good b { color: #000; }
-  [data-theme="dark"] .lvl-home { background: rgba(79,209,197,.22); color: #4fd1c5; }
+  
   [data-theme="dark"] .lvl-pefp { background: rgba(147,197,253,.2); color: #93c5fd; }
   [data-theme="dark"] .lvl-ptp  { background: rgba(129,140,248,.2); color: #a5b4fc; }
   [data-theme="dark"] .lvl-eb   { background: rgba(253,230,138,.2); color: #fde68a; }
-  [data-theme="dark"] .lvl-asp  { background: rgba(110,231,183,.22); color: #6ee7b7; }
-  [data-theme="dark"] .lvl-afb  { background: rgba(209,250,229,.18); color: #a7f3d0; }
-  [data-theme="dark"] .lvl-drc  { background: rgba(103,232,249,.2); color: #67e8f9; }
-  [data-theme="dark"] .lvl-drf  { background: rgba(34,211,238,.2); color: #22d3ee; }
-  [data-theme="dark"] .lvl-drsf { background: rgba(165,243,252,.18); color: #a5f3fc; }
+  [data-theme="dark"] .lvl-asp  { background: rgba(167,139,250,.25); color: #c4b5fd; }
+  [data-theme="dark"] .lvl-afb  { background: rgba(196,181,253,.18); color: #c4b5fd; }
+  [data-theme="dark"] .lvl-drc  { background: rgba(45,212,191,.22); color: #2dd4bf; }
+  [data-theme="dark"] .lvl-drf  { background: rgba(45,212,191,.2); color: #5eead4; }
+  [data-theme="dark"] .lvl-drsf { background: rgba(153,246,228,.18); color: #99f6e4; }
   [data-theme="dark"] .b-newpg  { background: #16a34a; color: #fff; }
   [data-theme="dark"] .diff .del { background: rgba(248,113,113,.14); }
   [data-theme="dark"] .diff .add { background: rgba(52,211,153,.14); }
