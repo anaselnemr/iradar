@@ -239,23 +239,39 @@ def set_setting(key, value):
 # and AEM's author-mode toggle (wcmmode). Left on, one page gets tracked twice
 # - once clean, once with a campaign tag the site glued onto a redirect.
 _JUNK_PARAMS = {"intc", "redirid", "redir_id", "wcmmode", "gclid", "fbclid",
-                # ad-network click ids: ef_id arrived on a report URL and made
-                # /home-appliances a second, duplicate page beside the clean one
                 "ef_id", "s_kwcid", "msclkid", "mkt_tok", "mc_cid", "mc_eid"}
+
+_INFINEON_HOST = re.compile(r"^https?://([a-z0-9-]+\.)*infineon\.com(/|$)", re.I)
 
 
 def strip_junk_params(u):
-    """The URL without tracking/tooling query params (utm_* included). A
-    query that only carried junk disappears entirely."""
+    """The URL as the watch list should hold it: for infineon.com, WITHOUT any
+    query string at all.
+
+    Nothing after a '?' has ever been part of an infineon page's identity - the
+    query is always a campaign tag, a redirect's own bookkeeping, or an
+    author-mode flag, and the page answers the same without it. Naming the junk
+    params instead was always one campaign behind: ef_id only got listed after
+    it had already made /home-appliances a second page beside the clean one.
+    Dropping the whole query closes that off for tags nobody has seen yet.
+
+    This is the WATCH LIST rule only. Links found ON a page keep their query -
+    thousands of design-resource items point at third-party tools where
+    ?product_id= IS the address. Off-site hosts keep the named-junk behaviour
+    for the same reason.
+    """
     base, _, query = (u or "").partition("?")
     if not query:
         return u
     frag = ""
     if "#" in query:
         query, _, frag = query.partition("#")
-    keep = [p for p in query.split("&") if p and
-            p.split("=")[0].strip().lower() not in _JUNK_PARAMS and
-            not p.split("=")[0].strip().lower().startswith("utm_")]
+    if _INFINEON_HOST.match(base or ""):
+        keep = []
+    else:
+        keep = [p for p in query.split("&") if p and
+                p.split("=")[0].strip().lower() not in _JUNK_PARAMS and
+                not p.split("=")[0].strip().lower().startswith("utm_")]
     out = base + ("?" + "&".join(keep) if keep else "")
     return out + ("#" + frag if frag else "")
 
