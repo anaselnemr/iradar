@@ -2985,13 +2985,27 @@ def search_items():
                 ["instr(lower(i.title), lower(?)) > 0"] * len(toks_all))
             prose_rows = con.execute(
                 "SELECT i.url_id, i.category, i.title FROM items i"
-                " WHERE i.category IN ('features','benefits','applications')"
+                " WHERE i.category IN ('features','benefits','applications',"
+                "                      'overview','about')"
                 " AND " + conds + " LIMIT 300", toks_all).fetchall()
         _PLBL = {"features": "Key features", "benefits": "Benefits",
-                 "applications": "Applications"}
+                 "applications": "Applications", "overview": "Overview",
+                 "about": "About"}
+
+        def _clip(s):
+            # overview/about are paragraphs, not bullets - quote the window
+            # around the first matched word, not the whole wall of text
+            if len(s) <= 200:
+                return s
+            low = s.lower()
+            hits = [low.find(t.lower()) for t in toks_all]
+            pos = min((p for p in hits if p >= 0), default=0)
+            start, end = max(0, pos - 70), min(len(s), pos + 150)
+            return (("… " if start else "") + s[start:end]
+                    + (" …" if end < len(s) else ""))
 
         def _markup(s):
-            out = str(_esc(s))
+            out = str(_esc(_clip(s)))
             for t in sorted({t for t in toks_all}, key=len, reverse=True):
                 out = re.sub("(?i)" + re.escape(str(_esc(t))),
                              lambda m: "<mark>" + m.group(0) + "</mark>", out)
