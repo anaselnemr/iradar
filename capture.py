@@ -1065,8 +1065,11 @@ SECTIONS_JS = r"""
   document.querySelectorAll('img').forEach(img => {
     const raw = img.currentSrc || img.src;
     if (!raw || raw.startsWith('data:') || NON_CONTENT_IMG.test(raw)) return;
-    // the ONLY images dropped as furniture are the author avatars inside the
-    // developer-community thread list - everything else, gifs included, stays
+    // the ONLY images dropped as furniture are the developer-community thread
+    // avatars - user furniture, not this page's content - identified by their
+    // own host (community.infineon.com) AND by container. Everything else,
+    // gifs included, stays.
+    if (/community\.infineon\.com|infineon-developer-community\.png/i.test(raw)) return;
     if (img.closest('#community, [id*="community" i], [class*="community" i]')) return;
     // collapse the responsive renditions of ONE picture (…/foo.jpg?wid=1400,
     // ?wid=600, and the Scene7 ':asset-…' preset) to a single canonical item

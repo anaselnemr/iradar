@@ -3709,6 +3709,14 @@ def _sweep_images():
     (Gifs are content and are kept - only dev-community avatars are dropped,
     and that happens at capture time, by container.)"""
     con = db.connect()
+    # developer-community thread avatars (community.infineon.com) + the
+    # community section icon are user furniture, not page content - drop them
+    # corpus-wide by URL, no re-capture needed (they sit on ~2,469 pages)
+    av = con.execute(
+        "DELETE FROM items WHERE category='images' AND"
+        " (lower(item_url) LIKE '%community.infineon.com%'"
+        "  OR lower(item_url) LIKE '%infineon-developer-community.png%')"
+    ).rowcount
     seen, dropped = {}, 0
     for r in con.execute("SELECT id, url_id, item_url FROM items"
                          " WHERE category='images' ORDER BY id").fetchall():
@@ -3724,8 +3732,9 @@ def _sweep_images():
                             (canon, r["id"]))
     con.commit()
     con.close()
-    if dropped:
-        print(f"  images: collapsed {dropped} responsive duplicate(s)")
+    if av or dropped:
+        print(f"  images: dropped {av} community avatar(s), collapsed {dropped}"
+              " responsive duplicate(s)")
 
 
 def _sweep_furniture():
