@@ -137,6 +137,29 @@ def init_db():
     -- per url; without this composite index that was a 37-SECOND scan of the
     -- items table per dashboard load. With it, each check is a single seek.
     CREATE INDEX IF NOT EXISTS idx_items_url_cat ON items(url_id, category);
+    -- the content library counts one DISTINCT item per category, which is a
+    -- GROUP BY lower(title), item_url. Sorting 199k rows per tile cost ~165 ms
+    -- each; indexing the grouped expression itself turns that into a 25 ms
+    -- index scan.
+    CREATE INDEX IF NOT EXISTS idx_items_cat_ltitle
+        ON items(category, lower(title), item_url);
+    -- the dashboard asks "how many pages have documents / images / ..." as one
+    -- GROUP BY category with COUNT(DISTINCT url_id). idx_items_url_cat has the
+    -- columns the wrong way round for that, so it scanned the table (160 ms);
+    -- this way round it is a covering index scan (16 ms).
+    CREATE INDEX IF NOT EXISTS idx_items_cat_url ON items(category, url_id);
+    -- Substring search over item titles/meta/urls. A LIKE '%foo%' cannot use an
+    -- index, so searching the library scanned all ~199k rows: two full seconds
+    -- per query. The TRIGRAM tokenizer is the one FTS5 mode that indexes
+    -- arbitrary substrings, so it keeps LIKE's exact semantics - including
+    -- part-number fragments like "4248" inside CY8C4248LQI, which a word
+    -- tokenizer would miss entirely. One row per DISTINCT item.
+    CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+        item_key UNINDEXED, title, meta, item_url, tokenize='trigram');
+    -- what the index was built from, so a stale one can be spotted and the
+    -- search fall back to scanning rather than answer from a stale index
+    CREATE TABLE IF NOT EXISTS items_fts_state(
+        k INTEGER PRIMARY KEY CHECK(k=1), max_id INTEGER, n_rows INTEGER);
     CREATE INDEX IF NOT EXISTS idx_snapshots_url ON snapshots(url_id, ts);
     -- full text of every page's newest snapshot (rowid = url_id), so search
     -- can look INSIDE the pages, not just at their item titles
@@ -274,6 +297,46 @@ def strip_junk_params(u):
                 not p.split("=")[0].strip().lower().startswith("utm_")]
     out = base + ("?" + "&".join(keep) if keep else "")
     return out + ("#" + frag if frag else "")
+
+
+def items_fts_state(con):
+    """(max item id, item row count) - what a fresh index would be built from."""
+    r = con.execute("SELECT IFNULL(MAX(id),0), COUNT(*) FROM items").fetchone()
+    return (r[0], r[1])
+
+
+def items_fts_fresh(con):
+    """Is the substring index still describing the items table?
+
+    Cheap on purpose (~3 ms): the search asks this on every query and falls
+    back to a plain scan when the answer is no, so being WRONG here is a
+    correctness bug while being conservative only costs speed.
+    """
+    r = con.execute("SELECT max_id, n_rows FROM items_fts_state"
+                    " WHERE k=1").fetchone()
+    return bool(r) and (r["max_id"], r["n_rows"]) == items_fts_state(con)
+
+
+def rebuild_items_fts(con=None):
+    """Rebuild the substring index from the items table. Cheap enough (~3 s for
+    20k distinct items) to just redo wholesale whenever items have moved."""
+    own = con is None
+    con = con or connect()
+    try:
+        con.execute("DELETE FROM items_fts")
+        con.execute(
+            "INSERT INTO items_fts(item_key, title, meta, item_url)"
+            " SELECT item_key, IFNULL(title,''), IFNULL(meta,''),"
+            "        IFNULL(item_url,'') FROM items"
+            " WHERE item_key<>'' AND category<>'about' GROUP BY item_key")
+        mx, n = items_fts_state(con)
+        con.execute("INSERT OR REPLACE INTO items_fts_state(k, max_id, n_rows)"
+                    " VALUES(1, ?, ?)", (mx, n))
+        con.commit()
+        return con.execute("SELECT COUNT(*) FROM items_fts").fetchone()[0]
+    finally:
+        if own:
+            con.close()
 
 
 def add_urls(url_list):

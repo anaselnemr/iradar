@@ -6,9 +6,11 @@ import io
 import json
 import os
 import re
+import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote as urlquote, urlsplit
 
@@ -931,17 +933,7 @@ def index():
                       for l in _SCHEMES.get(r["ptype"], ())
                       if lvl_counts.get((r["ptype"], l))]
             ptypes.append({"ptype": r["ptype"], "n": r["n"], "levels": levels})
-    # how many captured pages carry each category - one GROUP BY, indexed
-    cat_pages = {r["category"]: r["n"] for r in con.execute(
-        "SELECT category, COUNT(DISTINCT url_id) n FROM items GROUP BY category")}
-    # pages with a video anywhere (standalone OR a News & highlights card) -
-    # counted distinctly so a page with both is not double-counted
-    vid_pages = con.execute(
-        "SELECT COUNT(DISTINCT url_id) n FROM items"
-        " WHERE category IN ('videos','news')").fetchone()["n"]
-    # status + urls-only attr filters: one bulk pass each
-    status_counts = _bulk_counts(con, STATUS_FILTERS)
-    attr_counts = _bulk_counts(con, ATTR_FILTERS)
+    cat_pages, vid_pages, status_counts, attr_counts = _dash_counts(con)
     con.close()
     # content/component has/no counts come from cat_pages: has = pages with the
     # category (identical to the EXISTS filter), no = captured pages without it
@@ -1761,6 +1753,9 @@ def _hierarchy_tree(pages, tracked=None, product_tree=True):
     return tree
 
 
+# pure string reductions called ~90k and ~43k times per hierarchy render, over
+# a few thousand distinct values - memoising is most of that work removed
+@lru_cache(maxsize=32768)
 def _norm_url(u):
     return (u or "").split("#")[0].split("?")[0].rstrip("/").lower()
 
@@ -1780,6 +1775,7 @@ def _link_nodes(node, tracked):
         _link_nodes(c, tracked)
 
 
+@lru_cache(maxsize=32768)
 def _norm_node(s):
     """Node/page name reduced to its bare identity for matching."""
     s = re.sub(r"\s+", " ", (s or "")).strip().lower()
@@ -2711,6 +2707,28 @@ def _infer_missing_levels():
     return done, skipped
 
 
+def _refresh_item_index(why):
+    """Rebuild the item substring index if items have moved since it was built.
+
+    Search checks freshness itself and falls back to scanning, so this is only
+    about keeping the fast path available - never about correctness.
+    """
+    con = db.connect()
+    try:
+        if db.items_fts_fresh(con):
+            return 0
+        t0 = time.time()
+        n = db.rebuild_items_fts(con)
+        print(f"[search] item index rebuilt ({why}): {n:,} items"
+              f" in {time.time() - t0:.1f}s", flush=True)
+        return n
+    except Exception as e:
+        print(f"[search] item index rebuild failed ({why}): {e}", flush=True)
+        return 0
+    finally:
+        con.close()
+
+
 def _post_run_watcher():
     """After each capture run finishes, auto-infer the levels of any new
     Product/Application pages - so a freshly-added or newly-reached page gets
@@ -2735,6 +2753,9 @@ def _post_run_watcher():
                     print(f"[post-run] matrix learned {len(joined)} new"
                           f" component slot(s): {', '.join(joined[:6])}"
                           + ("…" if len(joined) > 6 else ""), flush=True)
+                # a run is what actually moves items, so this is where the
+                # search index earns its keep being rebuilt
+                _refresh_item_index("after run")
             except Exception:
                 pass
         prev = running
@@ -2972,25 +2993,59 @@ def _search_keys(con, q, cat, limit):
     seen = set(ordered)
     toks = [t for t in q.lower().split() if len(t) >= 2][:6]
     if toks:
-        conds, params = [], []
-        for t in toks:
-            conds.append("(lower(i.title) LIKE ? OR lower(i.meta) LIKE ?"
-                         " OR lower(i.item_url) LIKE ?)")
-            params += [f"%{t}%"] * 3
-        catf, catp = "", []
-        pill_cats = PILL_SQL_CATS.get(_norm_pill(cat))
-        if pill_cats:
-            catf = (" AND i.category IN ("
-                    + ",".join("?" * len(pill_cats)) + ")")
-            catp = list(pill_cats)
-        for r in con.execute(
-                f"SELECT DISTINCT i.item_key AS k FROM items i"
-                f" WHERE i.category<>'about' AND i.item_key<>''"
-                f" AND {' AND '.join(conds)}{catf} LIMIT 500", params + catp):
-            if r["k"] not in seen:
-                seen.add(r["k"])
-                ordered.append(r["k"])
+        for k in _substring_keys(con, toks, cat):
+            if k not in seen:
+                seen.add(k)
+                ordered.append(k)
     return ordered[:limit]
+
+
+def _substring_keys(con, toks, cat):
+    """item_keys whose title, meta or URL contains EVERY token.
+
+    Served by the trigram index, which answers the same substring question as
+    LIKE '%tok%' but from an index instead of a 199k-row scan - two seconds
+    down to under a millisecond. Trigram needs 3 characters to work with, and
+    the index can only be trusted while it matches the items table, so a short
+    token or a stale index falls back to the scan this replaced.
+    """
+    short = [t for t in toks if len(t) < 3]
+    if not short and db.items_fts_fresh(con):
+        # each token is a quoted phrase; ANDed, matching the old query
+        match = " AND ".join('"%s"' % t.replace('"', '""') for t in toks)
+        cats = list(PILL_SQL_CATS.get(_norm_pill(cat)) or ())
+        # the index holds one row per DISTINCT item and knows no category, so a
+        # pill-scoped search joins back to items. The join has to happen INSIDE
+        # the query: capping first and filtering after would spend the 500-row
+        # budget on items the pill excludes, and silently drop real matches.
+        if cats:
+            sql = ("SELECT DISTINCT f.item_key AS item_key FROM items_fts f"
+                   " JOIN items i ON i.item_key = f.item_key"
+                   " WHERE f MATCH ? AND i.category IN ("
+                   + ",".join("?" * len(cats)) + ") LIMIT 500")
+            args = [match] + cats
+        else:
+            sql = ("SELECT item_key FROM items_fts WHERE items_fts MATCH ?"
+                   " LIMIT 500")
+            args = [match]
+        try:
+            return [r["item_key"] for r in con.execute(sql, args)]
+        except sqlite3.OperationalError:
+            pass                             # malformed MATCH - scan instead
+    conds, params = [], []
+    for t in toks:
+        conds.append("(lower(i.title) LIKE ? OR lower(i.meta) LIKE ?"
+                     " OR lower(i.item_url) LIKE ?)")
+        params += [f"%{t}%"] * 3
+    catf, catp = "", []
+    pill_cats = PILL_SQL_CATS.get(_norm_pill(cat))
+    if pill_cats:
+        catf = " AND i.category IN (" + ",".join("?" * len(pill_cats)) + ")"
+        catp = list(pill_cats)
+    return [r["k"] for r in con.execute(
+        f"SELECT DISTINCT i.item_key AS k FROM items i"
+        f" WHERE i.category<>'about' AND i.item_key<>''"
+        f" AND {' AND '.join(conds)}{catf} LIMIT 500", params + catp)]
 
 
 BROWSE_PER_PAGE = 60
@@ -3012,6 +3067,108 @@ _BROWSE_SQL = {
     "products": "category='products'",
 }
 
+# The library tiles are six COUNT(DISTINCT)s over 199k items. They cost about a
+# second a load, and they only move when a run writes - so they are cached
+# against the database's own write clock. Any commit lands in the WAL and bumps
+# its mtime, so a stale cache is impossible without a write, and a checkpoint
+# costs at most one recount.
+_AGG_CACHE = {}
+_AGG_LOCK = threading.Lock()
+
+
+def _db_write_stamp():
+    """Newest mtime across the db and its WAL - changes on any commit."""
+    st = 0
+    for p in (db.DB_PATH, str(db.DB_PATH) + "-wal"):
+        try:
+            st = max(st, os.stat(p).st_mtime_ns)
+        except OSError:
+            pass
+    return st
+
+
+def _cached_by_db(name, build):
+    """Hold an aggregate until the database is next written to.
+
+    Corpus-wide counts cost hundreds of ms and cannot change without a commit,
+    so the write clock is the cache key: no staleness is possible without a
+    write, and the worst a WAL checkpoint costs is one extra recount.
+    """
+    key = _db_write_stamp()
+    with _AGG_LOCK:
+        hit = _AGG_CACHE.get(name)
+        if hit and hit[0] == key:
+            return hit[1]
+    val = build()
+    with _AGG_LOCK:
+        _AGG_CACHE[name] = (key, val)
+    return val
+
+
+def _library_counts(con, cat=""):
+    """Per-tile counts for the content library, cached until the db changes.
+
+    Only TILED categories are counted. Two of these used to be computed on
+    every load and rendered nowhere - a COUNT(*) over the FTS index (504 ms)
+    left behind when the page-text tile went away, and the boards count (107 ms)
+    left behind when boards folded into design resources. Together they were
+    over half the page's cost. Deriving the list from SEARCH_PILLS means a tile
+    that goes away stops being counted.
+    """
+    def build():
+        # 'about' is tracked for text comparison only - never surfaced.
+        # 'overview' is a page's own text, not an asset type.
+        out = {"all": con.execute(
+            "SELECT COUNT(*) FROM items WHERE category NOT IN"
+            "('about','overview','subheadline','features','benefits',"
+            "'applications')").fetchone()[0]}
+        # the pages tile says Live Pages, so it counts LIVE pages: a 404 or a
+        # page that never answered has no library to browse
+        out["pages"] = con.execute(
+            "SELECT COUNT(*) FROM urls u WHERE u.active=1 AND "
+            + ATTR_FILTERS["live"][1]).fetchone()[0]
+        for k, _lbl, _fn in SEARCH_PILLS:
+            if k in _BROWSE_SQL:
+                out[k] = _count_browse(con, k)
+        return out
+
+    hit = dict(_cached_by_db("library", build))
+    # an untiled category being browsed still needs its own total
+    if cat in _BROWSE_SQL and cat not in hit:
+        hit[cat] = _count_browse(con, cat)
+    return hit
+
+
+def _count_browse(con, key):
+    return con.execute(
+        "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE " + _BROWSE_SQL[key] +
+        " GROUP BY lower(title), item_url)").fetchone()[0]
+
+
+def _dash_counts(con):
+    """The dashboard's four corpus-wide passes, cached until the next write.
+
+    Returns copies: the caller derives has*/no* entries onto attr_counts, and
+    handing out the cached dict itself would let that accumulate across loads.
+    """
+    def build():
+        return {
+            # how many captured pages carry each category - one GROUP BY
+            "cat": {r["category"]: r["n"] for r in con.execute(
+                "SELECT category, COUNT(DISTINCT url_id) n FROM items"
+                " GROUP BY category")},
+            # pages with a video anywhere (standalone OR a News & highlights
+            # card), counted distinctly so a page with both is not doubled
+            "vid": con.execute(
+                "SELECT COUNT(DISTINCT url_id) n FROM items"
+                " WHERE category IN ('videos','news')").fetchone()["n"],
+            "status": _bulk_counts(con, STATUS_FILTERS),
+            "attr": _bulk_counts(con, ATTR_FILTERS),
+        }
+
+    d = _cached_by_db("dash", build)
+    return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
+
 
 @app.route("/search")
 def search_items():
@@ -3030,25 +3187,8 @@ def search_items():
     groups, total, page_hits = [], 0, []
     browse, browse_total = False, 0
     con = db.connect()
-    # 'about' is tracked for text comparison only - never surfaced. 'overview'
-    # is a page's own text, not an asset type. Prose sections live under text.
-    indexed = con.execute(
-        "SELECT COUNT(*) FROM items WHERE category NOT IN"
-        "('about','overview','subheadline','features','benefits','applications')"
-    ).fetchone()[0]
-    # live counts for every chip - the "all of it in front of me" numbers.
-    # The pages tile says Live Pages, so it counts LIVE pages: a 404 or a page
-    # that never answered has no library to browse and does not belong here.
-    ccounts = {"pages": con.execute(
-        "SELECT COUNT(*) FROM urls u WHERE u.active=1 AND "
-        + ATTR_FILTERS["live"][1]).fetchone()[0]}
-    for key, wsql in _BROWSE_SQL.items():
-        ccounts[key] = con.execute(
-            "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE " + wsql +
-            " GROUP BY lower(title), item_url)").fetchone()[0]
-    ccounts["all"] = indexed
-    ccounts["text"] = con.execute(
-        "SELECT COUNT(*) FROM page_fts").fetchone()[0]
+    ccounts = _library_counts(con, cat)
+    indexed = ccounts["all"]
 
     # ---- BROWSE mode: no query -> the library itself, paginated ----------
     if not q and cat == "pages":
@@ -3080,7 +3220,11 @@ def search_items():
             " COUNT(DISTINCT url_id) AS npages"
             " FROM items WHERE " + _BROWSE_SQL[cat] +
             " GROUP BY lower(title), item_url"
-            " ORDER BY lower(title) LIMIT ? OFFSET ?",
+            # ordering on the FULL grouping key, not just its first column, is
+            # what lets this walk idx_items_cat_ltitle and stop at the page
+            # size: sorting every group first cost 922 ms, this costs 4 ms.
+            # It also makes paging deterministic when titles repeat.
+            " ORDER BY lower(title), item_url LIMIT ? OFFSET ?",
             (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
         for r in rows:
             _bk = backend_system(r["category"], r["meta"], r["doc_type"],
@@ -3190,6 +3334,11 @@ def search_items():
                 for i, ll in enumerate(lows):
                     if len(comps) >= 3:
                         break
+                    # the regexes all require their token to appear literally,
+                    # so a plain substring test is a free necessary condition -
+                    # it skips the regex on the ~99% of lines that cannot match
+                    if not any(t in ll for t in toks):
+                        continue
                     if not any(pt.search(ll) for pt in pats):
                         continue
                     for j in range(i, -1, -1):
@@ -4011,6 +4160,9 @@ if __name__ == "__main__":
     _sweep_furniture()
     _sweep_images()
     _sweep_hero_flags()
+    # AFTER the sweeps, which rewrite item titles and urls: an index built
+    # before them would describe items that no longer exist
+    _refresh_item_index("startup")
     scheduler.start()
     reschedule()
     # warm the document previews in the background so item pages open instantly
