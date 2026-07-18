@@ -2067,6 +2067,7 @@ def url_detail(url_id):
                  for k, lbl, _kind, _arg in _all_components()
                  if k in type_comps or k in have or k == "hero_image"]
 
+    crumbs, siblings = _page_nav(u)
     # ownership fields to show/edit: the page type's set, plus any field that
     # carries an imported value even if not in the type's default set
     _mfields = list(META_FIELDS.get(u["ptype"], []))
@@ -2078,7 +2079,8 @@ def url_detail(url_id):
                            redirect_to=redirect_to, flags=flags,
                            components=comp_rows, price=(u["price"] or ""),
                            settings=_settings_now, level_names=LEVEL_NAMES,
-                           meta_fields=_mfields, meta_labels=META_LABELS)
+                           meta_fields=_mfields, meta_labels=META_LABELS,
+                           crumbs=crumbs, siblings=siblings)
 
 
 @app.route("/change/<int:change_id>")
@@ -2402,6 +2404,85 @@ META_FIELDS = {
     "Application": ["cm", "owner"],
     "Promo": ["cm"],
 }
+
+
+def _page_nav(u):
+    """The little breadcrumb bar on a page: its ancestors back to Home, and the
+    siblings sitting beside it, so you can move around WITHOUT going back to
+    the hierarchy. Ancestors come from the page's own captured breadcrumb (so
+    it matches Infineon's own trail); each crumb links to OUR page when we
+    track it, else to the live one. Siblings are the pages sharing this page's
+    parent path, found by URL prefix - one query, capped, current page marked.
+    """
+    con = db.connect()
+    try:
+        try:
+            raw = json.loads(u["breadcrumb"] or "[]")
+        except Exception:
+            raw = []
+        raw = [c for c in raw if isinstance(c, dict) and (c.get("title") or "").strip()
+               and (c.get("title") or "").strip().lower() != "home"]
+        # look up ONLY the handful of crumb URLs (not the whole table): this
+        # bar renders on every page view, so it stays two indexed queries
+        tracked = {}
+        want = [_norm_url(c.get("url") or "") for c in raw if c.get("url")]
+        if want:
+            marks = ",".join("?" * len(want))
+            for r in con.execute(
+                    "SELECT id, url, canonical_url FROM urls WHERE active=1"
+                    f" AND (rtrim(lower(url),'/') IN ({marks})"
+                    f"      OR rtrim(lower(canonical_url),'/') IN ({marks}))",
+                    want + want):
+                tracked[_norm_url(r["url"])] = r["id"]
+                if r["canonical_url"]:
+                    tracked.setdefault(_norm_url(r["canonical_url"]), r["id"])
+        home = con.execute("SELECT id FROM urls WHERE ptype='Home'"
+                           " AND active=1 LIMIT 1").fetchone()
+        crumbs = []
+        if home:
+            crumbs.append({"title": "Home", "page_id": home["id"], "url": "",
+                           "here": False})
+        for c in raw:
+            cu = (c.get("url") or "").strip()
+            crumbs.append({"title": c["title"].strip(), "url": cu,
+                           "page_id": tracked.get(_norm_url(cu)),
+                           "here": False})
+        # the page itself is the last crumb (its own breadcrumb usually ends at
+        # it; a part's ends at its family, so add it when missing)
+        if not crumbs or crumbs[-1].get("page_id") != u["id"]:
+            crumbs.append({"title": "", "url": u["url"], "page_id": u["id"],
+                           "here": True})
+        else:
+            crumbs[-1]["here"] = True
+
+        # siblings: pages directly under this page's parent path
+        tax = _tax_norm(u["canonical_url"] or u["url"])
+        parent = tax.rsplit("/", 1)[0] if "/" in tax.strip("/") else ""
+        siblings = []
+        if parent and parent.count("/") >= 1:
+            # a PREFIX match, so SQLite can use the url index instead of
+            # walking the table; depth is then checked in python
+            pfx = "https://www.infineon.com" + parent + "/"
+            for r in con.execute(
+                    "SELECT id, url, canonical_url,"
+                    " COALESCE(NULLIF(title_override,''),"
+                    "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+                    "    AND s.status='ok' AND s.page_title<>''"
+                    "    ORDER BY s.id DESC LIMIT 1)) AS t"
+                    " FROM urls WHERE active=1"
+                    " AND IFNULL(last_status,'') NOT IN ('notlive','blank')"
+                    " AND (url LIKE ? OR canonical_url LIKE ?) LIMIT 400",
+                    (pfx + "%", pfx + "%")):
+                p = _tax_norm(r["canonical_url"] or r["url"])
+                if p.rsplit("/", 1)[0] == parent and p != parent:
+                    siblings.append({"id": r["id"],
+                                     "title": (r["t"] or r["url"].rstrip("/")
+                                               .rsplit("/", 1)[-1]),
+                                     "here": r["id"] == u["id"]})
+        siblings.sort(key=lambda s: s["title"].lower())
+        return crumbs, siblings[:40]
+    finally:
+        con.close()
 
 
 @app.route("/url/<int:url_id>/meta", methods=["POST"])

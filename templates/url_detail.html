@@ -1,7 +1,72 @@
 {% extends "base.html" %}
 {% block title %}URL library — InfineonWatch{% endblock %}
 {% block content %}
-<p><a href="{{ url_for('index') }}">← Dashboard</a></p>
+<nav class="bcrumb" aria-label="Where this page sits">
+  <a class="bc-back" href="{{ url_for('index') }}" title="Back to the dashboard">←</a>
+  {% for c in crumbs %}
+    {% if not loop.first %}<span class="bc-sep">›</span>{% endif %}
+    {% if c.here %}
+      {% if siblings|length > 1 %}
+      <details class="bc-sibs">
+        <summary title="{{ siblings|length }} pages sit beside this one — jump to any">
+          <b>{{ (disp_crumb if disp_crumb is defined else '') or c.title or (u.title_override or (latest.page_title if latest and latest.page_title else u.url.rstrip('/').rsplit('/',1)[-1])) | clean_title }}</b>
+          <span class="bc-count">{{ siblings|length }}</span>
+        </summary>
+        <div class="bc-menu">
+          <div class="bc-menu-head">Beside this page</div>
+          {% for s in siblings %}
+          <a class="bc-item {{ 'cur' if s.here }}" href="{{ url_for('url_detail', url_id=s.id) }}">
+            {{ s.title|clean_title }}{% if s.here %} <span class="bc-tick">✓</span>{% endif %}</a>
+          {% endfor %}
+        </div>
+      </details>
+      {% else %}
+      <b class="bc-here">{{ c.title or (u.title_override or (latest.page_title if latest and latest.page_title else u.url.rstrip('/').rsplit('/',1)[-1])) | clean_title }}</b>
+      {% endif %}
+    {% elif c.page_id %}
+      <a href="{{ url_for('url_detail', url_id=c.page_id) }}">{{ c.title|clean_title }}</a>
+    {% elif c.url %}
+      <a href="{{ c.url }}" target="_blank" class="bc-ext" title="Not captured in our library — opens on infineon.com">{{ c.title|clean_title }} ↗</a>
+    {% else %}
+      <span class="muted">{{ c.title }}</span>
+    {% endif %}
+  {% endfor %}
+</nav>
+<style>
+  .bcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+            font-size: 13px; margin: 0 0 12px; line-height: 1.7; }
+  .bcrumb a { text-decoration: none; }
+  .bcrumb a:hover { text-decoration: underline; }
+  .bc-back { border: 1px solid var(--line); border-radius: 7px; padding: 1px 8px;
+             color: var(--muted) !important; }
+  .bc-back:hover { border-color: var(--accent); color: var(--accent) !important;
+                   text-decoration: none !important; }
+  .bc-sep { color: var(--muted); opacity: .55; }
+  .bc-ext { color: var(--muted) !important; }
+  .bc-here { color: var(--ink); }
+  .bc-sibs { display: inline-block; position: relative; }
+  .bc-sibs > summary { list-style: none; cursor: pointer; display: inline-flex;
+                       align-items: center; gap: 5px; border-radius: 7px;
+                       padding: 1px 7px; border: 1px solid transparent; }
+  .bc-sibs > summary::-webkit-details-marker { display: none; }
+  .bc-sibs > summary::after { content: "▾"; font-size: 10px; color: var(--muted); }
+  .bc-sibs > summary:hover { border-color: var(--line); background: var(--hover); }
+  .bc-count { font-size: 11px; color: var(--muted); background: var(--hover);
+              border-radius: 999px; padding: 0 6px; }
+  .bc-menu { position: absolute; z-index: 40; top: calc(100% + 5px); left: 0;
+             min-width: 250px; max-height: 340px; overflow: auto;
+             background: var(--panel); border: 1px solid var(--line);
+             border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.13);
+             padding: 5px; }
+  .bc-menu-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                  color: var(--muted); padding: 5px 9px 6px; }
+  .bc-item { display: block; padding: 5px 9px; border-radius: 6px;
+             color: var(--ink) !important; font-size: 13px; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
+  .bc-item:hover { background: var(--hover); text-decoration: none !important; }
+  .bc-item.cur { font-weight: 600; background: var(--hover); }
+  .bc-tick { color: var(--ok); }
+</style>
 <div class="card">
   {% set disp = u.title_override or ((latest.page_title if latest and latest.page_title else u.label) | clean_title) %}
   <h1 style="font-size:17px; word-break:break-all">
