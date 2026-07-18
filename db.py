@@ -181,6 +181,12 @@ def init_db():
     # when a listed address 301'd here, the address it came from - so the row
     # can wear a "redirect" sign: we track the destination, not the stale link
     _ensure_column(con, "urls", "redirect_from", "TEXT DEFAULT ''")
+    # ownership metadata from the CSS Pages report (per page type): BL business
+    # line, PL product line, CM content manager, Owner. Imported by URL match,
+    # then hand-editable on the page like the level. meta_flag holds an import
+    # warning (e.g. a PTP whose PL disagrees with its product family's).
+    for _c in ("bl", "pl", "cm", "owner", "meta_flag"):
+        _ensure_column(con, "urls", _c, "TEXT DEFAULT ''")
     # the page's own section-nav = the authoritative list of components it
     # carries (JSON list); plus the Product-details sub-tabs and price text.
     _ensure_column(con, "urls", "components", "TEXT DEFAULT ''")

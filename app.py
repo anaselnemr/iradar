@@ -2050,11 +2050,18 @@ def url_detail(url_id):
                  for k, lbl, _kind, _arg in _all_components()
                  if k in type_comps or k in have or k == "hero_image"]
 
+    # ownership fields to show/edit: the page type's set, plus any field that
+    # carries an imported value even if not in the type's default set
+    _mfields = list(META_FIELDS.get(u["ptype"], []))
+    for f in ("bl", "pl", "cm", "owner"):
+        if (u[f] or "") and f not in _mfields:
+            _mfields.append(f)
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
                            components=comp_rows, price=(u["price"] or ""),
-                           settings=_settings_now, level_names=LEVEL_NAMES)
+                           settings=_settings_now, level_names=LEVEL_NAMES,
+                           meta_fields=_mfields, meta_labels=META_LABELS)
 
 
 @app.route("/change/<int:change_id>")
@@ -2364,6 +2371,37 @@ def url_set_level(url_id):
         flash(("Level set to " + want + " (manual).") if want
               else "Level cleared.")
     con.close()
+    return redirect(url_for("url_detail", url_id=url_id))
+
+
+# which ownership fields a page type shows (and their display labels), from
+# the CSS report: products carry all four, parts BL+PL, apps CM+Owner, promos
+# just CM. Design-resources / Home carry none unless a value was imported.
+META_LABELS = {"bl": "BL (business line)", "pl": "PL (product line)",
+               "cm": "CM (content manager)", "owner": "Owner"}
+META_FIELDS = {
+    "Product": ["bl", "pl", "cm", "owner"],
+    "Part": ["bl", "pl"],
+    "Application": ["cm", "owner"],
+    "Promo": ["cm"],
+}
+
+
+@app.route("/url/<int:url_id>/meta", methods=["POST"])
+def url_set_meta(url_id):
+    """Edit the ownership fields (BL / PL / CM / Owner) - hand-editable like the
+    level, kept on the url row so they survive re-capture. Editing clears the
+    import misalignment flag: the human has now had the last word."""
+    con = db.connect()
+    if not con.execute("SELECT 1 FROM urls WHERE id=?", (url_id,)).fetchone():
+        con.close(); abort(404)
+    for f in ("bl", "pl", "cm", "owner"):
+        if f in request.form:
+            con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
+                        ((request.form.get(f) or "").strip()[:200], url_id))
+    con.execute("UPDATE urls SET meta_flag='' WHERE id=?", (url_id,))
+    con.commit(); con.close()
+    flash("Ownership fields saved.")
     return redirect(url_for("url_detail", url_id=url_id))
 
 

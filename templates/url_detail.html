@@ -68,6 +68,36 @@
     {% if settings and settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %} · <span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open">PIM</span>{% elif aurl %} · <a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
     {% if u.canonical_url %} · <span class="muted" style="font-size:12px" title="The page's long/canonical address from its own breadcrumb — used for duplicate detection, search and the AEM link">long URL: <a href="{{ u.canonical_url }}" target="_blank">{{ u.canonical_url }}</a></span>{% endif %}
   </div>
+
+  {% if meta_fields %}
+  <form method="post" action="{{ url_for('url_set_meta', url_id=u.id) }}" class="metabox">
+    {% if u.meta_flag %}
+    <div class="meta-warn" title="Imported from the CSS report; a mismatch was detected. Editing any field clears this flag.">⚠ {{ u.meta_flag }}</div>
+    {% endif %}
+    <div class="metagrid">
+      {% for f in meta_fields %}
+      <label class="metafield">
+        <span class="metalbl">{{ meta_labels.get(f, f)|upper if f in ('bl','pl') else meta_labels.get(f, f) }}</span>
+        <input type="text" name="{{ f }}" value="{{ u[f] or '' }}"
+               placeholder="—" autocomplete="off">
+      </label>
+      {% endfor %}
+      <button class="metasave" title="Save ownership fields">Save</button>
+    </div>
+  </form>
+  <style>
+    .metabox { margin: 8px 0 14px; padding: 10px 12px; border: 1px solid var(--line);
+               border-radius: 10px; background: var(--panel); }
+    .meta-warn { font-size: 12.5px; color: var(--warn); margin-bottom: 8px; font-weight: 600; }
+    .metagrid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .metafield { display: flex; flex-direction: column; gap: 3px; }
+    .metalbl { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .metafield input { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px;
+                       background: var(--card); color: var(--ink); font-size: 13.5px; min-width: 150px; }
+    .metafield input:focus { border-color: var(--accent); outline: none; }
+    .metasave { padding: 6px 16px; }
+  </style>
+  {% endif %}
   {% if redirect_to %}
   {# the listed address is not the page that answered: say so plainly, or the
      library silently describes a page nobody asked about #}
