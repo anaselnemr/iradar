@@ -4,7 +4,7 @@
 <div class="card">
   <div class="statrow">
     <div class="stat"><div class="n" style="color:#8b5cf6">{{ counts.total }}</div><div class="l">Total Pages</div></div>
-    <div class="stat"><div class="n" style="color:#3b82f6">{{ counts.checked or 0 }}</div><div class="l">Pages Captured</div></div>
+    <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Pages Captured</div></div>
     <a class="stat statlink" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring"><div class="n" style="color:#16a34a">{{ counts.live or 0 }}</div><div class="l">Live</div></a>
     <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review"><div class="n" style="color:{{ '#ea580c' if total_open else 'var(--muted)' }}">{{ total_open }}</div><div class="l">Updated</div></a>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
