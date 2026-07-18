@@ -48,7 +48,7 @@
         · <b><span id="run-saved">0</span></b> saved
         <b id="run-eta" style="color:var(--accent)"></b>
       </span>
-      <span id="run-paused" style="display:none; color:#d97706; font-weight:600">⏸ paused</span>
+      <span id="run-paused" style="display:none; color:#ea580c; font-weight:600">⏸ paused</span>
       <span id="run-stopping" style="display:none; color:#dc2626; font-weight:600">⏹ ending…</span>
       <span style="margin-left:auto; display:inline-flex; gap:8px">
         <button id="run-pause" class="linkbtn" type="button" onclick="togglePause()">⏸ Pause</button>
@@ -541,7 +541,7 @@ async function poll() {
         document.getElementById('run-eta').textContent = '';
         document.getElementById('run-msg').textContent =
           'Finishing the pages already in progress, then it holds. Press Resume to continue.';
-        if (bar) bar.style.background = '#d97706';
+        if (bar) bar.style.background = '#ea580c';
       } else {
         if (verb) verb.textContent = 'Capturing';
         // live throughput from the last ~3 min of polls, shown with the ETA

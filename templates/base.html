@@ -13,24 +13,24 @@
 </script>
 <style>
   :root {
-    --bg: #f4f6f8; --card: #ffffff; --ink: #1a2332; --muted: #64748b;
-    --accent: #b7002d; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --bg: #f8fafc; --card: #ffffff; --ink: #0f172a; --muted: #64748b;
+    --accent: #2563eb; --ok: #16a34a; --warn: #ea580c; --err: #dc2626;
     --line: #e2e8f0; --hover: #f8fafc; --panel: #ffffff;
     color-scheme: light;
   }
   [data-theme="dark"] {
     --bg: #000000; --card: #0c0c0c; --ink: #e9e9e9; --muted: #9a9a9a;
-    --accent: #ff5c7a; --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+    --accent: #3b82f6; --ok: #4ade80; --warn: #fb923c; --err: #f87171;
     --line: #222222; --hover: #171717; --panel: #101010;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
          background: var(--bg); color: var(--ink); font-size: 15px; }
-  header { background: #1a2332; color: #fff; padding: 14px 28px;
+  header { background: #0f172a; color: #fff; padding: 14px 28px;
            display: flex; align-items: center; gap: 24px; }
   header .logo { font-weight: 700; font-size: 18px; letter-spacing: .3px; }
-  header .logo span { color: #ff5a7a; }
+  header .logo span { color: #60a5fa; }
   header nav a { color: #cbd5e1; text-decoration: none; margin-right: 18px;
                  font-size: 14px; }
   header nav a:hover { color: #fff; }
@@ -48,7 +48,7 @@
        font-variant-numeric: tabular-nums;
        vertical-align: middle; }
   tr:hover td { background: var(--hover); }
-  a { color: #0f5bd7; }
+  a { color: #2563eb; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
            font-size: 12px; font-weight: 600; white-space: nowrap; }
   .b-changed  { background: #ffedd5; color: #c2410c; }
@@ -86,7 +86,7 @@
   .pagecard-title { font-weight: 600; font-size: 14px; margin-bottom: 3px;
                     overflow: hidden; text-overflow: ellipsis;
                     white-space: nowrap; }
-  .pagecard-url { font-size: 11.5px; color: #0f5bd7; overflow: hidden;
+  .pagecard-url { font-size: 11.5px; color: #2563eb; overflow: hidden;
                   text-overflow: ellipsis; white-space: nowrap; }
 
   /* --- hierarchy tree --- */
@@ -230,7 +230,7 @@
   .urlcell a { display: inline-block; max-width: 100%; overflow: hidden;
                text-overflow: ellipsis; white-space: nowrap;
                vertical-align: bottom; }
-  .liveurl { font-size: 12px; color: #0f5bd7 !important; }
+  .liveurl { font-size: 12px; color: #2563eb !important; }
   .liveurl:hover { text-decoration: underline; }
   .titlelink { color: var(--ink) !important; font-weight: 600;
                text-decoration: none; }
@@ -246,7 +246,7 @@
              width: 38px; height: 38px; border-radius: 8px; font-size: 16px;
              cursor: pointer; line-height: 1; }
   .iconbtn:hover { color: var(--ink); border-color: var(--muted); }
-  .linkbtn { background: none; border: 0; color: #0f5bd7; font-size: 13px;
+  .linkbtn { background: none; border: 0; color: #2563eb; font-size: 13px;
              cursor: pointer; padding: 0; text-decoration: underline; }
   .quickchips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
   details.addbox summary { cursor: pointer; font-weight: 600; font-size: 15px;
@@ -508,7 +508,11 @@
   [data-theme="dark"] .flash       { background: rgba(52,211,153,.1);
                                      border-color: rgba(52,211,153,.3); color: #6ee7b7; }
   [data-theme="dark"] .chip-on     { background: #e9e9e9; color: #000; border-color: #e9e9e9; }
-  [data-theme="dark"] .chip-on b   { color: #b7002d; }
+  [data-theme="dark"] .chip-on b   { color: #2563eb; }
+  [data-theme="dark"] a { color: #60a5fa; }
+  [data-theme="dark"] .pagecard-url { color: #60a5fa; }
+  [data-theme="dark"] .liveurl { color: #60a5fa !important; }
+  [data-theme="dark"] .linkbtn { color: #60a5fa; }
   [data-theme="dark"] .chip-bad b  { color: #f87171; }
   [data-theme="dark"] .chip-warn b { color: #fb923c; }
   [data-theme="dark"] .chip-good b { color: #34d399; }
