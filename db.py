@@ -276,6 +276,10 @@ def ptype_for_url(u):
     path = "/" + u.split("//", 1)[-1].split("/", 1)[-1] if "/" in u.split("//", 1)[-1] else "/"
     if "softwaretools.infineon.com" in host:
         return "Design resources"
+    # the bare site root is its own kind of page: every hierarchy starts
+    # from it, it belongs to none of them
+    if host in ("www.infineon.com", "infineon.com") and path.rstrip("/") == "":
+        return "Home"
     for prefix, t in (("/part/", "Part"), ("/evaluation-board/", "Part"),
                       ("/products/", "Product"),
                       ("/applications/", "Application"),

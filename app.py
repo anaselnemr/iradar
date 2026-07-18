@@ -489,7 +489,7 @@ _LEVEL_TYPES = ("PC", "PFP", "PSFP", "PEFP", "ADP", "AOP", "ASP", "AFB",
 ETYPE_ORDER = ["PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
                "DRC", "DRF", "DRSF",
                "ADP", "AOP", "ASP", "AFB",
-               "Product", "Application", "Design resources", "Promo"]
+               "Home", "Product", "Application", "Design resources", "Promo"]
 
 
 def _etype(ptype, url, level=""):
@@ -1274,9 +1274,11 @@ def _aemlink(page_url, base):
         host, path = parts.netloc.lower(), parts.path.rstrip("/")
     except Exception:
         host, path = "", ""
-    if not base or not path or host not in ("www.infineon.com",
-                                            "infineon.com"):
+    if not base or host not in ("www.infineon.com", "infineon.com"):
         return ""
+    # the HOMEPAGE is the one page whose path is empty: its author node is
+    # the language root itself, so the link simply ends language-masters/en
+    # (with the base's own .html suffix), no path segment appended
     # a /gated/ or /document-promo/ address IS a document, not an authored
     # page - there is no AEM editor behind it (the _uuid suffix is the tell)
     low = path.lower()
@@ -1442,6 +1444,9 @@ def _hierarchy_tabs(con):
     types = [r["ptype"] for r in con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE active=1 AND ptype<>''"
         " GROUP BY ptype ORDER BY n DESC")]
+    # the homepage is no tab: every hierarchy starts from it, so it renders
+    # at the TOP of each tree instead of standing alone
+    types = [t for t in types if t != "Home"]
     tabs, merged = [], set()
     for label, members in MERGED_TABS:
         present = [t for t in members if t in types]
@@ -3290,6 +3295,14 @@ def hierarchy():
         SELECT l.ts, l.old_level, l.new_level, l.src, l.why, l.url_id,
                u.url FROM level_log l JOIN urls u ON u.id=l.url_id
         ORDER BY l.id DESC LIMIT 30""").fetchall()
+    # the homepage roots every tree (except promo - standalone pages don't
+    # descend from anything): shown as the topmost node of each tab
+    home = con.execute(
+        "SELECT id, url,"
+        " COALESCE(NULLIF(title_override,''), (SELECT s.page_title FROM"
+        "  snapshots s WHERE s.url_id=urls.id AND s.status='ok'"
+        "  AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)) AS title"
+        " FROM urls WHERE ptype='Home' AND active=1 LIMIT 1").fetchone()
     con.close()
     # PC/PFP/… levels are a product taxonomy - only badge them on the product
     # tree; design resources, applications and promo have no such levels.
@@ -3305,7 +3318,8 @@ def hierarchy():
                            counts=counts, total=totals.get(sel, 0),
                            shown=len(pages), levels=seen_levels,
                            level_names=LEVEL_NAMES,
-                           disagreements=disagreements, level_log=level_log)
+                           disagreements=disagreements, level_log=level_log,
+                           home=home)
 
 
 @app.route("/export.xlsx")
