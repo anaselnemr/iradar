@@ -3443,8 +3443,26 @@ def prewarm():
     return jsonify(PREWARM)
 
 
+def _sweep_furniture():
+    """Startup sweep: drop template-chrome images (spinner, logos) that an
+    OLDER runner indexed before the furniture filter existed. index_items now
+    refuses them, but rows written by a run that predates the code - or by a
+    server that was mid-run when the filter landed - linger until their page's
+    next capture. Idempotent, milliseconds, every boot."""
+    con = db.connect()
+    n = con.execute(
+        "DELETE FROM items WHERE category='images' AND (item_url LIKE"
+        " '%/etc.clientlibs/%' OR lower(item_url) LIKE"
+        " '%/content/dam/ifx/infineon_logo%')").rowcount
+    con.commit()
+    con.close()
+    if n:
+        print(f"  swept {n} furniture image row(s) from the library index")
+
+
 if __name__ == "__main__":
     db.init_db()
+    _sweep_furniture()
     scheduler.start()
     reschedule()
     # warm the document previews in the background so item pages open instantly
