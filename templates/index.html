@@ -287,7 +287,10 @@
       <td class="muted">{{ u.last_checked|localtime }}</td>
       <td>
         {% if u.open_changes %}
-          <a href="{{ url_for('change_view', change_id=u.latest_change_id) }}"><b>{{ u.open_changes }} to review</b></a>
+          {% set wc = u.latest_components|fromjson if u.latest_components else [] %}
+          <a href="{{ url_for('change_view', change_id=u.latest_change_id) }}"
+             title="{{ wc|join(' · ') if wc else 'Open the diff' }}"><b>{{ u.open_changes }} to review</b></a>
+          {% if wc %}<div class="muted" style="font-size:11.5px; line-height:1.35; margin-top:2px">{{ wc[:3]|join(' · ') }}{% if wc|length > 3 %} · +{{ wc|length - 3 }} more{% endif %}</div>{% endif %}
         {% elif u.change_total %}
           <span class="muted" title="{{ u.change_total }} recorded change{{ 's' if u.change_total != 1 }} over time (all reviewed)">{{ u.change_total }}×</span>
         {% else %}<span class="muted">—</span>{% endif %}

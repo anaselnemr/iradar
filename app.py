@@ -118,6 +118,16 @@ ACRONYMS = {"psoc", "xmc", "optiga", "airoc", "traveo", "aurix", "tpm", "mcu",
             "ble", "wifi", "gan", "sic", "id", "tpu", "cpu", "kit", "eol"}
 
 
+@app.template_filter("fromjson")
+def _fromjson_filter(s):
+    """Decode a JSON column for the template (the per-change component list)."""
+    try:
+        v = json.loads(s or "[]")
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+
 @app.template_filter("pretty_slug")
 def pretty_slug_filter(s):
     """Readable provisional name for a page we have not captured yet."""
@@ -268,6 +278,7 @@ TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
 STATUS_FILTERS = {
     "test":      ("🧪 Test set",
                   "u.id IN (" + ",".join(map(str, TEST_PAGE_IDS)) + ")"),
+    "metaflag":  ("⚠ Ownership mismatch", "IFNULL(u.meta_flag,'')<>''"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
@@ -837,6 +848,8 @@ def index():
           (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id) AS change_total,
           (SELECT c2.id FROM changes c2 WHERE c2.url_id=u.id AND c2.reviewed=0
             ORDER BY c2.id DESC LIMIT 1) AS latest_change_id,
+          (SELECT c3.components FROM changes c3 WHERE c3.url_id=u.id
+            AND c3.reviewed=0 ORDER BY c3.id DESC LIMIT 1) AS latest_components,
           (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
             AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)
             AS page_title
@@ -952,6 +965,8 @@ def index():
     quick_chips = [c for c in (
         {"kind": "status", "vals": ["test"], "label": "🧪 Test set",
          "n": len(TEST_PAGE_IDS), "always": True},
+        {"kind": "status", "vals": ["metaflag"], "label": "⚠ Ownership mismatch",
+         "n": status_counts["metaflag"], "tone": "warn"},
         {"kind": "status", "vals": ["changed"], "label": "Updated",
          "n": status_counts["changed"], "always": True, "tone": "warn"},
         {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",

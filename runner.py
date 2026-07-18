@@ -242,6 +242,103 @@ def index_items(con, url_id, snap_dir, dead=False):
             " item_key, doc_type, img) VALUES(?,?,?,?,?,?,?,?,?)", rows)
 
 
+# human labels for the diff, mirroring the app's section/component names
+_DIFF_SECTIONS = [
+    ("overview", "Overview"), ("subheadline", "Subheadline"),
+    ("features", "Key features"), ("benefits", "Benefits"),
+    ("applications", "Applications"), ("categories", "Browse by category"),
+    ("products", "Related products"), ("documents", "Documents"),
+    ("design_resources", "Design resources & boards"),
+    ("trainings", "Trainings & webinars"), ("partners", "Partner solutions"),
+    ("news", "News & highlights"), ("videos", "Videos"),
+    ("images", "Images"), ("about", "About"),
+]
+_DIFF_FLAGS = [("hero_image", "Hero image"), ("product_table", "Products table"),
+               ("developer_community", "Developer community")]
+
+
+def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
+    """Name WHAT changed, component by component.
+
+    A review should read 'page text · News & highlights (+2/-1) · Hero image
+    added' - three concrete things - instead of one opaque 'something
+    changed'. Compares the two snapshots' captured sections item-by-item, the
+    presence/emptiness flags, and the page's own section-nav list. Ownership
+    metadata (BL/PL/CM/Owner) is deliberately NOT here: it is our bookkeeping,
+    not the page's content, so re-importing the report never raises a review.
+    """
+    out = []
+    if cmp_result.get("text_changed"):
+        out.append(f"page text (+{cmp_result.get('lines_added', 0)}"
+                   f"/-{cmp_result.get('lines_removed', 0)} lines)")
+
+    def _sections(d):
+        try:
+            return json.loads((Path(d) / "sections.json")
+                              .read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _keys(sec, cat):
+        return {(str(i.get("title", "")).strip().lower(),
+                 str(i.get("url", "")).strip())
+                for i in (sec.get(cat) or []) if isinstance(i, dict)}
+    old_s, new_s = _sections(old_dir), _sections(new_dir)
+    for cat, label in _DIFF_SECTIONS:
+        a, b = _keys(old_s, cat), _keys(new_s, cat)
+        add, rem = len(b - a), len(a - b)
+        if add and rem:
+            out.append(f"{label} (+{add}/-{rem})")
+        elif add:
+            out.append(f"{label} (+{add})")
+        elif rem:
+            out.append(f"{label} (-{rem})")
+
+    def _json(v, default):
+        try:
+            return json.loads(v or default)
+        except Exception:
+            return json.loads(default)
+    of = _json(old_row["flags"] if "flags" in old_row.keys() else "", "{}")
+    nf = new_res.get("flags") or {}
+    for key, label in _DIFF_FLAGS:
+        oe = bool((of.get(key) or {}).get("exists"))
+        ne = bool((nf.get(key) or {}).get("exists"))
+        if oe != ne:
+            out.append(f"{label} {'added' if ne else 'removed'}")
+        elif oe and ne:
+            oc = bool((of.get(key) or {}).get("has_content"))
+            nc = bool((nf.get(key) or {}).get("has_content"))
+            if oc != nc:
+                out.append(f"{label} {'filled' if nc else 'emptied'}")
+
+    def _set(v):
+        try:
+            return {str(x).strip().lower() for x in (v or [])}
+        except Exception:
+            return set()
+    onav = _set(_json(old_row["components"]
+                      if "components" in old_row.keys() else "", "[]"))
+    nnav = _set(new_res.get("components") or [])
+    # a section whose ITEMS already reported a change is not also reported as
+    # a nav add/remove - one real change, one line
+    said = {o.split(" (")[0].strip().lower() for o in out}
+    for c in sorted(nnav - onav):
+        if c not in said:
+            out.append(f"section '{c}' added")
+    for c in sorted(onav - nnav):
+        if c not in said:
+            out.append(f"section '{c}' removed")
+
+    # images/visual only matter when nothing more specific already says it
+    if cmp_result.get("images_changed") and not any("Images" in o for o in out):
+        out.append(f"images (+{cmp_result.get('images_added', 0)}"
+                   f"/-{cmp_result.get('images_removed', 0)})")
+    if cmp_result.get("visual_changed") and not out:
+        out.append(f"visual layout ({cmp_result.get('pixel_ratio', 0):.2f}% of pixels)")
+    return out
+
+
 def _write_page_meta(con, url_id, page_url, res, dead):
     """Write every page-derived urls column from ONE capture result.
 
@@ -670,19 +767,25 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
             result = cmp.compare_snapshots(prev["dir"], confirm_dir,
                                            change_dir=str(change_dir),
                                            settings=settings_now)
+            # name WHAT changed, component by component, so the review reads
+            # "page text · News & highlights (+2/-1) · Hero image added"
+            parts = component_changes(prev["dir"], confirm_dir, row, vres,
+                                      result)
+            summary = " · ".join(parts) if parts else result["summary"]
             con.execute(
                 "INSERT INTO changes(url_id, ts, old_snapshot_id,"
                 " new_snapshot_id, text_changed, images_changed,"
                 " visual_changed, pixel_ratio, height_delta, lines_added,"
-                " lines_removed, images_added, images_removed, summary, dir)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " lines_removed, images_added, images_removed, summary, dir,"
+                " components)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (url_id, now, prev["id"], confirm_id,
                  int(result["text_changed"]), int(result["images_changed"]),
                  int(result["visual_changed"]), result["pixel_ratio"],
                  result["height_delta"], result["lines_added"],
                  result["lines_removed"], result["images_added"],
-                 result["images_removed"], result["summary"],
-                 str(change_dir)))
+                 result["images_removed"], summary,
+                 str(change_dir), json.dumps(parts, ensure_ascii=False)))
             con.execute("UPDATE urls SET last_checked=?, last_status=?"
                         " WHERE id=?", (now, "changed", url_id))
             index_items(con, url_id, confirm_dir, dead_now)

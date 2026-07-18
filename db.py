@@ -150,6 +150,10 @@ def init_db():
     # kept for the record but never used as a comparison baseline.
     _ensure_column(con, "snapshots", "rejected", "INTEGER DEFAULT 0")
     _ensure_column(con, "changes", "resolution", "TEXT DEFAULT ''")
+    # WHICH named components changed in this review item, as a JSON list
+    # ("Hero image added", "News & highlights (+2/-1)", "page text") - so a
+    # review reads as a list of real things, not one opaque "something changed"
+    _ensure_column(con, "changes", "components", "TEXT DEFAULT ''")
     # page type: Product / Application / Design resources / Promo / Part
     _ensure_column(con, "urls", "ptype", "TEXT DEFAULT ''")
     # Infineon's own page level from the source report's "Page Type" column:

@@ -9,6 +9,22 @@
     Change detected on <a href="{{ u.url }}" target="_blank">{{ u.url }}</a></h1>
   <div class="muted">Detected {{ c.ts|localtime }} (local time) — comparing snapshot of
     {{ old_snap.ts|localtime if old_snap else '?' }} vs {{ new_snap.ts|localtime if new_snap else '?' }}</div>
+  {% set parts = c.components|fromjson if c.components else [] %}
+  {% if parts %}
+  <div class="whatchanged">
+    <div class="wc-head">{{ parts|length }} thing{{ 's' if parts|length != 1 }} changed on this page</div>
+    <ul class="wc-list">
+      {% for p in parts %}<li>{{ p }}</li>{% endfor %}
+    </ul>
+  </div>
+  <style>
+    .whatchanged { margin: 12px 0 4px; padding: 10px 14px; border-left: 3px solid var(--warn);
+                   background: var(--hover); border-radius: 0 8px 8px 0; }
+    .wc-head { font-weight: 600; font-size: 13.5px; margin-bottom: 5px; }
+    .wc-list { margin: 0; padding-left: 20px; font-size: 13.5px; }
+    .wc-list li { margin: 2px 0; }
+  </style>
+  {% endif %}
   <div style="margin-top:12px">
     {% if c.text_changed %}<span class="badge b-changed">TEXT: +{{ c.lines_added }} / −{{ c.lines_removed }} lines</span>{% endif %}
     {% if c.images_changed %}<span class="badge b-changed">IMAGES: +{{ c.images_added }} / −{{ c.images_removed }}</span>{% endif %}
