@@ -262,6 +262,8 @@ def type_level_for(url):
         lvl = "EB" if "/evaluation-board/" in lu else "PTP"
     elif pt == "Design resources":
         lvl = dr_level_for(url)
+    elif pt == "Home":
+        lvl = "HOME"          # the root wears its own tag, like PTP or DRC
     else:
         lvl = ""
     return pt, lvl, ("inferred" if lvl else "")

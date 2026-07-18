@@ -485,11 +485,11 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
 # superset - a PC hub is not built like a PEFP end family, an ADP directory
 # not like an ASP solution page. Order = display order in the matrix.
 _LEVEL_TYPES = ("PC", "PFP", "PSFP", "PEFP", "ADP", "AOP", "ASP", "AFB",
-                "DRC", "DRF", "DRSF")
-ETYPE_ORDER = ["PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
+                "DRC", "DRF", "DRSF", "HOME")
+ETYPE_ORDER = ["HOME", "PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
                "DRC", "DRF", "DRSF",
                "ADP", "AOP", "ASP", "AFB",
-               "Home", "Product", "Application", "Design resources", "Promo"]
+               "Product", "Application", "Design resources", "Promo"]
 
 
 def _etype(ptype, url, level=""):
@@ -1417,6 +1417,7 @@ LEVEL_NAMES = {
     "PC": "Product category", "PFP": "Product family",
     "PSFP": "Product sub-family", "PEFP": "Product end family",
     "PTP": "Part type page", "EB": "Evaluation board",
+    "HOME": "Homepage — the site root",
     "ADP": "Application division", "AOP": "Application overview",
     "ASP": "Application solution", "AFB": "Application focus",
     "DRC": "Design resource category", "DRF": "Design resource family",

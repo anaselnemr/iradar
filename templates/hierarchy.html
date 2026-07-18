@@ -149,7 +149,7 @@
     </div>
     {% if home and sel != 'Promo' %}
     <div class="tleaf" style="margin:0 0 8px; padding:7px 11px; border:1px solid var(--line); border-radius:9px; gap:8px">
-      <span class="lvl" style="background:var(--accent); border-color:var(--accent); color:#fff">HOME</span>
+      <span class="lvl lvl-home" title="Homepage — the site root">HOME</span>
       <a class="titlelink" href="{{ url_for('url_detail', url_id=home.id) }}" style="font-weight:600" title="Open our captured content for the homepage">{{ (home.title or 'Infineon')|clean_title }}</a>
       <a class="liveurl" href="{{ home.url }}" target="_blank" title="Open infineon.com">↗</a>
       <span class="muted" style="font-size:12px">— the site root; everything below descends from it</span>
