@@ -411,34 +411,38 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # Body-section components (cat/flag) cover every page type; the nav-only ones
 # are the structural sections PTP/EB pages expose that are not library content.
 #   key, label, kind, arg
+# Fixed display order (the user's spec), applied to BOTH the component chips
+# and the page's content sections. A component/section only shows if present.
+# The Videos component is intentionally gone: a video lives under News &
+# highlights / Trainings or in Design resources, reachable from those links.
 COMPONENTS = [
+    ("hero_image",         "Hero image",            "flag", "hero_image"),
     ("overview",           "Overview",              "cat",  "overview"),
-    ("about",              "About",                 "cat",  "about"),
-    ("documents",          "Documents",             "cat",  "documents"),
-    ("design_resources",   "Design resources",      "cat",  "design_resources"),
+    ("parametrics",        "Parametrics",           "tab",  "parametrics"),
+    ("ordering",           "Ordering",              "tab",  "ordering"),
+    ("description",        "Description",           "tab",  "description"),
     ("features",           "Key features",          "cat",  "features"),
     ("benefits",           "Benefits",              "cat",  "benefits"),
     ("applications",       "Applications",          "cat",  "applications"),
     ("categories",         "Browse by category",    "cat",  "categories"),
-    ("products",           "Related products",      "cat",  "products"),
-    ("news",               "News & highlights",     "cat",  "news"),
-    ("videos",             "Videos",                "cat",  "videos"),
-    ("product_table",      "Products table",        "flag", "product_table"),
-    ("developer_community","Developer community",   "flag", "developer_community"),
-    ("hero_image",         "Hero image",            "flag", "hero_image"),
-    ("buying_options",     "View buying options",   "nav",  "view buying options"),
-    ("product_details",    "Product details",       "nav",  "product details"),
+    ("about",              "About",                 "cat",  "about"),
     # PTP pages label it "Diagrams", application pages "Diagram" - one component
     ("diagrams",           "Diagram",               "nav",
      ("diagram", "diagrams", "block diagram", "block diagrams")),
-    ("featured_products",  "Featured products",     "nav",  "featured products"),
+    ("products",           "Related products",      "cat",  "products"),
+    ("documents",          "Documents",             "cat",  "documents"),
+    ("design_resources",   "Design resources",      "cat",  "design_resources"),
     ("partner_solutions",  "Partner solutions",     "nav",  "partner solutions"),
+    ("developer_community","Developer community",   "flag", "developer_community"),
+    ("news",               "News & highlights",     "cat",  "news"),
+    # product/part-specific components, after the canonical order above
+    ("product_table",      "Products table",        "flag", "product_table"),
+    ("buying_options",     "View buying options",   "nav",  "view buying options"),
+    ("product_details",    "Product details",       "nav",  "product details"),
+    ("featured_products",  "Featured products",     "nav",  "featured products"),
     ("register_product",   "Register product",      "nav",  "register product"),
     ("view_products",      "View products",         "nav",  "view products"),
     ("bom",                "Bill of material",      "nav",  "bill of material"),
-    ("parametrics",        "Parametrics",           "tab",  "parametrics"),
-    ("ordering",           "Ordering",              "tab",  "ordering"),
-    ("description",        "Description",           "tab",  "description"),
 ]
 COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
 # category name -> component key, for turning captured categories into components
@@ -1103,19 +1107,21 @@ def urls_toggle(url_id):
 # note: capture also stores an "about" category in sections.json; it is
 # deliberately NOT listed here - the user wants About content tracked for
 # text comparison only, never displayed as a library section.
+# Content sections in the SAME fixed order as the component chips (the ones
+# that hold displayable items). Videos removed (see COMPONENTS); a video shows
+# under News & highlights / Trainings or via a Design-resources link.
 SECTION_LABELS = [
     ("overview", "Overview"),
+    ("features", "Key features"),
+    ("benefits", "Benefits"),
+    ("applications", "Applications"),
     ("categories", "Browse by category"),
     ("products", "Related products"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
-    ("features", "Key features"),
-    ("benefits", "Benefits"),
-    ("applications", "Applications"),
-    ("trainings", "Trainings & webinars"),
-    ("videos", "Videos"),
-    ("news", "News & highlights"),
     ("partners", "Partner solutions"),
+    ("trainings", "Trainings & webinars"),
+    ("news", "News & highlights"),
     ("images", "Images"),
 ]
 
@@ -1232,6 +1238,11 @@ def pretty_image_title(title, url):
     extension - which is what actually identifies the asset.
     """
     t = (title or "").strip()
+    # a block/architecture diagram (alt 'blockdiagram-image', file
+    # 'infineon-13452-blockdiagram-en.svg') reads as 'Block Diagram', not the
+    # part number in its filename
+    if re.search(r"block[-_ ]?diagram", (t + " " + (url or "")), re.I):
+        return "Block Diagram"
     slug = " " not in t and bool(re.search(r"[-_]", t))
     if (t.lower() in _JUNK_TITLES or len(t) < 3 or slug
             or _SLOT_ALT.match(t)):
@@ -1979,10 +1990,16 @@ def url_detail(url_id):
                     if canon in _seen_img:
                         continue
                     _seen_img.add(canon)
+                    orig = i.get("title", "") or ""
+                    # the page's main visual: its alt/url calls it a banner,
+                    # hero or key-visual - flag it so it reads as THE main one
+                    i["is_main"] = bool(re.search(
+                        r"banner|hero|key.?visual", orig + " " + canon, re.I))
                     i["url"] = canon
-                    i["title"] = pretty_image_title(i.get("title", ""), canon)
+                    i["title"] = pretty_image_title(orig, canon)
                     _deduped.append(i)
-                items = _deduped
+                # the main image floats to the top of the Images section
+                items = sorted(_deduped, key=lambda x: not x.get("is_main"))
             # once every page of this type is captured, a category that is
             # empty across ALL of them does not belong to this page shape
             if not items and present is not None and cat not in present:
