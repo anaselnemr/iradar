@@ -5,23 +5,32 @@
   <a class="bc-back" href="{{ url_for('index') }}" title="Back to the dashboard">←</a>
   {% for c in crumbs %}
     {% if not loop.first %}<span class="bc-sep">›</span>{% endif %}
+    {% set hname = c.title or (u.title_override or (latest.page_title if latest and latest.page_title else u.url.rstrip('/').rsplit('/',1)[-1])) | clean_title %}
     {% if c.here %}
-      {% if siblings|length > 1 %}
+      {% if siblings|length > 1 or children %}
       <details class="bc-sibs">
-        <summary title="{{ siblings|length }} pages sit beside this one — jump to any">
-          <b>{{ (disp_crumb if disp_crumb is defined else '') or c.title or (u.title_override or (latest.page_title if latest and latest.page_title else u.url.rstrip('/').rsplit('/',1)[-1])) | clean_title }}</b>
-          <span class="bc-count">{{ siblings|length }}</span>
+        <summary title="Jump to a page beside or beneath this one">
+          <b>{{ hname }}</b>
+          <span class="bc-count">{{ (siblings|length if siblings|length > 1 else 0) + children|length }}</span>
         </summary>
         <div class="bc-menu">
-          <div class="bc-menu-head">Beside this page</div>
+          {% if children %}
+          <div class="bc-menu-head">Inside this page <span class="bc-n">{{ children|length }}</span></div>
+          {% for ch in children %}
+          <a class="bc-item bc-child" href="{{ url_for('url_detail', url_id=ch.id) }}">↳ {{ ch.title|clean_title }}</a>
+          {% endfor %}
+          {% endif %}
+          {% if siblings|length > 1 %}
+          <div class="bc-menu-head">Beside this page <span class="bc-n">{{ siblings|length }}</span></div>
           {% for s in siblings %}
           <a class="bc-item {{ 'cur' if s.here }}" href="{{ url_for('url_detail', url_id=s.id) }}">
             {{ s.title|clean_title }}{% if s.here %} <span class="bc-tick">✓</span>{% endif %}</a>
           {% endfor %}
+          {% endif %}
         </div>
       </details>
       {% else %}
-      <b class="bc-here">{{ c.title or (u.title_override or (latest.page_title if latest and latest.page_title else u.url.rstrip('/').rsplit('/',1)[-1])) | clean_title }}</b>
+      <b class="bc-here">{{ hname }}</b>
       {% endif %}
     {% elif c.page_id %}
       <a href="{{ url_for('url_detail', url_id=c.page_id) }}">{{ c.title|clean_title }}</a>
@@ -59,7 +68,14 @@
              border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.13);
              padding: 5px; }
   .bc-menu-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-                  color: var(--muted); padding: 5px 9px 6px; }
+                  color: var(--muted); padding: 5px 9px 6px;
+                  display: flex; align-items: center; gap: 6px; }
+  /* the second group gets a hairline so children and siblings read apart */
+  .bc-menu-head ~ .bc-menu-head { border-top: 1px solid var(--line);
+                                  margin-top: 5px; padding-top: 9px; }
+  .bc-n { font-size: 10px; color: var(--muted); background: var(--hover);
+          border-radius: 999px; padding: 0 5px; letter-spacing: 0; }
+  .bc-child { color: var(--accent) !important; }
   .bc-item { display: block; padding: 5px 9px; border-radius: 6px;
              color: var(--ink) !important; font-size: 13px; white-space: nowrap;
              overflow: hidden; text-overflow: ellipsis; }

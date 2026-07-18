@@ -15,9 +15,14 @@ con=db.connect()
 
 # our pages: normalized url/canonical -> id
 byurl={}
-for r in con.execute("SELECT id,url,canonical_url,ptype,level,breadcrumb FROM urls"):
+for r in con.execute("SELECT id,url,canonical_url,redirect_from FROM urls"):
     byurl[norm(r["url"])]=r["id"]
-    if r["canonical_url"]: byurl.setdefault(norm(r["canonical_url"]), r["id"])
+    for alt in ("canonical_url","redirect_from"):
+        # redirect_from matters: the report lists many pages under a legacy
+        # address that 301s to one we already track. Without this the importer
+        # re-adds that address every run, the next run deletes it again, and the
+        # ownership on it never reaches the real page.
+        if r[alt]: byurl.setdefault(norm(r[alt]), r["id"])
 
 wb=load_workbook(PATH, read_only=True, data_only=True)
 def rows(title):
@@ -84,6 +89,14 @@ for row,hdr in rows("Application"):
 print(f"[Application] set CM/Owner on {n} pages, {flags} page-type mismatches flagged")
 
 # ---------- 5. PTP/EB: PL from sheet, BL from product hierarchy, flag misalign ----------
+def pl_aligned(part_pl, family_pl):
+    """A family usually covers SEVERAL product lines and the sheet writes that
+    as a range - '80/81', '80, 81', '80-81'. A part sitting at PL 80 under it is
+    aligned, not misaligned; a plain string compare called all 200 of those a
+    problem. So the family PL is read as the SET of lines it spans."""
+    lines={t for t in re.split(r"[^0-9A-Za-z]+", str(family_pl)) if t}
+    return not lines or str(part_pl).strip() in lines
+
 def family_bl_pl(uid):
     """Walk the part's breadcrumb to its deepest product URL, match a Product row."""
     r=con.execute("SELECT breadcrumb FROM urls WHERE id=?", (uid,)).fetchone()
@@ -105,7 +118,7 @@ for row,hdr in rows("PTP"):
     fam,famurl=family_bl_pl(uid)
     bl = fam[0] if fam else ""
     flag=""
-    if fam and pl_sheet and fam[1] and pl_sheet!=fam[1]:
+    if fam and pl_sheet and fam[1] and not pl_aligned(pl_sheet, fam[1]):
         flag=f"PL {pl_sheet} != family {famurl.rsplit('/',1)[-1]} PL {fam[1]}"; flags+=1
     if bl: blset+=1
     setf(uid, pl=pl_sheet, bl=bl, meta_flag=flag); n+=1

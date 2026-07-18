@@ -238,7 +238,10 @@ def set_setting(key, value):
 # tags (intc, utm_*, gclid, fbclid), Infineon's redirect bookkeeping (redirId)
 # and AEM's author-mode toggle (wcmmode). Left on, one page gets tracked twice
 # - once clean, once with a campaign tag the site glued onto a redirect.
-_JUNK_PARAMS = {"intc", "redirid", "redir_id", "wcmmode", "gclid", "fbclid"}
+_JUNK_PARAMS = {"intc", "redirid", "redir_id", "wcmmode", "gclid", "fbclid",
+                # ad-network click ids: ef_id arrived on a report URL and made
+                # /home-appliances a second, duplicate page beside the clean one
+                "ef_id", "s_kwcid", "msclkid", "mkt_tok", "mc_cid", "mc_eid"}
 
 
 def strip_junk_params(u):

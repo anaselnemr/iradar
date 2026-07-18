@@ -93,12 +93,22 @@ def _follow_redirect(con, url_id, old_url, final_url):
             or _same_page(old_url, final_url):
         return False, ""
     existing = con.execute(
-        "SELECT id FROM urls WHERE id<>? AND rtrim(url,'/')=?",
+        "SELECT id, bl, pl, cm, owner FROM urls WHERE id<>? AND rtrim(url,'/')=?",
         (url_id, final_url.rstrip("/"))).fetchone()
     if existing:
         # the destination is already on the list: drop the stale twin rather
         # than track one page under two names. Its snapshots are captures of
         # the destination, which the destination's own row will make anyway.
+        # Its OWNERSHIP is not a duplicate though - the CSS report lists these
+        # pages under their legacy address, so that is the only row carrying
+        # BL/PL/CM/Owner. Move it to the keeper before the row goes, or the
+        # report's ownership dies here and re-importing just recreates the row.
+        stale = con.execute("SELECT bl, pl, cm, owner FROM urls WHERE id=?",
+                            (url_id,)).fetchone()
+        for f in ("bl", "pl", "cm", "owner"):
+            if (stale[f] or "").strip() and not (existing[f] or "").strip():
+                con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
+                            (stale[f], existing["id"]))
         for s in con.execute("SELECT dir FROM snapshots WHERE url_id=?",
                              (url_id,)).fetchall():
             if s["dir"]:

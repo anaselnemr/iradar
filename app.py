@@ -2067,7 +2067,7 @@ def url_detail(url_id):
                  for k, lbl, _kind, _arg in _all_components()
                  if k in type_comps or k in have or k == "hero_image"]
 
-    crumbs, siblings = _page_nav(u)
+    crumbs, nav = _page_nav(u)
     # ownership fields to show/edit: the page type's set, plus any field that
     # carries an imported value even if not in the type's default set
     _mfields = list(META_FIELDS.get(u["ptype"], []))
@@ -2080,7 +2080,8 @@ def url_detail(url_id):
                            components=comp_rows, price=(u["price"] or ""),
                            settings=_settings_now, level_names=LEVEL_NAMES,
                            meta_fields=_mfields, meta_labels=META_LABELS,
-                           crumbs=crumbs, siblings=siblings)
+                           crumbs=crumbs, siblings=nav["siblings"],
+                           children=nav["children"])
 
 
 @app.route("/change/<int:change_id>")
@@ -2480,7 +2481,29 @@ def _page_nav(u):
                                                .rsplit("/", 1)[-1]),
                                      "here": r["id"] == u["id"]})
         siblings.sort(key=lambda s: s["title"].lower())
-        return crumbs, siblings[:40]
+
+        # children: the pages one level BENEATH this one, so the bar navigates
+        # forward as well as back
+        children = []
+        if tax.count("/") >= 1:
+            cpfx = "https://www.infineon.com" + tax + "/"
+            for r in con.execute(
+                    "SELECT id, url, canonical_url,"
+                    " COALESCE(NULLIF(title_override,''),"
+                    "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+                    "    AND s.status='ok' AND s.page_title<>''"
+                    "    ORDER BY s.id DESC LIMIT 1)) AS t"
+                    " FROM urls WHERE active=1 AND id<>?"
+                    " AND IFNULL(last_status,'') NOT IN ('notlive','blank')"
+                    " AND (url LIKE ? OR canonical_url LIKE ?) LIMIT 400",
+                    (u["id"], cpfx + "%", cpfx + "%")):
+                p = _tax_norm(r["canonical_url"] or r["url"])
+                if p.rsplit("/", 1)[0] == tax:
+                    children.append({"id": r["id"],
+                                     "title": (r["t"] or r["url"].rstrip("/")
+                                               .rsplit("/", 1)[-1])})
+        children.sort(key=lambda s: s["title"].lower())
+        return crumbs, {"siblings": siblings[:40], "children": children[:40]}
     finally:
         con.close()
 
@@ -3842,18 +3865,24 @@ def _normalize_urls():
     otherwise the row is simply renamed to its clean address."""
     import shutil as _sh
     con = db.connect()
-    for r in con.execute("SELECT id, url, redirect_from FROM urls"
-                         " WHERE url LIKE '%?%'").fetchall():
+    for r in con.execute("SELECT id, url, redirect_from, bl, pl, cm, owner"
+                         " FROM urls WHERE url LIKE '%?%'").fetchall():
         clean = db.strip_junk_params(r["url"])
         if clean == r["url"]:
             continue
-        twin = con.execute("SELECT id, redirect_from FROM urls"
-                           " WHERE rtrim(url,'/')=? AND id<>?",
+        twin = con.execute("SELECT id, redirect_from, bl, pl, cm, owner"
+                           " FROM urls WHERE rtrim(url,'/')=? AND id<>?",
                            (clean.rstrip("/"), r["id"])).fetchone()
         if twin:
             if r["redirect_from"] and not twin["redirect_from"]:
                 con.execute("UPDATE urls SET redirect_from=? WHERE id=?",
                             (r["redirect_from"], twin["id"]))
+            # the junk row may be the one the CSS report landed its ownership
+            # on - carry it over, filling only what the keeper is missing
+            for f in ("bl", "pl", "cm", "owner"):
+                if (r[f] or "").strip() and not (twin[f] or "").strip():
+                    con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
+                                (r[f], twin["id"]))
             con.execute("DELETE FROM urls WHERE id=?", (r["id"],))
             con.execute("DELETE FROM page_fts WHERE rowid=?", (r["id"],))
             _sh.rmtree(db.SNAP_DIR / str(r["id"]), ignore_errors=True)
