@@ -122,6 +122,12 @@
   .lvl { font-size: 10.5px; font-weight: 700; letter-spacing: .4px;
          border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
          font-family: Consolas, monospace; }
+  /* cross-page crossfade (Chromium): chip filters and pagination glide
+     instead of flashing; browsers without support just navigate normally */
+  @view-transition { navigation: auto; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
   .lvl-home { background: #0a8276; color: #fff; }
   .lvl-pc   { background: #1e293b; color: #fff; }
   .lvl-pfp  { background: #1d4ed8; color: #fff; }
@@ -529,7 +535,7 @@
   <div class="logo">Infineon<span>Watch</span></div>
   <nav>
     <a href="{{ url_for('index') }}">Dashboard</a>
-    <a href="{{ url_for('search_items') }}">Search content</a>
+    <a href="{{ url_for('search_items') }}">Content</a>
     <a href="{{ url_for('hierarchy') }}">Hierarchy</a>
     <a href="{{ url_for('history') }}">Run history</a>
     <a href="{{ url_for('settings_view') }}">Settings</a>

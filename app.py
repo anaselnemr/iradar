@@ -1139,36 +1139,42 @@ def _videolike(d):
 
 
 SEARCH_PILLS = [
-    ("all",          "Everything",                None),
-    ("design",       "Design resources & boards",
-     lambda d: d["cat"] == "design_resources"),
-    ("docs",         "Documents",
+    ("all",      "Everything",       None),
+    ("pages",    "Live Pages",       None),
+    ("docs",     "Documents",
      lambda d: d["cat"] == "documents"
      or (d["cat"] == "design_resources"
          and (_doclike_url(d.get("url")) or _doc_typed(d)))),
-    ("images",       "Images", lambda d: d["cat"] == "images"),
-    ("features",     "Key features", lambda d: d["cat"] == "features"),
-    ("benefits",     "Benefits", lambda d: d["cat"] == "benefits"),
-    ("applications", "Applications", lambda d: d["cat"] == "applications"),
-    ("products",     "Related products", lambda d: d["cat"] == "products"),
-    ("videos",       "Videos",
+    ("videos",   "Videos",
      lambda d: d["cat"] == "videos"
      or (d["cat"] in ("news", "trainings") and _videolike(d))),
-    ("text",         "In page text", None),
-    ("pages",        "Pages themselves", None),
+    ("images",   "Images", lambda d: d["cat"] == "images"),
+    ("boards",   "Boards",
+     lambda d: d["cat"] == "design_resources"
+     and "board" in (d.get("grp") or "").lower()),
+    ("design",   "Design resources",
+     lambda d: d["cat"] == "design_resources"),
+    ("products", "Related products", lambda d: d["cat"] == "products"),
+    ("text",     "In page text", None),
 ]
 PILL_FN = {k: f for k, _l, f in SEARCH_PILLS}
 PILL_LABELS = {k: l for k, l, _f in SEARCH_PILLS}
 # categories each pill can live in - lets the SQL fallback prefilter
 PILL_SQL_CATS = {
     "design": ("design_resources",), "docs": ("documents", "design_resources"),
-    "images": ("images",), "features": ("features",), "benefits": ("benefits",),
-    "applications": ("applications",), "products": ("products",),
+    "images": ("images",), "products": ("products",),
+    "boards": ("design_resources",),
     "videos": ("videos", "news", "trainings"),
 }
+# page-section PROSE (key features, benefits, applications) is no content
+# type: it lives in the page's text, and the In-page-text search names the
+# section a match sits in. Keeping them as asset chips doubled every answer.
+PROSE_CATS = ("features", "benefits", "applications")
 # old links used raw category names - keep them working
 _LEGACY_PILL = {"documents": "docs", "design_resources": "design",
-                "news": "videos", "trainings": "videos"}
+                "news": "videos", "trainings": "videos",
+                "features": "text", "benefits": "text",
+                "applications": "text"}
 
 
 def _norm_pill(cat):
@@ -2753,19 +2759,107 @@ def _search_keys(con, q, cat, limit):
     return ordered[:limit]
 
 
+BROWSE_PER_PAGE = 60
+
+# browse-mode SQL per chip: plain, index-friendly filters (search mode keeps
+# the richer per-item functions; browse trades the edge cases for pagination)
+_BROWSE_SQL = {
+    "docs":     "category='documents'",
+    # mirrors _videolike: a news/trainings card that is actually a video -
+    # a media URL or a duration in its meta
+    "videos":   "(category='videos' OR (category IN ('news','trainings')"
+                " AND (lower(item_url) LIKE '%.mp4%'"
+                "  OR item_url LIKE '%/is/content/%'"
+                "  OR meta GLOB '*[0-9]:[0-9][0-9]*')))",
+    "images":   "category='images'",
+    "design":   "category='design_resources'",
+    "boards":   "category='design_resources' AND lower(IFNULL(grp,''))"
+                " LIKE '%board%'",
+    "products": "category='products'",
+}
+
+
 @app.route("/search")
 def search_items():
-    """Search every captured item (documents, boards, trainings, videos,
-    features...) and show which pages carry it. Typo-tolerant."""
+    """The CONTENT library: every captured asset - documents, videos, images,
+    boards, design resources, related products - plus the live pages and the
+    full page text. Empty search = browse it all; the chips filter; the search
+    box works before or after a chip. Page-section prose (key features,
+    benefits, applications) lives under In page text, which names the section
+    each match sits in."""
     q = request.args.get("q", "").strip()
     cat = _norm_pill(request.args.get("cat", "all"))
+    try:
+        pageno = max(1, int(request.args.get("page", 1)))
+    except Exception:
+        pageno = 1
     groups, total, page_hits = [], 0, []
+    browse, browse_total = False, 0
     con = db.connect()
     # 'about' is tracked for text comparison only - never surfaced. 'overview'
-    # is a page's own text, not an asset type - it stays searchable under
-    # Everything but is no pill of its own.
-    indexed = con.execute("SELECT COUNT(*) FROM items"
-                          " WHERE category NOT IN ('about','overview')").fetchone()[0]
+    # is a page's own text, not an asset type. Prose sections live under text.
+    indexed = con.execute(
+        "SELECT COUNT(*) FROM items WHERE category NOT IN"
+        " ('about','overview','features','benefits','applications')"
+    ).fetchone()[0]
+    # live counts for every chip - the "all of it in front of me" numbers
+    ccounts = {"pages": con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]}
+    for key, wsql in _BROWSE_SQL.items():
+        ccounts[key] = con.execute(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE " + wsql +
+            " GROUP BY lower(title), item_url)").fetchone()[0]
+    ccounts["all"] = indexed
+    ccounts["text"] = con.execute(
+        "SELECT COUNT(*) FROM page_fts").fetchone()[0]
+
+    # ---- BROWSE mode: no query -> the library itself, paginated ----------
+    if not q and cat == "pages":
+        browse = True
+        browse_total = ccounts["pages"]
+        prows = con.execute(
+            "SELECT id, url, level, label,"
+            " COALESCE(NULLIF(title_override,''),"
+            "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+            "    AND s.status='ok' AND s.page_title<>''"
+            "    ORDER BY s.id DESC LIMIT 1)) AS page_title"
+            " FROM urls WHERE active=1"
+            " ORDER BY lower(COALESCE(NULLIF(title_override,''), label, url))"
+            " LIMIT ? OFFSET ?",
+            (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
+        page_hits = [{"id": r["id"], "url": r["url"],
+                      "level": r["level"] or "",
+                      "title": (r["page_title"] or r["label"]
+                                or r["url"].rstrip("/").rsplit("/", 1)[-1])}
+                     for r in prows]
+        total = browse_total
+    elif not q and cat in _BROWSE_SQL:
+        browse = True
+        browse_total = ccounts[cat]
+        _sset = db.get_settings()
+        rows = con.execute(
+            "SELECT title, item_url, category, grp, meta,"
+            " MIN(item_key) AS item_key, MIN(doc_type) AS doc_type,"
+            " COUNT(DISTINCT url_id) AS npages"
+            " FROM items WHERE " + _BROWSE_SQL[cat] +
+            " GROUP BY lower(title), item_url"
+            " ORDER BY lower(title) LIMIT ? OFFSET ?",
+            (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
+        for r in rows:
+            _bk = backend_system(r["category"], r["meta"], r["doc_type"],
+                                 r["grp"])
+            _ttl = (pretty_image_title(r["title"], r["item_url"])
+                    if r["category"] == "images" else r["title"])
+            groups.append({"title": _ttl, "url": r["item_url"],
+                           "category": r["category"], "grp": r["grp"],
+                           "meta": r["meta"], "item_key": r["item_key"],
+                           "npages": r["npages"], "pages": [],
+                           "backend": _bk,
+                           "aname": asset_name(r["category"], r["item_url"]),
+                           "bsearch": backend_search_link(
+                               _bk, asset_name(r["category"], r["item_url"]),
+                               _sset)})
+        total = browse_total
     if q and cat == "pages":
         # the tracked pages themselves: typo-tolerant over title AND url
         prows = con.execute(
@@ -2903,6 +2997,9 @@ def search_items():
             if _pfn and not _pfn({"cat": r["category"], "url": r["item_url"],
                                   "meta": r["meta"], "grp": r["grp"]}):
                 continue
+            # prose sections are In-page-text territory, not content assets
+            if cat == "all" and r["category"] in PROSE_CATS:
+                continue
             gk = (r["title"].lower(), r["item_url"])
             if gk not in by_item:
                 _bk = backend_system(r["category"], r["meta"], r["doc_type"],
@@ -2931,12 +3028,15 @@ def search_items():
         groups.sort(key=lambda g: (g["rank"], -len(g["pages"])))
         total = sum(len(g["pages"]) for g in groups)
     con.close()
+    has_more = browse and pageno * BROWSE_PER_PAGE < browse_total
     return render_template("search.html", q=q, cat=cat,
                            pills=[(k, l) for k, l, _f in SEARCH_PILLS],
                            pill_labels=PILL_LABELS, page_hits=page_hits,
                            text_hits=text_hits,
                            groups=groups, total=total, indexed=indexed,
-                           labels=dict(SECTION_LABELS))
+                           labels=dict(SECTION_LABELS),
+                           ccounts=ccounts, browse=browse, pageno=pageno,
+                           has_more=has_more, per_page=BROWSE_PER_PAGE)
 
 
 @app.route("/api/suggest")
@@ -2946,9 +3046,11 @@ def api_suggest():
     if len(q) < 2:
         return jsonify([])
     cat = _norm_pill(request.args.get("cat", "all"))
-    # overview is a page's own text, not an asset to jump to - keep it out of
-    # the type-ahead (it still shows in full search results)
-    raw = _fuzzy_items(q, cat, 30, exclude={"overview"})
+    # overview is a page's own text, not an asset to jump to; prose sections
+    # (features/benefits/applications) live under In page text
+    raw = _fuzzy_items(q, cat, 30,
+                       exclude={"overview", "features", "benefits",
+                                "applications"})
     con = db.connect()
     pages = _pages_for_keys(con, [d["key"] for d in raw])
     con.close()

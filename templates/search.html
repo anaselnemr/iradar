@@ -17,16 +17,38 @@
   "applications": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
   "products": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
   "categories": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>',
+  "pages": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20M6 6.5h.01M9 6.5h.01"/></svg>',
+  "text": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 10h16M4 14h10M4 18h7"/></svg>',
+  "boards": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>',
   "overview": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
   "_default": '<svg class="ticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.6-7.6V4h9.2l8.4 8.4a2 2 0 0 1 0 1z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>'
 } %}
 {% macro ticon(cat) %}{{ ICONS.get(cat, ICONS['_default'])|safe }}{% endmacro %}
 
+<style>
+  .launchpad { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .lp-tile { display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 15px;
+             background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+             text-decoration: none; color: inherit;
+             transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .lp-tile:hover { transform: translateY(-2px); border-color: var(--accent);
+                   box-shadow: 0 6px 18px rgba(0,0,0,.06); }
+  .lp-tile .ticon { width: 22px; height: 22px; color: var(--accent); }
+  .lp-n { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .lp-l { font-size: 13.5px; color: var(--muted); }
+  .cchip-count { font-weight: 600; opacity: .55; margin-left: 5px; font-size: 11.5px; }
+  .bthumb { width: 74px; height: 56px; object-fit: contain; border: 1px solid var(--line);
+            border-radius: 8px; background: #fff; flex-shrink: 0; }
+  .browse-row { display: flex; gap: 12px; align-items: flex-start; }
+  .pgr { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 14px; }
+</style>
+
 <div class="hero">
-  <h1>Search everything we captured</h1>
-  <p class="muted" style="margin:0">Documents, boards, tools, trainings, videos,
-    features — find any item and see every page it lives on.
-    <b>{{ '{:,}'.format(indexed) }}</b> items indexed so far.</p>
+  <h1>Content</h1>
+  <p class="muted" style="margin:0">Everything we captured, in one library —
+    <b>{{ '{:,}'.format(indexed) }}</b> assets across
+    <b>{{ '{:,}'.format(ccounts.get('pages', 0)) }}</b> live pages.
+    Browse it all, filter by type, search before or after.</p>
   <form method="get" class="bigsearch" id="sform" autocomplete="off">
     <span class="grow sugwrap">
       <svg class="sicon-lead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -44,10 +66,84 @@
   <div class="pills">
     {% for k, lbl in pills %}
     <a class="pill {{ 'pill-on' if cat == k }}"
-       href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}</a>
+       href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}{% if ccounts.get(k) %}<span class="cchip-count">{{ '{:,}'.format(ccounts[k]) }}</span>{% endif %}</a>
     {% endfor %}
   </div>
 </div>
+
+{% macro pager() %}
+{% if browse and (pageno > 1 or has_more) %}
+<div class="pgr">
+  <span class="muted" style="font-size:12.5px">{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }} of {{ '{:,}'.format(total) }}</span>
+  {% if pageno > 1 %}<a class="pill" href="{{ url_for('search_items', cat=cat, page=pageno-1) }}">‹ Prev</a>{% endif %}
+  {% if has_more %}<a class="pill" href="{{ url_for('search_items', cat=cat, page=pageno+1) }}">Next ›</a>{% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% if not q and cat == 'all' %}
+  {# THE LIBRARY, all of it in front of you: one tile per content type #}
+  <div class="launchpad">
+    {% for k, lbl in pills if k not in ('all',) %}
+    <a class="lp-tile" href="{{ url_for('search_items', cat=k) }}">
+      {{ ticon({'pages':'pages','docs':'documents','videos':'videos','images':'images',
+                'boards':'boards','design':'design_resources','products':'products',
+                'text':'text'}.get(k, '_default')) }}
+      <span class="lp-n">{{ '{:,}'.format(ccounts.get(k, 0)) }}</span>
+      <span class="lp-l">{{ lbl }}{% if k == 'text' %} — searchable pages{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+{% elif not q and cat == 'text' %}
+  <div class="card"><p class="muted" style="margin:0">Type something above to
+    search inside the full text of every page — key features, benefits,
+    applications and all other prose live here, and each match names the
+    section it sits in.</p></div>
+{% elif browse and cat == 'pages' %}
+  <div class="card">
+    <h2>Live Pages <span class="muted" style="font-weight:400">— {{ '{:,}'.format(total) }} tracked</span></h2>
+    <div class="pagegrid">
+      {% for p in page_hits %}
+      <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
+        <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
+        <div class="pagecard-url">{{ p.url }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    {{ pager() }}
+  </div>
+{% elif browse %}
+  <div class="muted" style="margin:0 2px 12px">
+    Browsing <b>{{ pill_labels.get(cat, cat) }}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}, A→Z. Type above to search instead.
+  </div>
+  {% for g in groups %}
+  <div class="rescard">
+    <div class="browse-row">
+      {% if g.category == 'images' and g.url %}
+      <img class="bthumb" src="{{ g.url }}" alt="" loading="lazy">
+      {% endif %}
+      <div style="flex:1; min-width:0">
+        <div class="hit-head">
+          <span class="hit-title-row">
+            {{ ticon(g.category) }}
+            <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
+          </span>
+          <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
+          <a class="badge {{ 'b-changed' if g.npages > 1 else 'b-unchanged' }}" href="{{ url_for('item_detail', key=g.item_key) }}" title="Every page this is assigned to">{{ g.npages }} page{{ 's' if g.npages != 1 }}</a>
+          {% if g.bsearch %}<a class="badge b-sys" href="{{ g.bsearch }}" target="_blank" data-aname="{{ g.aname }}" title="Opens {{ g.backend }} search and copies the asset name — just paste">{{ g.backend }}</a>{% elif g.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ g.backend }}</span>{% endif %}
+          {% if g.url %}<a href="{{ g.url }}" target="_blank" class="liveurl">open ↗</a>{% endif %}
+        </div>
+        {% if g.meta %}
+        <div class="meta-chips">
+          {% for m in g.meta.split('|') %}{% if m.strip() %}<span class="mchip">{{ m.strip() }}</span>{% endif %}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {{ pager() }}
+{% endif %}
 
 {% if q and cat == 'text' %}
   {% if text_hits %}
