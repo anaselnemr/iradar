@@ -3625,6 +3625,40 @@ def _normalize_statuses():
         print(f"  normalized {n} page(s) from the retired 'baseline' state")
 
 
+def _normalize_urls():
+    """Boot migration: strip tracking junk (?intc=…, utm_*, wcmmode) from
+    tracked URLs. A redirect once glued a campaign tag onto its destination,
+    and the tagged address slipped past the twin check - one page, tracked
+    twice. If the cleaned address is already tracked, the junk row IS that
+    page: its short-link origin is grafted onto the keeper and the row goes;
+    otherwise the row is simply renamed to its clean address."""
+    import shutil as _sh
+    con = db.connect()
+    for r in con.execute("SELECT id, url, redirect_from FROM urls"
+                         " WHERE url LIKE '%?%'").fetchall():
+        clean = db.strip_junk_params(r["url"])
+        if clean == r["url"]:
+            continue
+        twin = con.execute("SELECT id, redirect_from FROM urls"
+                           " WHERE rtrim(url,'/')=? AND id<>?",
+                           (clean.rstrip("/"), r["id"])).fetchone()
+        if twin:
+            if r["redirect_from"] and not twin["redirect_from"]:
+                con.execute("UPDATE urls SET redirect_from=? WHERE id=?",
+                            (r["redirect_from"], twin["id"]))
+            con.execute("DELETE FROM urls WHERE id=?", (r["id"],))
+            con.execute("DELETE FROM page_fts WHERE rowid=?", (r["id"],))
+            _sh.rmtree(db.SNAP_DIR / str(r["id"]), ignore_errors=True)
+            _sh.rmtree(db.CHANGE_DIR / str(r["id"]), ignore_errors=True)
+            print(f"  merged junk-param duplicate #{r['id']} into #{twin['id']}"
+                  f" ({clean.rsplit('/', 1)[-1]})")
+        else:
+            con.execute("UPDATE urls SET url=? WHERE id=?", (clean, r["id"]))
+            print(f"  cleaned #{r['id']} -> {clean[:70]}")
+    con.commit()
+    con.close()
+
+
 def _sweep_furniture():
     """Startup sweep: drop template-chrome images (spinner, logos) that an
     OLDER runner indexed before the furniture filter existed. index_items now
@@ -3645,6 +3679,7 @@ def _sweep_furniture():
 if __name__ == "__main__":
     db.init_db()
     _normalize_statuses()
+    _normalize_urls()
     _sweep_furniture()
     scheduler.start()
     reschedule()

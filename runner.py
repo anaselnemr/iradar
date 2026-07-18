@@ -69,11 +69,11 @@ _REDIR_PARAMS = {"redirid", "redir_id"}
 
 
 def _clean_redirect_url(u):
-    """The destination address, without the redirect's own bookkeeping."""
-    base, _, query = (u or "").split("#")[0].partition("?")
-    keep = [p for p in query.split("&")
-            if p and p.split("=")[0].strip().lower() not in _REDIR_PARAMS]
-    return base + ("?" + "&".join(keep) if keep else "")
+    """The destination address without the redirect's own bookkeeping OR any
+    tracking junk the site glued on (intc campaign tags and friends) - one
+    such tag once turned a repointed short link into a duplicate of the
+    clean page it landed on."""
+    return db.strip_junk_params((u or "").split("#")[0])
 
 
 def _follow_redirect(con, url_id, old_url, final_url):

@@ -219,6 +219,29 @@ def set_setting(key, value):
     con.close()
 
 
+# Query params that are TRACKING/TOOLING noise, never page identity: campaign
+# tags (intc, utm_*, gclid, fbclid), Infineon's redirect bookkeeping (redirId)
+# and AEM's author-mode toggle (wcmmode). Left on, one page gets tracked twice
+# - once clean, once with a campaign tag the site glued onto a redirect.
+_JUNK_PARAMS = {"intc", "redirid", "redir_id", "wcmmode", "gclid", "fbclid"}
+
+
+def strip_junk_params(u):
+    """The URL without tracking/tooling query params (utm_* included). A
+    query that only carried junk disappears entirely."""
+    base, _, query = (u or "").partition("?")
+    if not query:
+        return u
+    frag = ""
+    if "#" in query:
+        query, _, frag = query.partition("#")
+    keep = [p for p in query.split("&") if p and
+            p.split("=")[0].strip().lower() not in _JUNK_PARAMS and
+            not p.split("=")[0].strip().lower().startswith("utm_")]
+    out = base + ("?" + "&".join(keep) if keep else "")
+    return out + ("#" + frag if frag else "")
+
+
 def add_urls(url_list):
     """Insert URLs, ignoring duplicates. Returns (added, skipped)."""
     return add_urls_labeled([(u, "") for u in url_list])
@@ -304,7 +327,7 @@ def add_urls_labeled(pairs):
     added = 0
     total = 0
     for u, label in pairs:
-        u = strip_lang((u or "").strip())
+        u = strip_junk_params(strip_lang((u or "").strip()))
         label = (label or "").strip()[:200]
         if not u:
             continue
