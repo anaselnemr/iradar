@@ -962,29 +962,33 @@ def index():
     # NB: the field is "vals", NOT "keys" - a chip is a dict, and `c.keys` in a
     # Jinja template resolves to dict.keys (the method), which silently broke
     # every chip URL. Ordered by what needs you: attention, health, then states.
+    # widest set first, narrowing to the specialised ones - the eye lands on
+    # the whole corpus and walks down to the exceptions
     quick_chips = [c for c in (
-        {"kind": "status", "vals": ["test"], "label": "🧪 Test set",
-         "n": len(TEST_PAGE_IDS), "always": True},
-        {"kind": "status", "vals": ["metaflag"], "label": "⚠ Ownership mismatch",
-         "n": status_counts["metaflag"], "tone": "warn"},
-        {"kind": "status", "vals": ["changed"], "label": "Updated",
-         "n": status_counts["changed"], "always": True, "tone": "warn"},
-        {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
-         "n": status_counts["rejected"], "tone": "warn"},
-        {"kind": "status", "vals": ["notlive"], "label": "Not live",
-         "n": notlive_total, "tone": "bad"},
-        {"kind": "status", "vals": ["blank"], "label": "Blank page",
-         "n": status_counts["blank"], "tone": "bad"},
-        {"kind": "status", "vals": ["error"], "label": "Capture error",
-         "n": status_counts["error"], "tone": "bad"},
+        {"kind": "all", "vals": [], "label": "Total Pages",
+         "n": counts["total"], "always": True},
         {"kind": "attr", "vals": ["live"], "label": "Live",
          "n": attr_counts["live"], "tone": "good"},
         {"kind": "status", "vals": ["unchanged"], "label": "Unchanged",
          "n": status_counts["unchanged"], "always": True},
+        {"kind": "status", "vals": ["changed"], "label": "Updated",
+         "n": status_counts["changed"], "always": True, "tone": "warn"},
+        {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
+         "n": status_counts["rejected"], "tone": "warn"},
+        {"kind": "status", "vals": ["blank"], "label": "Blank page",
+         "n": status_counts["blank"], "tone": "bad"},
+        {"kind": "status", "vals": ["error"], "label": "Capture error",
+         "n": status_counts["error"], "tone": "bad"},
+        {"kind": "status", "vals": ["notlive"], "label": "Not live",
+         "n": notlive_total, "tone": "bad"},
         {"kind": "status", "vals": ["new"], "label": "Not captured",
          "n": status_counts["new"]},
         {"kind": "status", "vals": ["paused"], "label": "Paused",
          "n": status_counts["paused"]},
+        {"kind": "status", "vals": ["metaflag"], "label": "Ownership mismatch",
+         "n": status_counts["metaflag"], "tone": "warn"},
+        {"kind": "status", "vals": ["test"], "label": "Test set",
+         "n": len(TEST_PAGE_IDS), "always": True},
     ) if c["n"] or c.get("always")]
 
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,

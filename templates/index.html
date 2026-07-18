@@ -13,30 +13,34 @@
         <button {% if state.running %}disabled style="opacity:.5"{% endif %}
                 title="Checks every page — in NEED order: never-captured first, then failed (blank/error), then the rest; dead pages last">▶ Check all pages</button>
       </form>
-      <button class="iconbtn" onclick="location.reload()" title="Refresh this page">⟳</button>
-      {% if pending_total > 0 and not state.running %}
-      <div style="margin-top:7px">
-        <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
-          <input type="hidden" name="pending" value="1">
-          <button class="linkbtn" title="Only pages that still NEED a capture: never checked{{ ' (' ~ counts.fresh ~ ')' if counts.fresh }} or failed — skips every page already known unchanged. Never-captured go first.">or just the {{ pending_total }} pending (new → failed)</button>
-        </form>
-      </div>
-      {% endif %}
-      {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 and not state.running %}
-      <div style="margin-top:5px">
-        <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
-          <input type="hidden" name="only_new" value="1">
-          <button class="linkbtn" title="Capture only pages never checked before">or capture just the {{ counts.fresh }} not-yet-captured</button>
-        </form>
-      </div>
-      {% endif %}
-      {% if comp_pending and not state.running %}
-      <div style="margin-top:5px">
-        <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
-          <input type="hidden" name="pending_components" value="1">
-          <button class="linkbtn" title="Continue the component pass: only pages that have not been through component detection yet">resume component pass ({{ comp_pending }} left)</button>
-        </form>
-      </div>
+      {# The partial runs stay one click away instead of standing under the
+         button permanently: pages that are blank stay blank for a while, so a
+         count that never reaches zero was nagging on every single page load. #}
+      {% if not state.running and (pending_total > 0 or comp_pending
+                                   or (counts.fresh or 0) > 0) %}
+      <details class="runmore">
+        <summary title="Run only part of the list">Partial runs</summary>
+        <div class="runmore-menu">
+          {% if pending_total > 0 %}
+          <form method="post" action="{{ url_for('run_now') }}">
+            <input type="hidden" name="pending" value="1">
+            <button class="linkbtn" title="Only pages that still NEED a capture: never checked{{ ' (' ~ counts.fresh ~ ')' if counts.fresh }} or failed — skips every page already known unchanged. Never-captured go first.">just the {{ pending_total }} pending (new → failed)</button>
+          </form>
+          {% endif %}
+          {% if (counts.fresh or 0) > 0 and (counts.checked or 0) > 0 %}
+          <form method="post" action="{{ url_for('run_now') }}">
+            <input type="hidden" name="only_new" value="1">
+            <button class="linkbtn" title="Capture only pages never checked before">just the {{ counts.fresh }} not-yet-captured</button>
+          </form>
+          {% endif %}
+          {% if comp_pending %}
+          <form method="post" action="{{ url_for('run_now') }}">
+            <input type="hidden" name="pending_components" value="1">
+            <button class="linkbtn" title="Continue the component pass: only pages that have not been through component detection yet">resume component pass ({{ comp_pending }} left)</button>
+          </form>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
     </div>
   </div>
@@ -69,7 +73,10 @@
 <div class="card" id="trackpanel">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">Tracked pages
-      <span class="muted" style="font-weight:400; font-size:14px">— {{ '{:,}'.format(total_match) }} shown</span></h2>
+      <span class="muted" style="font-weight:400; font-size:14px">— {{ '{:,}'.format(total_match) }} shown</span>
+      {# reloading is about THIS table's counts, so the control belongs on it #}
+      <button type="button" class="iconbtn" onclick="location.reload()"
+              title="Reload the table">⟳</button></h2>
     <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
       <button type="button" class="btn" onclick="toggleAdd()">＋ Add pages</button>
       <span class="exports">Export:
@@ -165,7 +172,12 @@
     {% for c in quick_chips %}
       {# an active chip's link points at the CLEARED state - clicking it again
          deselects, so every chip is a toggle #}
-      {% if c.kind == 'status' %}
+      {% if c.kind == 'all' %}
+      {# "everything" is the absence of a filter, so it lights up when nothing
+         else is picked and always links to the bare table #}
+      <a class="chip {{ 'chip-on' if not (sel_status or sel_types or sel_attrs) }}"
+         href="{{ url_for('index', q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
+      {% elif c.kind == 'status' %}
       {% set on = sel_status == c.vals and not sel_types and not sel_attrs %}
       <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if on }}"
          title="{{ 'Click again to clear this filter' if on }}"
