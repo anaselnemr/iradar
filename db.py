@@ -18,8 +18,13 @@ DEFAULT_SETTINGS = {
     "visual_threshold": "0.5",    # % of pixels that must differ to flag a visual change
     "height_threshold": "80",     # px difference in page height to flag
     # one regex per line; matching text lines are ignored.
-    # Default: relative timestamps ("13 days ago") change daily by themselves.
-    "ignore_patterns": r"^\d+ (day|hour|minute|week|month|year)s? ago$",
+    # Defaults: relative timestamps ("13 days ago") change by themselves, and
+    # the "Infineon stock last updated: Jul 18, 2026, 7:48 AM" ticker stamp
+    # refreshes every run - neither is content Infineon edited, so neither
+    # should ever flag a page for review.
+    "ignore_patterns": (r"^\d+ (day|hour|minute|week|month|year)s? ago$"
+                        "\n"
+                        r"^[A-Z][a-z]{2,8} \d{1,2}, \d{4}, \d{1,2}:\d{2}\s?[AP]M$"),
     # backend search pages: '{q}' marks where the asset name goes. Editable
     # in Settings -> Backends so a changed link is a ten-second fix.
     "dam_search_url": "",
