@@ -2065,7 +2065,7 @@ def change_resolve(change_id):
                 (resolution, change_id))
     if resolution == "reject":
         # The OLD version was correct: never compare against the rejected
-        # capture - the old snapshot stays the reference, so the page will be
+        # capture - the old snapshot stays the current version, so the page
         # flagged again on every check until the website is fixed.
         con.execute("UPDATE snapshots SET rejected=1 WHERE id=?",
                     (c["new_snapshot_id"],))
@@ -2079,9 +2079,9 @@ def change_resolve(change_id):
                           (c["old_snapshot_id"],)).fetchone()
         if old and old["dir"] and Path(old["dir"]).exists():
             runner.index_items(con, c["url_id"], old["dir"])
-        flash("Rejected — the old version stays the reference (library and "
-              "search restored to it). The page will be flagged again on the "
-              "next check until the website matches it.")
+        flash("Rejected — the old version stays the current version (library "
+              "and search restored to it). The page will be flagged again on "
+              "the next check until the website matches it.")
     else:
         remaining = con.execute(
             "SELECT COUNT(*) FROM changes WHERE url_id=? AND reviewed=0",
@@ -2090,7 +2090,7 @@ def change_resolve(change_id):
             con.execute("UPDATE urls SET last_status='unchanged'"
                         " WHERE id=? AND last_status IN ('changed','rejected')",
                         (c["url_id"],))
-        flash("Approved — this version is now the reference.")
+        flash("Approved — this is now the current version.")
     con.commit()
     con.close()
     nxt = request.form.get("next") or url_for("index")
