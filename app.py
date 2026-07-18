@@ -2973,6 +2973,65 @@ def search_items():
                                         or u2["url"].rstrip("/").rsplit("/", 1)[-1]),
                               "snip": snip,
                               "comps": comps or ["page body text"]})
+        # ---- the prose sections as a PRECISION layer -------------------
+        # Key features / Benefits / Applications were captured as their own
+        # items: exact bullets that already know their section. Match them
+        # too - they confirm the positional guess with certainty, quote the
+        # exact bullet, and catch matches FTS tokenization misses.
+        toks_all = [t for t in q.split() if t.strip()][:6]
+        prose_rows = []
+        if toks_all:
+            conds = " AND ".join(
+                ["instr(lower(i.title), lower(?)) > 0"] * len(toks_all))
+            prose_rows = con.execute(
+                "SELECT i.url_id, i.category, i.title FROM items i"
+                " WHERE i.category IN ('features','benefits','applications')"
+                " AND " + conds + " LIMIT 300", toks_all).fetchall()
+        _PLBL = {"features": "Key features", "benefits": "Benefits",
+                 "applications": "Applications"}
+
+        def _markup(s):
+            out = str(_esc(s))
+            for t in sorted({t for t in toks_all}, key=len, reverse=True):
+                out = re.sub("(?i)" + re.escape(str(_esc(t))),
+                             lambda m: "<mark>" + m.group(0) + "</mark>", out)
+            return out
+        by_page = {}
+        for pr in prose_rows:
+            by_page.setdefault(pr["url_id"], []).append(
+                (_PLBL[pr["category"]], pr["title"]))
+        for h in text_hits:
+            bl = by_page.get(h["id"])
+            if not bl:
+                continue
+            h["bullets"] = [(lbl, _markup(t)) for lbl, t in bl[:3]]
+            for lbl, _t in bl:
+                if lbl not in h["comps"]:
+                    h["comps"].append(lbl)
+            if "page body text" in h["comps"] and len(h["comps"]) > 1:
+                h["comps"].remove("page body text")
+            h["comps"] = h["comps"][:4]
+        seen_ids = {h["id"] for h in text_hits}
+        for uid in [u for u in by_page if u not in seen_ids][:30]:
+            u2 = con.execute(
+                "SELECT id, url, level, label,"
+                " COALESCE(NULLIF(title_override,''),"
+                "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+                "    AND s.status='ok' AND s.page_title<>''"
+                "    ORDER BY s.id DESC LIMIT 1)) AS page_title"
+                " FROM urls WHERE id=?", (uid,)).fetchone()
+            if not u2:
+                continue
+            bl = by_page[uid]
+            text_hits.append({"id": uid, "url": u2["url"],
+                              "level": u2["level"] or "",
+                              "title": (u2["page_title"] or u2["label"]
+                                        or u2["url"].rstrip("/").rsplit("/", 1)[-1]),
+                              "snip": _markup(bl[0][1]),
+                              "comps": list(dict.fromkeys(
+                                  lbl for lbl, _ in bl))[:3],
+                              "bullets": [(lbl, _markup(t))
+                                          for lbl, t in bl[:3]]})
         total = len(text_hits)
     if q and cat not in ("pages", "text"):
         keys = _search_keys(con, q, cat, 250)

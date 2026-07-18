@@ -158,6 +158,13 @@
           </span>
         </div>
         <div class="muted" style="font-size:13px; line-height:1.5; margin:4px 0 3px">{{ h.snip|safe }}</div>
+        {% if h.bullets %}
+        <div style="display:flex; flex-direction:column; gap:3px; margin:2px 0 4px">
+          {% for lbl, b in h.bullets %}
+          <div style="font-size:12.5px"><span class="badge b-sys" style="font-weight:500">{{ lbl }}</span> <span class="muted">“{{ b|safe }}”</span></div>
+          {% endfor %}
+        </div>
+        {% endif %}
         <div class="pagecard-url">{{ h.url }}</div>
       </a>
       {% endfor %}
