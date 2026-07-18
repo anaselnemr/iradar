@@ -1065,13 +1065,9 @@ SECTIONS_JS = r"""
   document.querySelectorAll('img').forEach(img => {
     const raw = img.currentSrc || img.src;
     if (!raw || raw.startsWith('data:') || NON_CONTENT_IMG.test(raw)) return;
-    // avatars are not page content: a .gif on this site is a person avatar or
-    // animated decoration (real photos/heroes/diagrams are jpg/png/svg/webp),
-    // and the developer-community thread avatars sit in their own container
-    if (/\.gif([?#]|$)/i.test(raw)) return;
-    if (img.closest('#community, [id*="community" i], react-component, ' +
-                    '[class*="developer-comm" i], [class*="communitycard" i], ' +
-                    '[class*="avatar" i], [class*="author" i]')) return;
+    // the ONLY images dropped as furniture are the author avatars inside the
+    // developer-community thread list - everything else, gifs included, stays
+    if (img.closest('#community, [id*="community" i], [class*="community" i]')) return;
     // collapse the responsive renditions of ONE picture (…/foo.jpg?wid=1400,
     // ?wid=600, and the Scene7 ':asset-…' preset) to a single canonical item
     const canon = raw.split('?')[0].split(':asset')[0];

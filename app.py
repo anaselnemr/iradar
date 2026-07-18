@@ -3702,17 +3702,13 @@ def _normalize_urls():
 
 
 def _sweep_images():
-    """Boot migration for the image library: drop .gif avatars, and collapse
-    responsive renditions of one picture (…/foo.jpg?wid=1400 / ?wid=600 / the
-    Scene7 ':asset-…' preset) to a single canonical item. Idempotent; runs at
-    every start so data an older runner wrote is cleaned regardless of when
-    each page is next re-captured."""
+    """Boot migration for the image library: collapse responsive renditions of
+    one picture (…/foo.jpg?wid=1400 / ?wid=600 / the Scene7 ':asset-…' preset)
+    to a single canonical item. Idempotent; runs at every start so data an
+    older runner wrote is cleaned regardless of when each page is re-captured.
+    (Gifs are content and are kept - only dev-community avatars are dropped,
+    and that happens at capture time, by container.)"""
     con = db.connect()
-    gifs = con.execute(
-        "DELETE FROM items WHERE category='images' AND"
-        " (lower(item_url) LIKE '%.gif' OR lower(item_url) LIKE '%.gif?%')"
-    ).rowcount
-    # canonicalise + dedup the responsive variants
     seen, dropped = {}, 0
     for r in con.execute("SELECT id, url_id, item_url FROM items"
                          " WHERE category='images' ORDER BY id").fetchall():
@@ -3728,9 +3724,8 @@ def _sweep_images():
                             (canon, r["id"]))
     con.commit()
     con.close()
-    if gifs or dropped:
-        print(f"  images: dropped {gifs} .gif avatar(s), collapsed {dropped}"
-              " responsive duplicate(s)")
+    if dropped:
+        print(f"  images: collapsed {dropped} responsive duplicate(s)")
 
 
 def _sweep_furniture():
