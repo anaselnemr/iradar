@@ -62,30 +62,53 @@
 {% endmacro %}
 
 {% block content %}
+<style>
+  .gpills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .gpill { border: 1px solid var(--line); background: var(--card); color: var(--ink, inherit);
+           border-radius: 99px; padding: 5px 14px; font-size: 13.5px; cursor: pointer;
+           transition: border-color .18s, background .18s, transform .12s; font-family: inherit; }
+  .gpill:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .gpill b { font-weight: 600; opacity: .55; margin-left: 5px; font-size: 12px; }
+  .gpill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .gpill.on b { opacity: .85; }
+  .hgroup { margin-top: 14px; }
+  .hgroup[hidden] { display: none; }
+  .ghead { display: flex; align-items: baseline; gap: 10px; padding: 6px 2px 8px;
+           border-bottom: 2px solid var(--line); margin-bottom: 8px; }
+  .ghead h2 { margin: 0; font-size: 16.5px; }
+  .ghead .gcount { font-size: 12px; color: var(--muted); }
+  .homeroot { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px;
+              padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; }
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; }
+    .hgroup { animation: gin .22s ease; }
+    @keyframes gin { from { opacity: 0; transform: translateY(4px); } }
+  }
+</style>
+
 <h1>Hierarchy</h1>
 <p class="muted" style="margin:-6px 0 16px; max-width:74ch">
-  Each page's place in Infineon's own structure, read from the breadcrumb it
-  publishes. Parts sit inside products — a part type page is the bottom of the
-  product taxonomy, not a separate one. Nothing here is hand-maintained:
-  capture a new page and it appears in its tree.
+  The whole site as one tree, rooted at the homepage — every page in its place
+  in Infineon's own structure. The pills are quick filters: click one to focus
+  its branch; nothing here is hand-maintained.
 </p>
 
 <div class="card" style="padding:12px 14px">
-  <div class="pills">
-    {% for t in types %}
-    <a class="pill {{ 'pill-on' if t == sel }}" href="{{ url_for('hierarchy', type=t) }}">
-      {{ t }} <span class="muted">{{ counts.get(t, 0) }}</span>
-    </a>
+  <div class="gpills" id="gpills">
+    <button type="button" class="gpill" data-group="All">All</button>
+    {% for g in groups %}
+    <button type="button" class="gpill" data-group="{{ g.label }}">{{ g.label }}<b>{{ g.shown }}</b></button>
     {% endfor %}
   </div>
   {% if levels %}
-  <div class="pills" style="margin-top:10px; align-items:center">
+  <div class="pills" style="margin-top:12px; align-items:center">
     <span class="muted" style="font-size:12px">Levels:</span>
     {% for l in levels %}
       <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
       <span class="muted" style="font-size:12px; margin-right:8px">{{ level_names.get(l, '') }}</span>
     {% endfor %}
   </div>
+  {% endif %}
   {% if level_log %}
   <details style="margin-top:10px">
     <summary class="muted" style="cursor:pointer; font-size:12.5px">
@@ -107,63 +130,93 @@
     </div>
   </details>
   {% endif %}
+  {% if disagreements %}
   <p class="muted" style="font-size:12.5px; margin:10px 0 0">
-    Levels are read from the live structure, not from the source report.
-    {% if disagreements %}
-      <b>{{ disagreements }}</b> page{{ 's' if disagreements != 1 }} on this tab
-      {{ 'are' if disagreements != 1 else 'is' }} filed differently in the
-      report — those badges are outlined, and hovering shows both. While the
-      run is still going a page can look like an end family simply because its
-      children have not been captured yet.
-    {% endif %}
+    Levels are read from the live structure. <b>{{ disagreements }}</b>
+    page{{ 's' if disagreements != 1 }} {{ 'are' if disagreements != 1 else 'is' }}
+    filed differently in the source report — those badges are outlined, and
+    hovering shows both.
   </p>
   {% endif %}
 </div>
 
 <div class="card">
-  <h2>{{ sel }}
-    <span class="muted" style="font-weight:400; font-size:14px">
-      — {{ shown }} of {{ total }} captured with a breadcrumb</span>
-  </h2>
-  {% if not tree.children and not tree.pages %}
-    <p class="muted">No pages of this type have been captured yet. The tree
-      builds itself as the run reaches them.</p>
-  {% else %}
-    {% if not tree.children %}
-      <p class="muted" style="margin-top:0">This type is flat — its pages sit at
-        the top level of the site with no parent path of their own.</p>
-    {% endif %}
-    <p class="muted" style="font-size:12.5px; margin:0 0 8px">
-      A number badge is how many pages sit under that group. The pages
-      themselves are the entries with no badge — expand a group to reach them.
-    </p>
-    <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center; flex-wrap:wrap">
-      <input id="treefilter" type="text" oninput="tfChange()"
-             placeholder="Filter this tree — type a product, board or family name…"
-             style="flex:1; min-width:230px">
-      <span id="tfcount" class="muted" style="font-size:12px"></span>
-      {% if tree.children %}
-      <button type="button" class="linkbtn" onclick="setAllTree(true)">⊕ Expand all pages</button>
-      <button type="button" class="linkbtn" onclick="setAllTree(false)">⊖ Collapse all</button>
-      {% endif %}
-    </div>
-    {% if home and sel != 'Promo' %}
-    <div class="tleaf" style="margin:0 0 8px; padding:7px 11px; border:1px solid var(--line); border-radius:9px; gap:8px">
-      <span class="lvl lvl-home" title="Homepage — the site root">HOME</span>
-      <a class="titlelink" href="{{ url_for('url_detail', url_id=home.id) }}" style="font-weight:600" title="Open our captured content for the homepage">{{ (home.title or 'Infineon')|clean_title }}</a>
-      <a class="liveurl" href="{{ home.url }}" target="_blank" title="Open infineon.com">↗</a>
-      <span class="muted" style="font-size:12px">— the site root; everything below descends from it</span>
-    </div>
-    {% endif %}
-    <div class="tree">{{ node(tree) }}</div>
+  <div style="display:flex; gap:10px; margin-bottom:6px; align-items:center; flex-wrap:wrap">
+    <input id="treefilter" type="text" oninput="tfChange()"
+           placeholder="Filter the tree — type a product, board or family name…"
+           style="flex:1; min-width:230px">
+    <span id="tfcount" class="muted" style="font-size:12px"></span>
+    <button type="button" class="linkbtn" onclick="setAllTree(true)">⊕ Expand all pages</button>
+    <button type="button" class="linkbtn" onclick="setAllTree(false)">⊖ Collapse all</button>
+  </div>
+  <p class="muted" style="font-size:12.5px; margin:0 0 4px">
+    A number badge is how many pages sit under that group; entries with no
+    badge are the pages themselves.
+  </p>
+
+  {% if home %}
+  <div class="homeroot" id="homeroot">
+    <span class="lvl lvl-home" title="Homepage — the site root">HOME</span>
+    <a class="titlelink" href="{{ url_for('url_detail', url_id=home.id) }}" style="font-weight:600" title="Open our captured content for the homepage">{{ (home.title or 'Infineon')|clean_title }}</a>
+    <a class="liveurl" href="{{ home.url }}" target="_blank" title="Open infineon.com">↗</a>
+    <span class="muted" style="font-size:12px">— the site root; every branch below descends from it</span>
+  </div>
   {% endif %}
+
+  {% for g in groups %}
+  <section class="hgroup" data-group="{{ g.label }}">
+    <div class="ghead">
+      <h2>{{ g.label }}</h2>
+      <span class="gcount">{{ g.shown }} of {{ g.total }} captured with a breadcrumb</span>
+    </div>
+    {% if not g.tree.children and not g.tree.pages %}
+      <p class="muted">No pages of this type captured yet — the branch builds
+        itself as the run reaches them.</p>
+    {% else %}
+      <div class="tree">{{ node(g.tree) }}</div>
+    {% endif %}
+  </section>
+  {% endfor %}
 </div>
+
 <script>
+  // ---- quick filters: one tree, the pills only focus it -------------------
+  var activeGroup = {{ sel|tojson }};
+  function applyGroup(name) {
+    document.querySelectorAll('.hgroup').forEach(function (g) {
+      g.hidden = (name !== 'All' && g.dataset.group !== name);
+    });
+    var hr = document.getElementById('homeroot');
+    if (hr) hr.hidden = (name === 'Promo');   // promo pages don't descend from Home
+    document.querySelectorAll('.gpill').forEach(function (p) {
+      p.classList.toggle('on', p.dataset.group === name);
+    });
+    activeGroup = name;
+    try {
+      history.replaceState(null, '', name === 'All'
+        ? location.pathname : '?type=' + encodeURIComponent(name));
+    } catch (e) {}
+    filterTree();                              // re-apply text filter to view
+  }
+  function setGroup(name) {
+    if (document.startViewTransition) {
+      document.startViewTransition(function () { applyGroup(name); });
+    } else {
+      applyGroup(name);
+    }
+  }
+  document.getElementById('gpills').addEventListener('click', function (ev) {
+    var b = ev.target.closest('.gpill');
+    if (b) setGroup(b.dataset.group === activeGroup ? 'All' : b.dataset.group);
+  });
+  applyGroup(activeGroup);
+
   function setAllTree(open) {
-    document.querySelectorAll('.tree details').forEach(function (d) { d.open = open; });
+    document.querySelectorAll('.hgroup:not([hidden]) .tree details')
+      .forEach(function (d) { d.open = open; });
   }
 
-  // live-prune the tree to branches matching the query, auto-expanding them
+  // live-prune the visible tree(s) to branches matching the query
   var tfTimer = null;
   function tfChange() {
     clearTimeout(tfTimer);
@@ -171,11 +224,11 @@
   }
   function filterTree() {
     var q = document.getElementById('treefilter').value.trim().toLowerCase();
-    var tree = document.querySelector('.tree');
     var count = document.getElementById('tfcount');
-    if (!tree) return;
+    var trees = document.querySelectorAll('.hgroup:not([hidden]) .tree');
     if (!q) {
-      tree.querySelectorAll('.tleaf, .tnode').forEach(function (el) { el.style.display = ''; });
+      document.querySelectorAll('.tree .tleaf, .tree .tnode')
+        .forEach(function (el) { el.style.display = ''; });
       count.textContent = '';
       return;
     }
@@ -208,7 +261,7 @@
       });
       return any;
     }
-    walk(tree);
+    trees.forEach(function (t) { walk(t); });
     count.textContent = hits ? hits + ' match' + (hits === 1 ? '' : 'es') : 'no matches';
   }
 </script>

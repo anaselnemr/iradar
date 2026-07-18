@@ -1458,7 +1458,7 @@ DR_LEVELS = ("DRC", "DRF", "DRSF")
 def _dr_level_for(url):
     return db.dr_level_for(url)
 # page types that share one tree, in the order their levels nest
-MERGED_TABS = [("Products & parts", ["Product", "Part"])]
+MERGED_TABS = [("Products & Eval Boards", ["Product", "Part"])]
 
 
 def _hierarchy_tabs(con):
@@ -3293,35 +3293,36 @@ def item_detail(key):
 
 @app.route("/hierarchy")
 def hierarchy():
-    """A tree per page type, built from each page's own JSON-LD breadcrumb -
-    so it follows the site's structure and grows with new entries instead of
-    being a hand-maintained list. Parts nest inside products, because a part
-    type page is the bottom of the product taxonomy, not a separate one."""
+    """The WHOLE site as one tree, rooted at the homepage: every type's
+    hierarchy is a branch group on a single page, built from URL structure
+    with breadcrumb text as names. The type pills are quick FILTERS -
+    client-side, animated - not separate pages: clicking one keeps that
+    branch and smoothly hides the rest."""
     con = db.connect()
     tabs = _hierarchy_tabs(con)
-    labels = [t[0] for t in tabs]
-    sel = request.args.get("type") or (labels[0] if labels else "")
-    members = next((m for lbl, m in tabs if lbl == sel), [])
-    pages = _breadcrumbs(con, members) if members else []
-    counts, totals = {}, {}
-    for lbl, mem in tabs:
-        marks = ",".join("?" * len(mem))
-        # dead pages are not part of any tree - keep them out of the
-        # "x of y" numbers too, or the counts promise pages the tree lacks
-        counts[lbl] = con.execute(
-            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})"
-            " AND breadcrumb NOT IN ('','[]') AND breadcrumb IS NOT NULL"
-            " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
-            mem).fetchone()[0]
-        totals[lbl] = con.execute(
-            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})"
-            " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
-            mem).fetchone()[0]
     # every live page we track, by URL, so a grouping node can link to our
     # captured library when we have the page it stands for
     tracked = {_norm_url(r["url"]): r["id"] for r in con.execute(
         "SELECT id, url FROM urls WHERE active=1"
         " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')")}
+    order = list(LEVEL_NAMES)
+    groups, all_levels, disagreements = [], set(), 0
+    for lbl, mem in tabs:
+        marks = ",".join("?" * len(mem))
+        # dead pages are not part of any tree - keep them out of the
+        # "x of y" numbers too, or the counts promise pages the tree lacks
+        total = con.execute(
+            f"SELECT COUNT(*) FROM urls WHERE active=1 AND ptype IN ({marks})"
+            " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')",
+            mem).fetchone()[0]
+        pages = _breadcrumbs(con, mem)
+        product_tree = any(m in ("Product", "Part") for m in mem)
+        tree = _hierarchy_tree(pages, tracked, product_tree)
+        all_levels |= {p.get("live_level") for p in pages
+                       if p.get("live_level")}
+        disagreements += sum(1 for p in pages if p.get("level_disagrees"))
+        groups.append({"label": lbl, "tree": tree, "shown": len(pages),
+                       "total": total})
     # the audit trail: every automatic level assignment, newest first, so
     # "did anything move?" is a glance, not a guess. Empty after a run means
     # exactly that - the site's structure did not change.
@@ -3329,8 +3330,8 @@ def hierarchy():
         SELECT l.ts, l.old_level, l.new_level, l.src, l.why, l.url_id,
                u.url FROM level_log l JOIN urls u ON u.id=l.url_id
         ORDER BY l.id DESC LIMIT 30""").fetchall()
-    # the homepage roots every tree (except promo - standalone pages don't
-    # descend from anything): shown as the topmost node of each tab
+    # the homepage roots the whole tree (promo pages are the one branch that
+    # does not descend from it - standalone landing pages)
     home = con.execute(
         "SELECT id, url,"
         " COALESCE(NULLIF(title_override,''), (SELECT s.page_title FROM"
@@ -3338,20 +3339,13 @@ def hierarchy():
         "  AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)) AS title"
         " FROM urls WHERE ptype='Home' AND active=1 LIMIT 1").fetchone()
     con.close()
-    # PC/PFP/… levels are a product taxonomy - only badge them on the product
-    # tree; design resources, applications and promo have no such levels.
-    product_tree = any(m in ("Product", "Part") for m in members)
-    tree = _hierarchy_tree(pages, tracked, product_tree)
-    # the levels present in this tab, in taxonomy order, for the legend
-    order = list(LEVEL_NAMES)
-    seen_levels = sorted({p.get("live_level") for p in pages
-                          if p.get("live_level")},
+    sel = request.args.get("type") or "All"
+    if sel == "Products & parts":          # old deep links keep working
+        sel = "Products & Eval Boards"
+    seen_levels = sorted(all_levels,
                          key=lambda l: order.index(l) if l in order else 99)
-    disagreements = sum(1 for p in pages if p.get("level_disagrees"))
-    return render_template("hierarchy.html", types=labels, sel=sel, tree=tree,
-                           counts=counts, total=totals.get(sel, 0),
-                           shown=len(pages), levels=seen_levels,
-                           level_names=LEVEL_NAMES,
+    return render_template("hierarchy.html", groups=groups, sel=sel,
+                           levels=seen_levels, level_names=LEVEL_NAMES,
                            disagreements=disagreements, level_log=level_log,
                            home=home)
 
