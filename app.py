@@ -1901,6 +1901,17 @@ def url_detail(url_id):
             if cat == "categories":
                 continue                      # rendered as a tree instead
             items = sections.get(cat, [])
+            if cat == "images":
+                # site furniture (spinner, header/footer logos) is identical
+                # on every page - not this page's content; and an image whose
+                # markup had no alt text gets its filename as a name so it
+                # reads and links like any other, not as a bare URL
+                items = [i for i in items
+                         if not (isinstance(i, dict)
+                                 and runner.is_furniture_img(i.get("url", "")))]
+                for i in items:
+                    if isinstance(i, dict) and not (i.get("title") or "").strip():
+                        i["title"] = runner.img_title_fallback(i.get("url", ""))
             # once every page of this type is captured, a category that is
             # empty across ALL of them does not belong to this page shape
             if not items and present is not None and cat not in present:

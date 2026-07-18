@@ -162,6 +162,29 @@ def _snapshot_item_count(snap_dir):
     return n
 
 
+# Template chrome served on EVERY page - the loading spinner, the header and
+# footer logos. Not page content: listing them says nothing about the page and
+# drowns the one real image (the banner) in noise identical across the site.
+_FURNITURE_IMG = re.compile(
+    r"/etc\.clientlibs/|/content/dam/ifx/infineon_logo", re.I)
+
+
+def is_furniture_img(url):
+    return bool(_FURNITURE_IMG.search(url or ""))
+
+
+def img_title_fallback(url):
+    """A display name for an image whose markup carried no alt text: the
+    asset's own filename, with the Scene7 ':asset-…' rendition suffix, query
+    and extension stripped - so '…/ai-visual-keyvisual-new.jpg:asset-680-2x1'
+    reads as 'ai-visual-keyvisual-new' and earns an item page like any
+    titled image instead of rendering as a bare URL."""
+    u = (url or "").split("?")[0].rsplit("/", 1)[-1]
+    u = u.split(":")[0]
+    u = re.sub(r"\.[a-z0-9]{2,5}$", "", u, flags=re.I)
+    return u.strip()
+
+
 def index_items(con, url_id, snap_dir, dead=False):
     """Refresh the searchable item index for a URL from its current snapshot.
 
@@ -196,6 +219,11 @@ def index_items(con, url_id, snap_dir, dead=False):
             if not isinstance(it, dict):
                 continue
             title = (it.get("title") or "").strip()
+            if cat == "images":
+                if is_furniture_img(it.get("url") or ""):
+                    continue
+                if not title:
+                    title = img_title_fallback(it.get("url") or "")
             if not title:
                 continue
             rows.append((url_id, cat, (it.get("group") or "")[:80],
