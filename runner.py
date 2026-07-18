@@ -536,6 +536,19 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         counters["saved"] += 1
         return
 
+    # STILL not live: a page that is 404/410 AND was already not-live never
+    # becomes "updated". Infineon's error page varies run to run (rotating
+    # promos, timestamps), but the tracked page did not change - it is simply
+    # still gone. Only a TRANSITION is worth flagging: back to live (handled
+    # by the normal compare below, dead=False), or a different failure (a
+    # blank/500 lands on the status!=ok path above). Dead->dead stays notlive.
+    if dead and (row["last_status"] or "") == "notlive":
+        _set_checked(con, url_id, now, "notlive")
+        index_items(con, url_id, snap_dir, dead)   # stays purged
+        _prune_snapshot(con, prev)                 # the old 404 snap is moot
+        counters["saved"] += 1
+        return
+
     result = cmp.compare_snapshots(prev["dir"], snap_dir, change_dir=None,
                                    settings=db.get_settings())
 

@@ -258,7 +258,16 @@ def _noflag(block, key):
 # real monitoring states - what the watcher says about the page (OR-combined)
 # One canonical name per state, used everywhere (stats, chips, this dropdown),
 # so the same page-state never reads under two different words.
+# A hand-picked test set: the 2 richest pages (most components) of every page
+# shape, for quick QA of the whole extractor from one filter. Temporary - drop
+# the entry to remove it.
+TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
+                 4177, 4180, 4203, 4220, 526, 574, 221, 264, 238, 4167, 239,
+                 269, 244, 278, 298, 535, 193, 194, 4233)
+
 STATUS_FILTERS = {
+    "test":      ("🧪 Test set",
+                  "u.id IN (" + ",".join(map(str, TEST_PAGE_IDS)) + ")"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
@@ -936,6 +945,8 @@ def index():
     # Jinja template resolves to dict.keys (the method), which silently broke
     # every chip URL. Ordered by what needs you: attention, health, then states.
     quick_chips = [c for c in (
+        {"kind": "status", "vals": ["test"], "label": "🧪 Test set",
+         "n": len(TEST_PAGE_IDS), "always": True},
         {"kind": "status", "vals": ["changed"], "label": "Updated",
          "n": status_counts["changed"], "always": True, "tone": "warn"},
         {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
