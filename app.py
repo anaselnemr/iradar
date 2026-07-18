@@ -1192,37 +1192,45 @@ SEARCH_PILLS = [
      lambda d: d["cat"] == "videos"
      or (d["cat"] in ("news", "trainings") and _videolike(d))),
     ("images",   "Images", lambda d: d["cat"] == "images"),
-    ("boards",   "Boards",
-     lambda d: d["cat"] == "design_resources"
-     and "board" in (d.get("grp") or "").lower()),
-    ("design",   "Design resources",
+    # boards ARE design resources - they were a sub-slice of the same category,
+    # so two tiles split one library and the counts overlapped
+    ("design",   "Design resources & boards",
      lambda d: d["cat"] == "design_resources"),
     ("products", "Related products", lambda d: d["cat"] == "products"),
-    ("text",     "In page text", None),
 ]
 PILL_FN = {k: f for k, _l, f in SEARCH_PILLS}
 PILL_LABELS = {k: l for k, l, _f in SEARCH_PILLS}
+PILL_LABELS["text"] = "In page text"   # a mode without a tile still needs a name
 # categories each pill can live in - lets the SQL fallback prefilter
 PILL_SQL_CATS = {
     "design": ("design_resources",), "docs": ("documents", "design_resources"),
     "images": ("images",), "products": ("products",),
-    "boards": ("design_resources",),
     "videos": ("videos", "news", "trainings"),
 }
 # page-section PROSE (key features, benefits, applications) is no content
 # type: it lives in the page's text, and the In-page-text search names the
 # section a match sits in. Keeping them as asset chips doubled every answer.
 PROSE_CATS = ("features", "benefits", "applications", "subheadline")
-# old links used raw category names - keep them working
+# old links used raw category names - keep them working. Boards folded INTO
+# design resources, so that one redirects. "text" is different: it lost its
+# tile because Everything now searches page text too, but it is still a real
+# mode - a page-text-only view with no assets mixed in - so it stays reachable
+# and must NOT be aliased to "all", or it starts answering with items.
 _LEGACY_PILL = {"documents": "docs", "design_resources": "design",
                 "news": "videos", "trainings": "videos",
+                "boards": "design",
                 "features": "text", "benefits": "text",
                 "applications": "text"}
 
 
+# real search modes that have no tile of their own: page text lost its tile to
+# Everything but is still its own view, so it has to survive _norm_pill
+UNTILED_MODES = {"text"}
+
+
 def _norm_pill(cat):
     cat = (cat or "all").strip()
-    if cat in PILL_FN:
+    if cat in PILL_FN or cat in UNTILED_MODES:
         return cat
     return _LEGACY_PILL.get(cat, "all")
 
@@ -3028,9 +3036,12 @@ def search_items():
         "SELECT COUNT(*) FROM items WHERE category NOT IN"
         "('about','overview','subheadline','features','benefits','applications')"
     ).fetchone()[0]
-    # live counts for every chip - the "all of it in front of me" numbers
+    # live counts for every chip - the "all of it in front of me" numbers.
+    # The pages tile says Live Pages, so it counts LIVE pages: a 404 or a page
+    # that never answered has no library to browse and does not belong here.
     ccounts = {"pages": con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]}
+        "SELECT COUNT(*) FROM urls u WHERE u.active=1 AND "
+        + ATTR_FILTERS["live"][1]).fetchone()[0]}
     for key, wsql in _BROWSE_SQL.items():
         ccounts[key] = con.execute(
             "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE " + wsql +
@@ -3044,13 +3055,13 @@ def search_items():
         browse = True
         browse_total = ccounts["pages"]
         prows = con.execute(
-            "SELECT id, url, level, label,"
-            " COALESCE(NULLIF(title_override,''),"
-            "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
+            "SELECT u.id, u.url, u.level, u.label,"
+            " COALESCE(NULLIF(u.title_override,''),"
+            "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
             "    AND s.status='ok' AND s.page_title<>''"
             "    ORDER BY s.id DESC LIMIT 1)) AS page_title"
-            " FROM urls WHERE active=1"
-            " ORDER BY lower(COALESCE(NULLIF(title_override,''), label, url))"
+            " FROM urls u WHERE u.active=1 AND " + ATTR_FILTERS["live"][1] +
+            " ORDER BY lower(COALESCE(NULLIF(u.title_override,''), u.label, u.url))"
             " LIMIT ? OFFSET ?",
             (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
         page_hits = [{"id": r["id"], "url": r["url"],
@@ -3113,10 +3124,12 @@ def search_items():
                                           key=lambda h: (-h[0], -h[1]))][:60]
         total = len(page_hits)
     text_hits = []
-    if q and cat == "text":
+    if q and cat in ("text", "all"):
         # look INSIDE the pages: FTS over each page's full captured text, and
         # then say WHICH COMPONENT the words live in by checking the page's
-        # own indexed items for the same tokens
+        # own indexed items for the same tokens. This runs for Everything too -
+        # searching the whole library should say where in a page the words are,
+        # not just which assets are named that.
         from markupsafe import escape as _esc
         # prefix matching: 'eval' also finds evaluation / EVAL_24V - generous
         # like a substring title search; the POSITIONAL attribution then names
@@ -3275,7 +3288,10 @@ def search_items():
                                   lbl for lbl, _ in bl))[:3],
                               "bullets": [(lbl, _markup(t))
                                           for lbl, t in bl[:3]]})
-        total = len(text_hits)
+        # in Everything the item search below owns the headline count; here
+        # the page-text hits are a section of their own
+        if cat == "text":
+            total = len(text_hits)
     if q and cat not in ("pages", "text"):
         keys = _search_keys(con, q, cat, 250)
         if keys:
