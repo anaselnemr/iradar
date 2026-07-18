@@ -745,9 +745,13 @@ def _url_filter(q, statuses, ptypes, attrs):
         for t in types:
             if t == "PTP":
                 tconds.append("(u.ptype='Part' AND u.url LIKE '%/part/%')")
-            elif t == "Evaluation board":
+            elif t in ("EB", "Evaluation board"):
                 tconds.append(
                     "(u.ptype='Part' AND u.url LIKE '%/evaluation-board/%')")
+            elif t == "Products & Eval Boards":
+                # the merged filter group: the whole product taxonomy,
+                # parts included (a part type page is its bottom level)
+                tconds.append("u.ptype IN ('Product','Part')")
             elif t in level_of:
                 tconds.append("(u.ptype=? AND u.level=?)")
                 params.extend([level_of[t], t])
@@ -862,16 +866,34 @@ def index():
         " WHERE ptype<>'' AND IFNULL(level,'')<>'' GROUP BY ptype, level")}
     _SCHEMES = {"Product": PRODUCT_LEVELS, "Application": APP_LEVELS,
                 "Design resources": DR_LEVELS}
-    # the Part sheet is two kinds of page - offer them as their own types
-    ptypes = []
+    # products and parts are ONE taxonomy - a part type page is its bottom -
+    # so the filter offers one group, "Products & Eval Boards", with every
+    # shape nested inside it: PC/PFP/PSFP/PEFP and then PTP/EB, each with
+    # its badge, instead of PTP and EB standing outside alone
+    part_total = next((r["n"] for r in ptypes_raw if r["ptype"] == "Part"), 0)
+    n_ptp = n_eb = 0
+    if part_total:
+        n_ptp = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
+                            " AND url LIKE '%/part/%'").fetchone()[0]
+        n_eb = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
+                           " AND url LIKE '%/evaluation-board/%'").fetchone()[0]
+    ptypes, merged_done = [], False
     for r in ptypes_raw:
-        if r["ptype"] == "Part":
-            n_ptp = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
-                                " AND url LIKE '%/part/%'").fetchone()[0]
-            n_eb = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
-                               " AND url LIKE '%/evaluation-board/%'").fetchone()[0]
-            ptypes.append({"ptype": "PTP", "n": n_ptp, "levels": []})
-            ptypes.append({"ptype": "Evaluation board", "n": n_eb, "levels": []})
+        if r["ptype"] in ("Part", "Product"):
+            if merged_done:
+                continue
+            merged_done = True
+            prod_n = next((x["n"] for x in ptypes_raw
+                           if x["ptype"] == "Product"), 0)
+            levels = [{"lvl": l, "n": lvl_counts.get(("Product", l), 0)}
+                      for l in PRODUCT_LEVELS
+                      if lvl_counts.get(("Product", l))]
+            if n_ptp:
+                levels.append({"lvl": "PTP", "n": n_ptp})
+            if n_eb:
+                levels.append({"lvl": "EB", "n": n_eb})
+            ptypes.append({"ptype": "Products & Eval Boards",
+                           "n": prod_n + part_total, "levels": levels})
         else:
             levels = [{"lvl": l, "n": lvl_counts.get((r["ptype"], l), 0)}
                       for l in _SCHEMES.get(r["ptype"], ())
