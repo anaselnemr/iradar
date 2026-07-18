@@ -1173,7 +1173,11 @@ SECTIONS_JS = r"""
       if (m && m[1]) { heroSrc = m[1]; break; }
     }
   }
-  const heroDefault = !!heroSrc && /default|placeholder|fallback|no-?image/i.test(heroSrc);
+  // A hero served from Infineon's own placeholder set (…/missing-product-
+  // images/…) is the DEFAULT image, not a page-specific one - the folder name
+  // matches none of default/placeholder/fallback, so it had to be named.
+  const heroDefault = !!heroSrc &&
+    /default|placeholder|fallback|no-?image|missing-product-images/i.test(heroSrc);
   out.flags.hero_image = {exists: !!heroSrc,
                           has_content: !!heroSrc && !heroDefault,
                           src: (heroSrc || '').slice(0, 400)};

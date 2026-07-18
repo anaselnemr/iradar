@@ -3786,6 +3786,41 @@ def _normalize_urls():
     con.close()
 
 
+_HERO_DEFAULT_RE = re.compile(
+    r"default|placeholder|fallback|no-?image|missing-product-images", re.I)
+
+
+def _sweep_hero_flags():
+    """Boot migration: a hero served from Infineon's placeholder set
+    (…/missing-product-images/…) is the DEFAULT image, not a page-specific
+    one, and must read amber '(default)' rather than green. The original test
+    looked for default/placeholder/fallback and missed that folder entirely,
+    so pages with a generic part photo claimed a real hero. Recomputed from
+    each page's stored hero src - no re-capture needed. Idempotent."""
+    con = db.connect()
+    fixed = 0
+    for r in con.execute("SELECT id, flags FROM urls"
+                         " WHERE flags LIKE '%hero_image%'").fetchall():
+        try:
+            f = json.loads(r["flags"] or "{}")
+        except Exception:
+            continue
+        h = f.get("hero_image") or {}
+        if not h.get("exists"):
+            continue
+        want = not bool(_HERO_DEFAULT_RE.search(h.get("src") or ""))
+        if bool(h.get("has_content")) != want:
+            h["has_content"] = want
+            f["hero_image"] = h
+            con.execute("UPDATE urls SET flags=? WHERE id=?",
+                        (json.dumps(f, ensure_ascii=False), r["id"]))
+            fixed += 1
+    con.commit()
+    con.close()
+    if fixed:
+        print(f"  hero flags: {fixed} page(s) corrected to the default image")
+
+
 def _sweep_images():
     """Boot migration for the image library: collapse responsive renditions of
     one picture (…/foo.jpg?wid=1400 / ?wid=600 / the Scene7 ':asset-…' preset)
@@ -3845,6 +3880,7 @@ if __name__ == "__main__":
     _normalize_urls()
     _sweep_furniture()
     _sweep_images()
+    _sweep_hero_flags()
     scheduler.start()
     reschedule()
     # warm the document previews in the background so item pages open instantly
