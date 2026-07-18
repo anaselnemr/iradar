@@ -1108,9 +1108,10 @@ def urls_toggle(url_id):
 # note: capture also stores an "about" category in sections.json; it is
 # deliberately NOT listed here - the user wants About content tracked for
 # text comparison only, never displayed as a library section.
-# Content sections in the SAME fixed order as the component chips (the ones
-# that hold displayable items). Videos removed (see COMPONENTS); a video shows
-# under News & highlights / Trainings or via a Design-resources link.
+# Content sections in the fixed display order. Videos has NO component pill
+# (see COMPONENTS) but keeps its content section - some pages carry a video
+# outside News/Trainings. It sits after News & highlights, before Images;
+# Trainings & webinars sits just below Design resources & boards.
 SECTION_LABELS = [
     ("overview", "Overview"),
     ("subheadline", "Subheadline"),
@@ -1121,9 +1122,10 @@ SECTION_LABELS = [
     ("products", "Related products"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
-    ("partners", "Partner solutions"),
     ("trainings", "Trainings & webinars"),
+    ("partners", "Partner solutions"),
     ("news", "News & highlights"),
+    ("videos", "Videos"),
     ("images", "Images"),
 ]
 
