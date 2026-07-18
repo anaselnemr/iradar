@@ -2914,7 +2914,8 @@ def search_items():
                        "news & highlights", "related products", "overview",
                        "about", "trainings & webinars", "videos",
                        "view buying options", "featured products",
-                       "register product", "boards & designs"}
+                       "register product", "boards & designs",
+                       "products table (all rows)"}
         for fr in frows:
             u2 = con.execute(
                 "SELECT id, url, level, label, components, detail_tabs,"

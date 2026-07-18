@@ -1616,6 +1616,61 @@ async def capture_one(browser, url, out_dir):
         except Exception:
             pass
 
+        # The OPN/products table paginates too: only the current page's rows
+        # exist in the DOM at once, so the text layer used to hold ~20 of a
+        # family's parts. Walk every table page and accumulate the component's
+        # text - the block joins text.txt under its own heading, so EVERY row
+        # is tracked (diffed, searchable, attributable) like any page text.
+        table_text = ""
+        try:
+            _tsel = ".ifx_product_table_component, .producttablereference"
+            _tnext = (".ifx_product_table_component .pagination"
+                      " .right-page:not(.inactive),"
+                      " .producttablereference .pagination"
+                      " .right-page:not(.inactive),"
+                      " .ifx_product_table_component"
+                      " button[aria-label*='next' i]:not([disabled]),"
+                      " .producttablereference"
+                      " button[aria-label*='next' i]:not([disabled])")
+            comp = await page.query_selector(_tsel)
+            if comp is not None:
+                # widen the table first: the pager ships a per-page select
+                # (10/20/50/100) - at 100 most families fit on one page and
+                # every row lands straight in the body text
+                try:
+                    sel = await page.query_selector(
+                        ".ifx_product_table_component select.per-page-value,"
+                        " .producttablereference select.per-page-value")
+                    if sel is not None:
+                        await sel.select_option("100")
+                        await page.wait_for_timeout(600)
+                        await _settle_quiet(page, 800)
+                except Exception:
+                    pass
+            if comp is not None and await page.query_selector(_tnext):
+                chunks = []
+                for _ in range(60):
+                    chunks.append(await comp.evaluate(
+                        "el => el.innerText || ''"))
+                    nxt = await page.query_selector(_tnext)
+                    if nxt is None:
+                        break
+                    await nxt.evaluate("el => el.click()")
+                    await page.wait_for_timeout(400)
+                    await _settle_quiet(page, 700)
+                # back to page 1, so screenshot + body text are stable per run
+                first_tp = await page.query_selector(
+                    ".ifx_product_table_component .pagination .page-numbers,"
+                    " .producttablereference .pagination .page-numbers")
+                if first_tp is not None:
+                    await first_tp.evaluate("el => el.click()")
+                    await page.wait_for_timeout(500)
+                if len(chunks) > 1:
+                    # page 1 is already in the body text - store the rest
+                    table_text = "\n".join(chunks[1:])
+        except Exception:
+            table_text = ""
+
         # Design-resources panes paginate too (e.g. 11 dev tools shown 5 per
         # page): activate each tab and walk its pages, merging the items.
         try:
@@ -1754,6 +1809,10 @@ async def capture_one(browser, url, out_dir):
             pass
 
         text = await page.evaluate(TEXT_JS)
+        if table_text:
+            # the walked table pages (2..N) join the tracked text under their
+            # own heading - page 1's rows are already in the body text above
+            text += "\nProducts table (all rows)\n" + table_text + "\n"
         images = await page.evaluate(IMAGES_JS)
         title = await page.title()
         # Infineon intermittently serves blank shells (HTTP 200/202, empty
