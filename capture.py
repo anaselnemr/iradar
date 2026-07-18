@@ -1022,25 +1022,29 @@ SECTIONS_JS = r"""
   if (!out.overview.length && docAbstract)
     push('overview', docAbstract, '', '');
 
+  // Scene7 / Video.js declares each video on a [data-videourl] wrapper that
+  // sits in the DOM even for TABS THE VISITOR NEVER OPENED - so scan those
+  // FIRST, and a promo page whose six tab panels each hold a video yields all
+  // six, not just the active tab's. The <video>'s own src is a runtime blob:
+  // (useless); the wrapper's data-videourl/title/duration are the real thing.
+  const vDone = new Set();
+  document.querySelectorAll('[data-videourl]').forEach(vp => {
+    const durl = (vp.getAttribute('data-videourl') || '').trim();
+    if (!durl || vDone.has(durl)) return;
+    vDone.add(durl);
+    const title = (vp.getAttribute('data-title') || '').trim();
+    const dsec = parseFloat(vp.getAttribute('data-duration') || '');
+    let meta = vp.getAttribute('data-poster') ? 'has poster' : '';
+    if (dsec > 0) meta = Math.floor(dsec / 60) + ':' +
+                         String(Math.round(dsec % 60)).padStart(2, '0');
+    push('videos', title || decodeURIComponent(durl.split('/').pop()), durl, meta);
+  });
   document.querySelectorAll('video').forEach(v => {
+    const vp = v.closest('[data-videourl]');
+    if (vp && vDone.has((vp.getAttribute('data-videourl') || '').trim())) return;
     const srcEl = v.querySelector('source');
     let src = v.currentSrc || v.src || (srcEl ? srcEl.src : '');
     let title = '', meta = v.poster ? 'has poster' : '';
-    // Scene7 / Video.js player: the <video>'s own src is a RUNTIME blob:
-    // object URL (blob:https://…/<uuid>) - meaningless outside the session,
-    // and with no caption its uuid became the "title". The real delivery URL,
-    // title and duration live on an ancestor wrapper (.video-path etc.),
-    // carried as data-videourl / data-title / data-duration.
-    const vp = v.closest('[data-videourl]');
-    if (vp) {
-      const durl = (vp.getAttribute('data-videourl') || '').trim();
-      const dttl = (vp.getAttribute('data-title') || '').trim();
-      const dsec = parseFloat(vp.getAttribute('data-duration') || '');
-      if (durl) src = durl;
-      if (dttl) title = dttl;
-      if (dsec > 0) meta = Math.floor(dsec / 60) + ':' +
-                           String(Math.round(dsec % 60)).padStart(2, '0');
-    }
     if (src.indexOf('blob:') === 0) src = '';   // a blob is never storable
     if (!title) {   // non-Scene7 players: fall back to a nearby caption
       const fig = v.closest('figure, [class*="video" i], section, article');
@@ -1048,9 +1052,7 @@ SECTIONS_JS = r"""
       if (cap) title = cap.textContent;
     }
     // only accept real media: a poster-bearing player, or a media-looking URL
-    // (Scene7 delivery paths are /is/content/…, no file extension)
     if (!v.poster && !/\.(mp4|webm|m3u8|mov)([?#]|$)|\/is\/content\/|video-cdn|brightcove|youtube/i.test(src)) return;
-    // real media elements are Videos; the carousel cards stay under news
     push('videos', (title || '').replace(/\s+/g, ' ').trim() ||
          (src ? decodeURIComponent(src.split('/').pop()) : 'video'), src, meta);
   });
@@ -1059,13 +1061,23 @@ SECTIONS_JS = r"""
     .forEach(f => push('videos', f.title || 'embedded video', f.src, 'iframe'));
 
   const NON_CONTENT_IMG = """ + NON_CONTENT_IMG_JS + r""";
+  const imgSeen = new Set();
   document.querySelectorAll('img').forEach(img => {
-    const src = img.currentSrc || img.src;
-    if (!src || src.startsWith('data:') || NON_CONTENT_IMG.test(src)) return;
-    const key = 'img|' + src;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.images.push({url: src,
+    const raw = img.currentSrc || img.src;
+    if (!raw || raw.startsWith('data:') || NON_CONTENT_IMG.test(raw)) return;
+    // avatars are not page content: a .gif on this site is a person avatar or
+    // animated decoration (real photos/heroes/diagrams are jpg/png/svg/webp),
+    // and the developer-community thread avatars sit in their own container
+    if (/\.gif([?#]|$)/i.test(raw)) return;
+    if (img.closest('#community, [id*="community" i], react-component, ' +
+                    '[class*="developer-comm" i], [class*="communitycard" i], ' +
+                    '[class*="avatar" i], [class*="author" i]')) return;
+    // collapse the responsive renditions of ONE picture (…/foo.jpg?wid=1400,
+    // ?wid=600, and the Scene7 ':asset-…' preset) to a single canonical item
+    const canon = raw.split('?')[0].split(':asset')[0];
+    if (imgSeen.has(canon)) return;
+    imgSeen.add(canon);
+    out.images.push({url: canon,
       title: (img.alt || img.title || '').replace(/\s+/g, ' ').trim().slice(0, 150)});
   });
 

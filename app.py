@@ -1205,20 +1205,30 @@ _JUNK_TITLES = {"", "name", "image", "img", "logo", "icon", "banner",
                 "picture", "photo", "thumbnail"}
 
 
+_SLOT_ALT = re.compile(
+    r"^(banner|hero|carousel|application-product-carousel|block\s*diagram|"
+    r"blockdiagram|placeholder|background|bg)([-_ ]?image)?$", re.I)
+
+
 def pretty_image_title(title, url):
-    """Images should read like documents: 'Asic Hero Image', not
-    'asic-hero-image.png:asset-680-2x1'. Real alt-text titles stay."""
+    """Images should read like documents: 'Biometric Payment Hero', not
+    'banner-image' or 'asic-hero-image.png:asset-680-2x1'.
+
+    A real alt-text sentence is kept. But a junk word ('banner'), a
+    slot-describing alt ('banner-image', 'application-product-carousel-image')
+    or any hyphen-slug that names the SLOT not the picture yields to the
+    image's own filename - the name after the last '/' and before the
+    extension - which is what actually identifies the asset.
+    """
     t = (title or "").strip()
-    if t.lower() in _JUNK_TITLES or len(t) < 3:
-        seg = asset_name("images", url)
+    slug = " " not in t and bool(re.search(r"[-_]", t))
+    if (t.lower() in _JUNK_TITLES or len(t) < 3 or slug
+            or _SLOT_ALT.match(t)):
+        seg = asset_name("images", url)                # filename, no ext/query
         nice = re.sub(r"[-_]+", " ", seg).strip().title()
-        return nice or t or "Image"
-    if " " not in t and re.search(r"[-_]", t):
-        # a slug posing as a title: application-product-carousel-image
-        nice = re.sub(r"[-_]+", " ", re.sub(r"\.[a-z0-9:]+$", "", t,
-                                            flags=re.I)).strip().title()
-        return nice or t
-    return t
+        if nice:
+            return nice
+    return t or "Image"
 
 
 # --------------------------------------------------------------------------
@@ -1943,15 +1953,25 @@ def url_detail(url_id):
             items = sections.get(cat, [])
             if cat == "images":
                 # site furniture (spinner, header/footer logos) is identical
-                # on every page - not this page's content; and an image whose
-                # markup had no alt text gets its filename as a name so it
-                # reads and links like any other, not as a bare URL
+                # on every page - not this page's content. Everything else gets
+                # a real name: a slot-slug alt ('banner-image') or an empty one
+                # yields to the image's own filename, and responsive renditions
+                # of one picture (?wid=1400/600) collapse to a single item.
                 items = [i for i in items
                          if not (isinstance(i, dict)
                                  and runner.is_furniture_img(i.get("url", "")))]
+                _seen_img, _deduped = set(), []
                 for i in items:
-                    if isinstance(i, dict) and not (i.get("title") or "").strip():
-                        i["title"] = runner.img_title_fallback(i.get("url", ""))
+                    if not isinstance(i, dict):
+                        continue
+                    canon = (i.get("url", "") or "").split("?")[0].split(":asset")[0]
+                    if canon in _seen_img:
+                        continue
+                    _seen_img.add(canon)
+                    i["url"] = canon
+                    i["title"] = pretty_image_title(i.get("title", ""), canon)
+                    _deduped.append(i)
+                items = _deduped
             # once every page of this type is captured, a category that is
             # empty across ALL of them does not belong to this page shape
             if not items and present is not None and cat not in present:
@@ -3681,6 +3701,38 @@ def _normalize_urls():
     con.close()
 
 
+def _sweep_images():
+    """Boot migration for the image library: drop .gif avatars, and collapse
+    responsive renditions of one picture (…/foo.jpg?wid=1400 / ?wid=600 / the
+    Scene7 ':asset-…' preset) to a single canonical item. Idempotent; runs at
+    every start so data an older runner wrote is cleaned regardless of when
+    each page is next re-captured."""
+    con = db.connect()
+    gifs = con.execute(
+        "DELETE FROM items WHERE category='images' AND"
+        " (lower(item_url) LIKE '%.gif' OR lower(item_url) LIKE '%.gif?%')"
+    ).rowcount
+    # canonicalise + dedup the responsive variants
+    seen, dropped = {}, 0
+    for r in con.execute("SELECT id, url_id, item_url FROM items"
+                         " WHERE category='images' ORDER BY id").fetchall():
+        canon = (r["item_url"] or "").split("?")[0].split(":asset")[0]
+        key = (r["url_id"], canon)
+        if key in seen:
+            con.execute("DELETE FROM items WHERE id=?", (r["id"],))
+            dropped += 1
+        else:
+            seen[key] = r["id"]
+            if canon != r["item_url"]:
+                con.execute("UPDATE items SET item_url=? WHERE id=?",
+                            (canon, r["id"]))
+    con.commit()
+    con.close()
+    if gifs or dropped:
+        print(f"  images: dropped {gifs} .gif avatar(s), collapsed {dropped}"
+              " responsive duplicate(s)")
+
+
 def _sweep_furniture():
     """Startup sweep: drop template-chrome images (spinner, logos) that an
     OLDER runner indexed before the furniture filter existed. index_items now
@@ -3703,6 +3755,7 @@ if __name__ == "__main__":
     _normalize_statuses()
     _normalize_urls()
     _sweep_furniture()
+    _sweep_images()
     scheduler.start()
     reschedule()
     # warm the document previews in the background so item pages open instantly
