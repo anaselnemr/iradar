@@ -1024,18 +1024,35 @@ SECTIONS_JS = r"""
 
   document.querySelectorAll('video').forEach(v => {
     const srcEl = v.querySelector('source');
-    const src = v.currentSrc || v.src || (srcEl ? srcEl.src : '');
-    // placeholder <video> elements point at page URLs - only accept real media
-    if (!v.poster && !/\.(mp4|webm|m3u8|mov)([?#]|$)|video-cdn|brightcove|youtube/i.test(src)) return;
-    let title = '';
-    const fig = v.closest('figure, [class*="video" i], section, article');
-    if (fig) {
-      const cap = fig.querySelector('figcaption, h2, h3, h4, [class*="title" i]');
+    let src = v.currentSrc || v.src || (srcEl ? srcEl.src : '');
+    let title = '', meta = v.poster ? 'has poster' : '';
+    // Scene7 / Video.js player: the <video>'s own src is a RUNTIME blob:
+    // object URL (blob:https://…/<uuid>) - meaningless outside the session,
+    // and with no caption its uuid became the "title". The real delivery URL,
+    // title and duration live on an ancestor wrapper (.video-path etc.),
+    // carried as data-videourl / data-title / data-duration.
+    const vp = v.closest('[data-videourl]');
+    if (vp) {
+      const durl = (vp.getAttribute('data-videourl') || '').trim();
+      const dttl = (vp.getAttribute('data-title') || '').trim();
+      const dsec = parseFloat(vp.getAttribute('data-duration') || '');
+      if (durl) src = durl;
+      if (dttl) title = dttl;
+      if (dsec > 0) meta = Math.floor(dsec / 60) + ':' +
+                           String(Math.round(dsec % 60)).padStart(2, '0');
+    }
+    if (src.indexOf('blob:') === 0) src = '';   // a blob is never storable
+    if (!title) {   // non-Scene7 players: fall back to a nearby caption
+      const fig = v.closest('figure, [class*="video" i], section, article');
+      const cap = fig && fig.querySelector('figcaption, h2, h3, h4, [class*="title" i]');
       if (cap) title = cap.textContent;
     }
+    // only accept real media: a poster-bearing player, or a media-looking URL
+    // (Scene7 delivery paths are /is/content/…, no file extension)
+    if (!v.poster && !/\.(mp4|webm|m3u8|mov)([?#]|$)|\/is\/content\/|video-cdn|brightcove|youtube/i.test(src)) return;
     // real media elements are Videos; the carousel cards stay under news
-    push('videos', title || (src ? decodeURIComponent(src.split('/').pop()) : 'video'),
-         src, v.poster ? 'has poster' : '');
+    push('videos', (title || '').replace(/\s+/g, ' ').trim() ||
+         (src ? decodeURIComponent(src.split('/').pop()) : 'video'), src, meta);
   });
   document.querySelectorAll(
       'iframe[src*="youtube" i], iframe[src*="video" i], iframe[src*="brightcove" i]')
