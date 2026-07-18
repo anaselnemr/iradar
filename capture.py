@@ -333,8 +333,9 @@ SECTIONS_JS = r"""
 
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
-               overview: [], applications: [], about: [], categories: [],
-               products: [], partners: [], breadcrumb: [], images: []};
+               overview: [], subheadline: [], applications: [], about: [],
+               categories: [], products: [], partners: [], breadcrumb: [],
+               images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
   const bodyLen = document.body ? document.body.textContent.length : 0;
@@ -1021,6 +1022,26 @@ SECTIONS_JS = r"""
   // abstract. Every real overview on the page has had its chance by now.
   if (!out.overview.length && docAbstract)
     push('overview', docAbstract, '', '');
+
+  // Subheadline: the lead tagline directly under the hero title (the <p> that
+  // follows the page's <h1>, an AEM '.para-info'). Stored as its own text
+  // section, shown like the overview.
+  (() => {
+    const h1 = document.querySelector('h1');
+    let sub = '';
+    if (h1) {
+      let p = h1.nextElementSibling;
+      while (p && !(p.tagName === 'P' && p.textContent.trim().length > 15))
+        p = p.nextElementSibling;
+      if (p) sub = p.textContent;
+    }
+    if (!sub) {
+      const pi = document.querySelector('.para-info, [class*="subheadline" i]');
+      if (pi) sub = pi.textContent;
+    }
+    sub = (sub || '').replace(/\s+/g, ' ').trim();
+    if (sub.length > 15) push('subheadline', sub.slice(0, 400), '', '');
+  })();
 
   // Scene7 / Video.js declares each video on a [data-videourl] wrapper that
   // sits in the DOM even for TABS THE VISITOR NEVER OPENED - so scan those

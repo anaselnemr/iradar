@@ -417,6 +417,7 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # highlights / Trainings or in Design resources, reachable from those links.
 COMPONENTS = [
     ("hero_image",         "Hero image",            "flag", "hero_image"),
+    ("subheadline",        "Subheadline",           "cat",  "subheadline"),
     ("overview",           "Overview",              "cat",  "overview"),
     ("parametrics",        "Parametrics",           "tab",  "parametrics"),
     ("ordering",           "Ordering",              "tab",  "ordering"),
@@ -1112,6 +1113,7 @@ def urls_toggle(url_id):
 # under News & highlights / Trainings or via a Design-resources link.
 SECTION_LABELS = [
     ("overview", "Overview"),
+    ("subheadline", "Subheadline"),
     ("features", "Key features"),
     ("benefits", "Benefits"),
     ("applications", "Applications"),
@@ -1189,7 +1191,7 @@ PILL_SQL_CATS = {
 # page-section PROSE (key features, benefits, applications) is no content
 # type: it lives in the page's text, and the In-page-text search names the
 # section a match sits in. Keeping them as asset chips doubled every answer.
-PROSE_CATS = ("features", "benefits", "applications")
+PROSE_CATS = ("features", "benefits", "applications", "subheadline")
 # old links used raw category names - keep them working
 _LEGACY_PILL = {"documents": "docs", "design_resources": "design",
                 "news": "videos", "trainings": "videos",
@@ -2861,7 +2863,7 @@ def search_items():
     # is a page's own text, not an asset type. Prose sections live under text.
     indexed = con.execute(
         "SELECT COUNT(*) FROM items WHERE category NOT IN"
-        " ('about','overview','features','benefits','applications')"
+        "('about','overview','subheadline','features','benefits','applications')"
     ).fetchone()[0]
     # live counts for every chip - the "all of it in front of me" numbers
     ccounts = {"pages": con.execute(
@@ -3050,11 +3052,11 @@ def search_items():
             prose_rows = con.execute(
                 "SELECT i.url_id, i.category, i.title FROM items i"
                 " WHERE i.category IN ('features','benefits','applications',"
-                "                      'overview','about')"
+                "                      'overview','about','subheadline')"
                 " AND " + conds + " LIMIT 300", toks_all).fetchall()
         _PLBL = {"features": "Key features", "benefits": "Benefits",
                  "applications": "Applications", "overview": "Overview",
-                 "about": "About"}
+                 "about": "About", "subheadline": "Subheadline"}
 
         def _clip(s):
             # overview/about are paragraphs, not bullets - quote the window
@@ -3189,7 +3191,7 @@ def api_suggest():
     # overview is a page's own text, not an asset to jump to; prose sections
     # (features/benefits/applications) live under In page text
     raw = _fuzzy_items(q, cat, 30,
-                       exclude={"overview", "features", "benefits",
+                       exclude={"overview", "subheadline", "features", "benefits",
                                 "applications"})
     con = db.connect()
     pages = _pages_for_keys(con, [d["key"] for d in raw])

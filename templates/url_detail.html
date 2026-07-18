@@ -235,7 +235,7 @@
           {% endfor %}
         {% else %}
         <ul class="liblist">
-          {% for it in cat['items'] %}{% if cat['cat'] == 'overview' %}<li>{{ it.title }}</li>{% else %}{{ libitem(it) }}{% endif %}{% endfor %}
+          {% for it in cat['items'] %}{% if cat['cat'] in ('overview', 'subheadline') %}<li>{{ it.title }}</li>{% else %}{{ libitem(it) }}{% endif %}{% endfor %}
         </ul>
         {% endif %}
       </details>
