@@ -335,7 +335,8 @@ def _run_check_inner(kind, url_ids):
 
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
                      total=len(urls), done=0, saved=0, changed=0, errors=0,
-                     started=db.now_iso(), started_ts=time.time(), message="")
+                     suspects=0, started=db.now_iso(), started_ts=time.time(),
+                     message="")
     if not urls:
         RUN_STATE["message"] = "No active URLs to check."
         return {"total": 0, "ok": 0, "changed": 0, "errors": 0}
@@ -550,6 +551,9 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
                     (new_snap_id,))
         suspects.append({"row": row, "new1_id": new_snap_id,
                          "new1_dir": snap_dir, "prev": prev})
+        # each suspect owes ONE more capture at the end - publish the debt so
+        # the ETA can tell the truth instead of ignoring the verify tail
+        RUN_STATE["suspects"] = len(suspects)
     else:
         _set_checked(con, url_id, now, "notlive" if dead else "unchanged")
         index_items(con, url_id, snap_dir, dead)
@@ -562,6 +566,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
     Each verified page is committed on its own."""
     RUN_STATE["message"] = f"double-checking {len(suspects)} suspected change(s)…"
     RUN_STATE["total"] += len(suspects)
+    RUN_STATE["suspects"] = 0     # the debt is folded into total now
     ts2 = ts_label + "-verify"
     vjobs = [(s["row"]["url"], str(_snapshot_dir(s["row"]["id"], ts2)))
              for s in suspects]

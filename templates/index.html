@@ -554,6 +554,7 @@ async function poll() {
           const perMin = (b.done - a.done) / ((b.t - a.t) / 60000);
           if (perMin > 0) eta += ' · ' + perMin.toFixed(1) + ' pages/min';
         }
+        if (s.suspects) eta += ' · ' + s.suspects + ' held for a double-check at the end';
         document.getElementById('run-eta').textContent = eta;
         document.getElementById('run-msg').textContent = s.message || '';
         if (bar) bar.style.background = '';

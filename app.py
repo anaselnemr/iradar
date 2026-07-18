@@ -2204,7 +2204,11 @@ def status():
         elapsed = _time.time() - s["started_ts"]
         if elapsed > 0:
             rate = s["done"] / elapsed
-            remaining = max(0, s.get("total", 0) - s["done"])
+            # each parked suspect owes ONE more capture in the verify pass -
+            # count that debt now, or the ETA quietly ignores the whole tail
+            # and "time doesn't move" once verification starts
+            remaining = (max(0, s.get("total", 0) - s["done"])
+                         + s.get("suspects", 0))
             s["eta_s"] = int(remaining / rate) if rate > 0 else None
     return jsonify(s)
 
