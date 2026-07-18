@@ -25,6 +25,15 @@
 } %}
 {% macro ticon(cat) %}{{ ICONS.get(cat, ICONS['_default'])|safe }}{% endmacro %}
 
+{# Until the server restarts onto the new route, the OLD route renders this
+   template without the browse-mode variables - default them so the page
+   degrades to plain search instead of dying on an undefined. #}
+{% set ccounts = ccounts if ccounts is defined else {} %}
+{% set browse = browse if browse is defined else False %}
+{% set pageno = pageno if pageno is defined else 1 %}
+{% set has_more = has_more if has_more is defined else False %}
+{% set per_page = per_page if per_page is defined else 60 %}
+
 <style>
   .launchpad { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
   .lp-tile { display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 15px;
@@ -46,8 +55,8 @@
 <div class="hero">
   <h1>Content</h1>
   <p class="muted" style="margin:0">Everything we captured, in one library —
-    <b>{{ '{:,}'.format(indexed) }}</b> assets across
-    <b>{{ '{:,}'.format(ccounts.get('pages', 0)) }}</b> live pages.
+    <b>{{ '{:,}'.format(indexed) }}</b> assets{% if ccounts.get('pages') %} across
+    <b>{{ '{:,}'.format(ccounts['pages']) }}</b> live pages{% endif %}.
     Browse it all, filter by type, search before or after.</p>
   <form method="get" class="bigsearch" id="sform" autocomplete="off">
     <span class="grow sugwrap">
@@ -81,7 +90,7 @@
 {% endif %}
 {% endmacro %}
 
-{% if not q and cat == 'all' %}
+{% if not q and cat == 'all' and ccounts %}
   {# THE LIBRARY, all of it in front of you: one tile per content type #}
   <div class="launchpad">
     {% for k, lbl in pills if k not in ('all',) %}
