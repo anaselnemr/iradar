@@ -259,10 +259,9 @@ def _noflag(block, key):
 # One canonical name per state, used everywhere (stats, chips, this dropdown),
 # so the same page-state never reads under two different words.
 STATUS_FILTERS = {
-    "changed":   ("Changed", "u.last_status='changed' AND u.active=1"),
+    "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
-    "baseline":  ("Baseline", "u.last_status='baseline'"),
     "notlive":   ("Not live (404)", "u.last_status='notlive'"),
     "blank":     ("Blank page", "u.last_status='blank'"),
     "error":     ("Capture error", "u.last_status='error'"),
@@ -832,7 +831,9 @@ def index():
         SELECT COUNT(*) AS total,
           SUM(CASE WHEN last_status='changed' AND active=1 THEN 1 ELSE 0 END) AS changed,
           SUM(CASE WHEN last_status='unchanged' AND active=1 THEN 1 ELSE 0 END) AS unchanged,
-          SUM(CASE WHEN last_status='baseline' THEN 1 ELSE 0 END) AS baseline,
+          SUM(CASE WHEN last_http IS NOT NULL AND last_http NOT IN (404, 410)
+                   AND IFNULL(last_status,'') NOT IN ('blank','error')
+                   THEN 1 ELSE 0 END) AS live,
           SUM(CASE WHEN last_checked IS NOT NULL THEN 1 ELSE 0 END) AS checked,
           SUM(CASE WHEN last_status='rejected' THEN 1 ELSE 0 END) AS rejected,
           SUM(CASE WHEN last_status='error' THEN 1 ELSE 0 END) AS errors,
@@ -849,12 +850,12 @@ def index():
     comp_pending = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1"
         " AND (components IS NULL OR components='')").fetchone()[0]
-    # pages that still NEED a capture (never checked / baseline-only / failed)
+    # pages that still NEED a capture (never checked / failed)
     # - the set the "check pending first" button runs, and the front of the
     # queue when checking everything
     pending_total = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1 AND (last_checked IS NULL"
-        " OR IFNULL(last_status,'') IN ('baseline','blank','error'))"
+        " OR IFNULL(last_status,'') IN ('blank','error'))"
     ).fetchone()[0]
     ptypes_raw = con.execute(
         "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
@@ -931,7 +932,7 @@ def index():
     # Jinja template resolves to dict.keys (the method), which silently broke
     # every chip URL. Ordered by what needs you: attention, health, then states.
     quick_chips = [c for c in (
-        {"kind": "status", "vals": ["changed"], "label": "Changed",
+        {"kind": "status", "vals": ["changed"], "label": "Updated",
          "n": status_counts["changed"], "always": True, "tone": "warn"},
         {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
          "n": status_counts["rejected"], "tone": "warn"},
@@ -945,8 +946,6 @@ def index():
          "n": attr_counts["live"], "tone": "good"},
         {"kind": "status", "vals": ["unchanged"], "label": "Unchanged",
          "n": status_counts["unchanged"], "always": True},
-        {"kind": "status", "vals": ["baseline"], "label": "Baseline",
-         "n": status_counts["baseline"]},
         {"kind": "status", "vals": ["new"], "label": "Not captured",
          "n": status_counts["new"]},
         {"kind": "status", "vals": ["paused"], "label": "Paused",
@@ -2066,7 +2065,7 @@ def change_resolve(change_id):
                 (resolution, change_id))
     if resolution == "reject":
         # The OLD version was correct: never compare against the rejected
-        # capture - the old snapshot stays the baseline, so the page will be
+        # capture - the old snapshot stays the reference, so the page will be
         # flagged again on every check until the website is fixed.
         con.execute("UPDATE snapshots SET rejected=1 WHERE id=?",
                     (c["new_snapshot_id"],))
@@ -2080,7 +2079,7 @@ def change_resolve(change_id):
                           (c["old_snapshot_id"],)).fetchone()
         if old and old["dir"] and Path(old["dir"]).exists():
             runner.index_items(con, c["url_id"], old["dir"])
-        flash("Rejected — the old version stays the baseline (library and "
+        flash("Rejected — the old version stays the reference (library and "
               "search restored to it). The page will be flagged again on the "
               "next check until the website matches it.")
     else:
@@ -2091,7 +2090,7 @@ def change_resolve(change_id):
             con.execute("UPDATE urls SET last_status='unchanged'"
                         " WHERE id=? AND last_status IN ('changed','rejected')",
                         (c["url_id"],))
-        flash("Approved — this version is the new baseline.")
+        flash("Approved — this version is now the reference.")
     con.commit()
     con.close()
     nxt = request.form.get("next") or url_for("index")
@@ -2162,13 +2161,13 @@ def run_now():
             flash("Every page has been checked already — nothing to resume.")
             return redirect(url_for("index"))
     elif request.form.get("pending") == "1" or request.args.get("pending") == "1":
-        # only the pages that still NEED a capture: never checked, baseline
-        # (one capture only), or failed (blank/error). Skips every page whose
-        # current library is already known-good.
+        # only the pages that still NEED a capture: never checked or
+        # failed (blank/error). Skips every page whose current library
+        # is already known-good.
         con = db.connect()
         ids = [r["id"] for r in con.execute(
             "SELECT id FROM urls WHERE active=1 AND (last_checked IS NULL"
-            " OR IFNULL(last_status,'') IN ('baseline','blank','error'))")]
+            " OR IFNULL(last_status,'') IN ('blank','error'))")]
         con.close()
         if not ids:
             flash("No pending pages — everything has a checked, current library.")
@@ -3613,6 +3612,19 @@ def prewarm():
     return jsonify(PREWARM)
 
 
+def _normalize_statuses():
+    """Boot migration: the 'baseline' state is retired - a first capture now
+    lands as 'unchanged' (next run either keeps it there or moves it to
+    Updated). Rows written by an older runner normalize on every start."""
+    con = db.connect()
+    n = con.execute("UPDATE urls SET last_status='unchanged'"
+                    " WHERE last_status='baseline'").rowcount
+    con.commit()
+    con.close()
+    if n:
+        print(f"  normalized {n} page(s) from the retired 'baseline' state")
+
+
 def _sweep_furniture():
     """Startup sweep: drop template-chrome images (spinner, logos) that an
     OLDER runner indexed before the furniture filter existed. index_items now
@@ -3632,6 +3644,7 @@ def _sweep_furniture():
 
 if __name__ == "__main__":
     db.init_db()
+    _normalize_statuses()
     _sweep_furniture()
     scheduler.start()
     reschedule()

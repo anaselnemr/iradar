@@ -94,7 +94,7 @@
 
 {% if art.regions %}
 <div class="card">
-  <h2>Changed areas up close <span class="muted">({{ art.regions|length }} area(s) — click to open full size)</span></h2>
+  <h2>Updated areas up close <span class="muted">({{ art.regions|length }} area(s) — click to open full size)</span></h2>
   <p class="muted">Each strip shows the same spot on the page: left = before, right = after.</p>
   {% for r in art.regions %}
   <a href="{{ url_for('change_art', change_id=c.id, name=r) }}" target="_blank" title="Open full size" class="regionstrip">

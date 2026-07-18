@@ -346,10 +346,9 @@ def _run_check_inner(kind, url_ids):
     # those beat re-checking a page we already know is unchanged. Dead pages
     # come last: a 404 re-check is the least urgent thing in the run.
     priority = ("CASE WHEN last_checked IS NULL THEN 0"
-                " WHEN IFNULL(last_status,'')='baseline' THEN 1"
-                " WHEN IFNULL(last_status,'') IN ('blank','error') THEN 2"
-                " WHEN IFNULL(last_status,'')='notlive' THEN 4"
-                " ELSE 3 END")
+                " WHEN IFNULL(last_status,'') IN ('blank','error') THEN 1"
+                " WHEN IFNULL(last_status,'')='notlive' THEN 3"
+                " ELSE 2 END")
     if url_ids:
         marks = ",".join("?" * len(url_ids))
         urls = con.execute(
@@ -532,7 +531,7 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
 
     if prev is None:
         con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
-                    (now, "notlive" if dead else "baseline", url_id))
+                    (now, "notlive" if dead else "unchanged", url_id))
         index_items(con, url_id, snap_dir, dead)
         counters["saved"] += 1
         return

@@ -3,22 +3,22 @@
 
 <div class="card">
   <div class="statrow">
-    <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">Pages tracked</div></div>
-    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages with a change waiting for you"><div class="n" style="color:{{ '#d97706' if total_open else '#16a34a' }}">{{ total_open }}</div><div class="l">To review</div></a>
-    <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Captured</div></div>
-    <a class="stat statlink" href="{{ url_for('index', status=['notlive']) }}" title="Pages the server answers 404 for — blank pages are counted separately"><div class="n" style="color:{{ '#dc2626' if notlive_total else '#16a34a' }}">{{ notlive_total }}</div><div class="l">Not live</div></a>
+    <div class="stat"><div class="n">{{ counts.total }}</div><div class="l">Total Pages</div></div>
+    <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Pages Captured</div></div>
+    <a class="stat statlink" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring"><div class="n" style="color:#16a34a">{{ counts.live or 0 }}</div><div class="l">Live</div></a>
+    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review"><div class="n" style="color:{{ '#d97706' if total_open else 'var(--muted)' }}">{{ total_open }}</div><div class="l">Updated</div></a>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
         <button {% if state.running %}disabled style="opacity:.5"{% endif %}
-                title="Checks every page — in NEED order: never-captured first, then baseline, then failed (blank/error), then the rest; dead pages last">▶ Check all pages</button>
+                title="Checks every page — in NEED order: never-captured first, then failed (blank/error), then the rest; dead pages last">▶ Check all pages</button>
       </form>
       <button class="iconbtn" onclick="location.reload()" title="Refresh this page">⟳</button>
       {% if pending_total > 0 and not state.running %}
       <div style="margin-top:7px">
         <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
           <input type="hidden" name="pending" value="1">
-          <button class="linkbtn" title="Only pages that still NEED a capture: never checked{{ ' (' ~ counts.fresh ~ ')' if counts.fresh }}, baseline-only or failed — skips every page already known unchanged. Never-captured go first.">or just the {{ pending_total }} pending (new → baseline → failed)</button>
+          <button class="linkbtn" title="Only pages that still NEED a capture: never checked{{ ' (' ~ counts.fresh ~ ')' if counts.fresh }} or failed — skips every page already known unchanged. Never-captured go first.">or just the {{ pending_total }} pending (new → failed)</button>
         </form>
       </div>
       {% endif %}
@@ -61,7 +61,7 @@
   {% if last_run and last_run.finished and not state.running %}
   <div class="muted" style="margin-top:10px">
     Last run finished {{ last_run.finished|localtime }} — {{ last_run.ok }} ok,
-    <b>{{ last_run.changed }} changed</b>, {{ last_run.errors }} errors
+    <b>{{ last_run.changed }} updated</b>, {{ last_run.errors }} errors
   </div>
   {% endif %}
 </div>
@@ -276,10 +276,9 @@
       </td>
       <td>
         {% if not u.active %}<span class="badge b-off">paused</span>
-        {% elif u.last_status == 'changed' %}<span class="badge b-changed">changed</span>
-        {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected a change: the old version stays the baseline until the site matches it again">awaiting fix</span>
-        {% elif u.last_status == 'unchanged' %}<span class="badge b-unchanged">unchanged</span>
-        {% elif u.last_status == 'baseline' %}<span class="badge b-baseline">baseline saved</span>
+        {% elif u.last_status == 'changed' %}<span class="badge b-changed">updated</span>
+        {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected an update: the old version stays the reference until the site matches it again">awaiting fix</span>
+        {% elif u.last_status in ('unchanged', 'baseline') %}<span class="badge b-unchanged">unchanged</span>
         {% elif u.last_status == 'notlive' %}<span class="badge b-off" title="Infineon serves this URL as an error page. It is still watched, so a revival shows up as a change.">dead page</span>
         {% elif u.last_status == 'blank' %}<span class="badge b-error" title="The page answers with an HTTP success code but an empty body - nothing renders, for us or for a visitor. This is a fault on the page itself.">serves blank page</span>
         {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>

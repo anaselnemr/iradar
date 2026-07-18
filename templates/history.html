@@ -6,7 +6,7 @@
   {% if not runs %}<p class="muted">No checks have run yet.</p>
   {% else %}
   <table>
-    <tr><th>Started (local)</th><th>Finished</th><th>Type</th><th>URLs</th><th>OK</th><th>Changed</th><th>Errors</th></tr>
+    <tr><th>Started (local)</th><th>Finished</th><th>Type</th><th>URLs</th><th>OK</th><th>Updated</th><th>Errors</th></tr>
     {% for r in runs %}
     <tr>
       <td>{{ r.started|localtime }}</td>
