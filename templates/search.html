@@ -134,7 +134,7 @@
       <div style="flex:1; min-width:0">
         <div class="hit-head">
           <span class="hit-title-row">
-            {{ ticon(g.category) }}
+            {{ ticon('videos' if g.is_video else g.category) }}
             <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
           </span>
           <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
@@ -219,7 +219,7 @@
     <div class="rescard">
       <div class="hit-head">
         <span class="hit-title-row">
-          {{ ticon(g.category) }}
+          {{ ticon('videos' if g.is_video else g.category) }}
           {% if is_overview %}
           <a href="{{ url_for('url_detail', url_id=g.pages[0].id) }}" class="hit-title">{{ g.title }}</a>
           {% else %}

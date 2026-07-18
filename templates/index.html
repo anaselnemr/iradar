@@ -233,7 +233,7 @@
       <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
       <th>Type</th><th>Live</th><th>Status</th>
       <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
-      <th>Changes</th>
+      <th><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has changed (click again for least-changed first)">Changes{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
     </tr>
     {% for u in urls %}
     <tr>
@@ -288,6 +288,8 @@
       <td>
         {% if u.open_changes %}
           <a href="{{ url_for('change_view', change_id=u.latest_change_id) }}"><b>{{ u.open_changes }} to review</b></a>
+        {% elif u.change_total %}
+          <span class="muted" title="{{ u.change_total }} recorded change{{ 's' if u.change_total != 1 }} over time (all reviewed)">{{ u.change_total }}×</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </td>
     </tr>
@@ -399,8 +401,13 @@ const panel = document.getElementById('trackpanel');
 function sortBy(key) {
   const p = new URLSearchParams(location.search);
   const cur = p.get('sort') || 'page';
-  if (key === 'page') p.set('sort', cur === 'page' ? 'page_desc' : 'page');
-  else p.set('sort', cur === 'date' ? 'date_asc' : 'date');
+  // each column toggles between its primary and reversed form on repeat clicks
+  const toggle = {page: 'page_desc', page_desc: 'page',
+                  date: 'date_asc', date_asc: 'date',
+                  changes: 'changes_asc', changes_asc: 'changes'};
+  const primary = {page: 'page', date: 'date', changes: 'changes'}[key];
+  p.set('sort', (cur === primary || cur === primary + '_desc' ||
+                 cur === primary + '_asc') ? toggle[cur] : primary);
   p.delete('page');
   pjax('{{ url_for("index") }}?' + p.toString());
   return false;

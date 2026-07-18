@@ -775,11 +775,14 @@ def index():
     # alphabetical-by-URL keeps the hierarchy grouped ("…/microcontroller/…"
     # rows sit together) AND a newly added page lands in place immediately -
     # its URL is known the moment it is added, long before it has a title.
+    _chg = "(SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id)"
     order_by = {
         "page": "u.url COLLATE NOCASE ASC",
         "page_desc": "u.url COLLATE NOCASE DESC",
         "date": "u.last_checked IS NULL, u.last_checked DESC",
         "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
+        "changes": _chg + " DESC",          # most-changed first
+        "changes_asc": _chg + " ASC",       # least-changed first
     }.get(sort, "u.url COLLATE NOCASE ASC")
     # a page added within the last week wears a NEW badge (created_at is UTC).
     # new_badge_since is the user's reset watermark: pages added before it are
@@ -817,6 +820,7 @@ def index():
         SELECT u.*,
           (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
             AS open_changes,
+          (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id) AS change_total,
           (SELECT c2.id FROM changes c2 WHERE c2.url_id=u.id AND c2.reviewed=0
             ORDER BY c2.id DESC LIMIT 1) AS latest_change_id,
           (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
@@ -1134,7 +1138,7 @@ def _videolike(d):
     duration (\d:\d\d) in its meta."""
     u = (d.get("url") or "").lower()
     return (".mp4" in u or "/is/content/" in u
-            or bool(re.search(r"\d+:\d{2}", d.get("meta") or "")))
+            or bool(re.search(r"\d{1,2}:\d{2}", d.get("meta") or "")))
 
 
 SEARCH_PILLS = [
@@ -1264,7 +1268,16 @@ for _t in WINDCHILL_DOC_TYPES:
     DOC_TYPE_SYSTEM[_norm_doc_type(_t)] = "Windchill"
 
 
-def backend_system(category, meta, doc_type=None, grp=None):
+def is_video_item(category, url="", meta=""):
+    """A video, wherever it sits: the videos category itself, OR a card under
+    News & highlights / Trainings that is really a video (media URL or a
+    m:ss duration). Such a video lives in DAM like any other."""
+    return category == "videos" or (
+        category in ("news", "trainings")
+        and _videolike({"url": url, "meta": meta}))
+
+
+def backend_system(category, meta, doc_type=None, grp=None, url=""):
     """DAM / Windchill / '' (type not on the migration sheet).
 
     Per document, never per page: one product page carries a datasheet
@@ -1276,7 +1289,7 @@ def backend_system(category, meta, doc_type=None, grp=None):
     doc_type is the row's own Type column, captured as its own field. The meta
     fallback exists only for snapshots taken before that was stored.
     """
-    if category in ALWAYS_DAM:
+    if category in ALWAYS_DAM or is_video_item(category, url, meta):
         return "DAM"
     if category == "design_resources":
         return "Windchill" if _DOC_TYPED_GRP.match((grp or "").strip()) else ""
@@ -1949,7 +1962,8 @@ def url_detail(url_id):
                                                      it.get("url", ""))
                     it["backend"] = backend_system(cat, it.get("meta", ""),
                                                    it.get("dtype"),
-                                                   it.get("group"))
+                                                   it.get("group"),
+                                                   it.get("url", ""))
                     it["aname"] = asset_name(cat, it.get("url", ""))
                     it["bsearch"] = backend_search_link(
                         it["backend"], it["aname"], _settings_now)
@@ -2846,7 +2860,7 @@ def search_items():
             (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
         for r in rows:
             _bk = backend_system(r["category"], r["meta"], r["doc_type"],
-                                 r["grp"])
+                                 r["grp"], r["item_url"])
             _ttl = (pretty_image_title(r["title"], r["item_url"])
                     if r["category"] == "images" else r["title"])
             groups.append({"title": _ttl, "url": r["item_url"],
@@ -2854,6 +2868,8 @@ def search_items():
                            "meta": r["meta"], "item_key": r["item_key"],
                            "npages": r["npages"], "pages": [],
                            "backend": _bk,
+                           "is_video": is_video_item(r["category"],
+                                                     r["item_url"], r["meta"]),
                            "aname": asset_name(r["category"], r["item_url"]),
                            "bsearch": backend_search_link(
                                _bk, asset_name(r["category"], r["item_url"]),
@@ -3076,7 +3092,7 @@ def search_items():
             gk = (r["title"].lower(), r["item_url"])
             if gk not in by_item:
                 _bk = backend_system(r["category"], r["meta"], r["doc_type"],
-                                     r["grp"])
+                                     r["grp"], r["item_url"])
                 _ttl = (pretty_image_title(r["title"], r["item_url"])
                         if r["category"] == "images" else r["title"])
                 by_item[gk] = {"title": _ttl, "url": r["item_url"],
@@ -3085,6 +3101,9 @@ def search_items():
                                "item_key": r["item_key"],
                                "rank": rank.get(r["item_key"], 10 ** 9),
                                "backend": _bk,
+                               "is_video": is_video_item(r["category"],
+                                                         r["item_url"],
+                                                         r["meta"]),
                                "aname": asset_name(r["category"],
                                                    r["item_url"]),
                                "bsearch": backend_search_link(
@@ -3439,15 +3458,18 @@ def item_detail(key):
     # the richest meta wins: the same item can be listed tersely on one page
     meta = max((r["meta"] or "" for r in rows), key=len)
     dtype = next((r["doc_type"] for r in rows if r["doc_type"]), "")
-    _bk = backend_system(first["category"], meta, dtype, first["grp"])
+    _bk = backend_system(first["category"], meta, dtype, first["grp"],
+                         first["item_url"])
     _aname = asset_name(first["category"], first["item_url"])
     _img = next((r["img"] for r in rows if r["img"]), "")
     _pk, _psrc = ("", "")
     if first["category"] in ("documents", "design_resources"):
         _pk, _psrc = doc_preview(first["item_url"])
+    _isvid = is_video_item(first["category"], first["item_url"], meta)
     item = {"title": first["title"], "url": first["item_url"],
             "category": first["category"], "grp": first["grp"], "meta": meta,
             "backend": _bk, "asset_name": _aname, "img": _img,
+            "is_video": _isvid,
             "preview_kind": _pk, "preview_src": _psrc,
             "bsearch": backend_search_link(_bk, _aname, db.get_settings()),
             "doc_type": (dtype or document_type_of(meta))
