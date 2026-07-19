@@ -406,7 +406,9 @@
             {#- same three colours as the chips on a page: green has it, orange
                 has it but empty, grey has not -#}
             {% if v == 'yes' %}<td class="yes">yes</td>
-            {% elif v == 'empty' %}<td class="emptyv">empty</td>
+            {#- a blank page answered and shows nothing: its own word and its
+                own colour, the same orange the chips and the table use -#}
+            {% elif v == 'empty' %}<td class="emptyv">live but empty</td>
             {% elif v == 'default' %}<td class="emptyv">default</td>
             {% elif v == 'no' %}<td class="no">no</td>
             {# a count of 0 is an answer, not a blank - only an empty string is #}

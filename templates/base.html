@@ -87,6 +87,10 @@
   .notice     { background: #fffbeb; border: 1px solid #fde68a; color: #78350f;
                 border-radius: 8px; padding: 10px 12px; font-size: 14px; }
   .b-sys      { background: #0369a1; color: #fff; }
+  /* answered, but nothing on the page - not the green of a good
+     page nor the red of a dead one */
+  .b-empty    { background: #ffedd5; color: #9a3412; }
+  [data-theme="dark"] .b-empty { background: #3a2410; color: #fdba74; }
   .b-redir    { background: #fef3c7; color: #92400e; cursor: help; }
   .sorth { cursor: pointer; color: inherit; text-decoration: none;
            user-select: none; white-space: nowrap; }
@@ -680,6 +684,24 @@
   [data-theme="dark"] .diff .add { background: rgba(52,211,153,.14); }
   [data-theme="dark"] .pill-on   { background: #e9e9e9; color: #000;
                                    border-color: #e9e9e9; }
+
+  /* back to the top of a four-thousand-row table without dragging the
+     scrollbar. Appears once there is enough behind you to be worth it. */
+  .totop { position: fixed; right: 22px; bottom: 22px; z-index: 80;
+           width: 42px; height: 42px; border-radius: 50%;
+           display: none; align-items: center; justify-content: center;
+           background: var(--card); color: var(--ink);
+           border: 1px solid var(--line); cursor: pointer;
+           box-shadow: 0 6px 22px rgba(0,0,0,.28);
+           transition: background .14s, transform .14s; }
+  .totop.on { display: flex; }
+  .totop:hover { background: var(--hover); transform: translateY(-2px); }
+  .totop svg { width: 19px; height: 19px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .totop.on { animation: totopin .16s ease-out; }
+    @keyframes totopin { from { opacity: 0; transform: translateY(6px); }
+                         to   { opacity: 1; transform: translateY(0); } }
+  }
 </style>
 </head>
 <body>
@@ -717,6 +739,12 @@
   {% block content %}{% endblock %}
 </main>
 
+<button type="button" class="totop" id="totop" aria-label="Back to top"
+        title="Back to top"
+        onclick="window.scrollTo({top:0,behavior:'smooth'})">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+       stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+</button>
 <script>
   // (the level editor's own outside-click handler used to live here; it is the
   // unified popover handler at the end of this file now, which covers every
@@ -829,6 +857,22 @@ function closePopovers(except) {
     if (!dirty) d.open = false;
   });
 }
+
+// Back to top, on every page. Shows after a screenful and a half, which
+// is far enough that the scrollbar is the only way back.
+(function () {
+  var btn = document.getElementById('totop');
+  if (!btn) return;
+  function sync() {
+    btn.classList.toggle('on', window.scrollY > window.innerHeight * 1.5);
+  }
+  // straight off the scroll event, not through requestAnimationFrame: one
+  // classList.toggle is cheaper than the bookkeeping, and a rAF that never
+  // fires - a background tab, a renderer that is not painting - leaves the
+  // throttle latched and the button never appears again
+  window.addEventListener('scroll', sync, {passive: true});
+  sync();
+})();
 
 document.addEventListener('click', function (ev) { closePopovers(ev.target); });
 // Escape closes the innermost one and hands focus back to what opened it

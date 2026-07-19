@@ -4600,11 +4600,15 @@ def _export_rows(con, levels, cols, verbose=False):
             row["vals"].append(p[k] or "")
         for k in want_page:
             if k == "live":
-                http = p["last_http"]
+                # Three answers, not two. A blank page answered - it is not a
+                # 404 - and it shows a visitor nothing, so calling it either
+                # yes or no loses the only interesting thing about it. A
+                # capture error is neither: we did not see the page.
+                http, st = p["last_http"], (p["last_status"] or "")
                 row["vals"].append(
-                    "no" if (http in (404, 410)
-                             or (p["last_status"] or "") in ("blank", "error"))
-                    else ("yes" if http else "—"))
+                    "no" if http in (404, 410)
+                    else ("empty" if st == "blank"
+                          else ("—" if st == "error" or not http else "yes")))
             elif k == "status":
                 row["vals"].append(p["last_status"] or "not captured yet")
             elif k == "last_captured":
