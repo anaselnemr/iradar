@@ -111,15 +111,8 @@
   .xhead { display: flex; align-items: baseline; justify-content: space-between;
            gap: 10px; margin-bottom: 3px; }
   .xhead h3 { margin: 0; font-size: 14px; }
-  /* the everything-workbook is not a variant of the builder, so it sits apart
-     from it rather than becoming a third mode card */
-  .xall-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-              margin-top: 16px; padding: 13px 16px; border-radius: 12px;
-              border: 1px dashed var(--line); background: var(--panel); }
-  .xall-row .t { font-size: 13.5px; }
-  .xall-row .t b { display: block; }
-  .xall-row .t span { color: var(--muted); font-size: 12.5px; }
-  .xall-row a { margin-left: auto; }
+  /* ignores the selection, so it sits apart from the two that use it */
+  .xevery { margin-left: auto; }
 </style>
 
 <div class="xmodes">
@@ -243,6 +236,11 @@
       <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">Download as Excel</a>
       <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} item{{ 's' if shown != 1 }}</span>
       {% endif %}
+      {#- the whole-workbook download is an action on this page like the
+          other two, so it sits with them - pushed right, because it
+          ignores everything you picked -#}
+      <a class="btn xevery" href="{{ url_for('export_xlsx') }}"
+         title="One workbook: every page with all of its content, then a sheet per kind of content with its own data and every page it is assigned to">Export everything</a>
     </div>
   </div>
 
@@ -305,19 +303,17 @@
       <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">Download as Excel</a>
       <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} row{{ 's' if shown != 1 }}</span>
       {% endif %}
+      {#- the whole-workbook download is an action on this page like the
+          other two, so it sits with them - pushed right, because it
+          ignores everything you picked -#}
+      <a class="btn xevery" href="{{ url_for('export_xlsx') }}"
+         title="One workbook: every page with all of its content, then a sheet per kind of content with its own data and every page it is assigned to">Export everything</a>
     </div>
   </div>
   {% endif %}
 </div>
 </form>
 
-<div class="xall-row">
-  <div class="t"><b>Or take everything at once</b>
-    <span>One workbook: every page with all of its content, then a sheet per
-      kind of content with its own data and every page it is assigned to.</span>
-  </div>
-  <a class="btn" href="{{ url_for('export_xlsx') }}">Export everything</a>
-</div>
 
 {% if ran and mode == 'items' %}
 <div class="card" style="margin-top:16px">
@@ -420,11 +416,6 @@
   {% endif %}
 </div>
 {% else %}
-<div class="card" style="margin-top:16px">
-  <p class="muted" style="margin:0">Pick your rows and columns above, then
-    <b>Build table</b>. The spreadsheet you download is this same table — same
-    rows, same columns, same values.</p>
-</div>
 {% endif %}
 
 <script>
