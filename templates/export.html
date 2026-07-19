@@ -56,6 +56,7 @@
   table.xt tbody tr:hover td.stick { background: var(--hover); }
   .xpage { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
   .yes { color: var(--ok); font-weight: 600; }
+  .emptyv { color: var(--warn); font-weight: 600; }
   .no  { color: var(--muted); opacity: .6; }
   .xempty { color: var(--muted); opacity: .55; }
   /* the two shapes this page can build, said plainly rather than as a toggle
@@ -377,7 +378,11 @@
             <a href="{{ url_for('url_detail', url_id=r.id) }}">{{ r.title|clean_title or r.url }}</a>
           </td>
           {% for v in r.vals %}
+            {#- same three colours as the chips on a page: green has it, orange
+                has it but empty, grey has not -#}
             {% if v == 'yes' %}<td class="yes">yes</td>
+            {% elif v == 'empty' %}<td class="emptyv">empty</td>
+            {% elif v == 'default' %}<td class="emptyv">default</td>
             {% elif v == 'no' %}<td class="no">no</td>
             {# a count of 0 is an answer, not a blank - only an empty string is #}
             {% elif v == 0 %}<td class="xzero">0</td>

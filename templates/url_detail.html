@@ -111,11 +111,13 @@
             margin: 12px 0 14px; padding: 9px 13px; border-radius: 10px;
             border: 1px solid var(--line); background: var(--panel); }
   .ownrow-warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
-  .ownfield { display: inline-flex; align-items: baseline; gap: 7px;
+  .ownfield { display: inline-flex; flex-direction: column; gap: 1px;
               min-width: 0; }
-  .ownlbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  /* the label reads as a heading over its value rather than as a word in front
+     of it - same weight and case as a column header elsewhere on the site */
+  .ownlbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
             color: var(--muted); font-weight: 700; white-space: nowrap; }
-  .ownval { font-size: 13.5px; color: var(--ink); }
+  .ownval { font-size: 14px; color: var(--ink); font-weight: 600; }
   .ownval-none { color: var(--muted); opacity: .55; font-style: italic; }
   .ownpen { margin-left: auto; }
   .ownpen > summary { list-style: none; cursor: pointer; padding: 3px 6px;
@@ -212,7 +214,7 @@
   <div class="ownrow{{ ' ownrow-warn' if u.meta_flag }}">
     {% for f in meta_fields %}
     <span class="ownfield">
-      <span class="ownlbl">{{ meta_labels.get(f, f)|upper if f in ('bl','pl') else meta_labels.get(f, f) }}</span>
+      <span class="ownlbl">{{ meta_labels.get(f, f) }}</span>
       {% if u[f] %}<span class="ownval">{{ u[f] }}</span>
       {% else %}<span class="ownval ownval-none" title="Not set">not set</span>{% endif %}
     </span>
@@ -226,7 +228,7 @@
         </div>
         {% for f in meta_fields %}
         <label class="ownedit">
-          <span class="ownlbl">{{ meta_labels.get(f, f)|upper if f in ('bl','pl') else meta_labels.get(f, f) }}</span>
+          <span class="ownlbl">{{ meta_labels.get(f, f) }}</span>
           <input type="text" name="{{ f }}" value="{{ u[f] or '' }}"
                  placeholder="not set" autocomplete="off">
         </label>

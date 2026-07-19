@@ -533,17 +533,14 @@
                 border-color: rgba(255,255,255,.2); }
   .hbtn svg { width: 15px; height: 15px; flex-shrink: 0; }
   .hbtn.icon-only { padding: 7px; }
-  .hkey { font-size: 10.5px; border: 1px solid rgba(255,255,255,.2);
-          border-radius: 5px; padding: 1px 5px; opacity: .75;
-          font-family: Consolas, monospace; letter-spacing: .3px; }
   /* one icon per theme, swapped by the attribute the toggle already sets */
   .themeicon-dark { display: none; }
   [data-theme="dark"] .themeicon-dark { display: block; }
   [data-theme="dark"] .themeicon-light { display: none; }
 
   /* ---- ONE search bar, used in all four places ------------------------
-     Whole-site (Ctrl+K), the dashboard's page search, the content library and
-     the hierarchy filter were four different boxes - different heights, borders
+     The dashboard's page search, the content library and the hierarchy
+     filter were three different boxes - different heights, borders
      and focus rings - which made them read as four unrelated features rather
      than the same one pointed at different things. The shape is shared here;
      only what each searches, and what it shows back, differs. */
@@ -572,32 +569,6 @@
                               border-radius: 13px; }
   .sbar-lg > svg.slead { left: 16px; width: 19px; height: 19px; }
   .sbar-hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
-
-  /* command palette */
-  .pal { position: fixed; inset: 0; z-index: 200; background: rgba(10, 14, 25, .45);
-         backdrop-filter: blur(2px); display: flex; align-items: flex-start;
-         justify-content: center; padding-top: 11vh; }
-  /* display:flex above would defeat the hidden attribute - restate it, or the
-     palette sits open over every page on load */
-  .pal[hidden] { display: none; }
-  .pal-box { width: min(660px, 92vw); background: var(--panel);
-             border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-             box-shadow: 0 24px 70px rgba(0, 0, 0, .35); }
-  .pal-box input { width: 100%; border: 0; outline: 0; background: transparent;
-                   color: var(--ink); font-size: 17px; padding: 17px 20px;
-                   border-bottom: 1px solid var(--line); }
-  .pal-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
-  .pal-row { display: block; width: 100%; text-align: left; background: none;
-             border: 0; border-radius: 8px; padding: 9px 13px; cursor: pointer;
-             color: var(--ink); font-size: 14px; }
-  .pal-row.sel, .pal-row:hover { background: var(--hover); }
-  .pal-t { display: block; overflow: hidden; text-overflow: ellipsis;
-           white-space: nowrap; }
-  .pal-m { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .pal-all { color: var(--accent); font-weight: 600; }
-  .pal-empty { color: var(--muted); font-size: 13.5px; padding: 16px 14px; }
-  .pal-foot { border-top: 1px solid var(--line); color: var(--muted);
-              font-size: 11.5px; padding: 8px 16px; }
 
   mark { background: rgba(255, 200, 60, .45); color: inherit;
          border-radius: 3px; padding: 0 2px; }
@@ -687,11 +658,6 @@
     {% endfor %}
   </nav>
   <div class="hactions">
-    <button type="button" class="hbtn" onclick="openPalette()"
-            title="Search everything (Ctrl+K)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-           stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
-      <span class="hkey">Ctrl K</span></button>
     <button type="button" class="hbtn icon-only" id="themebtn" onclick="toggleTheme()"
             title="Light / dark mode" aria-label="Toggle light or dark mode">
       <svg class="themeicon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -712,17 +678,6 @@
   {% block content %}{% endblock %}
 </main>
 
-{# ---- command palette: Ctrl+K from anywhere ---- #}
-<div id="pal" class="pal" hidden>
-  <div class="pal-box" role="dialog" aria-label="Search everything">
-    <span class="sbar sbar-lg"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
-      <input id="pal-in" type="text" placeholder="Search everything — documents, boards, videos, pages…"
-             autocomplete="off" spellcheck="false"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
-    </span>
-    <div id="pal-list" class="pal-list"></div>
-    <div class="pal-foot">↑↓ choose · Enter open · Esc close</div>
-  </div>
-</div>
 <script>
   // (the level editor's own outside-click handler used to live here; it is the
   // unified popover handler at the end of this file now, which covers every
@@ -777,70 +732,41 @@
     // here used to replace the whole button, SVG included
   }
 
-  var palSel = -1, palItems = [], palTimer = null;
-  function openPalette() {
-    var p = document.getElementById("pal");
-    p.hidden = false;
-    var i = document.getElementById("pal-in");
-    i.value = ""; renderPal([]); i.focus();
-  }
-  function closePalette() { document.getElementById("pal").hidden = true; }
-  function palGo(q) { location.href = "{{ url_for('search_items') }}?q=" + encodeURIComponent(q); }
-  function renderPal(items) {
-    palItems = items; palSel = items.length ? 0 : -1;
-    var box = document.getElementById("pal-list");
-    var q = document.getElementById("pal-in").value.trim();
-    var html = items.map(function (it, i) {
-      return '<button type="button" class="pal-row' + (i === palSel ? ' sel' : '') +
-        '" onmouseenter="palSel=' + i + ';paintPal()" onclick="palGo(palItems[' + i + '].title)">' +
-        '<span class="pal-t">' + esc(it.title) + '</span>' +
-        '<span class="pal-m">' + esc(it.category) + (it.lang ? ' · ' + esc(it.lang) : '') +
-        ' · on ' + it.pages + ' page' + (it.pages === 1 ? '' : 's') + '</span></button>';
-    }).join("");
-    if (q.length >= 2) {
-      html += '<button type="button" class="pal-row pal-all" onclick="palGo(' +
-              "document.getElementById('pal-in').value)\">See all results for “" + esc(q) + '”…</button>';
-    }
-    box.innerHTML = html || '<div class="pal-empty">Type at least 2 characters…</div>';
-  }
-  function paintPal() {
-    var rows = document.querySelectorAll("#pal-list .pal-row");
-    rows.forEach(function (r, i) { r.classList.toggle("sel", i === palSel); });
-  }
-  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
-    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
-  document.addEventListener("keydown", function (e) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-      e.preventDefault();
-      var p = document.getElementById("pal");
-      if (p.hidden) openPalette(); else closePalette();
-      return;
-    }
-    var p = document.getElementById("pal");
-    if (p.hidden) return;
-    if (e.key === "Escape") { closePalette(); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); if (palItems.length) { palSel = (palSel + 1) % palItems.length; paintPal(); } }
-    else if (e.key === "ArrowUp") { e.preventDefault(); if (palItems.length) { palSel = (palSel - 1 + palItems.length) % palItems.length; paintPal(); } }
-    else if (e.key === "Enter") {
-      e.preventDefault();
-      if (palSel >= 0 && palItems[palSel]) palGo(palItems[palSel].title);
-      else palGo(document.getElementById("pal-in").value);
+// Every search bar gets the same clear button and the same "/" shortcut,
+// wherever it is - the three of them are one control pointed at three things.
+document.querySelectorAll('.sbar').forEach(function (bar) {
+  var input = bar.querySelector('input');
+  if (!input) return;
+  var btn = bar.querySelector('.sclear');
+  function sync() { bar.classList.toggle('has-text', !!input.value); }
+  input.addEventListener('input', sync);
+  if (btn) btn.addEventListener('click', function () {
+    input.value = '';
+    sync();
+    // whatever the page does on typing, it must also do on clearing
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.focus();
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && input.value) {
+      input.value = ''; sync();
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      e.stopPropagation();          // do not also close a popover
     }
   });
-  document.getElementById("pal").addEventListener("click", function (e) {
-    if (e.target === this) closePalette();
-  });
-  document.getElementById("pal-in").addEventListener("input", function () {
-    var q = this.value.trim();
-    clearTimeout(palTimer);
-    if (q.length < 2) { renderPal([]); return; }
-    palTimer = setTimeout(function () {
-      fetch("{{ url_for('api_suggest') }}?q=" + encodeURIComponent(q))
-        .then(function (r) { return r.json(); })
-        .then(function (items) { renderPal(items); })
-        .catch(function () {});
-    }, 160);
-  });
+  sync();
+});
+// "/" focuses the search on the page you are on
+document.addEventListener('keydown', function (e) {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  var t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  var first = document.querySelector('.sbar input');
+  if (!first) return;
+  e.preventDefault();
+  first.focus();
+  first.select();
+});
 
 // Any open popover closes when you click away from it, everywhere on the site.
 // A <details> normally only closes by clicking its own summary again, so a
@@ -864,41 +790,6 @@ function closePopovers(except) {
     if (!dirty) d.open = false;
   });
 }
-// Every search bar gets the same clear button and the same "/" shortcut,
-// wherever it is - the four of them are one control pointed at four things.
-document.querySelectorAll('.sbar').forEach(function (bar) {
-  var input = bar.querySelector('input');
-  if (!input) return;
-  var btn = bar.querySelector('.sclear');
-  function sync() { bar.classList.toggle('has-text', !!input.value); }
-  input.addEventListener('input', sync);
-  if (btn) btn.addEventListener('click', function () {
-    input.value = '';
-    sync();
-    // whatever the page does on typing, it must also do on clearing
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-    input.focus();
-  });
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && input.value) {
-      input.value = ''; sync();
-      input.dispatchEvent(new Event('input', {bubbles: true}));
-      e.stopPropagation();          // do not also close a popover
-    }
-  });
-  sync();
-});
-// "/" focuses the search on the page you are on; Ctrl+K stays the whole-site one
-document.addEventListener('keydown', function (e) {
-  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
-  var t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  var first = document.querySelector('.sbar input');
-  if (!first) return;
-  e.preventDefault();
-  first.focus();
-  first.select();
-});
 
 document.addEventListener('click', function (ev) { closePopovers(ev.target); });
 // Escape closes the innermost one and hands focus back to what opened it

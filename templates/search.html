@@ -194,6 +194,10 @@
      A row of hits is a wall when a term lives in the shared navigation, so
      each family is a disclosure: the header always says how many are inside,
      and only the oversized ones arrive shut. */
+  /* a page's screenshot is an identifying glance in a row of rows, so it
+     is cropped to the masthead rather than shown whole */
+  .pgshot { flex-shrink: 0; display: block; }
+  .pgshot .bthumb { object-fit: cover; object-position: top center; }
   .fams { display: flex; flex-direction: column; gap: 8px; }
   .fam { border: 1px solid var(--line); border-radius: 11px;
          background: var(--panel); overflow: hidden; }
@@ -376,32 +380,43 @@
     applications and all other prose live here, and each match names the
     section it sits in.</p></div>
 {% elif browse and cat == 'pages' %}
-  <div class="card">
-    <h2>Live Pages <span class="muted" style="font-weight:400">— {{ '{:,}'.format(total) }} tracked</span></h2>
-    {{ controls() }}
-    {{ pager('top') }}
-    <div class="pagegrid">
-      {% for p in page_hits %}
-      <div class="pagecard">
-        <a class="pc-open" href="{{ url_for('url_detail', url_id=p.id) }}"
-           title="Open what we captured for this page">
-          {#- the page as it actually looks. Served from the snapshot we already
-              store, downsized on first request - no new capture, no full-size
-              megabyte per card. -#}
-          {% if p.snap_id %}
-          <img class="pageshot" loading="lazy" alt=""
-               src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
-          {% endif %}
-          <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
-        </a>
-        {#- the address is a link in its own right: infineon.com in one click -#}
-        <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
-           title="Open the live page on infineon.com">{{ p.url }} <span class="ext">↗</span></a>
-      </div>
-      {% endfor %}
-    </div>
-    {{ pager() }}
+  {#- Same shape as Documents, Videos and the rest: one row per thing, thumbnail
+      at the left, title and badges on one line. It used to be a grid of large
+      screenshots, so the one library that is pages read as a different feature
+      from the six that are assets. -#}
+  <div class="muted" style="margin:0 2px 12px">
+    Browsing <b>Live Pages</b> — {{ '{:,}'.format(total) }} tracked page{{ 's' if total != 1 }}. Type above to search instead.
   </div>
+  {{ controls() }}
+  {{ pager('top') }}
+  {% for p in page_hits %}
+  <div class="rescard">
+    <div class="browse-row">
+      <a class="pgshot" href="{{ url_for('url_detail', url_id=p.id) }}"
+         title="Open what we captured for this page">
+        {% if p.snap_id %}
+        <img class="bthumb" loading="lazy" alt=""
+             src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
+        {% else %}
+        <span class="thumbfall">{{ ticon('pages') }}</span>
+        {% endif %}
+      </a>
+      <div style="flex:1; min-width:0">
+        <div class="hit-head">
+          <span class="hit-title-row">
+            <a href="{{ url_for('url_detail', url_id=p.id) }}" class="hit-title">{{ p.title|clean_title }}</a>
+          </span>
+          {% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span>{% endif %}
+          {% if p.ptype %}<span class="badge b-type">{{ p.ptype }}</span>{% endif %}
+          <a href="{{ p.url }}" target="_blank" class="liveurl">open ↗</a>
+        </div>
+        <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
+           title="Open the live page on infineon.com">{{ p.url }}</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {{ pager() }}
 {% elif browse %}
   <div class="muted" style="margin:0 2px 12px">
     Browsing <b>{{ pill_labels.get(cat, cat) }}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}. Type above to search instead.

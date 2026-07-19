@@ -2591,8 +2591,9 @@ def url_set_level(url_id):
 # which ownership fields a page type shows (and their display labels), from
 # the CSS report: products carry all four, parts BL+PL, apps CM+Owner, promos
 # just CM. Design-resources / Home carry none unless a value was imported.
-META_LABELS = {"bl": "BL (business line)", "pl": "PL (product line)",
-               "cm": "CM (content manager)", "owner": "Owner"}
+# Just the names. Whoever reads this page knows what BL and PL are, and
+# spelling them out every time made the label longer than the value beside it.
+META_LABELS = {"bl": "BL", "pl": "PL", "cm": "CM", "owner": "Owner"}
 META_FIELDS = {
     "Product": ["bl", "pl", "cm", "owner"],
     "Part": ["bl", "pl"],
@@ -3636,7 +3637,7 @@ def search_items():
         browse = True
         browse_total = ccounts["pages"]
         prows = con.execute(
-            "SELECT u.id, u.url, u.level, u.label, u.last_checked,"
+            "SELECT u.id, u.url, u.level, u.label, u.ptype, u.last_checked,"
             " COALESCE(NULLIF(u.title_override,''),"
             "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
             "    AND s.status='ok' AND s.page_title<>''"
@@ -3648,7 +3649,7 @@ def search_items():
             " LIMIT ? OFFSET ?",
             (per_page, (pageno - 1) * per_page)).fetchall()
         page_hits = [{"id": r["id"], "url": r["url"],
-                      "level": r["level"] or "",
+                      "level": r["level"] or "", "ptype": r["ptype"] or "",
                       "snap_id": r["snap_id"],
                       "title": (r["page_title"] or r["label"]
                                 or r["url"].rstrip("/").rsplit("/", 1)[-1])}
@@ -4542,20 +4543,29 @@ def _export_rows(con, levels, cols, verbose=False):
             else:
                 row["vals"].append(open_changes.get(p["id"], 0))
         if want_comps:
-            have = _page_component_set(p["components"], p["detail_tabs"], flags,
-                                       cats.get(p["id"], set()), registry)
+            states = _page_component_states(
+                p["components"], p["detail_tabs"], flags,
+                cats.get(p["id"], set()), registry)
             for k in want_comps:
+                st = states.get(k, "absent")
+                # "empty" is its own answer here too - a column of yes/no
+                # files a section that exists with nothing in it under the
+                # same word as one that was never built. A hero image that
+                # exists without content IS the site default, so it says so.
+                word = ("yes" if st == "content"
+                        else ("default" if (st == "empty" and k == "hero_image")
+                              else ("empty" if st == "empty" else "no")))
                 if not verbose:
-                    row["vals"].append("yes" if k in have else "no")
+                    row["vals"].append(word)
                 elif k in cat_of:
                     lines = texts.get((p["id"], cat_of[k]), [])
-                    row["vals"].append(chr(10).join(lines)[:_CELL_CAP])
+                    row["vals"].append(chr(10).join(lines)[:_CELL_CAP] or word)
                 elif k == "hero_image":
                     row["vals"].append((flags.get("hero_image") or {}).get("src", "")
-                                       or ("yes" if k in have else "no"))
+                                       or word)
                 else:
-                    # a nav label or a flag: presence is all there ever was
-                    row["vals"].append("yes" if k in have else "no")
+                    # a nav label: a link, so present or not is all there is
+                    row["vals"].append(word)
         out.append(row)
     return out, want_meta, want_comps, want_page
 
