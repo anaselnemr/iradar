@@ -2771,33 +2771,11 @@ def _infer_missing_levels():
     return done, skipped
 
 
-CSS_REPORT_XLSX = os.environ.get(
-    "CSS_REPORT_XLSX",
-    str(Path.home() / "Downloads" / "CSS_Pages_Report_v15_SW.xlsx"))
-
-
-def _apply_css_report(why):
-    """Re-apply the CSS report's ownership (BL/PL/CM/Owner) to the watch list.
-
-    This used to be a script somebody had to remember to run, which meant every
-    page added after the last manual run had blank ownership forever. It is
-    idempotent - a second pass adds nothing - so it just runs: at startup and
-    after each capture, whenever the workbook is present. If the file is not
-    there, this is a no-op and nothing complains.
-    """
-    p = Path(CSS_REPORT_XLSX)
-    if not p.exists():
-        return
-    try:
-        import runpy
-        os.environ["CSS_REPORT_XLSX"] = str(p)
-        t0 = time.time()
-        runpy.run_path(str(Path(__file__).parent / "import_css_report.py"),
-                       run_name="__ifw_import__")
-        print(f"[css-report] applied ({why}) in {time.time() - t0:.1f}s",
-              flush=True)
-    except Exception as e:
-        print(f"[css-report] skipped ({why}): {e}", flush=True)
+# The CSS report was a one-off. Its ownership (BL/PL/CM/Owner) now lives in
+# our own database, which IS the report from here on - re-reading a workbook on
+# every start would only let a stale file overwrite edits made here. The
+# importer is still in the repo if a genuinely new report ever arrives; nothing
+# calls it.
 
 
 def _refresh_item_index(why):
@@ -2846,9 +2824,6 @@ def _post_run_watcher():
                     print(f"[post-run] matrix learned {len(joined)} new"
                           f" component slot(s): {', '.join(joined[:6])}"
                           + ("…" if len(joined) > 6 else ""), flush=True)
-                # a run can add pages (a redirect to something untracked), so
-                # re-apply ownership before re-indexing
-                _apply_css_report("after run")
                 # a run is what actually moves items, so this is where the
                 # search index earns its keep being rebuilt
                 _refresh_item_index("after run")
@@ -4349,8 +4324,6 @@ if __name__ == "__main__":
     _sweep_furniture()
     _sweep_images()
     _sweep_hero_flags()
-    # ownership from the CSS report, before the index: it can add pages
-    _apply_css_report("startup")
     # AFTER the sweeps, which rewrite item titles and urls: an index built
     # before them would describe items that no longer exist
     _refresh_item_index("startup")

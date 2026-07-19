@@ -307,16 +307,24 @@ def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
         return {(str(i.get("title", "")).strip().lower(),
                  str(i.get("url", "")).strip())
                 for i in (sec.get(cat) or []) if isinstance(i, dict)}
-    old_s, new_s = _sections(old_dir), _sections(new_dir)
-    for cat, label in _DIFF_SECTIONS:
-        a, b = _keys(old_s, cat), _keys(new_s, cat)
-        add, rem = len(b - a), len(a - b)
-        if add and rem:
-            out.append(f"{label} (+{add}/-{rem})")
-        elif add:
-            out.append(f"{label} (+{add})")
-        elif rem:
-            out.append(f"{label} (-{rem})")
+    # per-section adds/removes/in-place edits, from the same library comparison
+    # that decided this page changed at all - so what raised the review and what
+    # the review NAMES can never disagree
+    lib = (cmp_result.get("library") or {}).get("per_section") or {}
+    _lbl = dict(_DIFF_SECTIONS)
+    for cat in sorted(lib, key=lambda c: [k for k, _ in _DIFF_SECTIONS].index(c)
+                      if c in _lbl else 99):
+        d = lib[cat]
+        label = _lbl.get(cat, cat.replace("_", " ").capitalize())
+        bits = []
+        if d.get("added"):
+            bits.append(f"+{d['added']}")
+        if d.get("removed"):
+            bits.append(f"-{d['removed']}")
+        if d.get("changed"):
+            bits.append(f"~{d['changed']}")
+        if bits:
+            out.append(f"{label} ({'/'.join(bits)})")
 
     def _json(v, default):
         try:

@@ -207,6 +207,91 @@ def visual_diff(old_dir, new_dir, change_dir=None):
     return ratio_pct, height_delta, len(boxes)
 
 
+# Sections this comparison does NOT own. 'flags' and 'components' are derived
+# by us and reported through their own path. 'images' is already a signal of
+# its own - and images_diff applies the ignore list, which this would bypass:
+# re-comparing them here re-raised a spinner or a partner logo that had simply
+# not loaded, on a page images_diff had correctly let pass.
+_NOT_CONTENT = {"flags", "components", "images"}
+
+# A part page reprints its stock level, and that ticks constantly. The price
+# itself is news; "986 in stock" becoming "985 in stock" is not, and comparing
+# it would put every orderable part into review every single run.
+_STOCK_RE = re.compile(r"[\d.,]*\d\s*in\s+stock", re.I)
+
+
+def _load_sections(snap_dir):
+    p = Path(snap_dir) / "sections.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _item_id(d):
+    """What makes an item itself: its name and where it points."""
+    return (str(d.get("title", "")).strip().lower(),
+            str(d.get("url", "")).strip())
+
+
+def _item_body(d):
+    """Everything ELSE about it - the part that can change while it stays the
+    same item: its meta (dates, sizes, durations, languages), its document
+    type, the group it sits under, its icon.
+
+    An icon that is missing on either side is NOT a difference. These load
+    lazily and resolve on roughly two runs in three, so demanding they match
+    would raise a review for a slow image rather than a changed one. Two icons
+    that are both present and different is a real change and does count.
+    """
+    return {k: str(v) for k, v in sorted(d.items())
+            if k not in ("title", "url", "img", "exact")}
+
+
+def library_diff(old_dir, new_dir):
+    """Every item of every component: added, removed, or changed in place.
+
+    This is what makes the watch a CONTENT review and not just a page review.
+    A document repointed to a different file, a training that changed date, a
+    board that quietly disappeared from one tab - none of those need move a
+    single visible word, and before this none of them raised anything.
+    """
+    old, new = _load_sections(old_dir), _load_sections(new_dir)
+    per, added, removed, changed = {}, 0, 0, 0
+    for cat in sorted(set(old) | set(new)):
+        if cat in _NOT_CONTENT:
+            continue
+        a_raw, b_raw = old.get(cat), new.get(cat)
+        if isinstance(a_raw, str) or isinstance(b_raw, str):   # price
+            a_s = _STOCK_RE.sub("", str(a_raw or "")).split()
+            b_s = _STOCK_RE.sub("", str(b_raw or "")).split()
+            if a_s != b_s:
+                per[cat] = {"added": 0, "removed": 0, "changed": 1}
+                changed += 1
+            continue
+        a = {_item_id(d): d for d in (a_raw or []) if isinstance(d, dict)}
+        b = {_item_id(d): d for d in (b_raw or []) if isinstance(d, dict)}
+        n_add = len(set(b) - set(a))
+        n_rem = len(set(a) - set(b))
+        n_chg = 0
+        for k in set(a) & set(b):
+            if _item_body(a[k]) != _item_body(b[k]):
+                n_chg += 1
+                continue
+            ia, ib = str(a[k].get("img", "")), str(b[k].get("img", ""))
+            if ia and ib and ia != ib:
+                n_chg += 1
+        if n_add or n_rem or n_chg:
+            per[cat] = {"added": n_add, "removed": n_rem, "changed": n_chg}
+            added += n_add
+            removed += n_rem
+            changed += n_chg
+    return {"changed": bool(per), "per_section": per,
+            "added": added, "removed": removed, "modified": changed}
+
+
 def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     """Full comparison. Returns a dict describing what changed."""
     settings = settings or {}
@@ -218,6 +303,7 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     t_changed, t_added, t_removed, _ = text_diff(old_dir, new_dir, ignore_patterns)
     i_changed, i_added, i_removed = images_diff(old_dir, new_dir,
                                                 ignore_image_patterns)
+    lib = library_diff(old_dir, new_dir)
 
     ratio_pct, height_delta, n_regions = visual_diff(old_dir, new_dir, change_dir)
     v_changed = ratio_pct >= visual_threshold or height_delta >= height_threshold
@@ -227,11 +313,18 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
         parts.append(f"text: +{t_added}/-{t_removed} lines")
     if i_changed:
         parts.append(f"images: +{len(i_added)}/-{len(i_removed)}")
+    if lib["changed"]:
+        parts.append(f"library: +{lib['added']}/-{lib['removed']}"
+                     f"/~{lib['modified']}")
     if v_changed:
         parts.append(f"visual: {n_regions} area(s), {ratio_pct:.2f}% of pixels")
 
     return {
-        "any_changed": t_changed or i_changed or v_changed,
+        # the library counts too: an item can be repointed, redated or removed
+        # without moving one visible word or one pixel over the threshold
+        "any_changed": t_changed or i_changed or v_changed or lib["changed"],
+        "library_changed": lib["changed"],
+        "library": lib,
         "text_changed": t_changed,
         "lines_added": t_added,
         "lines_removed": t_removed,
