@@ -847,6 +847,24 @@ def _bulk_counts(con, filters):
     return {k: (row[f"k{i}"] or 0) for i, k in enumerate(conds)}
 
 
+_DASH_CHG = "(SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id)"
+_DASH_ORDER = {
+    "page": "u.url COLLATE NOCASE ASC",
+    "page_desc": "u.url COLLATE NOCASE DESC",
+    "date": "u.last_checked IS NULL, u.last_checked DESC",
+    "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
+    "changes": _DASH_CHG + " DESC",      # most-updated first
+    "changes_asc": _DASH_CHG + " ASC",   # fewest first
+}
+
+
+def _dash_order(sort):
+    """The table's ORDER BY. Shared, because a shift-click range that sorted
+    differently from the rows on screen would select a different set from the
+    one you counted."""
+    return _DASH_ORDER.get(sort, _DASH_ORDER["page"])
+
+
 def _url_filter(q, statuses, ptypes, attrs):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
 
@@ -919,15 +937,7 @@ def index():
     # alphabetical-by-URL keeps the hierarchy grouped ("…/microcontroller/…"
     # rows sit together) AND a newly added page lands in place immediately -
     # its URL is known the moment it is added, long before it has a title.
-    _chg = "(SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id)"
-    order_by = {
-        "page": "u.url COLLATE NOCASE ASC",
-        "page_desc": "u.url COLLATE NOCASE DESC",
-        "date": "u.last_checked IS NULL, u.last_checked DESC",
-        "date_asc": "u.last_checked IS NULL, u.last_checked ASC",
-        "changes": _chg + " DESC",          # most-changed first
-        "changes_asc": _chg + " ASC",       # least-changed first
-    }.get(sort, "u.url COLLATE NOCASE ASC")
+    order_by = _dash_order(sort)
     # a page added within the last week wears a NEW badge (created_at is UTC).
     # new_badge_since is the user's reset watermark: pages added before it are
     # old content belatedly uploaded and never wear the badge; later adds do.
@@ -1052,6 +1062,7 @@ def index():
             ptypes.append({"ptype": r["ptype"], "n": r["n"], "levels": levels})
     cat_pages, vid_pages, status_counts, attr_counts = _dash_counts(con)
     con.close()
+    con2 = db.connect()
     # content/component has/no counts come from cat_pages: has = pages with the
     # category (identical to the EXISTS filter), no = captured pages without it
     checked = attr_counts.get("checked", 0)
@@ -1113,7 +1124,18 @@ def index():
             status=(nxt if c["kind"] == "status" else statuses) or None,
             attr=(nxt if c["kind"] == "attr" else attrs) or None)
 
+    # The dropdown numbers are the FACETED ones, worked out here rather than
+    # left to the browser to correct after paint. Shipping corpus-wide counts
+    # and fixing them by fetch meant opening Content with Blank page selected
+    # showed 3,024 documents for one frame - and for longer than a frame if you
+    # were quick. The chips keep the corpus-wide counts: a chip says how many
+    # pages are in that state, not how many are left after the other filters.
+    try:
+        facets = _dash_facets(con2, q, statuses, sel_types, attrs)
+    finally:
+        con2.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
+                           facets=facets,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            q=q, page=page, pages=pages, sort=sort,
@@ -3601,6 +3623,36 @@ def _dash_facets(con, q, statuses, ptypes, attrs):
     return out
 
 
+@app.route("/urls/range")
+def urls_range():
+    """The page ids between two positions of the CURRENT ordering.
+
+    Shift-click across a page boundary needs the rows in between, and most of
+    them are not rendered. Same filter and same sort as the table, so the range
+    is the one you can see yourself counting.
+    """
+    try:
+        a = max(1, int(request.args.get("from", "1")))
+        b = max(1, int(request.args.get("to", "1")))
+    except ValueError:
+        return jsonify({"ids": []})
+    lo, hi = min(a, b), max(a, b)
+    con = db.connect()
+    try:
+        where, params = _url_filter(
+            request.args.get("q", "").strip(),
+            [x for x in request.args.getlist("status") if x in STATUS_FILTERS],
+            request.args.getlist("ptype"),
+            [x for x in request.args.getlist("attr") if x in ATTR_FILTERS])
+        order = _dash_order(request.args.get("sort", "page"))
+        rows = con.execute(
+            "SELECT u.id FROM urls u " + where + " ORDER BY " + order
+            + " LIMIT ? OFFSET ?", params + [hi - lo + 1, lo - 1]).fetchall()
+    finally:
+        con.close()
+    return jsonify({"ids": [r["id"] for r in rows]})
+
+
 @app.route("/dash/avail")
 def dash_avail():
     """Live facet counts for the dashboard's filter dropdowns."""
@@ -4915,7 +4967,7 @@ def _export_item_rows(con, kinds, levels, cols=()):
     return rows, used, want_f
 
 
-def _export_avail(con, mode, levels, kinds):
+def _export_avail(con, mode, levels, kinds, cols=()):
     """How much of each option actually exists for the current selection.
 
     Shown beside every checkbox so the answer to "do these pages even have
@@ -4984,6 +5036,40 @@ def _export_avail(con, mode, levels, kinds):
     total = con.execute("SELECT COUNT(*) FROM urls WHERE active=1" + lv_sql,
                         lv_args).fetchone()[0]
     out["_total"] = total
+
+    # It has to narrow BOTH ways. Picking Evaluation board told you which
+    # columns have anything for it, but picking Images did not tell you
+    # which page types have images - so the same question answered or did
+    # not depending on which pane you happened to start in. A level now
+    # counts the pages of that level carrying EVERY component column you
+    # have ticked, and drops out when that is none of them.
+    comp_sql = {k: a for k, _l, kind, a in _all_components() if kind == "cat"}
+    want = [k for k in cols if k in dict(
+        (kk, 1) for kk, _l2, _k2, _a2 in _all_components())]
+    conds, cargs = [], []
+    for k in want:
+        kind = next(kd for kk, _l3, kd, _a3 in _all_components() if kk == k)
+        arg = next(a for kk, _l4, _k4, a in _all_components() if kk == k)
+        if kind == "cat":
+            conds.append("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
+                         " AND i.category=?)")
+            cargs.append(arg)
+        elif kind == "flag":
+            conds.append("json_valid(u.flags) AND json_extract(u.flags,"
+                         " '$.' || ? || '.exists') = 1")
+            cargs.append(arg)
+        else:
+            args = arg if isinstance(arg, tuple) else (arg,)
+            col = "detail_tabs" if kind == "tab" else "components"
+            conds.append("(" + " OR ".join(
+                "instr(lower(IFNULL(u." + col + ",'')), ?) > 0"
+                for _ in args) + ")")
+            cargs.extend(chr(34) + a.lower() + chr(34) for a in args)
+    where = (" AND " + " AND ".join(conds)) if conds else ""
+    for r in con.execute(
+            "SELECT IFNULL(u.level,'') lv, COUNT(*) n FROM urls u"
+            " WHERE u.active=1" + where + " GROUP BY lv", cargs):
+        out["lv_" + r["lv"]] = r["n"]
     for k, _l in _export_meta_cols():
         out[k] = con.execute(
             f"SELECT COUNT(*) FROM urls WHERE active=1 AND IFNULL({k},'')<>''"
@@ -5030,7 +5116,8 @@ def export_avail():
     try:
         data = _export_avail(con, request.args.get("mode", "pages"),
                              request.args.getlist("lv"),
-                             _wanted_kinds(request.args.getlist("kind")))
+                             _wanted_kinds(request.args.getlist("kind")),
+                             request.args.getlist("col"))
     finally:
         con.close()
     return jsonify(data)
@@ -5070,7 +5157,7 @@ def export_builder():
     elif ran:
         rows, want_meta, want_comps, want_page = _export_rows(con, levels, cols)
     try:
-        avail = _export_avail(con, mode, levels, kinds)
+        avail = _export_avail(con, mode, levels, kinds, cols)
     finally:
         con.close()
     return render_template(

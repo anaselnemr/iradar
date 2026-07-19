@@ -41,10 +41,14 @@
      different components. What it keeps that the dashboard does not need is a
      header and first column that stay put - a matrix you have to remember the
      edges of is unreadable. */
-  .xtable-wrap { overflow: auto; max-height: 74vh; border: 1px solid var(--line);
-                 border-radius: 11px; background: var(--panel); }
+  /* Not just the same measurements - the same table. The dashboard's rows sit
+     directly on the card with a hairline between them and no frame; this had a
+     panel, a border and a rounded box around it, so the two read as different
+     components however closely the type matched. What it keeps is the sticky
+     header and first column, which a matrix needs to stay readable sideways. */
+  .xtable-wrap { overflow: auto; max-height: 74vh; }
   table.xt { border-collapse: separate; border-spacing: 0; width: 100%;
-             font-size: 14px; }
+             font-size: 14px; background: var(--card); }
   table.xt th, table.xt td { padding: 9px 10px; text-align: left;
                              border-bottom: 1px solid var(--line);
                              white-space: nowrap; }
@@ -55,10 +59,11 @@
                       color: var(--muted); font-weight: 600;
                       border-bottom: 2px solid var(--line); }
   table.xt td.stick, table.xt th.stick { position: sticky; left: 0; z-index: 2;
-                                         background: var(--panel); }
-  table.xt thead th.stick { z-index: 4; background: var(--card); }
+                                         background: var(--card); }
+  table.xt thead th.stick { z-index: 4; }
   table.xt tbody tr:hover td { background: var(--hover); }
   table.xt tbody tr:hover td.stick { background: var(--hover); }
+  table.xt tbody tr:last-child td { border-bottom: 0; }
   .xpage { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
   .yes { color: var(--ok); font-weight: 600; }
   .emptyv { color: var(--warn); font-weight: 600; }
@@ -142,8 +147,8 @@
                data-kid="{{ l }}" {% if l in sel_levels %}checked{% endif %}>
         <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
         <span class="nm" title="{{ level_names.get(l, l) }}">{{ level_names.get(l, l) }}</span>
-        <span class="ct"{% if av_prefix %} data-av="{{ av_prefix }}{{ l }}"{% endif %}>{{
-          '{:,}'.format(avail.get(av_prefix + l, 0) if av_prefix else counts.get(l, 0)) }}</span>
+        <span class="ct" data-av="{{ av_prefix }}{{ l }}">{{
+          '{:,}'.format(avail.get(av_prefix + l, 0)) }}</span>
       </label>
       {% endif %}{% endfor %}
     </div>
@@ -155,8 +160,8 @@
            {% if l in sel_levels %}checked{% endif %}>
     <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
     <span class="nm">{{ level_names.get(l, l) }}</span>
-    <span class="ct"{% if av_prefix %} data-av="{{ av_prefix }}{{ l }}"{% endif %}>{{
-      '{:,}'.format(avail.get(av_prefix + l, 0) if av_prefix else counts.get(l, 0)) }}</span>
+    <span class="ct" data-av="{{ av_prefix }}{{ l }}">{{
+      '{:,}'.format(avail.get(av_prefix + l, 0)) }}</span>
   </label>
   {% endfor %}
   {% if counts.get('') and not av_prefix %}
@@ -242,7 +247,7 @@
       <button type="button" class="xall" data-pick="lv">all</button></div>
     <p class="hint">Which pages. Ticking a family ticks everything under it.
       Nothing ticked means every page.</p>
-    <div class="xlevels">{{ levelpicker('') }}</div>
+    <div class="xlevels">{{ levelpicker('lv_') }}</div>
   </div>
 
   <div class="xpane">
@@ -467,6 +472,10 @@ function refresh() {
       .forEach(function (c) { p.append('lv', c.value); });
     document.querySelectorAll('input[data-grp="kind"]:checked')
       .forEach(function (c) { p.append('kind', c.value); });
+    // the columns too: picking one narrows the rows the same way picking a row
+    // narrows the columns
+    document.querySelectorAll('input[name="col"]:checked')
+      .forEach(function (c) { p.append('col', c.value); });
     var mine = ++seq;
     // built off location.origin, not a relative path: reached through a URL
     // that carries basic-auth credentials, a relative fetch inherits them and
@@ -490,7 +499,8 @@ function refresh() {
       .catch(function (e) { console.warn('count refresh failed', e); });
   }, 90);
 }
-document.querySelectorAll('input[data-grp="lv"], input[data-grp="kind"]')
+document.querySelectorAll('input[data-grp="lv"], input[data-grp="kind"],'
+                       + ' input[name="col"]')
   .forEach(function (c) { c.addEventListener('change', refresh); });
 refresh();
 </script>

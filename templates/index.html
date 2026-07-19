@@ -122,9 +122,10 @@
       <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for t in ptypes %}
-        <label data-opt><input type="checkbox" name="ptype" value="{{ t.ptype }}"
-                 {% if t.ptype in sel_types %}checked{% endif %}> {{ t.ptype }}
-          <span class="cnt" data-av="t_{{ t.ptype }}">{{ t.n }}</span></label>
+        {% set _n = facets.get('t_' + t.ptype, t.n) %}
+        <label data-opt class="{{ 'optdim' if not _n and t.ptype not in sel_types }}"><input type="checkbox" name="ptype" value="{{ t.ptype }}"
+                 {% if t.ptype in sel_types %}checked{% elif not _n %}disabled{% endif %}> {{ t.ptype }}
+          <span class="cnt" data-av="t_{{ t.ptype }}">{{ '{:,}'.format(facets.get('t_' + t.ptype, t.n)) }}</span></label>
         {% if t.levels %}
         <div style="margin:-2px 0 4px 20px; border-left:2px solid var(--line); padding-left:8px">
           {% for l in t.levels %}
@@ -133,7 +134,7 @@
                    {% if l.lvl in sel_types %}checked{% endif %} data-lvlbox>
             <span class="lvl lvl-{{ l.lvl|lower }}">{{ l.lvl }}</span>
             <span class="muted" style="font-size:11px">{{ level_names.get(l.lvl, '') }}</span>
-            <span class="cnt" data-av="t_{{ l.lvl }}">{{ l.n }}</span></label>
+            <span class="cnt" data-av="t_{{ l.lvl }}">{{ '{:,}'.format(facets.get('t_' + l.lvl, l.n)) }}</span></label>
           {% endfor %}
         </div>
         {% endif %}
@@ -145,17 +146,19 @@
       <summary>Status{% if sel_status %}<span class="fbadge">{{ sel_status|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key, sf in status_filters.items() %}
-        <label data-opt><input type="checkbox" name="status" value="{{ key }}"
-                 {% if key in sel_status %}checked{% endif %}> {{ sf[0] }}
-          <span class="cnt" data-av="s_{{ key }}">{{ status_counts.get(key, 0) }}</span></label>
+        {% set _n = facets.get('s_' + key, 0) %}
+        <label data-opt class="{{ 'optdim' if not _n and key not in sel_status }}"><input type="checkbox" name="status" value="{{ key }}"
+                 {% if key in sel_status %}checked{% elif not _n %}disabled{% endif %}> {{ sf[0] }}
+          <span class="cnt" data-av="s_{{ key }}">{{ '{:,}'.format(facets.get('s_' + key, 0)) }}</span></label>
         {% endfor %}
         {#- Captured and Live are page states too; they filter on attr rather
             than status, which is a parameter detail, not a reason to file them
             under Content where they were sitting above the documents. -#}
         {% for key in status_attr_keys %}
-        <label data-opt><input type="checkbox" name="attr" value="{{ key }}"
-                 {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt" data-av="a_{{ key }}">{{ attr_counts.get(key, 0) }}</span></label>
+        {% set _n = facets.get('a_' + key, 0) %}
+        <label data-opt class="{{ 'optdim' if not _n and key not in sel_attrs }}"><input type="checkbox" name="attr" value="{{ key }}"
+                 {% if key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ attr_filters[key][0] }}
+          <span class="cnt" data-av="a_{{ key }}">{{ '{:,}'.format(facets.get('a_' + key, 0)) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -164,9 +167,10 @@
       <summary>Content{% if sel_content_n %}<span class="fbadge">{{ sel_content_n }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key in content_keys %}
-        <label data-opt><input type="checkbox" name="attr" value="{{ key }}"
-                 {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt" data-av="a_{{ key }}">{{ attr_counts.get(key, 0) }}</span></label>
+        {% set _n = facets.get('a_' + key, 0) %}
+        <label data-opt class="{{ 'optdim' if not _n and key not in sel_attrs }}"><input type="checkbox" name="attr" value="{{ key }}"
+                 {% if key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ attr_filters[key][0] }}
+          <span class="cnt" data-av="a_{{ key }}">{{ '{:,}'.format(facets.get('a_' + key, 0)) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -175,9 +179,10 @@
       <summary>Components{% if sel_comp_n %}<span class="fbadge">{{ sel_comp_n }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key in component_keys %}
-        <label data-opt><input type="checkbox" name="attr" value="{{ key }}"
-                 {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt" data-av="a_{{ key }}">{{ attr_counts.get(key, 0) }}</span></label>
+        {% set _n = facets.get('a_' + key, 0) %}
+        <label data-opt class="{{ 'optdim' if not _n and key not in sel_attrs }}"><input type="checkbox" name="attr" value="{{ key }}"
+                 {% if key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ attr_filters[key][0] }}
+          <span class="cnt" data-av="a_{{ key }}">{{ '{:,}'.format(facets.get('a_' + key, 0)) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -260,7 +265,8 @@
     </tr>
     {% for u in urls %}
     <tr>
-      <td><input type="checkbox" class="rowsel" form="bulkform" name="ids" value="{{ u.id }}"></td>
+      <td><input type="checkbox" class="rowsel" form="bulkform" name="ids"
+                 value="{{ u.id }}" data-pos="{{ (page-1)*per_page + loop.index }}"></td>
       <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
       <td class="urlcell">
         {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span> {% endif %}
@@ -338,14 +344,39 @@
 
 <script>
 let TOTAL_MATCH = {{ total_match }};  // updated after an in-place filter swap
-function selected() { return document.querySelectorAll('.rowsel:checked').length; }
+// The selection is a set of page ids, not the state of the checkboxes:
+// checkboxes only exist for the hundred rows on screen, and a shift-click that
+// spans pages has to hold on to the ones that do not.
+const SEL = new Set();
+function selected() { return SEL.size; }
+function applySel() {
+  document.querySelectorAll('.rowsel').forEach(c => {
+    c.checked = SEL.has(c.value);
+  });
+}
+// the form posts what is on screen, so anything selected elsewhere rides along
+// as hidden inputs
+function stageSel() {
+  const f = document.getElementById('bulkform');
+  f.querySelectorAll('input.selstage').forEach(n => n.remove());
+  const here = new Set(Array.from(document.querySelectorAll('.rowsel')).map(c => c.value));
+  SEL.forEach(id => {
+    if (here.has(id)) return;
+    const i = document.createElement('input');
+    i.type = 'hidden'; i.name = 'ids'; i.value = id; i.className = 'selstage';
+    f.appendChild(i);
+  });
+}
 function allMatching() { return document.getElementById('all-matching').value === '1'; }
 function toggleAdd() {
   const box = document.getElementById('addbox');
   if (box) box.style.display = (box.style.display === 'none') ? 'block' : 'none';
 }
 function clearSel() {
-  document.querySelectorAll('.rowsel:checked').forEach(c => { c.checked = false; });
+  SEL.clear();
+  applySel();
+  // the hidden ids staged for submit are part of the selection, so they go too
+  document.querySelectorAll('#bulkform input.selstage').forEach(n => n.remove());
   const am = document.getElementById('all-matching');
   if (am) am.value = '0';
   refreshCount();
@@ -401,24 +432,39 @@ document.addEventListener('change', (e) => {
     document.querySelectorAll('.rowsel').forEach(cb => { cb.checked = t.checked; });
     refreshCount();
   } else if (t.classList && t.classList.contains('rowsel')) {
+    if (t.checked) SEL.add(t.value); else SEL.delete(t.value);
     const am = document.getElementById('all-matching'); if (am) am.value = '0';
     syncSelall();
     refreshCount();
   }
 });
-document.addEventListener('click', (e) => {
+let anchorPos = null;          // survives a page turn; the DOM node does not
+document.addEventListener('click', async (e) => {
   const cb = e.target;
   if (!cb || !cb.classList || !cb.classList.contains('rowsel')) return;
-  if (e.shiftKey && lastClickedBox && lastClickedBox !== cb) {
-    const boxes = Array.from(document.querySelectorAll('.rowsel'));
-    const a = boxes.indexOf(lastClickedBox), b = boxes.indexOf(cb);
-    if (a >= 0 && b >= 0)
-      boxes.slice(Math.min(a, b), Math.max(a, b) + 1)
-           .forEach(x => { x.checked = cb.checked; });
+  const pos = parseInt(cb.dataset.pos || '0', 10);
+  if (e.shiftKey && anchorPos && pos && anchorPos !== pos) {
+    const on = cb.checked;
+    const p = new URLSearchParams(location.search);
+    p.set('from', Math.min(anchorPos, pos));
+    p.set('to', Math.max(anchorPos, pos));
+    p.delete('page');
+    try {
+      const r = await fetch(location.origin + '/urls/range?' + p.toString(),
+                            {credentials: 'same-origin'});
+      const d = await r.json();
+      d.ids.forEach(id => { if (on) SEL.add(String(id)); else SEL.delete(String(id)); });
+      applySel();
+    } catch (err) {
+      console.warn('range select failed', err);
+    }
   }
-  lastClickedBox = cb;
+  anchorPos = pos || anchorPos;
+  if (cb.checked) SEL.add(cb.value); else SEL.delete(cb.value);
+  syncSelall();
+  refreshCount();
 });
-function initTable() { lastClickedBox = null; syncSelall(); }
+function initTable() { applySel(); syncSelall(); }
 initTable();
 
 // Filter in place instead of a full page reload. Every filter control (the
@@ -506,6 +552,7 @@ function bulk(action, btn) {
       !confirm(`Remove ${n} page(s) and all their stored snapshots? This cannot be undone.`)) return;
   if (action === 'check' && n > 200 &&
       !confirm(`Capture ${n} pages now? That takes roughly ${Math.round(n * 90 / 3600 * 10) / 10} hours.`)) return;
+  stageSel();
   document.getElementById('bulk-action').value = action;
   document.getElementById('bulkform').submit();
 }
