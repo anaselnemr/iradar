@@ -200,7 +200,6 @@
   </form>
 
   <div class="quickchips">
-    <span class="muted" style="font-size:12px; align-self:center; margin-right:3px">Quick filters:</span>
     {% for c in quick_chips %}
       {# href and on are worked out server-side: a chip keeps every other
          filter and toggles only its own #}
@@ -245,7 +244,6 @@
 
   {# one clean line above the table: count on the left, compact pager right #}
   <div class="tabletop">
-    <span class="muted" style="font-size:12.5px">shift-click selects a range</span>
     <span style="flex:1"></span>
     {{ pg.pager(page, pages, total_match, per_page, purl, 'top') }}
   </div>
