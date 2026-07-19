@@ -106,6 +106,12 @@
     </div>
   </div>
 
+  <style>
+    /* an option with nothing behind it stays readable - "we looked, there are
+       none" is an answer - but stops looking like something worth ticking */
+    .dd .panel label.optdim { opacity: .4; }
+    .dd .panel label.optdim .cnt { text-decoration: line-through; }
+  </style>
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
     <input class="grow" type="text" name="q" value="{{ q }}" placeholder="Search page URL or name…">
 
@@ -113,18 +119,18 @@
       <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for t in ptypes %}
-        <label><input type="checkbox" name="ptype" value="{{ t.ptype }}"
+        <label data-opt><input type="checkbox" name="ptype" value="{{ t.ptype }}"
                  {% if t.ptype in sel_types %}checked{% endif %}> {{ t.ptype }}
-          <span class="cnt">{{ t.n }}</span></label>
+          <span class="cnt" data-av="t_{{ t.ptype }}">{{ t.n }}</span></label>
         {% if t.levels %}
         <div style="margin:-2px 0 4px 20px; border-left:2px solid var(--line); padding-left:8px">
           {% for l in t.levels %}
           <label style="font-size:12.5px" title="{{ level_names.get(l.lvl, '') }}">
             <input type="checkbox" name="ptype" value="{{ l.lvl }}"
-                   {% if l.lvl in sel_types %}checked{% endif %}>
+                   {% if l.lvl in sel_types %}checked{% endif %} data-lvlbox>
             <span class="lvl lvl-{{ l.lvl|lower }}">{{ l.lvl }}</span>
             <span class="muted" style="font-size:11px">{{ level_names.get(l.lvl, '') }}</span>
-            <span class="cnt">{{ l.n }}</span></label>
+            <span class="cnt" data-av="t_{{ l.lvl }}">{{ l.n }}</span></label>
           {% endfor %}
         </div>
         {% endif %}
@@ -136,9 +142,9 @@
       <summary>Status{% if sel_status %}<span class="fbadge">{{ sel_status|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key, sf in status_filters.items() %}
-        <label><input type="checkbox" name="status" value="{{ key }}"
+        <label data-opt><input type="checkbox" name="status" value="{{ key }}"
                  {% if key in sel_status %}checked{% endif %}> {{ sf[0] }}
-          <span class="cnt">{{ status_counts.get(key, 0) }}</span></label>
+          <span class="cnt" data-av="s_{{ key }}">{{ status_counts.get(key, 0) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -147,9 +153,9 @@
       <summary>Content{% if sel_content_n %}<span class="fbadge">{{ sel_content_n }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key in content_keys %}
-        <label><input type="checkbox" name="attr" value="{{ key }}"
+        <label data-opt><input type="checkbox" name="attr" value="{{ key }}"
                  {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt">{{ attr_counts.get(key, 0) }}</span></label>
+          <span class="cnt" data-av="a_{{ key }}">{{ attr_counts.get(key, 0) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -158,9 +164,9 @@
       <summary>Components{% if sel_comp_n %}<span class="fbadge">{{ sel_comp_n }}</span>{% endif %}</summary>
       <div class="panel">
         {% for key in component_keys %}
-        <label><input type="checkbox" name="attr" value="{{ key }}"
+        <label data-opt><input type="checkbox" name="attr" value="{{ key }}"
                  {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt">{{ attr_counts.get(key, 0) }}</span></label>
+          <span class="cnt" data-av="a_{{ key }}">{{ attr_counts.get(key, 0) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -592,5 +598,52 @@ async function poll() {
 }
 poll();
 refreshCount();
+
+// Every filter option says how many pages it would still let in, given the
+// other filters already set - so you can see what a tick is worth before
+// applying it. Faceted: a dropdown is never narrowed by its own selections,
+// or ticking one Type would show 0 beside all the others and you could never
+// pick a second. An option worth nothing dims and stops being tickable, but
+// one already ticked stays live so you can untick it.
+(function () {
+  var form = document.querySelector('form.toolbar');
+  if (!form) return;
+  var timer = null, seq = 0;
+  function refreshFacets() {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      var p = new URLSearchParams();
+      var q = form.querySelector('input[name=q]');
+      if (q && q.value.trim()) p.set('q', q.value.trim());
+      form.querySelectorAll('input[name=ptype]:checked, input[name=status]:checked,'
+                          + ' input[name=attr]:checked')
+          .forEach(function (c) { p.append(c.name, c.value); });
+      var mine = ++seq;
+      fetch(location.origin + '{{ url_for("dash_avail") }}?' + p.toString(),
+            {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (mine !== seq) return;
+          form.querySelectorAll('.cnt[data-av]').forEach(function (el) {
+            var n = d[el.dataset.av];
+            if (n === undefined) return;
+            el.textContent = n.toLocaleString();
+            var lab = el.closest('label');
+            var box = lab && lab.querySelector('input');
+            if (!box) return;
+            lab.classList.toggle('optdim', n === 0 && !box.checked);
+            box.disabled = (n === 0 && !box.checked);
+          });
+        })
+        .catch(function (e) { console.warn('facet counts failed', e); });
+    }, 90);
+  }
+  form.addEventListener('change', function (ev) {
+    if (['ptype', 'status', 'attr'].indexOf(ev.target.name) >= 0) refreshFacets();
+  });
+  var qbox = form.querySelector('input[name=q]');
+  if (qbox) qbox.addEventListener('input', refreshFacets);
+  refreshFacets();
+})();
 </script>
 {% endblock %}

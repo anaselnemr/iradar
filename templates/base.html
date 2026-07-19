@@ -664,16 +664,9 @@
   </div>
 </div>
 <script>
-  // popover menus (level editor): clicking anywhere else - or Esc - closes
-  document.addEventListener("click", function (e) {
-    document.querySelectorAll("details.lvledit[open]").forEach(function (d) {
-      if (!d.contains(e.target)) d.open = false;
-    });
-  });
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape")
-      document.querySelectorAll("details.lvledit[open]").forEach(function (d) { d.open = false; });
-  });
+  // (the level editor's own outside-click handler used to live here; it is the
+  // unified popover handler at the end of this file now, which covers every
+  // popover on the site and will not discard an edit in progress)
 
   // toasts: slide in, auto-dismiss, click to dismiss
   document.querySelectorAll("#toasts .flash").forEach(function (t, i) {
@@ -792,6 +785,41 @@
         .catch(function () {});
     }, 160);
   });
+
+// Any open popover closes when you click away from it, everywhere on the site.
+// A <details> normally only closes by clicking its own summary again, so a
+// dropdown you have finished with sits on top of the thing you were trying to
+// read.
+//
+// POPOVERS ONLY - the ones that float above the page on position:absolute.
+// The disclosures that ARE the page (a search-result family, a hierarchy node,
+// a page's library sections) must survive clicking around inside the page, so
+// they are deliberately not listed.
+var POPOVERS = 'details.dd, details.runmore, details.bc-sibs, details.lvledit';
+
+function closePopovers(except) {
+  document.querySelectorAll(POPOVERS).forEach(function (d) {
+    if (!d.open || (except && d.contains(except))) return;
+    // never discard typing: the rename popover holds an edit in progress, and
+    // a stray click outside it must not be the same as pressing cancel
+    var dirty = Array.prototype.some.call(
+      d.querySelectorAll('input, textarea'),
+      function (i) { return i.value !== i.defaultValue; });
+    if (!dirty) d.open = false;
+  });
+}
+document.addEventListener('click', function (ev) { closePopovers(ev.target); });
+// Escape closes the innermost one and hands focus back to what opened it
+document.addEventListener('keydown', function (ev) {
+  if (ev.key !== 'Escape') return;
+  var open = document.querySelectorAll(POPOVERS);
+  var last = null;
+  open.forEach(function (d) { if (d.open) last = d; });
+  if (!last) return;
+  last.open = false;
+  var s = last.querySelector('summary');
+  if (s) s.focus();
+});
 </script>
 </body>
 </html>

@@ -3414,6 +3414,95 @@ def _dash_counts(con):
     return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
 
 
+def _dash_facets(con, q, statuses, ptypes, attrs):
+    """What each filter option would still be worth, given the others.
+
+    Faceted, not flat: a dimension is narrowed by the OTHER dimensions and
+    never by itself. Narrowing Type by the types you already picked would
+    show 0 beside every type you had not picked, and you could never add a
+    second one - the count has to answer "how many more would this let in",
+    not "how many did I already choose".
+    """
+    def where(skip):
+        return _url_filter("" if skip == "q" else q,
+                           [] if skip == "status" else statuses,
+                           [] if skip == "type" else ptypes,
+                           [] if skip == "attr" else attrs)
+
+    out = {"s_" + k: 0 for k in STATUS_FILTERS}
+    out.update({"a_" + k: 0 for k in ATTR_FILTERS})
+    out.update({"t_" + t: 0 for t in
+                ("Products & Eval Boards", "PTP", "EB", *PRODUCT_LEVELS,
+                 *APP_LEVELS, *DR_LEVELS, "Product", "Part", "Application",
+                 "Design resources", "Promo", "Home")})
+    # statuses and the urls-only attributes: one SUM(CASE) pass each
+    for skip, filters, prefix in (("status", STATUS_FILTERS, "s_"),
+                                  ("attr", ATTR_FILTERS, "a_")):
+        w, params = where(skip)
+        conds = {k: v[1] for k, v in filters.items() if "items i" not in v[1]}
+        cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
+                         for i, c in enumerate(conds.values()))
+        row = con.execute(f"SELECT {cols} FROM urls u {w}", params).fetchone()
+        out.update({prefix + k: (row[f"k{i}"] or 0)
+                    for i, k in enumerate(conds)})
+    # the category attributes (has-documents, has-videos ...) are an EXISTS
+    # over items - twenty correlated subqueries per row takes seconds, so they
+    # come from one GROUP BY over the pages that survive the other filters
+    w, params = where("attr")
+    cat_n = {r["category"]: r["n"] for r in con.execute(
+        "SELECT i.category, COUNT(DISTINCT i.url_id) n FROM items i"
+        " JOIN urls u ON u.id=i.url_id " + w + " GROUP BY i.category", params)}
+    vid_n = con.execute(
+        "SELECT COUNT(DISTINCT i.url_id) n FROM items i JOIN urls u"
+        " ON u.id=i.url_id " + w + (" AND " if w else " WHERE ")
+        + "i.category IN ('videos','news')", params).fetchone()["n"]
+    checked = out.get("a_checked", 0)
+    # derived exactly as index() derives the static ones, so the live count
+    # and the page you land on after Apply cannot disagree
+    for _stem, _cat, _ in _CONTENT_ATTRS + _COMPONENT_ATTRS:
+        have = vid_n if _stem == "videos" else cat_n.get(_cat, 0)
+        out["a_has" + _stem] = have
+        out["a_no" + _stem] = max(0, checked - have)
+    # types, and the levels nested under them
+    w, params = where("type")
+    for r in con.execute("SELECT ptype, IFNULL(level,'') lv, url, COUNT(*) n"
+                         " FROM urls u " + w + " GROUP BY ptype, lv, "
+                         " CASE WHEN url LIKE '%/part/%' THEN 1"
+                         "      WHEN url LIKE '%/evaluation-board/%' THEN 2"
+                         "      ELSE 0 END", params):
+        pt, lv, url = r["ptype"] or "", r["lv"], r["url"] or ""
+        if pt == "Part":
+            key = "PTP" if "/part/" in url else (
+                "EB" if "/evaluation-board/" in url else pt)
+            out["t_" + key] = out.get("t_" + key, 0) + r["n"]
+        else:
+            out["t_" + pt] = out.get("t_" + pt, 0) + r["n"]
+            if lv:
+                out["t_" + lv] = out.get("t_" + lv, 0) + r["n"]
+    out["t_Products & Eval Boards"] = (out.get("t_Product", 0)
+                                       + out.get("t_PTP", 0)
+                                       + out.get("t_EB", 0))
+    w, params = where(None)
+    out["_total"] = con.execute("SELECT COUNT(*) FROM urls u " + w,
+                                params).fetchone()[0]
+    return out
+
+
+@app.route("/dash/avail")
+def dash_avail():
+    """Live facet counts for the dashboard's filter dropdowns."""
+    con = db.connect()
+    try:
+        data = _dash_facets(
+            con, request.args.get("q", "").strip(),
+            [s for s in request.args.getlist("status") if s in STATUS_FILTERS],
+            request.args.getlist("ptype"),
+            [a for a in request.args.getlist("attr") if a in ATTR_FILTERS])
+    finally:
+        con.close()
+    return jsonify(data)
+
+
 @app.route("/search")
 def search_items():
     """The CONTENT library: every captured asset - documents, videos, images,
