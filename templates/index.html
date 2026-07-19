@@ -76,7 +76,8 @@
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <div class="muted" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
       <span>
-        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>
+        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>{#- the count says how far, the percentage says how far to go; the bar
+    below already knows this number and was the only thing showing it -#}<span id="run-pct" class="runpct">{{ (100 * state.done // state.total) if state.total else 0 }}%</span>
         · <b><span id="run-saved">0</span></b> saved
         <b id="run-eta" style="color:var(--accent)"></b>
       </span>
@@ -662,6 +663,8 @@ async function poll() {
       reflectPause();
       const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
       bar.style.width = pct + '%';
+      const pctEl = document.getElementById('run-pct');
+      if (pctEl) pctEl.textContent = pct + '%';
       setTimeout(poll, 2000);
     } else if (sawRunning) {
       location.reload();

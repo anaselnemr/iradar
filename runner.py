@@ -526,12 +526,36 @@ def _run_check_inner(kind, url_ids):
     counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
     suspects = []
     url_by_addr = {row["url"]: row for row in urls}
+    # A capture is matched back to its row by URL text. If that lookup ever
+    # misses, the page is captured, written to disk, and then dropped on the
+    # floor - which is exactly what happened: `done` climbed to 2,462 while 118
+    # rows moved, and nothing was logged because the miss had no else branch.
+    # This second key is forgiving about the things that do not change which
+    # page it is.
+    def _key(u):
+        u = (u or "").strip().lower()
+        if u.endswith("/"):
+            u = u[:-1]
+        for pre in ("https://", "http://"):
+            if u.startswith(pre):
+                u = u[len(pre):]
+                break
+        return u[4:] if u.startswith("www.") else u
+
+    url_by_key = {_key(row["url"]): row for row in urls}
     jobs = [(row["url"], str(_snapshot_dir(row["id"], ts_label))) for row in urls]
 
     def progress(res):
         RUN_STATE["done"] += 1
         RUN_STATE["message"] = res["url"]
-        row = url_by_addr.get(res["url"])
+        row = url_by_addr.get(res["url"]) or url_by_key.get(_key(res.get("url")))
+        if row is None:
+            # Never silent again. A page we cannot file is a page we did not
+            # save, and it must read as an error rather than as progress.
+            counters["errors"] += 1
+            RUN_STATE["errors"] = counters["errors"]
+            print("UNMATCHED RESULT - not saved:", repr(res.get("url")),
+                  flush=True)
         if row is not None:
             before = dict(counters)
             try:
@@ -576,9 +600,14 @@ def _run_check_inner(kind, url_ids):
 
     # Suspected changes are re-captured once, all together, and flagged only if
     # the difference survives (real edits persist; first-load flakes vanish).
-    # A user-requested stop skips this pass - everything captured is already saved.
-    if suspects and not stopping():
-        _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id)
+    # A suspect is NOT saved yet: its snapshot sits in limbo, last_checked is
+    # untouched and no change row exists. Skipping this pass on stop therefore
+    # threw the whole queue away - a run could capture 2,438 pages, be stopped,
+    # and leave 152 saved with 0 changes. Stopping now still resolves the
+    # queue; it just does not get to re-capture first.
+    if suspects:
+        _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
+                         recapture=not stopping())
 
     ok, changed, errors = counters["ok"], counters["changed"], counters["errors"]
     stopped = stopping()
@@ -742,7 +771,7 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         con.execute("UPDATE snapshots SET status='pending' WHERE id=?",
                     (new_snap_id,))
         suspects.append({"row": row, "new1_id": new_snap_id,
-                         "new1_dir": snap_dir, "prev": prev})
+                         "new1_dir": snap_dir, "prev": prev, "res": res})
         # each suspect owes ONE more capture at the end - publish the debt so
         # the ETA can tell the truth instead of ignoring the verify tail
         RUN_STATE["suspects"] = len(suspects)
@@ -753,11 +782,15 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         counters["saved"] += 1
 
 
-def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
+def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
+                     recapture=True):
     """Re-capture every suspected change once and flag only those that persist.
     Each verified page is committed on its own."""
-    RUN_STATE["message"] = f"double-checking {len(suspects)} suspected change(s)…"
-    RUN_STATE["total"] += len(suspects)
+    RUN_STATE["message"] = (
+        f"double-checking {len(suspects)} suspected change(s)…" if recapture
+        else f"saving {len(suspects)} suspected change(s) before stopping…")
+    if recapture:
+        RUN_STATE["total"] += len(suspects)
     RUN_STATE["suspects"] = 0     # the debt is folded into total now
     ts2 = ts_label + "-verify"
     vjobs = [(s["row"]["url"], str(_snapshot_dir(s["row"]["id"], ts2)))
@@ -770,19 +803,23 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id):
     def paused():
         return bool(RUN_STATE.get("paused"))
 
-    vresults = asyncio.run(capture.capture_all(
-        vjobs, concurrency=concurrency, progress=vprogress, pause_check=paused))
-    vby = {r["url"]: r for r in vresults}
+    if recapture:
+        vresults = asyncio.run(capture.capture_all(
+            vjobs, concurrency=concurrency, progress=vprogress,
+            pause_check=paused))
+        vby = {r["url"]: r for r in vresults}
+    else:
+        vby = {}      # stopping: every suspect falls to the keep-detection path
     settings_now = db.get_settings()
 
     for s in suspects:
         row, prev = s["row"], s["prev"]
         url_id = row["id"]
-        vres = vby[row["url"]]
+        vres = vby.get(row["url"]) or s["res"]
         vdir = str(_snapshot_dir(url_id, ts2))
         now = db.now_iso()
 
-        if vres["status"] != "ok":
+        if not recapture or vres["status"] != "ok":
             # Verification capture failed - keep the original detection rather
             # than risk missing a real change. The kept snapshot leaves limbo:
             # it is now this page's baseline-to-be.
