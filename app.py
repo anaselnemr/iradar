@@ -4967,7 +4967,45 @@ def _export_item_rows(con, kinds, levels, cols=()):
     return rows, used, want_f
 
 
+def _item_fields_present(r):
+    """The data fields one item row carries, from a SINGLE parse of its meta.
+
+    One definition, used both to count a field and to decide whether a row
+    still qualifies once that field is asked for - so the two numbers on
+    screen cannot contradict each other. Asking field by field re-parsed the
+    same meta line eleven times a row and took the whole panel from 450 ms
+    to over a second.
+    """
+    got = parse_item_meta(r["meta"], r["doc_type"])
+    out = {f for f, _l in ITEM_FIELDS if got.get(f)}
+    if (r["grp"] or "").strip():
+        out.add("group")
+    if (r["item_url"] or "").strip():
+        out.add("link")
+    if item_source(r["category"]):
+        out.add("source")
+    if backend_system(r["category"], r["meta"], r["doc_type"], r["grp"],
+                      r["item_url"] or ""):
+        out.add("backend")
+    return out
+
+
 def _export_avail(con, mode, levels, kinds, cols=()):
+    """Cached against the database's own write clock.
+
+    The answer only moves when a run writes, and the panel asks again on every
+    tick - including for combinations you have already seen while toggling a
+    box on and off. Keyed on the exact selection, so nothing is shared between
+    two different questions.
+    """
+    key = "avail|%s|%s|%s|%s" % (mode, ",".join(sorted(levels or [])),
+                                 ",".join(sorted(kinds or [])),
+                                 ",".join(sorted(cols or [])))
+    return _cached_by_db(key, lambda: _export_avail_build(
+        con, mode, levels, kinds, cols))
+
+
+def _export_avail_build(con, mode, levels, kinds, cols=()):
     """How much of each option actually exists for the current selection.
 
     Shown beside every checkbox so the answer to "do these pages even have
@@ -4982,39 +5020,35 @@ def _export_avail(con, mode, levels, kinds, cols=()):
             lv_sql = (" AND IFNULL(u.level,'') IN ("
                       + ",".join("?" * len(levels)) + ")")
             lv_args = list(levels)
-        for k, _l in ITEM_KINDS_ALL:
-            out[k] = con.execute(
-                "SELECT COUNT(*) FROM (SELECT 1 FROM items i"
-                " JOIN urls u ON u.id=i.url_id WHERE u.active=1 AND ("
-                + _q_items(ITEM_KIND_SQL[k]) + ")" + lv_sql
-                + " GROUP BY lower(i.title), i.item_url)", lv_args).fetchone()[0]
-        # Which meta fields the chosen kinds actually carry. GROUP BY item_key,
-        # not one row per placement: the table below is one row per distinct
-        # item, so a field count of raw rows would read 47,833 beside a table
-        # of 6,146. Deduping first also makes this the cheaper query.
+        # ONE pass. Each deduped row is labelled with the kind it matched -
+        # first match wins, the same order the rows themselves use - and both
+        # the kind counts and the field counts are read off that. A data column
+        # narrows the kinds the same way a page type does: ask for Time and
+        # Documents says 0, because a document has no duration.
+        want_f = [f for f, _l in ITEM_FIELDS if "f_" + f in cols]
+        all_k = [k for k, _l in ITEM_KINDS_ALL]
+        case = ("CASE " + " ".join(
+            "WHEN (" + _q_items(ITEM_KIND_SQL[k]) + ") THEN " + repr(k)
+            for k in all_k) + " END AS kind")
         rows = con.execute(
-            "SELECT i.meta, i.doc_type, i.grp, i.item_url, i.category"
-            " FROM items i"
-            " JOIN urls u ON u.id=i.url_id WHERE u.active=1 AND ("
-            + " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")" for k in ks)
+            "SELECT " + case + ", i.meta, i.doc_type, i.grp, i.item_url,"
+            " i.category FROM items i JOIN urls u ON u.id=i.url_id"
+            " WHERE u.active=1 AND ("
+            + " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")" for k in all_k)
             + ")" + lv_sql + " GROUP BY lower(i.title), i.item_url",
             lv_args).fetchall()
+
+        out.update({k: 0 for k in all_k})
         seen = {f: 0 for f, _l in ITEM_FIELDS}
         for r in rows:
-            f = parse_item_meta(r["meta"], r["doc_type"])
-            for key in seen:
-                if key == "source":
-                    seen[key] += 1 if item_source(r["category"]) else 0
-                elif key == "group":
-                    seen[key] += 1 if (r["grp"] or "").strip() else 0
-                elif key == "link":
-                    seen[key] += 1 if (r["item_url"] or "").strip() else 0
-                elif key == "backend":
-                    seen[key] += 1 if backend_system(
-                        r["category"], r["meta"], r["doc_type"], r["grp"],
-                        r["item_url"] or "") else 0
-                elif f.get(key):
-                    seen[key] += 1
+            fields = _item_fields_present(r)
+            # the field tally counts every row of the CHOSEN kinds...
+            if r["kind"] in ks:
+                for f in fields:
+                    seen[f] += 1
+            # ...while a kind counts the rows that carry every chosen field
+            if r["kind"] and all(f in fields for f in want_f):
+                out[r["kind"]] += 1
         out.update({"f_" + k: v for k, v in seen.items()})
         # and how many pages of each level carry any of the chosen kinds
         for lv in con.execute(
@@ -5043,13 +5077,17 @@ def _export_avail(con, mode, levels, kinds, cols=()):
     # not depending on which pane you happened to start in. A level now
     # counts the pages of that level carrying EVERY component column you
     # have ticked, and drops out when that is none of them.
-    comp_sql = {k: a for k, _l, kind, a in _all_components() if kind == "cat"}
-    want = [k for k in cols if k in dict(
-        (kk, 1) for kk, _l2, _k2, _a2 in _all_components())]
+    reg_by_key = {kk: (kd, a) for kk, _l2, kd, a in _all_components()}
     conds, cargs = [], []
-    for k in want:
-        kind = next(kd for kk, _l3, kd, _a3 in _all_components() if kk == k)
-        arg = next(a for kk, _l4, _k4, a in _all_components() if kk == k)
+    # Ownership columns narrow too: asking for BL should show which page
+    # types actually have one. Page-status columns deliberately do not -
+    # every page has a status, so requiring one would exclude nothing and
+    # the number would only pretend to have moved.
+    for k, _l in _export_meta_cols():
+        if k in cols:
+            conds.append("IFNULL(u." + k + ",'')<>''")
+    for k in [c for c in cols if c in reg_by_key]:
+        kind, arg = reg_by_key[k]
         if kind == "cat":
             conds.append("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
                          " AND i.category=?)")
