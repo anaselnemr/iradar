@@ -108,14 +108,14 @@
   .sz-s .pagegrid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
   .sz-l .pagegrid { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
 
-  .ctrls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
-           margin: 0 2px 12px; }
-  .ctrls .grp { display: flex; gap: 6px; align-items: center; }
-  .ctrls .lbl { font-size: 12px; color: var(--muted); }
-  .jump { display: flex; gap: 5px; align-items: center; }
-  .jump input { width: 62px; padding: 3px 7px; font-size: 12.5px;
-                border: 1px solid var(--line); border-radius: 7px;
-                background: var(--panel); color: var(--ink); }
+  /* Order / Per page / Size read as headings for the choices under them,
+     not as words sitting in the same line as the buttons. */
+  .ctrls { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap;
+           margin: 0 2px 14px; }
+  .ctrls .grp { display: flex; flex-direction: column; gap: 6px; }
+  .ctrls .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+                text-transform: uppercase; color: var(--muted); }
+  .ctrls .opts { display: flex; gap: 6px; flex-wrap: wrap; }
   /* page cards: the screenshot IS the recognisable thing about a page.
      Cropped from the TOP, because that is the masthead you recognise; a
      contained full-page shot at this size is an unreadable grey ribbon. */
@@ -138,15 +138,16 @@
      click and the shape of the row tells you where you are in the list. The
      "go to page N of 15" box it replaces made you read, type and submit to do
      what a number does in one click. */
-  .pgr { display: flex; gap: 14px; align-items: center; justify-content: space-between;
+  .pgr { display: flex; gap: 14px; align-items: center; justify-content: flex-end;
          flex-wrap: wrap; margin-top: 18px; }
   .pgr-top { margin: 0 0 16px; }
-  .pgr-count { font-size: 12.5px; color: var(--muted);
-               font-variant-numeric: tabular-nums; }
+  .pgr-count { font-size: 12.5px; color: var(--muted); padding: 0 10px 0 4px;
+               border-right: 1px solid var(--line); margin-right: 5px;
+               font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pgr-count b { color: var(--ink); font-weight: 600; }
   .pgr-nav { display: flex; align-items: center; gap: 3px;
              background: var(--panel); border: 1px solid var(--line);
-             border-radius: 11px; padding: 4px; }
+             border-radius: 11px; padding: 4px 6px; }
   .pnum, .pstep {
       min-width: 32px; height: 32px; padding: 0 9px; border-radius: 8px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -159,8 +160,15 @@
   .pstep svg { width: 16px; height: 16px; }
   /* a dead end reads dead: no hover, no pointer, and out of the tab order */
   .pstep.off { opacity: .32; pointer-events: none; }
-  .pgap { min-width: 20px; text-align: center; color: var(--muted);
-          font-size: 13px; user-select: none; }
+  /* the ellipsis IS the jump box - it looks like a gap until you click it */
+  .pgap { width: 30px; height: 32px; text-align: center; color: var(--muted);
+          font-size: 13px; padding: 0; border: 1px solid transparent;
+          border-radius: 8px; background: transparent;
+          font-variant-numeric: tabular-nums; }
+  .pgap:hover { border-color: var(--line); color: var(--ink); cursor: text; }
+  .pgap.typing { width: 46px; border-color: var(--accent); color: var(--ink);
+                 background: var(--card); }
+  .pgap:focus { outline: none; }
 
   /* ---- search -------------------------------------------------------------
      Centred, because it is the one thing this page is for. The dropdown that
@@ -223,12 +231,23 @@
     always reachable and gaps shown as an ellipsis. Numbers beat a "go to" box:
     the nearby pages are one click, and the shape of the list tells you where
     you are in it. -#}
+{#- The gap between page runs is where you want to go when the page you want
+    is not on screen - so it IS the way to get there. Type a number, press
+    Enter. It reads as an ellipsis until you touch it. -#}
+{% macro pjump() %}
+<input class="pgap" type="text" inputmode="numeric" value="…"
+       size="1" aria-label="Jump to page"
+       data-base="{{ burl(page=0) }}" data-last="{{ last_page }}"
+       onfocus="this.value=''; this.classList.add('typing')"
+       onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">
+{% endmacro %}
+
 {% macro pagenums() %}
   {% set lo = [1, pageno - 2]|max %}
   {% set hi = [last_page, pageno + 2]|min %}
   {% if lo > 1 %}
     <a class="pnum" href="{{ burl(page=1) }}">1</a>
-    {% if lo > 2 %}<span class="pgap">…</span>{% endif %}
+    {% if lo > 2 %}{{ pjump() }}{% endif %}
   {% endif %}
   {% for n in range(lo, hi + 1) %}
     {% if n == pageno %}
@@ -238,7 +257,7 @@
     {% endif %}
   {% endfor %}
   {% if hi < last_page %}
-    {% if hi < last_page - 1 %}<span class="pgap">…</span>{% endif %}
+    {% if hi < last_page - 1 %}{{ pjump() }}{% endif %}
     <a class="pnum" href="{{ burl(page=last_page) }}">{{ last_page }}</a>
   {% endif %}
 {% endmacro %}
@@ -246,11 +265,13 @@
 {% macro pager(where='bottom') %}
 {% if browse and (pageno > 1 or has_more) %}
 <nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination">
-  <span class="pgr-count">
-    <b>{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }}</b>
-    of {{ '{:,}'.format(total) }}
-  </span>
+  {#- the count sits WITH the control, not exiled to the far side of a wide
+      screen where the two ends had nothing to do with each other -#}
   <span class="pgr-nav">
+    <span class="pgr-count">
+      <b>{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }}</b>
+      of {{ '{:,}'.format(total) }}
+    </span>
     <a class="pstep {{ 'off' if pageno == 1 }}"
        href="{{ burl(page=pageno-1) if pageno > 1 else '#' }}" aria-label="Previous page">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -273,20 +294,26 @@
 <div class="ctrls">
   {% if sort_opts is defined and sort_opts %}
   <span class="grp"><span class="lbl">Order</span>
+    <span class="opts">
     {% for key, label in sort_opts %}
     <a class="sortopt {{ 'on' if sort == key }}" href="{{ burl(o=key) }}">{{ label }}</a>
     {% endfor %}
+    </span>
   </span>
   {% endif %}
   <span class="grp"><span class="lbl">Per page</span>
+    <span class="opts">
     {% for nper in per_choices %}
     <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ burl(n=nper, page=1) }}">{{ nper }}</a>
     {% endfor %}
+    </span>
   </span>
   <span class="grp"><span class="lbl">Size</span>
+    <span class="opts">
     {% for key, label in [('s','Small'), ('m','Medium'), ('l','Large')] %}
     <a class="sortopt {{ 'on' if size == key }}" href="{{ burl(z=key) }}">{{ label }}</a>
     {% endfor %}
+    </span>
   </span>
 </div>
 {% endif %}
@@ -356,8 +383,9 @@
       {{ thumb(g) }}
       <div style="flex:1; min-width:0">
         <div class="hit-head">
+          {#- no type icon here: the thumbnail to the left already says what
+              this is, and the badge beside it says so in words -#}
           <span class="hit-title-row">
-            {{ ticon('videos' if g.is_video else g.category) }}
             <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
           </span>
           <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
@@ -469,7 +497,8 @@
       <div style="flex:1; min-width:0">
       <div class="hit-head">
         <span class="hit-title-row">
-          {{ ticon('videos' if g.is_video else g.category) }}
+          {#- prose has no thumbnail, so it keeps its icon; assets do not -#}
+          {% if is_overview %}{{ ticon(g.category) }}{% endif %}
           {% if is_overview %}
           <a href="{{ url_for('url_detail', url_id=g.pages[0].id) }}" class="hit-title">{{ g.title }}</a>
           {% else %}
@@ -516,6 +545,21 @@
 </div><!-- /sz -->
 
 <script>
+// The ellipsis between page runs is a text box: type a page, press Enter.
+// Delegated, so it keeps working after the results block is swapped out.
+document.addEventListener('keydown', function (e) {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('pgap')) return;
+  if (e.key === 'Escape') { el.blur(); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const n = parseInt(el.value, 10);
+  const last = parseInt(el.dataset.last, 10) || 1;
+  if (!n || n < 1 || n > last) { el.value = ''; return; }
+  // the macro rendered this href with page=0; swap in the number asked for
+  location.href = (el.dataset.base || '').replace(/([?&]page=)0\b/, '$1' + n);
+});
+
 // ---------------------------------------------------------------------------
 // Search as you type. The server already renders these results; rather than
 // build a second, JS-only rendering of them that could drift from the real

@@ -122,7 +122,14 @@
   .asn > summary .n { font-size: 11.5px; font-weight: 600; color: var(--muted);
                       background: var(--hover); border-radius: 999px;
                       padding: 1px 8px; }
-  .asn .pagegrid { margin-top: 11px; }
+  /* Assignments are a LIST of where a thing appears, so the screenshot is an
+     identifying glance, not the subject. At the page grid's normal 280px
+     minimum these ran ~500px wide and half as tall again - a wall of
+     browser chrome. Narrower columns and a letterbox crop keep the masthead,
+     which is the part you recognise. */
+  .asn .pagegrid { margin-top: 11px;
+                   grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
+  .asn .pageshot { aspect-ratio: 16 / 6.5; }
 
   /* --- hierarchy tree --- */
   .tree { font-size: 14px; }
