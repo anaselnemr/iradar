@@ -2677,11 +2677,21 @@ def _structure_registry(con, aliases=None):
     has children even when we do not track those children, so a sub-family is
     never mistaken for an end family just because our list stops there."""
     reg = set()
-    for r in con.execute("SELECT url, canonical_url FROM urls WHERE active=1"):
+    # A dead or blank page is not a child. This registry is what decides
+    # sub-family from end family - "the site declares something beneath it" -
+    # and a 404 sitting under a page declares nothing except that an address
+    # used to work. Counting it turns a real end family into a sub-family.
+    # (Today 25 addresses here exist only because of dead pages, and no live
+    # page is mis-levelled by them yet; that is luck, not design.)
+    for r in con.execute(
+            "SELECT url, canonical_url FROM urls WHERE active=1"
+            " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error')"):
         for u in (r["url"], r["canonical_url"]):
             n = _tax_norm(u)
             if n.startswith("/products/"):
                 reg.add(_apply_aliases(n, aliases))
+    # the navigation tiles stay: those come from a LIVE page's own category
+    # module, so they are the site declaring children even where we track none
     for r in con.execute("SELECT DISTINCT item_url FROM items"
                          " WHERE category IN ('categories','products')"
                          " AND item_url<>''"):
@@ -2708,9 +2718,16 @@ def _rebuild_structure():
     aliases = _redirect_aliases(con)
     reg = _structure_registry(con, aliases)
     changed, filled, kept = [], [], 0
+    # Only pages a visitor actually gets. A 404 or a blank shell is not part of
+    # the structure - it is already kept out of the tree and out of the counts,
+    # and level inference already skips it, but this walk was still writing
+    # levels onto 706 of them. Whatever level a page last held stays, as the
+    # record of where it was; nothing new is written to a page that is gone.
     for r in con.execute("SELECT id, url, canonical_url, ptype, level,"
                          " level_src FROM urls WHERE active=1"
-                         " AND ptype IN ('Product','Design resources')"):
+                         " AND ptype IN ('Product','Design resources')"
+                         " AND IFNULL(last_status,'')"
+                         "     NOT IN ('notlive','blank','error')"):
         cur, src = r["level"] or "", r["level_src"] or ""
         if src == "manual":
             kept += 1
