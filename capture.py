@@ -426,7 +426,27 @@ SECTIONS_JS = r"""
   };
 
   const normT = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
-  const push = (cat, title, url, meta, group, dtype, exact) => {
+  // An <img>'s REAL address. These cards ship with src set to a 1x1
+  // transparent data: URI and swap the true URL in when their tab is shown, so
+  // reading src alone recorded "iVBORw0KGgo..." as the tool's picture whenever
+  // the swap had not happened yet - a placeholder stored as groundtruth, and
+  // one that would compare unequal against the real icon on the next run. A
+  // data: URI is never the answer; fall through to the lazy-load attributes.
+  const realImgSrc = (im) => {
+    if (!im) return '';
+    const cands = [im.currentSrc, im.getAttribute('src'),
+                   im.getAttribute('data-src'), im.getAttribute('data-original'),
+                   im.getAttribute('data-lazy-src')];
+    for (const ss of [im.getAttribute('srcset'), im.getAttribute('data-srcset')]) {
+      if (ss) cands.push(ss.split(',')[0].trim().split(/\s+/)[0]);
+    }
+    for (const c of cands) {
+      if (c && !/^data:/i.test(c.trim())) return c.trim();
+    }
+    return '';
+  };
+
+  const push = (cat, title, url, meta, group, dtype, exact, img) => {
     // 200 chars is a sane cap for a card title, but overview/about entries ARE
     // prose - their text is the item - and capping those chopped a paragraph
     // mid-sentence, hiding the tail from the library.
@@ -450,6 +470,7 @@ SECTIONS_JS = r"""
         if (meta && !existing.meta) existing.meta =
           meta.replace(/\s+/g, ' ').trim().slice(0, 260);
         if (dtype && !existing.dtype) existing.dtype = dtype;
+        if (img && !existing.img) existing.img = img;
         return;
       }
       urlOwned.set(url, cat);
@@ -471,6 +492,13 @@ SECTIONS_JS = r"""
     // this title came from the card's own title element: it is the page's
     // text verbatim and must not be tidied up afterwards
     if (exact) item.exact = true;
+    // the card's own thumbnail. Every design-resource card on the page shows
+    // one, and none of them were being recorded - the icon only survived in
+    // the page-wide image list, where identical icons collapse to a single
+    // entry under whichever card happened to be read first. So a tool whose
+    // icon changed, or which shared an icon with a neighbour, had no image of
+    // its own to compare against.
+    if (img) item.img = img.slice(0, 400);
     out[cat].push(item);
   };
 
@@ -648,7 +676,16 @@ SECTIONS_JS = r"""
         const img = card.querySelector('img[src*=".mp4/"]');
         if (img) href = img.src.split('/jcr:content')[0];
       }
-      push(cat, t, href, cardExtras(card), group, '', exact);
+      // the card's icon. Skip the partner badge's logo, which belongs to the
+      // vendor strip beside the card and not to the tool itself.
+      let thumb = '';
+      for (const im of card.querySelectorAll('img')) {
+        if (im.closest('.partner-ul-box, .heading-partnerobject, .partner-box'))
+          continue;
+        thumb = realImgSrc(im);
+        if (thumb) break;
+      }
+      push(cat, t, href, cardExtras(card), group, '', exact, thumb);
     });
   });
 
@@ -1418,6 +1455,48 @@ async def _settle_section_nav(page, cap_s=12.0):
 
 
 IN_NAV_JS = "el => !!el.closest('header, nav, [role=\"navigation\"], footer')"
+
+# Bring any still-unswapped card image into view so the page loads it.
+# These cards ship a 1x1 data: URI and swap the real icon in when the image
+# intersects the viewport, so a card below the fold of a freshly-opened tab
+# keeps its placeholder forever - the icon is on the page for a reader who
+# scrolls down, and was simply never in ours. Returns how many are still
+# unresolved, so the caller can stop as soon as there is nothing to wait for.
+LAZY_IMG_JS = r"""
+() => {
+  const pend = [...document.querySelectorAll('img')].filter(im => {
+    const s = im.getAttribute('src') || '';
+    return /^data:/i.test(s) && im.offsetParent !== null;
+  });
+  // Put the page back EXACTLY where it was. Nudging these into view scrolls
+  // the document, and the widget below re-renders around the viewport: parking
+  // at the top afterwards left the design-resources pane showing different
+  // cards than the rest of the capture had just read, and the page image list
+  // came back short. Restore the offset, do not assume it was zero.
+  const y = window.scrollY, x = window.scrollX;
+  pend.forEach(im => {
+    try { im.scrollIntoView({block: 'center', inline: 'nearest'}); } catch (e) {}
+    im.loading = 'eager';
+  });
+  window.scrollTo(x, y);
+  return pend.length;
+}
+"""
+
+
+async def _load_lazy_images(page, rounds=3):
+    """Nudge unresolved card icons into view until they stop being placeholders."""
+    prev = None
+    for _ in range(rounds):
+        try:
+            n = await page.evaluate(LAZY_IMG_JS)
+        except Exception:
+            return
+        if not n or n == prev:
+            break
+        prev = n
+        await page.wait_for_timeout(300)
+
 
 async def _dom_click(el):
     """Fire the element's click handler directly, without Playwright's
