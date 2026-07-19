@@ -3758,6 +3758,8 @@ def search_items():
                            pills=[(k, l) for k, l, _f in SEARCH_PILLS],
                            pill_labels=PILL_LABELS, page_hits=page_hits,
                            text_hits=text_hits,
+                           text_fams=by_family(text_hits),
+                           page_fams=by_family(page_hits),
                            groups=groups, total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS),
                            ccounts=ccounts, browse=browse, pageno=pageno,
@@ -4431,6 +4433,29 @@ LEVEL_GROUPS = [
     ("Design resources", DR_LEVELS),
 ]
 _GROUPED_LEVELS = {l for _t, ls in LEVEL_GROUPS for l in ls}
+_FAMILY_OF = {l: t for t, ls in LEVEL_GROUPS for l in ls}
+# above this a group is clutter rather than content, so it arrives folded. Below
+# it nothing is hidden - a search that returns six pages should still just show
+# six pages rather than making you open a box to find them.
+FAMILY_FOLD_AT = 12
+
+
+def by_family(hits):
+    """Search results split into the page families, in the site's own order.
+
+    Sixty page cards in one column is a wall - and on a term that appears in
+    the shared navigation, fifty-six of them are the same kind of page saying
+    the same thing. The same sixty under "Products & eval boards 56 /
+    Applications 3 / Design resources 1" can be read without opening anything.
+    """
+    buckets = {}
+    for h in hits:
+        buckets.setdefault(_FAMILY_OF.get(h.get("level") or "",
+                                          "Other pages"), []).append(h)
+    order = [t for t, _ls in LEVEL_GROUPS] + ["Other pages"]
+    return [{"name": t, "hits": buckets[t], "n": len(buckets[t]),
+             "open": len(buckets[t]) <= FAMILY_FOLD_AT}
+            for t in order if t in buckets]
 
 
 # the five the Content tab tiles, in its order, then the rest

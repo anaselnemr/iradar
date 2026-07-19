@@ -190,6 +190,34 @@
   @media (prefers-reduced-motion: reduce) {
     .sspin.on { animation: none; border-top-color: var(--accent); }
   }
+  /* ---- results folded into page families ------------------------------
+     A row of hits is a wall when a term lives in the shared navigation, so
+     each family is a disclosure: the header always says how many are inside,
+     and only the oversized ones arrive shut. */
+  .fams { display: flex; flex-direction: column; gap: 8px; }
+  .fam { border: 1px solid var(--line); border-radius: 11px;
+         background: var(--panel); overflow: hidden; }
+  .fam-head { display: flex; align-items: center; gap: 10px; cursor: pointer;
+              padding: 9px 13px; list-style: none; user-select: none;
+              transition: background .12s; }
+  .fam-head::-webkit-details-marker { display: none; }
+  .fam-head:hover { background: var(--hover); }
+  .fam-head::before { content: "›"; font-size: 17px; line-height: 1;
+                      color: var(--muted); transition: transform .15s;
+                      transform: rotate(0deg); flex-shrink: 0; width: 9px; }
+  .fam[open] > .fam-head::before { transform: rotate(90deg); }
+  .fam-name { font-weight: 650; font-size: 13.5px; }
+  .fam-n { font-size: 12px; color: var(--muted); margin-left: auto;
+           font-variant-numeric: tabular-nums; }
+  .fam-body { display: flex; flex-direction: column; gap: 10px;
+              padding: 3px 13px 13px; }
+  /* the pages section lays its cards out as a grid, so that wins there */
+  .fam-body.pagegrid { display: grid; }
+  .fam:focus-within > .fam-head { outline: 2px solid var(--accent);
+                                  outline-offset: -2px; }
+  .famall { font-size: 11.5px; font-weight: 500; color: var(--link);
+            background: none; border: 0; padding: 0; margin-left: 10px;
+            cursor: pointer; text-decoration: underline; vertical-align: middle; }
 </style>
 
 <div class="hero">
@@ -408,11 +436,7 @@
 {# Where the words sit INSIDE a page - its own section, shown both in the
    dedicated text mode and as part of Everything, so a search of the whole
    library still says which component the text lives in. #}
-{% if q and cat in ('text', 'all') and text_hits %}
-  <div class="card">
-    <h2>In page text <span class="muted" style="font-weight:400">— {{ text_hits|length }} page{{ 's' if text_hits|length != 1 }}</span></h2>
-    <div style="display:flex; flex-direction:column; gap:10px">
-      {% for h in text_hits %}
+{% macro texthit(h) %}
       <div class="pagecard">
         <a class="pc-open" href="{{ url_for('url_detail', url_id=h.id) }}"
            title="Open what we captured for this page">
@@ -433,6 +457,29 @@
         <a class="pagecard-url" href="{{ h.url }}" target="_blank" rel="noopener"
            title="Open the live page on infineon.com">{{ h.url }} <span class="ext">↗</span></a>
       </div>
+{% endmacro %}
+
+{% if q and cat in ('text', 'all') and text_hits %}
+  <div class="card">
+    <h2>In page text <span class="muted" style="font-weight:400">— {{ text_hits|length }} page{{ 's' if text_hits|length != 1 }}</span>
+      {% if text_fams|length > 1 or not text_fams[0].open %}
+      <button type="button" class="famall" data-scope="tf">expand all</button>
+      {% endif %}
+    </h2>
+    {# Grouped by family so a wall of near-identical part pages folds into one
+       line. A term in the site navigation matches every page that carries the
+       menu, so this section is routinely dominated by one family. #}
+    <div class="fams" data-scope="tf">
+      {% for f in text_fams %}
+      <details class="fam"{% if f.open %} open{% endif %}>
+        <summary class="fam-head">
+          <span class="fam-name">{{ f.name }}</span>
+          <span class="fam-n">{{ '{:,}'.format(f.n) }} page{{ 's' if f.n != 1 }}</span>
+        </summary>
+        <div class="fam-body">
+          {% for h in f.hits %}{{ texthit(h) }}{% endfor %}
+        </div>
+      </details>
       {% endfor %}
     </div>
   </div>
@@ -447,9 +494,20 @@
 {% elif q and cat == 'pages' %}
   {% if page_hits %}
   <div class="card">
-    <h2>Pages <span class="muted" style="font-weight:400">— {{ page_hits|length }} match{{ 'es' if page_hits|length != 1 }}</span></h2>
-    <div class="pagegrid">
-      {% for p in page_hits %}
+    <h2>Pages <span class="muted" style="font-weight:400">— {{ page_hits|length }} match{{ 'es' if page_hits|length != 1 }}</span>
+      {% if page_fams|length > 1 or not page_fams[0].open %}
+      <button type="button" class="famall" data-scope="pf">expand all</button>
+      {% endif %}
+    </h2>
+    <div class="fams" data-scope="pf">
+      {% for f in page_fams %}
+      <details class="fam"{% if f.open %} open{% endif %}>
+        <summary class="fam-head">
+          <span class="fam-name">{{ f.name }}</span>
+          <span class="fam-n">{{ '{:,}'.format(f.n) }} page{{ 's' if f.n != 1 }}</span>
+        </summary>
+        <div class="fam-body pagegrid">
+      {% for p in f.hits %}
       <div class="pagecard">
         <a class="pc-open" href="{{ url_for('url_detail', url_id=p.id) }}"
            title="Open what we captured for this page">
@@ -466,6 +524,9 @@
         <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
            title="Open the live page on infineon.com">{{ p.url }} <span class="ext">↗</span></a>
       </div>
+      {% endfor %}
+        </div>
+      </details>
       {% endfor %}
     </div>
   </div>
@@ -625,5 +686,26 @@ document.addEventListener('keydown', function (e) {
   });
   if (btn) btn.style.display = 'none';   // nothing left for it to do
 })();
+
+// One control per section, flipping to "collapse all" once everything in that
+// section is open. The groups work without this - <details> needs no script -
+// so this only saves clicks, it is never the only way in.
+document.querySelectorAll('.famall').forEach(function (b) {
+  var box = document.querySelector('.fams[data-scope="' + b.dataset.scope + '"]');
+  if (!box) { b.remove(); return; }
+  function label() {
+    var all = box.querySelectorAll('.fam');
+    var open = box.querySelectorAll('.fam[open]').length;
+    b.textContent = open === all.length ? 'collapse all' : 'expand all';
+  }
+  b.addEventListener('click', function () {
+    var all = box.querySelectorAll('.fam');
+    var every = box.querySelectorAll('.fam[open]').length === all.length;
+    all.forEach(function (d) { d.open = !every; });
+    label();
+  });
+  box.addEventListener('toggle', label, true);
+  label();
+});
 </script>
 {% endblock %}
