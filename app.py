@@ -74,6 +74,18 @@ def clean_title_filter(s):
     return s.strip()
 
 
+@app.template_filter("has_amount")
+def has_amount_filter(s):
+    """Is this captured text an actual price?
+
+    The buying-options block also renders things that are not prices at all -
+    "Multiple OPNs available", a button caption, a link to a distributor. Those
+    read as a price on our page while telling you nothing, so the page says
+    "empty" instead. A real price has a currency amount in it.
+    """
+    return bool(re.search(r"[$€£]\s?\d", s or ""))
+
+
 @app.template_filter("fmt_price")
 def fmt_price_filter(s):
     """The captured buying-options text, split into clean display lines.
@@ -956,9 +968,9 @@ def index():
     # every chip URL. Ordered by what needs you: attention, health, then states.
     # widest set first, narrowing to the specialised ones - the eye lands on
     # the whole corpus and walks down to the exceptions
+    # no "everything" chip: an unfiltered table is the table's normal state,
+    # and the stat card above already carries the total
     quick_chips = [c for c in (
-        {"kind": "all", "vals": [], "label": "Total Pages",
-         "n": counts["total"], "always": True},
         {"kind": "attr", "vals": ["live"], "label": "Live",
          "n": attr_counts["live"], "tone": "good"},
         {"kind": "status", "vals": ["unchanged"], "label": "Unchanged",
@@ -2254,6 +2266,39 @@ def snapshot_screenshot(snap_id):
     return send_file(p, mimetype="image/png")
 
 
+@app.route("/snapshot/<int:snap_id>/thumb")
+def snapshot_thumb(snap_id):
+    """A small JPEG of the page, for lists that show many pages at once.
+
+    The stored screenshot is the WHOLE page - often a megabyte and 20,000px
+    tall - so a grid of sixty would be sixty megabytes and unreadable at that
+    aspect anyway. This is the top of the page at card size, written next to
+    the snapshot the first time it is asked for: a few KB each, and only for
+    pages someone actually looks at.
+    """
+    con = db.connect()
+    s = con.execute("SELECT dir FROM snapshots WHERE id=?", (snap_id,)).fetchone()
+    con.close()
+    if not s or not s["dir"]:
+        abort(404)
+    full = Path(s["dir"]) / "shot.png"
+    if not full.exists():
+        abort(404)
+    thumb = Path(s["dir"]) / "thumb.jpg"
+    if not thumb.exists() or thumb.stat().st_mtime < full.stat().st_mtime:
+        try:
+            from PIL import Image
+            im = Image.open(full)
+            w, h = im.size
+            # keep the masthead, not a sliver of a very tall page
+            im = im.crop((0, 0, w, min(h, int(w * 0.62))))
+            im.thumbnail((420, 420), Image.Resampling.LANCZOS)
+            im.convert("RGB").save(thumb, "JPEG", quality=72, optimize=True)
+        except Exception:
+            return send_file(full, mimetype="image/png")
+    return send_file(thumb, mimetype="image/jpeg")
+
+
 @app.route("/change/<int:change_id>/visualdiff")
 def change_visualdiff(change_id):
     con = db.connect()
@@ -2726,6 +2771,35 @@ def _infer_missing_levels():
     return done, skipped
 
 
+CSS_REPORT_XLSX = os.environ.get(
+    "CSS_REPORT_XLSX",
+    str(Path.home() / "Downloads" / "CSS_Pages_Report_v15_SW.xlsx"))
+
+
+def _apply_css_report(why):
+    """Re-apply the CSS report's ownership (BL/PL/CM/Owner) to the watch list.
+
+    This used to be a script somebody had to remember to run, which meant every
+    page added after the last manual run had blank ownership forever. It is
+    idempotent - a second pass adds nothing - so it just runs: at startup and
+    after each capture, whenever the workbook is present. If the file is not
+    there, this is a no-op and nothing complains.
+    """
+    p = Path(CSS_REPORT_XLSX)
+    if not p.exists():
+        return
+    try:
+        import runpy
+        os.environ["CSS_REPORT_XLSX"] = str(p)
+        t0 = time.time()
+        runpy.run_path(str(Path(__file__).parent / "import_css_report.py"),
+                       run_name="__ifw_import__")
+        print(f"[css-report] applied ({why}) in {time.time() - t0:.1f}s",
+              flush=True)
+    except Exception as e:
+        print(f"[css-report] skipped ({why}): {e}", flush=True)
+
+
 def _refresh_item_index(why):
     """Rebuild the item substring index if items have moved since it was built.
 
@@ -2772,6 +2846,9 @@ def _post_run_watcher():
                     print(f"[post-run] matrix learned {len(joined)} new"
                           f" component slot(s): {', '.join(joined[:6])}"
                           + ("…" if len(joined) > 6 else ""), flush=True)
+                # a run can add pages (a redirect to something untracked), so
+                # re-apply ownership before re-indexing
+                _apply_css_report("after run")
                 # a run is what actually moves items, so this is where the
                 # search index earns its keep being rebuilt
                 _refresh_item_index("after run")
@@ -3164,6 +3241,47 @@ def _count_browse(con, key):
         " GROUP BY lower(title), item_url)").fetchone()[0]
 
 
+# Ordering for the browse lists. A-Z is the default because it is the only one
+# you can hold in your head; the rest exist because "show me the other end" is
+# a real question a 3,500-page list cannot otherwise answer.
+_TITLE_EXPR = "lower(COALESCE(NULLIF(u.title_override,''), u.label, u.url))"
+_PAGE_SORT_SQL = {
+    "az":      _TITLE_EXPR + " ASC",
+    "za":      _TITLE_EXPR + " DESC",
+    "newest":  "u.last_checked DESC, " + _TITLE_EXPR,
+    "oldest":  "u.last_checked ASC, " + _TITLE_EXPR,
+}
+_ITEM_SORT_SQL = {
+    "az":     "lower(title), item_url",
+    "za":     "lower(title) DESC, item_url DESC",
+    "newest": "npages DESC, lower(title)",     # most widely used first
+    "oldest": "npages ASC, lower(title)",
+}
+SORT_LABELS = [("az", "A → Z"), ("za", "Z → A"),
+               ("newest", "Newest checked"), ("oldest", "Oldest checked")]
+ITEM_SORT_LABELS = [("az", "A → Z"), ("za", "Z → A"),
+                    ("newest", "On most pages"), ("oldest", "On fewest pages")]
+
+_IMG_URL_RE = re.compile(r"\.(png|jpe?g|gif|webp|svg)(\?|$)|/is/image/", re.I)
+
+
+def item_thumb(cat, item_url, img, item_key=""):
+    """The picture to show beside an item, or "" for none.
+
+    Nothing new is stored: every one of these is an address the capture already
+    recorded, so the browser fetches it from Infineon's CDN exactly as the real
+    page does. Documents are the exception - their first page is rendered by
+    this app and cached on disk, which already existed for the item pages.
+    """
+    if cat == "images":
+        return item_url if _IMG_URL_RE.search(item_url or "") else ""
+    if img:                       # partners, and design-resource cards
+        return img
+    if cat == "documents" and item_key:
+        return url_for("doc_preview_png", key=item_key)
+    return ""
+
+
 def _generic_images():
     """Canonical URLs of images that are site furniture rather than a page's
     own content, judged by how many pages carry them.
@@ -3233,6 +3351,9 @@ def search_items():
     each match sits in."""
     q = request.args.get("q", "").strip()
     cat = _norm_pill(request.args.get("cat", "all"))
+    sort = request.args.get("sort", "az")
+    if sort not in _PAGE_SORT_SQL:
+        sort = "az"
     try:
         pageno = max(1, int(request.args.get("page", 1)))
     except Exception:
@@ -3248,17 +3369,20 @@ def search_items():
         browse = True
         browse_total = ccounts["pages"]
         prows = con.execute(
-            "SELECT u.id, u.url, u.level, u.label,"
+            "SELECT u.id, u.url, u.level, u.label, u.last_checked,"
             " COALESCE(NULLIF(u.title_override,''),"
             "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
             "    AND s.status='ok' AND s.page_title<>''"
-            "    ORDER BY s.id DESC LIMIT 1)) AS page_title"
+            "    ORDER BY s.id DESC LIMIT 1)) AS page_title,"
+            "  (SELECT s.id FROM snapshots s WHERE s.url_id=u.id"
+            "    AND s.status='ok' ORDER BY s.id DESC LIMIT 1) AS snap_id"
             " FROM urls u WHERE u.active=1 AND " + ATTR_FILTERS["live"][1] +
-            " ORDER BY lower(COALESCE(NULLIF(u.title_override,''), u.label, u.url))"
+            " ORDER BY " + _PAGE_SORT_SQL[sort] +
             " LIMIT ? OFFSET ?",
             (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
         page_hits = [{"id": r["id"], "url": r["url"],
                       "level": r["level"] or "",
+                      "snap_id": r["snap_id"],
                       "title": (r["page_title"] or r["label"]
                                 or r["url"].rstrip("/").rsplit("/", 1)[-1])}
                      for r in prows]
@@ -3270,6 +3394,7 @@ def search_items():
         rows = con.execute(
             "SELECT title, item_url, category, grp, meta,"
             " MIN(item_key) AS item_key, MIN(doc_type) AS doc_type,"
+            " MAX(IFNULL(img,'')) AS img,"
             " COUNT(DISTINCT url_id) AS npages"
             " FROM items WHERE " + _BROWSE_SQL[cat] +
             " GROUP BY lower(title), item_url"
@@ -3277,7 +3402,7 @@ def search_items():
             # what lets this walk idx_items_cat_ltitle and stop at the page
             # size: sorting every group first cost 922 ms, this costs 4 ms.
             # It also makes paging deterministic when titles repeat.
-            " ORDER BY lower(title), item_url LIMIT ? OFFSET ?",
+            " ORDER BY " + _ITEM_SORT_SQL[sort] + " LIMIT ? OFFSET ?",
             (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
         for r in rows:
             _bk = backend_system(r["category"], r["meta"], r["doc_type"],
@@ -3289,6 +3414,8 @@ def search_items():
                            "meta": r["meta"], "item_key": r["item_key"],
                            "npages": r["npages"], "pages": [],
                            "backend": _bk,
+                           "thumb": item_thumb(r["category"], r["item_url"],
+                                               r["img"], r["item_key"]),
                            "is_video": is_video_item(r["category"],
                                                      r["item_url"], r["meta"]),
                            "aname": asset_name(r["category"], r["item_url"]),
@@ -3303,8 +3430,12 @@ def search_items():
             " COALESCE(NULLIF(title_override,''),"
             "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=urls.id"
             "    AND s.status='ok' AND s.page_title<>''"
-            "    ORDER BY s.id DESC LIMIT 1)) AS page_title FROM urls").fetchall()
+            "    ORDER BY s.id DESC LIMIT 1)) AS page_title,"
+            "  (SELECT s.id FROM snapshots s WHERE s.url_id=urls.id"
+            "    AND s.status='ok' ORDER BY s.id DESC LIMIT 1) AS snap_id"
+            " FROM urls").fetchall()
         pdata = [{"id": r["id"], "url": r["url"], "level": r["level"] or "",
+                  "snap_id": r["snap_id"],
                   "title": (r["page_title"] or r["label"]
                             or r["url"].rstrip("/").rsplit("/", 1)[-1]),
                   "sl": _searchable((r["page_title"] or r["label"] or "")
@@ -3500,7 +3631,7 @@ def search_items():
             marks = ",".join("?" * len(keys))
             rows = con.execute(f"""
                 SELECT i.category, i.grp, i.title, i.item_url, i.meta, i.url_id,
-                       i.item_key, i.doc_type, u.url AS page_url, u.label,
+                       i.item_key, i.doc_type, i.img, u.url AS page_url, u.label,
                        COALESCE(NULLIF(u.title_override,''),
                          (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
                            AND s.status='ok' AND s.page_title<>''
@@ -3537,6 +3668,8 @@ def search_items():
                                                          r["meta"]),
                                "aname": asset_name(r["category"],
                                                    r["item_url"]),
+                               "thumb": item_thumb(r["category"], r["item_url"],
+                                                   r["img"], r["item_key"]),
                                "bsearch": backend_search_link(
                                    _bk, asset_name(r["category"],
                                                    r["item_url"]), _sset)}
@@ -3559,7 +3692,10 @@ def search_items():
                            groups=groups, total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS),
                            ccounts=ccounts, browse=browse, pageno=pageno,
-                           has_more=has_more, per_page=BROWSE_PER_PAGE)
+                           has_more=has_more, per_page=BROWSE_PER_PAGE,
+                           sort=sort,
+                           sort_opts=(SORT_LABELS if cat == "pages"
+                                      else ITEM_SORT_LABELS))
 
 
 @app.route("/api/suggest")
@@ -4213,6 +4349,8 @@ if __name__ == "__main__":
     _sweep_furniture()
     _sweep_images()
     _sweep_hero_flags()
+    # ownership from the CSS report, before the index: it can add pages
+    _apply_css_report("startup")
     # AFTER the sweeps, which rewrite item titles and urls: an index built
     # before them would describe items that no longer exist
     _refresh_item_index("startup")

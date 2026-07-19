@@ -110,6 +110,13 @@ def _follow_redirect(con, url_id, old_url, final_url):
             if (stale[f] or "").strip() and not (existing[f] or "").strip():
                 con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
                             (stale[f], existing["id"]))
+        # Record on the KEEPER that this address leads here. Without it the
+        # source report re-adds the legacy URL on every import, the next run
+        # deletes it again, and 60-odd rows churn back and forth forever. The
+        # importer matches redirect_from, so one round of this ends the loop.
+        if not (existing["redirect_from"] or "").strip():
+            con.execute("UPDATE urls SET redirect_from=? WHERE id=?",
+                        (old_url, existing["id"]))
         for s in con.execute("SELECT dir FROM snapshots WHERE url_id=?",
                              (url_id,)).fetchall():
             if s["dir"]:

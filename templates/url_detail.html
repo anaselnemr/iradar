@@ -216,14 +216,6 @@
       <div class="muted" style="text-align:center; margin-top:6px">Full-page screenshot — click to open</div>
     </div>
     <div>
-      {% if price %}
-      <div style="margin:0 0 12px; padding:10px 14px; border:1px solid rgba(128,128,128,.28); border-radius:8px">
-        <div class="muted" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px">Price</div>
-        {% for line in price|fmt_price %}
-        <div style="{{ 'font-weight:600; font-size:15px' if loop.first else 'margin-top:2px' }}">{{ line }}</div>
-        {% endfor %}
-      </div>
-      {% endif %}
       {% if cat_tree %}
       {% macro tree(nodes) %}
         <ul class="cattree">
@@ -329,6 +321,28 @@
           {% else %}<span class="badge b-new">present but empty</span>{% endif %}
         </div>
         {% endfor %}
+      </div>
+      {% endif %}
+
+      {#- Price sits AFTER the components box: what the page is made of reads
+          first, what one part of it says reads second. Shown on any page that
+          carries a price component at all - a part with nothing to quote says
+          "empty" rather than vanishing, so a missing price is visibly a fact
+          we checked and not a section we forgot. Captured text that is not
+          actually a price ("Multiple OPNs available", a button caption) is
+          not a price either. -#}
+      {% set plines = price|fmt_price %}
+      {% set is_price = price|has_amount %}
+      {% if price or u.level in ('PTP', 'EB') %}
+      <div class="pricebox">
+        <div class="pricelabel">Price</div>
+        {% if is_price %}
+          {% for line in plines %}
+          <div style="{{ 'font-weight:600; font-size:15px' if loop.first else 'margin-top:2px' }}">{{ line }}</div>
+          {% endfor %}
+        {% else %}
+          <div class="muted">empty</div>
+        {% endif %}
       </div>
       {% endif %}
 

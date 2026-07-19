@@ -1,9 +1,11 @@
-import sys, re, json
+import sys, re, json, os
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0,'.'); import db
 from openpyxl import load_workbook
 
-PATH=r"C:\Users\anasn\Downloads\CSS_Pages_Report_v15_SW.xlsx"
+# the workbook to read. Overridable so the app can re-apply it automatically
+# without this path being buried in a script somebody has to remember to run.
+PATH=os.environ.get("CSS_REPORT_XLSX") or r"C:\Users\anasn\Downloads\CSS_Pages_Report_v15_SW.xlsx"
 
 def norm(u):
     u=(u or "").split("#")[0].split("?")[0].rstrip("/").lower()

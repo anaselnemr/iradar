@@ -172,12 +172,7 @@
     {% for c in quick_chips %}
       {# an active chip's link points at the CLEARED state - clicking it again
          deselects, so every chip is a toggle #}
-      {% if c.kind == 'all' %}
-      {# "everything" is the absence of a filter, so it lights up when nothing
-         else is picked and always links to the bare table #}
-      <a class="chip {{ 'chip-on' if not (sel_status or sel_types or sel_attrs) }}"
-         href="{{ url_for('index', q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
-      {% elif c.kind == 'status' %}
+      {% if c.kind == 'status' %}
       {% set on = sel_status == c.vals and not sel_types and not sel_attrs %}
       <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if on }}"
          title="{{ 'Click again to clear this filter' if on }}"

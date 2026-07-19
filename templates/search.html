@@ -25,6 +25,21 @@
 } %}
 {% macro ticon(cat) %}{{ ICONS.get(cat, ICONS['_default'])|safe }}{% endmacro %}
 
+{#- The item's OWN picture where we have its address - the image itself, a
+    partner's logo, a design-resource card's icon, a document's first page.
+    Nothing extra is stored for these: the capture already recorded the URL, so
+    the browser loads it from Infineon's CDN just as the real page does. Items
+    with no picture keep the type icon at the same size, so every row in a list
+    still starts on the same left edge. -#}
+{% macro thumb(g) %}
+  {% if g.thumb %}
+  <img class="bthumb" src="{{ g.thumb }}" alt="" loading="lazy"
+       onerror="this.style.display='none'">
+  {% else %}
+  <span class="thumbfall">{{ ticon('videos' if g.is_video else g.category) }}</span>
+  {% endif %}
+{% endmacro %}
+
 {# Until the server restarts onto the new route, the OLD route renders this
    template without the browse-mode variables - default them so the page
    degrades to plain search instead of dying on an undefined. #}
@@ -51,9 +66,35 @@
      but only once two columns actually exist, or it overflows a phone */
   @media (min-width: 620px) { .lp-tile.lp-wide { grid-column: span 2; } }
   .cchip-count { font-weight: 600; opacity: .55; margin-left: 5px; font-size: 11.5px; }
+  /* One thumbnail treatment everywhere, so a row reads the same whether it
+     came from browsing or searching. `contain` on white: these are logos,
+     icons and document pages, and cropping them to fill would cut the very
+     part that identifies them. */
   .bthumb { width: 74px; height: 56px; object-fit: contain; border: 1px solid var(--line);
             border-radius: 8px; background: #fff; flex-shrink: 0; }
   .browse-row { display: flex; gap: 12px; align-items: flex-start; }
+  /* the fallback when an item has no picture of its own: the type icon, at
+     the same size, so rows keep a single left edge instead of ragging */
+  .thumbfall { width: 74px; height: 56px; border: 1px solid var(--line);
+               border-radius: 8px; background: var(--hover); flex-shrink: 0;
+               display: flex; align-items: center; justify-content: center; }
+  .thumbfall .ticon { width: 22px; height: 22px; color: var(--muted); }
+  /* page cards: the screenshot IS the recognisable thing about a page.
+     Cropped from the TOP, because that is the masthead you recognise; a
+     contained full-page shot at this size is an unreadable grey ribbon. */
+  .pageshot { width: 100%; aspect-ratio: 16 / 10; object-fit: cover;
+              object-position: top center; border-radius: 8px;
+              border: 1px solid var(--line); background: var(--hover);
+              margin-bottom: 8px; display: block; }
+  .sortbar { display: flex; gap: 8px; align-items: center; margin: 0 2px 12px;
+             flex-wrap: wrap; }
+  .sortbar .lbl { font-size: 12px; color: var(--muted); }
+  .sortopt { font-size: 12.5px; padding: 3px 10px; border-radius: 999px;
+             border: 1px solid var(--line); color: var(--ink) !important;
+             text-decoration: none !important; white-space: nowrap; }
+  .sortopt:hover { background: var(--hover); }
+  .sortopt.on { background: var(--accent); border-color: var(--accent);
+                color: #fff !important; font-weight: 600; }
   .pgr { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 14px; }
 </style>
 
@@ -89,8 +130,24 @@
 {% if browse and (pageno > 1 or has_more) %}
 <div class="pgr">
   <span class="muted" style="font-size:12.5px">{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }} of {{ '{:,}'.format(total) }}</span>
-  {% if pageno > 1 %}<a class="pill" href="{{ url_for('search_items', cat=cat, page=pageno-1) }}">‹ Prev</a>{% endif %}
-  {% if has_more %}<a class="pill" href="{{ url_for('search_items', cat=cat, page=pageno+1) }}">Next ›</a>{% endif %}
+  {#- carry the sort across pages: turning the list round and then paging
+      used to silently drop you back into A-Z on page 2 -#}
+  {% if pageno > 1 %}<a class="pill" href="{{ url_for('search_items', cat=cat, sort=sort, page=pageno-1) }}">‹ Prev</a>{% endif %}
+  {% if has_more %}<a class="pill" href="{{ url_for('search_items', cat=cat, sort=sort, page=pageno+1) }}">Next ›</a>{% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{#- Order the list from either end. A 3,500-page list has a far end you can
+    otherwise never reach, and "what did we check last" is a real question. -#}
+{% macro sortbar() %}
+{% if sort_opts is defined and sort_opts %}
+<div class="sortbar">
+  <span class="lbl">Order</span>
+  {% for key, label in sort_opts %}
+  <a class="sortopt {{ 'on' if sort == key }}"
+     href="{{ url_for('search_items', cat=cat, sort=key, q=q or None) }}">{{ label }}</a>
+  {% endfor %}
 </div>
 {% endif %}
 {% endmacro %}
@@ -121,9 +178,17 @@
 {% elif browse and cat == 'pages' %}
   <div class="card">
     <h2>Live Pages <span class="muted" style="font-weight:400">— {{ '{:,}'.format(total) }} tracked</span></h2>
+    {{ sortbar() }}
     <div class="pagegrid">
       {% for p in page_hits %}
       <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
+        {#- the page as it actually looks. Served from the snapshot we already
+            store, downsized on first request - no new capture, no full-size
+            megabyte per card. -#}
+        {% if p.snap_id %}
+        <img class="pageshot" loading="lazy" alt=""
+             src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
+        {% endif %}
         <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
         <div class="pagecard-url">{{ p.url }}</div>
       </a>
@@ -133,14 +198,13 @@
   </div>
 {% elif browse %}
   <div class="muted" style="margin:0 2px 12px">
-    Browsing <b>{{ pill_labels.get(cat, cat) }}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}, A→Z. Type above to search instead.
+    Browsing <b>{{ pill_labels.get(cat, cat) }}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}. Type above to search instead.
   </div>
+  {{ sortbar() }}
   {% for g in groups %}
   <div class="rescard">
     <div class="browse-row">
-      {% if g.category == 'images' and g.url %}
-      <img class="bthumb" src="{{ g.url }}" alt="" loading="lazy">
-      {% endif %}
+      {{ thumb(g) }}
       <div style="flex:1; min-width:0">
         <div class="hit-head">
           <span class="hit-title-row">
@@ -206,6 +270,10 @@
     <div class="pagegrid">
       {% for p in page_hits %}
       <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
+        {% if p.snap_id %}
+        <img class="pageshot" loading="lazy" alt=""
+             src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
+        {% endif %}
         <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
         <div class="pagecard-url">{{ p.url }}</div>
       </a>
@@ -234,6 +302,10 @@
        it just links straight to its page. #}
     {% set is_overview = g.category == 'overview' %}
     <div class="rescard">
+      {#- prose has no picture to show; assets do -#}
+      <div class="{{ '' if is_overview else 'browse-row' }}">
+      {% if not is_overview %}{{ thumb(g) }}{% endif %}
+      <div style="flex:1; min-width:0">
       <div class="hit-head">
         <span class="hit-title-row">
           {{ ticon('videos' if g.is_video else g.category) }}
@@ -274,6 +346,7 @@
         {% endif %}
       </ul>
       {% endif %}
+      </div></div>
     </div>
     {% endfor %}
   {% endif %}
