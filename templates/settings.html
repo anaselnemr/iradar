@@ -6,7 +6,7 @@
     something that failed to load the rest of itself. -#}
 <div class="card" style="max-width:680px; margin-left:auto; margin-right:auto">
   {# segmented nav: one form, four panes - switching tabs never loses input #}
-  <div class="seg" role="tablist" style="justify-content:center">
+  <div class="seg" role="tablist">
     <button type="button" class="seg-b on" data-pane="schedule" onclick="segGo(this)">Schedule</button>
     <button type="button" class="seg-b" data-pane="sensitivity" onclick="segGo(this)">Sensitivity</button>
     <button type="button" class="seg-b" data-pane="components" onclick="segGo(this)">Components</button>
@@ -120,8 +120,12 @@
 </div>
 
 <style>
-  .seg { display: inline-flex; background: var(--hover); border: 1px solid var(--line);
-         border-radius: 10px; padding: 3px; gap: 2px; margin: 2px 0 18px; }
+  /* auto margins, not justify-content: the pill is inline-flex, so it
+     shrinks to its buttons and sits at the start of the line - centring
+     its contents moved nothing, because they already fill it. */
+  .seg { display: flex; width: max-content; background: var(--hover);
+         border: 1px solid var(--line); border-radius: 10px; padding: 3px;
+         gap: 2px; margin: 2px auto 18px; }
   .seg-b { border: 0; background: none; color: var(--muted); padding: 7px 16px;
            border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600; }
   .seg-b:hover { color: var(--ink); }
