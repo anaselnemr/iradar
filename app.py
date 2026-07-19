@@ -317,6 +317,7 @@ _CONTENT_ATTRS = [
 # section-content we already index. The nav-only components (Product details,
 # Diagrams, ...) join this group from urls.components once a re-capture fills it.
 _COMPONENT_ATTRS = [
+    ("subheadline", "subheadline",     "subheadline"),
     ("design",     "design_resources", "design resources"),
     ("features",   "features",         "key features"),
     ("benefits",   "benefits",         "benefits"),
@@ -441,8 +442,10 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # The Videos component is intentionally gone: a video lives under News &
 # highlights / Trainings or in Design resources, reachable from those links.
 COMPONENTS = [
-    ("hero_image",         "Hero image",            "flag", "hero_image"),
+    # the subheadline leads: it is the line directly under the page title, so
+    # it is the first thing the page says about itself
     ("subheadline",        "Subheadline",           "cat",  "subheadline"),
+    ("hero_image",         "Hero image",            "flag", "hero_image"),
     ("overview",           "Overview",              "cat",  "overview"),
     ("parametrics",        "Parametrics",           "tab",  "parametrics"),
     ("ordering",           "Ordering",              "tab",  "ordering"),
@@ -490,10 +493,16 @@ def _all_components():
     return COMPONENTS + _custom_components()
 
 
-def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
+def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
+                        registry=None):
     """The set of component keys PRESENT on one page, from its four signals:
     captured categories (a set of category names), the Product-details sub-tabs,
-    flags dict, and the nav labels stored in urls.components (JSON)."""
+    flags dict, and the nav labels stored in urls.components (JSON).
+
+    Pass `registry` when calling this in a loop: _all_components() re-reads the
+    settings row every time, which is invisible for one page and three seconds
+    across three thousand.
+    """
     def _loadset(j):
         try:
             return {s.lower() for s in json.loads(j or "[]")}
@@ -507,7 +516,8 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present):
                 else arg in pool)
 
     have = set()
-    for key, _label, kind, arg in _all_components():
+    for key, _label, kind, arg in (registry if registry is not None
+                                   else _all_components()):
         if kind == "cat" and arg in cat_present:
             have.add(key)
         elif kind == "flag" and (flags.get(arg) or {}).get("exists"):
@@ -1136,8 +1146,10 @@ def urls_toggle(url_id):
 # outside News/Trainings. It sits after News & highlights, before Images;
 # Trainings & webinars sits just below Design resources & boards.
 SECTION_LABELS = [
-    ("overview", "Overview"),
+    # the subheadline is the line directly under the page title - the first
+    # thing written on the page, so the first thing listed about it
     ("subheadline", "Subheadline"),
+    ("overview", "Overview"),
     ("features", "Key features"),
     ("benefits", "Benefits"),
     ("applications", "Applications"),
@@ -4163,6 +4175,144 @@ def hierarchy():
 
 
 @app.route("/export.xlsx")
+def _export_meta_cols():
+    """The ownership columns, in the order the CSS report used."""
+    return [("bl", "BL"), ("pl", "PL"), ("cm", "CM"), ("owner", "Owner")]
+
+
+def _export_rows(con, levels, cols):
+    """One row per page: its identity, then whichever columns were ticked.
+
+    Component presence comes from the same resolver the page view uses, so a
+    "yes" here means exactly what a green chip there means - never a second
+    definition of the same fact drifting away from the first.
+    """
+    registry = _all_components()          # resolved ONCE, not per page
+    comp_keys = [k for k, _l, _kind, _a in registry]
+    want_comps = [k for k in comp_keys if k in cols]
+    want_meta = [k for k, _l in _export_meta_cols() if k in cols]
+
+    q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.cm, u.owner,"
+         " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
+         " COALESCE(NULLIF(u.title_override,''),"
+         "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
+         "    AND s.status='ok' AND s.page_title<>''"
+         "    ORDER BY s.id DESC LIMIT 1)) AS title"
+         " FROM urls u WHERE u.active=1")
+    args = []
+    if levels:
+        q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
+        args += levels
+    q += " ORDER BY u.level, lower(COALESCE(NULLIF(u.title_override,''), u.url))"
+    pages = con.execute(q, args).fetchall()
+
+    # which content categories each page actually captured - one query for the
+    # whole set rather than one per page
+    cats = {}
+    if want_comps and pages:
+        ids = [p["id"] for p in pages]
+        for i in range(0, len(ids), 800):
+            chunk = ids[i:i + 800]
+            for r in con.execute(
+                    "SELECT url_id, category FROM items WHERE url_id IN ("
+                    + ",".join("?" * len(chunk)) + ") GROUP BY url_id, category",
+                    chunk):
+                cats.setdefault(r["url_id"], set()).add(r["category"])
+
+    out = []
+    for p in pages:
+        try:
+            flags = json.loads(p["flags"] or "{}")
+        except Exception:
+            flags = {}
+        row = {"id": p["id"], "url": p["url"], "title": p["title"] or "",
+               "ptype": p["ptype"] or "", "level": p["level"] or "",
+               "status": p["last_status"] or "", "vals": []}
+        for k in want_meta:
+            row["vals"].append(p[k] or "")
+        if want_comps:
+            have = _page_component_set(p["components"], p["detail_tabs"], flags,
+                                       cats.get(p["id"], set()), registry)
+            for k in want_comps:
+                row["vals"].append("yes" if k in have else "no")
+        out.append(row)
+    return out, want_meta, want_comps
+
+
+def _export_headers(want_meta, want_comps):
+    labels = dict(_export_meta_cols())
+    clabels = {k: l for k, l, _k2, _a in _all_components()}
+    return ([labels[k] for k in want_meta]
+            + [clabels.get(k, k) for k in want_comps])
+
+
+@app.route("/export")
+def export_builder():
+    """Build your own table: pick the page types for the rows, pick the columns,
+    read it here, take it away as a spreadsheet.
+
+    The two fixed exports this replaces answered one shape of question each.
+    This answers the question actually being asked - "which of THESE pages have
+    THAT" - and the sheet you download is the table you were just looking at,
+    not a different one produced by different code.
+    """
+    con = db.connect()
+    lv_rows = con.execute(
+        "SELECT IFNULL(level,'') lv, COUNT(*) n FROM urls WHERE active=1"
+        " GROUP BY lv").fetchall()
+    counts = {r["lv"]: r["n"] for r in lv_rows}
+    # taxonomy order, so the rows read top-down the way the site nests:
+    # product levels, then parts, then applications, then design resources
+    order = (("HOME",) + PRODUCT_LEVELS + ("PTP", "EB")
+             + APP_LEVELS + DR_LEVELS)
+    known = [l for l in order if counts.get(l)]
+    known += sorted(l for l in counts if l and l not in order)
+
+    levels = [l for l in request.args.getlist("lv") if l in counts]
+    cols = request.args.getlist("col")
+    ran = bool(request.args.get("go"))
+    rows, want_meta, want_comps = ([], [], [])
+    if ran:
+        rows, want_meta, want_comps = _export_rows(con, levels, cols)
+    con.close()
+    return render_template(
+        "export.html", levels_all=known, counts=counts, sel_levels=levels,
+        meta_cols=_export_meta_cols(),
+        comp_cols=[(k, l) for k, l, _k, _a in _all_components()],
+        sel_cols=cols, rows=rows, ran=ran,
+        headers=_export_headers(want_meta, want_comps),
+        level_names=LEVEL_NAMES, shown=len(rows))
+
+
+@app.route("/export/download")
+def export_builder_download():
+    """The table you are looking at, as a spreadsheet - same code path, so the
+    file can never disagree with the screen."""
+    import tempfile
+    from openpyxl import Workbook
+    con = db.connect()
+    levels = request.args.getlist("lv")
+    cols = request.args.getlist("col")
+    rows, want_meta, want_comps = _export_rows(con, levels, cols)
+    con.close()
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("Pages")
+    ws.append(["Level", "Type", "Page", "URL", "Status"]
+              + _export_headers(want_meta, want_comps))
+    for r in rows:
+        ws.append([r["level"], r["ptype"], r["title"], r["url"], r["status"]]
+                  + r["vals"])
+    f = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    f.close()
+    wb.save(f.name)
+    stamp = datetime.now().strftime("%Y-%m-%d")
+    return send_file(f.name, as_attachment=True,
+                     download_name=f"infineonwatch-table-{stamp}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "spreadsheetml.sheet")
+
+
+@app.route("/export/all")
 def export_xlsx():
     """Excel export of ALL tracked URLs (never filtered/paged).
 

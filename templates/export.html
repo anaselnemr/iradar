@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Export — InfineonWatch{% endblock %}
+{% block content %}
+
+<style>
+  .xbuild { display: grid; gap: 16px; grid-template-columns: 250px 1fr;
+            align-items: start; }
+  @media (max-width: 820px) { .xbuild { grid-template-columns: 1fr; } }
+  .xpane { border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); padding: 14px 16px; }
+  .xpane h3 { margin: 0 0 3px; font-size: 14px; }
+  .xpane .hint { font-size: 12px; color: var(--muted); margin-bottom: 11px; }
+  /* the rows list is short and ordered; the columns list is long, so it wraps
+     into as many tracks as the width allows rather than becoming a scroll */
+  .xrows { display: flex; flex-direction: column; gap: 2px; }
+  .xcols { display: grid; gap: 2px 18px;
+           grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
+  .xopt { display: flex; align-items: center; gap: 9px; padding: 5px 7px;
+          border-radius: 7px; cursor: pointer; font-size: 13.5px; }
+  .xopt:hover { background: var(--hover); }
+  .xopt input { width: 15px; height: 15px; accent-color: var(--accent);
+                flex-shrink: 0; margin: 0; cursor: pointer; }
+  .xopt .nm { flex: 1 1 auto; min-width: 0; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+  .xopt .ct { font-size: 11.5px; color: var(--muted);
+              font-variant-numeric: tabular-nums; }
+  .xgrouphead { font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+                text-transform: uppercase; color: var(--muted);
+                margin: 13px 0 5px; }
+  .xgrouphead:first-of-type { margin-top: 0; }
+  .xall { font-size: 11.5px; color: var(--link); cursor: pointer;
+          background: none; border: 0; padding: 0; text-decoration: underline; }
+  .xactions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+              margin-top: 16px; }
+
+  /* the result: a plain dense table, because that is what it is */
+  .xtable-wrap { overflow: auto; max-height: 74vh; border: 1px solid var(--line);
+                 border-radius: 11px; background: var(--panel); }
+  table.xt { border-collapse: separate; border-spacing: 0; width: 100%;
+             font-size: 13px; }
+  table.xt th, table.xt td { padding: 7px 11px; text-align: left;
+                             border-bottom: 1px solid var(--line);
+                             white-space: nowrap; }
+  /* both the header row and the first columns stay put while you scan a wide,
+     long table - a matrix you have to remember the edges of is unreadable */
+  table.xt thead th { position: sticky; top: 0; z-index: 3;
+                      background: var(--card); font-size: 10.5px;
+                      text-transform: uppercase; letter-spacing: .07em;
+                      color: var(--muted); font-weight: 700; }
+  table.xt td.stick, table.xt th.stick { position: sticky; left: 0; z-index: 2;
+                                         background: var(--panel); }
+  table.xt thead th.stick { z-index: 4; background: var(--card); }
+  table.xt tbody tr:hover td { background: var(--hover); }
+  table.xt tbody tr:hover td.stick { background: var(--hover); }
+  .xpage { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .no  { color: var(--muted); opacity: .6; }
+  .xempty { color: var(--muted); opacity: .55; }
+</style>
+
+<div class="hero">
+  <h1>Export</h1>
+  <p class="muted" style="margin:0">Build the table you actually want: pick which
+    kinds of page make the rows, pick which columns to put beside them, read it
+    here, then take it away as a spreadsheet.</p>
+</div>
+
+<form method="get" action="{{ url_for('export_builder') }}" id="xform">
+<div class="xbuild">
+
+  <div class="xpane">
+    <h3>Rows</h3>
+    <p class="hint">Which pages. Nothing ticked means every page.</p>
+    <div class="xrows">
+      {% for l in levels_all %}
+      <label class="xopt">
+        <input type="checkbox" name="lv" value="{{ l }}"
+               {% if l in sel_levels %}checked{% endif %}>
+        <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+        <span class="nm">{{ level_names.get(l, l) }}</span>
+        <span class="ct">{{ '{:,}'.format(counts.get(l, 0)) }}</span>
+      </label>
+      {% endfor %}
+      {% if counts.get('') %}
+      <label class="xopt">
+        <input type="checkbox" name="lv" value=""
+               {% if '' in sel_levels %}checked{% endif %}>
+        <span class="nm muted">No level assigned</span>
+        <span class="ct">{{ '{:,}'.format(counts['']) }}</span>
+      </label>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="xpane">
+    <h3>Columns</h3>
+    <p class="hint">Ownership comes from the report; every component is answered
+      yes or no per page, by the same rule the page itself uses.</p>
+
+    <div class="xgrouphead">Ownership
+      <button type="button" class="xall" data-pick="meta">all</button></div>
+    <div class="xcols">
+      {% for key, label in meta_cols %}
+      <label class="xopt"><input type="checkbox" name="col" value="{{ key }}"
+             data-grp="meta" {% if key in sel_cols %}checked{% endif %}>
+        <span class="nm">{{ label }}</span></label>
+      {% endfor %}
+    </div>
+
+    <div class="xgrouphead">Components
+      <button type="button" class="xall" data-pick="comp">all</button></div>
+    <div class="xcols">
+      {% for key, label in comp_cols %}
+      <label class="xopt"><input type="checkbox" name="col" value="{{ key }}"
+             data-grp="comp" {% if key in sel_cols %}checked{% endif %}>
+        <span class="nm">{{ label }}</span></label>
+      {% endfor %}
+    </div>
+
+    <div class="xactions">
+      <button name="go" value="1">Build table</button>
+      {% if ran %}
+      <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">⬇ Download as Excel</a>
+      <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} row{{ 's' if shown != 1 }}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</form>
+
+{% if ran %}
+<div class="card" style="margin-top:16px">
+  {% if not rows %}
+    <p class="muted" style="margin:0">Nothing matches that selection.</p>
+  {% else %}
+  <div class="xtable-wrap">
+    <table class="xt">
+      <thead>
+        <tr>
+          <th class="stick">Level</th>
+          <th>Page</th>
+          {% for h in headers %}<th>{{ h }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="stick">
+            {% if r.level %}<span class="lvl lvl-{{ r.level|lower }}">{{ r.level }}</span>
+            {% else %}<span class="xempty">—</span>{% endif %}
+          </td>
+          <td class="xpage">
+            <a href="{{ url_for('url_detail', url_id=r.id) }}">{{ r.title|clean_title or r.url }}</a>
+          </td>
+          {% for v in r.vals %}
+            {% if v == 'yes' %}<td class="yes">yes</td>
+            {% elif v == 'no' %}<td class="no">no</td>
+            {% elif v %}<td>{{ v }}</td>
+            {% else %}<td class="xempty">—</td>{% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card" style="margin-top:16px">
+  <p class="muted" style="margin:0">Pick your rows and columns above, then
+    <b>Build table</b>. The spreadsheet you download is this same table — same
+    rows, same columns, same values.</p>
+</div>
+{% endif %}
+
+<script>
+// "all" toggles its own group only, and flips to clearing once everything in
+// that group is already ticked - one control instead of an all/none pair.
+document.querySelectorAll('.xall').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var boxes = document.querySelectorAll('input[data-grp="' + b.dataset.pick + '"]');
+    var every = Array.prototype.every.call(boxes, function (c) { return c.checked; });
+    boxes.forEach(function (c) { c.checked = !every; });
+  });
+});
+</script>
+{% endblock %}

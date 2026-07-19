@@ -86,10 +86,7 @@
       </button></h2>
     <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
       <button type="button" class="btn" onclick="toggleAdd()">＋ Add pages</button>
-      <span class="exports">Export:
-        <a href="{{ url_for('export_xlsx', mode='table') }}" title="One sheet: every page with status and library counts">⬇ table</a>
-        <a href="{{ url_for('export_xlsx', mode='full') }}" title="Every page + every captured item (documents, boards, trainings…) + all changes">⬇ everything</a>
-      </span>
+      
     </div>
   </div>
 
