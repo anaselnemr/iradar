@@ -3189,14 +3189,18 @@ SIZE_CHOICES = ("s", "m", "l")
 
 # browse-mode SQL per chip: plain, index-friendly filters (search mode keeps
 # the richer per-item functions; browse trades the edge cases for pagination)
+# mirrors _videolike: a news/trainings card that is actually a video - a media
+# URL or a duration in its meta. Named once because three places need to agree
+# on it; two of them need its negation, to say "the news cards that are NOT
+# already counted as videos" without double-counting.
+_VIDEOLIKE_SQL = ("(lower(item_url) LIKE '%.mp4%'"
+                  " OR item_url LIKE '%/is/content/%'"
+                  " OR meta GLOB '*[0-9]:[0-9][0-9]*')")
+
 _BROWSE_SQL = {
     "docs":     "category='documents'",
-    # mirrors _videolike: a news/trainings card that is actually a video -
-    # a media URL or a duration in its meta
     "videos":   "(category='videos' OR (category IN ('news','trainings')"
-                " AND (lower(item_url) LIKE '%.mp4%'"
-                "  OR item_url LIKE '%/is/content/%'"
-                "  OR meta GLOB '*[0-9]:[0-9][0-9]*')))",
+                " AND " + _VIDEOLIKE_SQL + "))",
     "images":   "category='images'",
     "design":   "category='design_resources'",
     "boards":   "category='design_resources' AND lower(IFNULL(grp,''))"
@@ -4373,11 +4377,86 @@ def parse_item_meta(meta, doc_type=""):
     return out
 
 
-ITEM_KINDS = [("documents", "Documents"), ("videos", "Videos"),
-              ("images", "Images"), ("design_resources", "Design resources"),
-              ("trainings", "Trainings & webinars"),
-              ("partners", "Partner solutions"), ("products", "Related products"),
-              ("news", "News & highlights")]
+# What each row-kind MEANS, as one predicate over items - the Content tab's own
+# definitions, not the raw scrape category. Most videos are captured as News or
+# Trainings cards, so category='videos' finds 35 of the 349 videos that exist;
+# an export that disagreed with the library about what a video is would be
+# describing a different corpus from the rest of the site.
+ITEM_KIND_SQL = {
+    "docs": _BROWSE_SQL["docs"],
+    "videos": _BROWSE_SQL["videos"],
+    "images": _BROWSE_SQL["images"],
+    "design": _BROWSE_SQL["design"],
+    "products": _BROWSE_SQL["products"],
+    # Not tiles on the Content tab, but real captured content, so they stay
+    # exportable. Defined as NOT video-like precisely because Videos above
+    # already claims the news and training cards that are videos - without the
+    # negation those items would appear under two kinds and the totals would
+    # over-count, which is the same overlap that folding boards into design
+    # resources removed.
+    "trainings": "(category='trainings' AND NOT " + _VIDEOLIKE_SQL + ")",
+    "news": "(category='news' AND NOT " + _VIDEOLIKE_SQL + ")",
+    "partners": "category='partners'",
+}
+# The predicates above are written against a bare items table, because that is
+# how the Content tab uses them. Joined against urls they need the alias, and
+# hand-maintaining a second aliased copy is how the two drift apart.
+_ITEM_COLS = ("category", "item_url", "meta", "grp", "title")
+_Q_ITEMS_RE = re.compile(r"\b(?<!\.)(" + "|".join(_ITEM_COLS) + r")\b")
+
+
+def _q_items(sql):
+    """Qualify a bare items predicate with the i. alias."""
+    return _Q_ITEMS_RE.sub(r"i.\1", sql)
+
+
+def _item_dedup_key(r):
+    """One row per title+link - the Content tab's own grouping.
+
+    Grouping by item_key instead counts 367 videos where the library lists
+    349: the same asset placed under two different section headings gets two
+    keys. Two views of one library must not report two sizes.
+    """
+    return ((r["title"] or "").lower(), r["item_url"] or "")
+
+
+# Page types as the site's own taxonomy, matching the Type filter elsewhere:
+# products and parts are ONE family down to the part type page, so PTP and EB
+# nest with them rather than standing alone. A parent is a family, not a value -
+# no page's level is "Applications" - so ticking one can only mean ticking its
+# children, and the parent itself is never submitted.
+LEVEL_GROUPS = [
+    ("Products & eval boards", ("PC", "PFP", "PSFP", "PEFP", "PTP", "EB")),
+    ("Applications", APP_LEVELS),
+    ("Design resources", DR_LEVELS),
+]
+_GROUPED_LEVELS = {l for _t, ls in LEVEL_GROUPS for l in ls}
+
+
+# the five the Content tab tiles, in its order, then the rest
+ITEM_KINDS = [("docs", "Documents"), ("videos", "Videos"),
+              ("images", "Images"),
+              ("design", "Design resources & boards"),
+              ("products", "Related products")]
+ITEM_KINDS_MORE = [("trainings", "Trainings & webinars"),
+                   ("news", "News & highlights"),
+                   ("partners", "Partner solutions")]
+ITEM_KINDS_ALL = ITEM_KINDS + ITEM_KINDS_MORE
+# two kinds are keyed by what they ARE rather than by the category they were
+# scraped from. An old link carrying the scrape name must not silently drop to
+# "every kind" - that answers a different question and still looks like a
+# valid export.
+_LEGACY_KIND = {"documents": "docs", "design_resources": "design"}
+
+
+def _wanted_kinds(raw):
+    valid = dict(ITEM_KINDS_ALL)
+    out = []
+    for k in raw:
+        k = _LEGACY_KIND.get(k, k)
+        if k in valid and k not in out:
+            out.append(k)
+    return out
 
 
 def _export_item_rows(con, kinds, levels, cols=()):
@@ -4389,9 +4468,19 @@ def _export_item_rows(con, kinds, levels, cols=()):
     page that will change.
     """
     if not kinds:
-        kinds = [k for k, _l in ITEM_KINDS]
+        kinds = [k for k, _l in ITEM_KINDS_ALL]
     want_f = [f for f, _l in ITEM_FIELDS if "f_" + f in cols]
-    q = ("SELECT i.item_key, i.category, i.title, i.item_url, i.meta,"
+    kind_sql = " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")" for k in kinds)
+    # Label each row by the kind it MATCHED, not by the category it was scraped
+    # from: a video captured as a news card is a video, and saying "News &
+    # highlights" in the Kind column of a Videos export is just wrong. First
+    # match wins, in the order the kinds are listed, so an asset that is both a
+    # document and a training reads as the former consistently.
+    kind_case = ("CASE " + " ".join(
+        "WHEN (" + _q_items(ITEM_KIND_SQL[k]) + ") THEN " + repr(k)
+        for k in kinds) + " END AS kind")
+    q = ("SELECT " + kind_case + ", i.item_key, i.category, i.title,"
+         " i.item_url, i.meta,"
          " i.doc_type, i.grp, IFNULL(u.level,'') AS lv, u.id AS pid,"
          " u.url AS purl,"
          " COALESCE(NULLIF(u.title_override,''),"
@@ -4399,16 +4488,16 @@ def _export_item_rows(con, kinds, levels, cols=()):
          "    AND s.status='ok' AND s.page_title<>''"
          "    ORDER BY s.id DESC LIMIT 1)) AS ptitle"
          " FROM items i JOIN urls u ON u.id=i.url_id"
-         " WHERE u.active=1 AND i.category IN ("
-         + ",".join("?" * len(kinds)) + ")")
-    args = list(kinds)
+         " WHERE u.active=1 AND (" + kind_sql + ")")
+    args = []
     if levels:
         q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
         args += levels
     by = {}
     for r in con.execute(q, args):
-        e = by.setdefault(r["item_key"], {
+        e = by.setdefault(_item_dedup_key(r), {
             "key": r["item_key"], "category": r["category"],
+            "kind": r["kind"] or r["category"],
             "title": r["title"] or "", "url": r["item_url"] or "",
             "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
             "fields": {}, "levels": {}, "pages": []})
@@ -4439,17 +4528,18 @@ def _export_avail(con, mode, levels, kinds):
     """
     out = {}
     if mode == "items":
-        ks = kinds or [k for k, _l in ITEM_KINDS]
+        ks = kinds or [k for k, _l in ITEM_KINDS_ALL]
         lv_sql, lv_args = "", []
         if levels:
             lv_sql = (" AND IFNULL(u.level,'') IN ("
                       + ",".join("?" * len(levels)) + ")")
             lv_args = list(levels)
-        for k, _l in ITEM_KINDS:
+        for k, _l in ITEM_KINDS_ALL:
             out[k] = con.execute(
-                "SELECT COUNT(DISTINCT i.item_key) FROM items i"
-                " JOIN urls u ON u.id=i.url_id WHERE u.active=1"
-                " AND i.category=?" + lv_sql, [k] + lv_args).fetchone()[0]
+                "SELECT COUNT(*) FROM (SELECT 1 FROM items i"
+                " JOIN urls u ON u.id=i.url_id WHERE u.active=1 AND ("
+                + _q_items(ITEM_KIND_SQL[k]) + ")" + lv_sql
+                + " GROUP BY lower(i.title), i.item_url)", lv_args).fetchone()[0]
         # Which meta fields the chosen kinds actually carry. GROUP BY item_key,
         # not one row per placement: the table below is one row per distinct
         # item, so a field count of raw rows would read 47,833 beside a table
@@ -4457,9 +4547,10 @@ def _export_avail(con, mode, levels, kinds):
         rows = con.execute(
             "SELECT i.meta, i.doc_type, i.grp, i.item_url, i.category"
             " FROM items i"
-            " JOIN urls u ON u.id=i.url_id WHERE u.active=1 AND i.category IN ("
-            + ",".join("?" * len(ks)) + ")" + lv_sql + " GROUP BY i.item_key",
-            ks + lv_args).fetchall()
+            " JOIN urls u ON u.id=i.url_id WHERE u.active=1 AND ("
+            + " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")" for k in ks)
+            + ")" + lv_sql + " GROUP BY lower(i.title), i.item_url",
+            lv_args).fetchall()
         seen = {f: 0 for f, _l in ITEM_FIELDS}
         for r in rows:
             f = parse_item_meta(r["meta"], r["doc_type"])
@@ -4479,8 +4570,10 @@ def _export_avail(con, mode, levels, kinds):
         for lv in con.execute(
                 "SELECT IFNULL(u.level,'') lv, COUNT(DISTINCT u.id) n"
                 " FROM urls u JOIN items i ON i.url_id=u.id"
-                " WHERE u.active=1 AND i.category IN ("
-                + ",".join("?" * len(ks)) + ") GROUP BY lv", ks):
+                " WHERE u.active=1 AND ("
+                + " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")"
+                              for k in ks)
+                + ") GROUP BY lv"):
             out["lv_" + lv["lv"]] = lv["n"]
         return out
 
@@ -4539,7 +4632,7 @@ def export_avail():
     try:
         data = _export_avail(con, request.args.get("mode", "pages"),
                              request.args.getlist("lv"),
-                             request.args.getlist("kind"))
+                             _wanted_kinds(request.args.getlist("kind")))
     finally:
         con.close()
     return jsonify(data)
@@ -4569,8 +4662,7 @@ def export_builder():
 
     levels = [l for l in request.args.getlist("lv") if l in counts]
     cols = request.args.getlist("col")
-    kinds = [k for k in request.args.getlist("kind")
-             if k in dict(ITEM_KINDS)]
+    kinds = _wanted_kinds(request.args.getlist("kind"))
     mode = "items" if request.args.get("mode") == "items" else "pages"
     ran = bool(request.args.get("go"))
     rows, want_meta, want_comps, want_page = [], [], [], []
@@ -4589,7 +4681,10 @@ def export_builder():
         item_fields=ITEM_FIELDS,
         comp_cols=[(k, l) for k, l, _k, _a in _all_components()],
         sel_cols=cols, rows=rows, ran=ran, mode=mode, avail=avail,
-        kinds_all=ITEM_KINDS, sel_kinds=kinds, labels=dict(SECTION_LABELS),
+        kinds_all=ITEM_KINDS, kinds_more=ITEM_KINDS_MORE,
+        level_groups=LEVEL_GROUPS, loose_levels=[
+            l for l in known if l not in _GROUPED_LEVELS],
+        sel_kinds=kinds, labels=dict(ITEM_KINDS_ALL),
         irows=irows, ilevels=ilevels,
         headers=_export_headers(want_meta, want_comps, want_page),
         ifields=ifields, level_names=LEVEL_NAMES,
@@ -4608,7 +4703,7 @@ def export_builder_download():
     mode = request.args.get("mode")
     wb = Workbook(write_only=True)
     if mode == "items":
-        kinds = [k for k in request.args.getlist("kind") if k in dict(ITEM_KINDS)]
+        kinds = _wanted_kinds(request.args.getlist("kind"))
         irows, ilevels, ifields = _export_item_rows(con, kinds, levels, cols)
         flab = dict(ITEM_FIELDS)
         ws = wb.create_sheet("Items")
@@ -4616,9 +4711,9 @@ def export_builder_download():
                   + [flab[f] for f in ifields]
                   + ["Pages"] + [l or "No level" for l in ilevels]
                   + ["Assigned to"])
-        klab = dict(ITEM_KINDS)
+        klab = dict(ITEM_KINDS_ALL)
         for e in irows:
-            ws.append([klab.get(e["category"], e["category"]), e["title"],
+            ws.append([klab.get(e["kind"], e["kind"]), e["title"],
                        e["url"]]
                       + [e["fields"].get(f, "") for f in ifields]
                       + [sum(e["levels"].values())]
@@ -4736,21 +4831,31 @@ def export_xlsx():
                   + comp_cells
                   + [ov[0].get("title", "") if ov else ""])
 
-    # one sheet per kind: the item's own data, then every page carrying it
-    for cat, label in SECTION_LABELS:
+    # One sheet per kind. The content kinds come from ITEM_KIND_SQL so the
+    # workbook says the same thing as the builder and the Content tab - by raw
+    # category the Videos sheet held 35 of the 349 videos that exist. Page
+    # PROSE (subheadline, key features, ...) is not a content kind and stays
+    # keyed by its own category.
+    prose = [(c, l) for c, l in SECTION_LABELS
+             if c in PROSE_CATS or c in ("overview", "categories")]
+    sheets = ([(l, "i.category=" + repr(c)) for c, l in prose]
+              + [(l, _q_items(ITEM_KIND_SQL[k])) for k, l in ITEM_KINDS_ALL])
+    for label, pred in sheets:
         rows = con.execute(
             "SELECT i.item_key, i.title, i.item_url, i.meta, i.doc_type, i.grp,"
-            " i.img, u.id AS pid, u.url AS purl, IFNULL(u.level,'') AS lv,"
+            " i.img, i.category, u.id AS pid, u.url AS purl,"
+            " IFNULL(u.level,'') AS lv,"
             " u.ptype FROM items i JOIN urls u ON u.id=i.url_id"
-            " WHERE u.active=1 AND i.category=?"
-            " ORDER BY lower(i.title)", (cat,)).fetchall()
+            " WHERE u.active=1 AND (" + pred + ")"
+            " ORDER BY lower(i.title)").fetchall()
         if not rows:
             continue
         by = {}
         for r in rows:
-            e = by.setdefault(r["item_key"], {
+            e = by.setdefault(_item_dedup_key(r), {
                 "title": r["title"] or "", "url": r["item_url"] or "",
                 "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
+                "cat": r["category"],
                 "grp": r["grp"] or "", "img": r["img"] or "", "pages": []})
             e["pages"].append(r)
         wsx = wb.create_sheet(label[:31])
@@ -4760,8 +4865,8 @@ def export_xlsx():
             lv = sorted({p["lv"] for p in e["pages"] if p["lv"]})
             wsx.append([e["title"], e["dtype"], e["grp"], e["url"], e["meta"],
                         e["img"],
-                        backend_system(cat, e["meta"], e["dtype"], e["grp"],
-                                       e["url"]) or "",
+                        backend_system(e["cat"], e["meta"], e["dtype"],
+                                       e["grp"], e["url"]) or "",
                         len(e["pages"]), ", ".join(lv),
                         chr(10).join(p["purl"] for p in e["pages"][:200])])
 

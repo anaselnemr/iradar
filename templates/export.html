@@ -3,7 +3,9 @@
 {% block content %}
 
 <style>
-  .xbuild { display: grid; gap: 16px; grid-template-columns: 250px 1fr;
+  /* wide enough for "Design resources & boards" and its count to sit on one
+     line - the longest label in the pane is what sets this, not a round number */
+  .xbuild { display: grid; gap: 16px; grid-template-columns: 288px 1fr;
             align-items: start; }
   @media (max-width: 820px) { .xbuild { grid-template-columns: 1fr; } }
   .xpane { border: 1px solid var(--line); border-radius: 12px;
@@ -69,7 +71,9 @@
   .xmode span { font-size: 12.5px; color: var(--muted); }
   .xmode.on { border-color: var(--accent);
               box-shadow: inset 0 0 0 1px var(--accent); }
-  .xitem { max-width: 420px; white-space: normal !important; }
+  /* min as well as max: with a column per page type the table is wide enough
+     that a percentage-width title column collapses to one word per line */
+  .xitem { min-width: 230px; max-width: 420px; white-space: normal !important; }
   .xn { text-align: right; font-variant-numeric: tabular-nums; }
   .xzero { color: var(--muted); opacity: .35; }
   /* an option with nothing behind it stays visible - "we looked, there are
@@ -77,6 +81,17 @@
   .xopt.xdim { opacity: .38; }
   .xopt.xdim:hover { background: none; }
   .xopt.xdim .ct { text-decoration: line-through; }
+  /* the family and its members: one indent and a rule down the side, so the
+     nesting is readable without turning into a tree widget */
+  .xlevels { display: flex; flex-direction: column; gap: 2px; }
+  .xgroup + .xgroup { margin-top: 7px; }
+  .xparent .nm { font-weight: 650; }
+  .xkids { display: flex; flex-direction: column; gap: 2px;
+           margin: 1px 0 0 12px; padding-left: 10px;
+           border-left: 1px solid var(--line); }
+  /* the columns pane is wide, so members sit side by side there */
+  .xcols-wide .xkids { display: grid; gap: 2px 18px;
+                       grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); }
   .xhead { display: flex; align-items: baseline; justify-content: space-between;
            gap: 10px; margin-bottom: 3px; }
   .xhead h3 { margin: 0; font-size: 14px; }
@@ -111,6 +126,50 @@
   </a>
 </div>
 
+{# One definition of the page-type list, used as rows in one mode and as
+   columns in the other. The parent carries no name attribute, so it is a
+   control over its children and never a submitted value of its own. #}
+{% macro levelpicker(av_prefix) %}
+  {% for title, kids in level_groups %}
+  <div class="xgroup">
+    <label class="xopt xparent">
+      <input type="checkbox" class="xpar" data-kids="{{ kids|join(',') }}">
+      <span class="nm">{{ title }}</span>
+    </label>
+    <div class="xkids">
+      {% for l in kids %}{% if l in levels_all %}
+      <label class="xopt" data-for="{{ av_prefix }}{{ l }}">
+        <input type="checkbox" name="lv" value="{{ l }}" data-grp="lv"
+               data-kid="{{ l }}" {% if l in sel_levels %}checked{% endif %}>
+        <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+        <span class="nm" title="{{ level_names.get(l, l) }}">{{ level_names.get(l, l) }}</span>
+        <span class="ct"{% if av_prefix %} data-av="{{ av_prefix }}{{ l }}"{% endif %}>{{
+          '{:,}'.format(avail.get(av_prefix + l, 0) if av_prefix else counts.get(l, 0)) }}</span>
+      </label>
+      {% endif %}{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% for l in loose_levels %}
+  <label class="xopt" data-for="{{ av_prefix }}{{ l }}">
+    <input type="checkbox" name="lv" value="{{ l }}" data-grp="lv"
+           {% if l in sel_levels %}checked{% endif %}>
+    <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+    <span class="nm">{{ level_names.get(l, l) }}</span>
+    <span class="ct"{% if av_prefix %} data-av="{{ av_prefix }}{{ l }}"{% endif %}>{{
+      '{:,}'.format(avail.get(av_prefix + l, 0) if av_prefix else counts.get(l, 0)) }}</span>
+  </label>
+  {% endfor %}
+  {% if counts.get('') and not av_prefix %}
+  <label class="xopt">
+    <input type="checkbox" name="lv" value="" data-grp="lv"
+           {% if '' in sel_levels %}checked{% endif %}>
+    <span class="nm muted">No level assigned</span>
+    <span class="ct">{{ '{:,}'.format(counts['']) }}</span>
+  </label>
+  {% endif %}
+{% endmacro %}
+
 <form method="get" action="{{ url_for('export_builder') }}" id="xform">
 {% if mode == 'items' %}<input type="hidden" name="mode" value="items">{% endif %}
 <div class="xbuild">
@@ -119,13 +178,26 @@
   <div class="xpane">
     <div class="xhead"><h3>Rows</h3>
       <button type="button" class="xall" data-pick="kind">all</button></div>
-    <p class="hint">One row per document, video or board. Nothing ticked means
-      every kind.</p>
+    <p class="hint">One row per document, video or board — the same five
+      libraries the Content tab lists, counted the same way. Nothing ticked
+      means every kind.</p>
     <div class="xrows">
       {% for key, label in kinds_all %}
       <label class="xopt" data-for="{{ key }}">
         <input type="checkbox" name="kind" value="{{ key }}" data-grp="kind"
                {% if key in sel_kinds %}checked{% endif %}>
+        <span class="nm">{{ label }}</span>
+        <span class="ct" data-av="{{ key }}">{{ '{:,}'.format(avail.get(key, 0)) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="xgrouphead">Also captured
+      <button type="button" class="xall" data-pick="kind2">all</button></div>
+    <div class="xrows">
+      {% for key, label in kinds_more %}
+      <label class="xopt" data-for="{{ key }}">
+        <input type="checkbox" name="kind" value="{{ key }}" data-grp="kind"
+               data-grp2="kind2" {% if key in sel_kinds %}checked{% endif %}>
         <span class="nm">{{ label }}</span>
         <span class="ct" data-av="{{ key }}">{{ '{:,}'.format(avail.get(key, 0)) }}</span>
       </label>
@@ -141,17 +213,7 @@
 
     <div class="xgrouphead">Page types
       <button type="button" class="xall" data-pick="lv">all</button></div>
-    <div class="xcols">
-      {% for l in levels_all %}
-      <label class="xopt" data-for="lv_{{ l }}">
-        <input type="checkbox" name="lv" value="{{ l }}" data-grp="lv"
-               {% if l in sel_levels %}checked{% endif %}>
-        <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
-        <span class="nm">{{ level_names.get(l, l) }}</span>
-        <span class="ct" data-av="lv_{{ l }}">{{ '{:,}'.format(avail.get('lv_' + l, 0)) }}</span>
-      </label>
-      {% endfor %}
-    </div>
+    <div class="xlevels xcols-wide">{{ levelpicker('lv_') }}</div>
 
     <div class="xgrouphead">Item data
       <button type="button" class="xall" data-pick="f">all</button></div>
@@ -179,26 +241,9 @@
   <div class="xpane">
     <div class="xhead"><h3>Rows</h3>
       <button type="button" class="xall" data-pick="lv">all</button></div>
-    <p class="hint">Which pages. Nothing ticked means every page.</p>
-    <div class="xrows">
-      {% for l in levels_all %}
-      <label class="xopt">
-        <input type="checkbox" name="lv" value="{{ l }}" data-grp="lv"
-               {% if l in sel_levels %}checked{% endif %}>
-        <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
-        <span class="nm">{{ level_names.get(l, l) }}</span>
-        <span class="ct">{{ '{:,}'.format(counts.get(l, 0)) }}</span>
-      </label>
-      {% endfor %}
-      {% if counts.get('') %}
-      <label class="xopt">
-        <input type="checkbox" name="lv" value="" data-grp="lv"
-               {% if '' in sel_levels %}checked{% endif %}>
-        <span class="nm muted">No level assigned</span>
-        <span class="ct">{{ '{:,}'.format(counts['']) }}</span>
-      </label>
-      {% endif %}
-    </div>
+    <p class="hint">Which pages. Ticking a family ticks everything under it.
+      Nothing ticked means every page.</p>
+    <div class="xlevels">{{ levelpicker('') }}</div>
   </div>
 
   <div class="xpane">
@@ -288,7 +333,7 @@
           <td class="stick xitem">
             <a href="{{ url_for('item_detail', key=e.key) }}">{{ e.title or e.url }}</a>
           </td>
-          <td>{{ labels.get(e.category, e.category) if labels is defined else e.category }}</td>
+          <td>{{ labels.get(e.kind, e.kind) }}</td>
           {% for f in ifields %}
             {% set v = e.fields.get(f, '') %}
             {% if f == 'link' and v %}<td><a href="{{ v }}" target="_blank" rel="noopener">open</a></td>
@@ -363,12 +408,43 @@
 // that group is already ticked - one control instead of an all/none pair.
 document.querySelectorAll('.xall').forEach(function (b) {
   b.addEventListener('click', function () {
-    var boxes = document.querySelectorAll('input[data-grp="' + b.dataset.pick + '"]');
+    var g = b.dataset.pick;
+    var boxes = document.querySelectorAll(
+      'input[data-grp="' + g + '"], input[data-grp2="' + g + '"]');
     var every = Array.prototype.every.call(boxes, function (c) { return c.checked; });
-    boxes.forEach(function (c) { c.checked = !every; });
+    boxes.forEach(function (c) { if (!c.disabled) c.checked = !every; });
+    syncParents();
     refresh();
   });
 });
+
+// A family is a control over its members, not a value: it has no name, so it
+// is never submitted, and there is no such thing as picking "Applications"
+// without picking the application levels. Half-ticked shows as indeterminate.
+function syncParents() {
+  document.querySelectorAll('.xpar').forEach(function (par) {
+    var kids = par.dataset.kids.split(',').map(function (k) {
+      return document.querySelector('input[data-kid="' + k + '"]');
+    }).filter(Boolean);
+    var on = kids.filter(function (k) { return k.checked; }).length;
+    par.checked = on > 0 && on === kids.length;
+    par.indeterminate = on > 0 && on < kids.length;
+  });
+}
+document.querySelectorAll('.xpar').forEach(function (par) {
+  par.addEventListener('change', function () {
+    par.dataset.kids.split(',').forEach(function (k) {
+      var box = document.querySelector('input[data-kid="' + k + '"]');
+      if (box && !box.disabled) box.checked = par.checked;
+    });
+    syncParents();
+    refresh();
+  });
+});
+document.querySelectorAll('input[data-kid]').forEach(function (c) {
+  c.addEventListener('change', syncParents);
+});
+syncParents();
 
 // Change the rows and every column count re-answers "how much of this is
 // actually in there" - before you build anything. A count of zero would only
@@ -403,6 +479,7 @@ function refresh() {
           lab.classList.toggle('xdim', n === 0 && !box.checked);
           box.disabled = (n === 0 && !box.checked);
         });
+        syncParents();   // a family whose members all went empty follows them
       })
       .catch(function (e) { console.warn('count refresh failed', e); });
   }, 90);
