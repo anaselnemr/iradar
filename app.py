@@ -4246,6 +4246,53 @@ def _export_headers(want_meta, want_comps):
             + [clabels.get(k, k) for k in want_comps])
 
 
+ITEM_KINDS = [("documents", "Documents"), ("videos", "Videos"),
+              ("images", "Images"), ("design_resources", "Design resources"),
+              ("trainings", "Trainings & webinars"),
+              ("partners", "Partner solutions"), ("products", "Related products"),
+              ("news", "News & highlights")]
+
+
+def _export_item_rows(con, kinds, levels):
+    """One row per ITEM, with a column per page type saying where it is used.
+
+    The other view answers "what does this page have". This answers the
+    reverse - "where does this document live" - which is the question you
+    actually have when a datasheet needs replacing and you need to know every
+    page that will change.
+    """
+    if not kinds:
+        kinds = [k for k, _l in ITEM_KINDS]
+    q = ("SELECT i.item_key, i.category, i.title, i.item_url, i.meta,"
+         " i.doc_type, IFNULL(u.level,'') AS lv, u.id AS pid, u.url AS purl,"
+         " COALESCE(NULLIF(u.title_override,''),"
+         "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
+         "    AND s.status='ok' AND s.page_title<>''"
+         "    ORDER BY s.id DESC LIMIT 1)) AS ptitle"
+         " FROM items i JOIN urls u ON u.id=i.url_id"
+         " WHERE u.active=1 AND i.category IN ("
+         + ",".join("?" * len(kinds)) + ")")
+    args = list(kinds)
+    if levels:
+        q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
+        args += levels
+    by = {}
+    for r in con.execute(q, args):
+        e = by.setdefault(r["item_key"], {
+            "key": r["item_key"], "category": r["category"],
+            "title": r["title"] or "", "url": r["item_url"] or "",
+            "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
+            "levels": {}, "pages": []})
+        e["levels"][r["lv"]] = e["levels"].get(r["lv"], 0) + 1
+        if len(e["pages"]) < 40:
+            e["pages"].append({"id": r["pid"], "title": r["ptitle"] or r["purl"]})
+    rows = sorted(by.values(),
+                  key=lambda e: (e["category"], e["title"].lower()))
+    used = [l for l in (levels or sorted(
+        {l for e in rows for l in e["levels"]}))]
+    return rows, used
+
+
 @app.route("/export")
 def export_builder():
     """Build your own table: pick the page types for the rows, pick the columns,
@@ -4270,18 +4317,26 @@ def export_builder():
 
     levels = [l for l in request.args.getlist("lv") if l in counts]
     cols = request.args.getlist("col")
+    kinds = [k for k in request.args.getlist("kind")
+             if k in dict(ITEM_KINDS)]
+    mode = "items" if request.args.get("mode") == "items" else "pages"
     ran = bool(request.args.get("go"))
-    rows, want_meta, want_comps = ([], [], [])
-    if ran:
+    rows, want_meta, want_comps, irows, ilevels = ([], [], [], [], [])
+    if ran and mode == "items":
+        irows, ilevels = _export_item_rows(con, kinds, levels)
+    elif ran:
         rows, want_meta, want_comps = _export_rows(con, levels, cols)
     con.close()
     return render_template(
         "export.html", levels_all=known, counts=counts, sel_levels=levels,
         meta_cols=_export_meta_cols(),
         comp_cols=[(k, l) for k, l, _k, _a in _all_components()],
-        sel_cols=cols, rows=rows, ran=ran,
+        sel_cols=cols, rows=rows, ran=ran, mode=mode,
+        kinds_all=ITEM_KINDS, sel_kinds=kinds, labels=dict(SECTION_LABELS),
+        irows=irows, ilevels=ilevels,
         headers=_export_headers(want_meta, want_comps),
-        level_names=LEVEL_NAMES, shown=len(rows))
+        level_names=LEVEL_NAMES,
+        shown=len(irows) if mode == "items" else len(rows))
 
 
 @app.route("/export/download")
@@ -4293,15 +4348,31 @@ def export_builder_download():
     con = db.connect()
     levels = request.args.getlist("lv")
     cols = request.args.getlist("col")
-    rows, want_meta, want_comps = _export_rows(con, levels, cols)
-    con.close()
+    mode = request.args.get("mode")
     wb = Workbook(write_only=True)
-    ws = wb.create_sheet("Pages")
-    ws.append(["Level", "Type", "Page", "URL", "Status"]
-              + _export_headers(want_meta, want_comps))
-    for r in rows:
-        ws.append([r["level"], r["ptype"], r["title"], r["url"], r["status"]]
-                  + r["vals"])
+    if mode == "items":
+        kinds = [k for k in request.args.getlist("kind") if k in dict(ITEM_KINDS)]
+        irows, ilevels = _export_item_rows(con, kinds, levels)
+        ws = wb.create_sheet("Items")
+        ws.append(["Kind", "Title", "Type", "URL", "Meta", "Pages"]
+                  + list(ilevels)
+                  + ["Assigned to"])
+        klab = dict(ITEM_KINDS)
+        for e in irows:
+            ws.append([klab.get(e["category"], e["category"]), e["title"],
+                       e["dtype"], e["url"], e["meta"],
+                       sum(e["levels"].values())]
+                      + [e["levels"].get(l, 0) for l in ilevels]
+                      + ["; ".join(p["title"] for p in e["pages"])])
+    else:
+        rows, want_meta, want_comps = _export_rows(con, levels, cols)
+        ws = wb.create_sheet("Pages")
+        ws.append(["Level", "Type", "Page", "URL", "Status"]
+                  + _export_headers(want_meta, want_comps))
+        for r in rows:
+            ws.append([r["level"], r["ptype"], r["title"], r["url"],
+                       r["status"]] + r["vals"])
+    con.close()
     f = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     f.close()
     wb.save(f.name)
@@ -4314,71 +4385,118 @@ def export_builder_download():
 
 @app.route("/export/all")
 def export_xlsx():
-    """Excel export of ALL tracked URLs (never filtered/paged).
+    """Everything, as a workbook: every page with all of its content, then one
+    sheet per kind of content with that kind's own data and every page it is
+    assigned to.
 
-    mode=table  -> one sheet: the whole dashboard table + library counts
-    mode=full   -> adds every extracted library item and all changes"""
+    The old version put all items on one "Library items" sheet, which meant
+    filtering a 190,000-row sheet by hand to look at documents. A sheet each
+    costs nothing to write and is the shape people actually work in.
+    """
     import tempfile
     from openpyxl import Workbook
 
-    mode = request.args.get("mode", "full")
     wb = Workbook(write_only=True)
-    ws_pages = wb.create_sheet("Pages")
-    cat_keys = [c for c, _ in SECTION_LABELS if c != "images"]
-    ws_pages.append(["ID", "URL", "Name", "Page type", "Active", "Status",
-                     "HTTP", "Last checked (UTC)", "Text lines", "Image count"] +
-                    [label for c, label in SECTION_LABELS if c != "images"] +
-                    ["Overview text"])
-    ws_items = ws_changes = None
-    if mode == "full":
-        ws_items = wb.create_sheet("Library items")
-        ws_items.append(["URL ID", "URL", "Page type", "Category", "Group",
-                         "Title", "Link", "Details"])
-        ws_changes = wb.create_sheet("Changes")
-        ws_changes.append(["Change ID", "URL", "When (UTC)", "Summary", "Verdict"])
+    cat_keys = [c for c, _ in SECTION_LABELS]
+    registry = _all_components()
+    comp_labels = [l for _k, l, _x, _y in registry]
+
+    ws = wb.create_sheet("Pages")
+    ws.append(["ID", "URL", "Name", "Page type", "Level", "Status", "HTTP",
+               "Last checked (UTC)", "BL", "PL", "CM", "Owner",
+               "Text lines", "Image count"]
+              + [label for _c, label in SECTION_LABELS]
+              + comp_labels + ["Overview text"])
 
     con = db.connect()
-    label_by_cat = dict(SECTION_LABELS)
-    for u in con.execute("SELECT * FROM urls ORDER BY id"):
-        snap = con.execute(
-            "SELECT * FROM snapshots WHERE url_id=? AND status='ok' AND dir<>''"
-            " AND rejected=0 ORDER BY id DESC LIMIT 1", (u["id"],)).fetchone()
-        sections = _load_sections(snap["dir"]) if snap else None
-        counts = []
-        overview_text = ""
-        if sections:
-            for c in cat_keys:
-                counts.append(len(sections.get(c, [])))
-            ov = sections.get("overview") or []
-            overview_text = ov[0].get("title", "") if ov else ""
-            if ws_items is not None:
-                for c in cat_keys:
-                    if c == "overview":
-                        continue
-                    for it in sections.get(c, []):
-                        ws_items.append([u["id"], u["url"], u["ptype"],
-                                         label_by_cat[c], it.get("group", ""),
-                                         it.get("title", ""), it.get("url", ""),
-                                         it.get("meta", "")])
-        else:
-            counts = ["" for _ in cat_keys]
-        ws_pages.append([u["id"], u["url"], u["label"], u["ptype"], u["active"],
-                         u["last_status"] or "not checked", u["last_http"],
-                         u["last_checked"],
-                         snap["text_lines"] if snap else "",
-                         snap["image_count"] if snap else ""] +
-                        counts + [overview_text])
-    if ws_changes is not None:
-        for c in con.execute(
-                "SELECT c.*, u.url AS u_url FROM changes c JOIN urls u ON u.id=c.url_id"
-                " ORDER BY c.id"):
-            verdict = ("to review" if not c["reviewed"] else
-                       ("rejected" if c["resolution"] == "reject" else "approved"))
-            ws_changes.append([c["id"], c["u_url"], c["ts"], c["summary"], verdict])
+    # every page's captured categories in one pass, for the component answer
+    cats = {}
+    for r in con.execute("SELECT url_id, category FROM items"
+                         " GROUP BY url_id, category"):
+        cats.setdefault(r["url_id"], set()).add(r["category"])
+
+    # per-category counts and the overview line come from the index, not from
+    # re-reading 4,190 sections.json files off disk - that alone was a minute
+    counts_by = {}
+    for r in con.execute("SELECT url_id, category, COUNT(*) n FROM items"
+                         " GROUP BY url_id, category"):
+        counts_by.setdefault(r["url_id"], {})[r["category"]] = r["n"]
+    overview_by = {}
+    for r in con.execute("SELECT url_id, title FROM items"
+                         " WHERE category='overview'"):
+        overview_by.setdefault(r["url_id"], r["title"] or "")
+    snap_by = {}
+    for r in con.execute(
+            "SELECT url_id, MAX(id) AS id, text_lines, image_count"
+            " FROM snapshots WHERE status='ok' AND dir<>'' AND rejected=0"
+            " GROUP BY url_id"):
+        snap_by[r["url_id"]] = r
+
+    for u in con.execute("SELECT * FROM urls WHERE active=1 ORDER BY id"):
+        snap = snap_by.get(u["id"])
+        cb = counts_by.get(u["id"], {})
+        counts = [cb.get(c, 0) for c in cat_keys]
+        ov = [{"title": overview_by.get(u["id"], "")}] if overview_by.get(u["id"]) else []
+        try:
+            flags = json.loads(u["flags"] or "{}")
+        except Exception:
+            flags = {}
+        have = _page_component_set(u["components"], u["detail_tabs"], flags,
+                                   cats.get(u["id"], set()), registry)
+        ws.append([u["id"], u["url"], u["label"] or "", u["ptype"] or "",
+                   u["level"] or "", u["last_status"] or "", u["last_http"],
+                   u["last_checked"] or "", u["bl"] or "", u["pl"] or "",
+                   u["cm"] or "", u["owner"] or "",
+                   snap["text_lines"] if snap else 0,
+                   snap["image_count"] if snap else 0]
+                  + counts
+                  + ["yes" if k in have else "no" for k, _l, _x, _y in registry]
+                  + [ov[0].get("title", "") if ov else ""])
+
+    # one sheet per kind: the item's own data, then every page carrying it
+    for cat, label in SECTION_LABELS:
+        rows = con.execute(
+            "SELECT i.item_key, i.title, i.item_url, i.meta, i.doc_type, i.grp,"
+            " i.img, u.id AS pid, u.url AS purl, IFNULL(u.level,'') AS lv,"
+            " u.ptype FROM items i JOIN urls u ON u.id=i.url_id"
+            " WHERE u.active=1 AND i.category=?"
+            " ORDER BY lower(i.title)", (cat,)).fetchall()
+        if not rows:
+            continue
+        by = {}
+        for r in rows:
+            e = by.setdefault(r["item_key"], {
+                "title": r["title"] or "", "url": r["item_url"] or "",
+                "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
+                "grp": r["grp"] or "", "img": r["img"] or "", "pages": []})
+            e["pages"].append(r)
+        wsx = wb.create_sheet(label[:31])
+        wsx.append(["Title", "Type", "Group", "Link", "Details", "Thumbnail",
+                    "Backend", "On pages", "Levels", "Assigned to (URLs)"])
+        for e in by.values():
+            lv = sorted({p["lv"] for p in e["pages"] if p["lv"]})
+            wsx.append([e["title"], e["dtype"], e["grp"], e["url"], e["meta"],
+                        e["img"],
+                        backend_system(cat, e["meta"], e["dtype"], e["grp"],
+                                       e["url"]) or "",
+                        len(e["pages"]), ", ".join(lv),
+                        chr(10).join(p["purl"] for p in e["pages"][:200])])
+
+    ws_ch = wb.create_sheet("Changes")
+    ws_ch.append(["Change ID", "URL", "When (UTC)", "Summary", "Components",
+                  "Verdict"])
+    for c in con.execute(
+            "SELECT c.*, u.url AS u_url FROM changes c"
+            " JOIN urls u ON u.id=c.url_id ORDER BY c.id"):
+        verdict = ("to review" if not c["reviewed"] else
+                   ("rejected" if c["resolution"] == "reject" else "approved"))
+        ws_ch.append([c["id"], c["u_url"], c["ts"], c["summary"],
+                      (c["components"] if "components" in c.keys() else "") or "",
+                      verdict])
     con.close()
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    name = f"infineonwatch-{'table' if mode == 'table' else 'everything'}-{stamp}.xlsx"
+    name = f"infineonwatch-everything-{stamp}.xlsx"
     out = Path(tempfile.gettempdir()) / name
     wb.save(out)
     return send_file(out, as_attachment=True, download_name=name)

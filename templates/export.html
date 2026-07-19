@@ -56,6 +56,22 @@
   .yes { color: var(--ok); font-weight: 600; }
   .no  { color: var(--muted); opacity: .6; }
   .xempty { color: var(--muted); opacity: .55; }
+  /* the two shapes this page can build, said plainly rather than as a toggle
+     labelled with a word only the person who wrote it understands */
+  .xmodes { display: grid; gap: 12px; margin-bottom: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .xmode { display: flex; flex-direction: column; gap: 3px; padding: 13px 16px;
+           border: 1px solid var(--line); border-radius: 12px;
+           background: var(--panel); text-decoration: none !important;
+           color: var(--ink) !important; transition: border-color .15s; }
+  .xmode:hover { border-color: var(--accent); }
+  .xmode b { font-size: 14px; }
+  .xmode span { font-size: 12.5px; color: var(--muted); }
+  .xmode.on { border-color: var(--accent);
+              box-shadow: inset 0 0 0 1px var(--accent); }
+  .xitem { max-width: 420px; white-space: normal !important; }
+  .xn { text-align: right; font-variant-numeric: tabular-nums; }
+  .xzero { color: var(--muted); opacity: .35; }
 </style>
 
 <div class="hero">
@@ -65,7 +81,21 @@
     here, then take it away as a spreadsheet.</p>
 </div>
 
+<div class="xmodes">
+  <a class="xmode {{ 'on' if mode == 'pages' }}"
+     href="{{ url_for('export_builder') }}">
+    <b>A row per page</b>
+    <span>Which pages have which components, and who owns them.</span>
+  </a>
+  <a class="xmode {{ 'on' if mode == 'items' }}"
+     href="{{ url_for('export_builder', mode='items') }}">
+    <b>A row per document, video, board…</b>
+    <span>Where each one is used, and on how many pages of each type.</span>
+  </a>
+</div>
+
 <form method="get" action="{{ url_for('export_builder') }}" id="xform">
+{% if mode == 'items' %}<input type="hidden" name="mode" value="items">{% endif %}
 <div class="xbuild">
 
   <div class="xpane">
@@ -92,6 +122,28 @@
     </div>
   </div>
 
+  {% if mode == 'items' %}
+  <div class="xpane">
+    <h3>Which content</h3>
+    <p class="hint">Each row is one document, video or board; each column is a
+      page type, showing how many pages of that type carry it. Nothing ticked
+      means every kind.</p>
+    <div class="xcols">
+      {% for key, label in kinds_all %}
+      <label class="xopt"><input type="checkbox" name="kind" value="{{ key }}"
+             {% if key in sel_kinds %}checked{% endif %}>
+        <span class="nm">{{ label }}</span></label>
+      {% endfor %}
+    </div>
+    <div class="xactions">
+      <button name="go" value="1">Build table</button>
+      {% if ran %}
+      <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">⬇ Download as Excel</a>
+      <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} item{{ 's' if shown != 1 }}</span>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
   <div class="xpane">
     <h3>Columns</h3>
     <p class="hint">Ownership comes from the report; every component is answered
@@ -125,10 +177,50 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 </div>
 </form>
 
-{% if ran %}
+{% if ran and mode == 'items' %}
+<div class="card" style="margin-top:16px">
+  {% if not irows %}
+    <p class="muted" style="margin:0">Nothing matches that selection.</p>
+  {% else %}
+  <div class="xtable-wrap">
+    <table class="xt">
+      <thead>
+        <tr>
+          <th class="stick">Item</th>
+          <th>Kind</th><th>Type</th><th class="xn">Pages</th>
+          {% for l in ilevels %}<th class="xn">{{ l or '—' }}</th>{% endfor %}
+          <th>Assigned to</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in irows %}
+        <tr>
+          <td class="stick xitem">
+            <a href="{{ url_for('item_detail', key=e.key) }}">{{ e.title or e.url }}</a>
+          </td>
+          <td>{{ labels.get(e.category, e.category) if labels is defined else e.category }}</td>
+          <td>{% if e.dtype %}{{ e.dtype }}{% else %}<span class="xempty">—</span>{% endif %}</td>
+          <td class="xn"><b>{{ e.levels.values()|sum }}</b></td>
+          {% for l in ilevels %}
+            {% set c = e.levels.get(l, 0) %}
+            <td class="xn {{ 'xzero' if not c }}">{{ c or '·' }}</td>
+          {% endfor %}
+          <td class="xitem">
+            {% for p in e.pages[:4] %}<a href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.title|clean_title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+            {% if e.pages|length > 4 %}<span class="muted"> +{{ e.pages|length - 4 }} more</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% elif ran %}
 <div class="card" style="margin-top:16px">
   {% if not rows %}
     <p class="muted" style="margin:0">Nothing matches that selection.</p>
