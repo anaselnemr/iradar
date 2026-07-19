@@ -293,8 +293,15 @@ TEXT_JS = r"""
 # like. A Qualtrics tracking pixel loads whenever the intercept fires and a
 # "missing-product-images" placeholder is the site's own "no image available"
 # graphic - neither is page content, and both drifted the count run to run.
+# community.infineon.com is added here so the IMAGE inventory drops developer-
+# community avatars the same way SECTIONS_JS already does (capture.py ~1194).
+# The community widget fetches its recent-thread authors asynchronously, so
+# which avatars are in the DOM at capture time varies run to run - and that was
+# reported as an "images changed" every time the author mix shifted (e.g. 5->0
+# on url 1078). Avatars are not page content; the thread churn is tracked
+# separately under developer_community, not as pictures of the page.
 NON_CONTENT_IMG_JS = \
-    r"/qualtrics|siteintercept|wrqualtrics|graphic\.php|missing-product-images/i"
+    r"/qualtrics|siteintercept|wrqualtrics|graphic\.php|missing-product-images|community\.infineon\.com/i"
 
 IMAGES_JS = r"""
 () => {
@@ -1886,7 +1893,28 @@ async def capture_one(browser, url, out_dir):
                       " .producttablereference"
                       " button[aria-label*='next' i]:not([disabled])")
             comp = await page.query_selector(_tsel)
+            # A product FAMILY table is 1-3 pages. A finder / selection tool
+            # reuses this SAME component over the whole global catalogue - the
+            # simulation-model finder has 10,544 rows - so the walk ran to its
+            # 60-page cap, stored ~120k lines of only 57% of the rows, took ~20
+            # min, and then mislabelled the truncated result as "all rows".
+            # These pages carry a "N matching results" readout; when it is far
+            # past any family's size, skip the walk. Page 1 (~100 rows) is
+            # already in the body text, and the walk's "all rows" heading is
+            # only reached below when we did cover every row.
+            total_results = None
             if comp is not None:
+                try:
+                    n_txt = await page.evaluate(
+                        "() => (document.querySelector('.total-count')"
+                        "||{}).textContent || ''")
+                    m = re.search(r"\d[\d,]*", n_txt or "")
+                    if m:
+                        total_results = int(m.group(0).replace(",", ""))
+                except Exception:
+                    total_results = None
+            big = total_results is not None and total_results > 300
+            if comp is not None and not big:
                 # widen the table first: the pager ships a per-page select
                 # (10/20/50/100) - at 100 most families fit on one page and
                 # every row lands straight in the body text
@@ -1900,7 +1928,7 @@ async def capture_one(browser, url, out_dir):
                         await _settle_quiet(page, 800)
                 except Exception:
                     pass
-            if comp is not None and await page.query_selector(_tnext):
+            if comp is not None and not big and await page.query_selector(_tnext):
                 chunks = []
                 for _ in range(60):
                     chunks.append(await comp.evaluate(
