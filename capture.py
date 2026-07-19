@@ -254,10 +254,22 @@ TEXT_JS = r"""
   // of these widgets per page; skip them all. Nothing page-specific lives
   // here, so no real signal is lost - only the language chrome leaves.
   const LANG = '.language-dropdown, .lang-list';
+  // The language switcher also has a toggle that shows the CURRENT language as
+  // a bare word ("English"), and it hydrates on some captures and not others -
+  // it flapped one stray "English" into an otherwise identical re-run, on a
+  // different toggle element from the option lists LANG already covers. A bare
+  // language name inside the site header is always that switcher, never page
+  // content, so drop it. Restricted to <header>: a document's language cell
+  // ("English") lives in the body and must be kept.
+  const LANGNAMES = new Set(['English', '中文', '日本語']);
   const walk = (node, sink) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent.replace(/\s+/g, ' ').trim();
-      if (t) sink.push(t);
+      if (t) {
+        if (LANGNAMES.has(t) && node.parentElement &&
+            node.parentElement.closest('header')) return;
+        sink.push(t);
+      }
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
