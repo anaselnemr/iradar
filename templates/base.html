@@ -272,6 +272,9 @@
   .shots figcaption { font-size: 13px; color: var(--muted); margin-bottom: 6px;
                       font-weight: 600; }
   .shots img { width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+  /* the table can never be wider than the card it sits in; if a row does
+     demand more, that row scrolls rather than the page breaking */
+  .tablewrap { overflow-x: auto; }
   .urlcell { max-width: 480px; overflow: hidden; }
   .urlcell a { display: inline-block; max-width: 100%; overflow: hidden;
                text-overflow: ellipsis; white-space: nowrap;

@@ -271,6 +271,11 @@
     {{ pg.pager(page, pages, total_match, per_page, purl, 'top', viewopts) }}
   </div>
 
+  {#- A cell's max-width is only a hint to a table: one very long address in
+      the page column and the whole table grows past the card holding it,
+      which is what showed up as soon as 100 rows made a long one likely.
+      The wrapper is the hard stop; the ellipsis still does the tidy work. -#}
+  <div class="tablewrap">
   <table>
     <tr>
       <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
@@ -347,6 +352,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
 
   {{ pg.pager(page, pages, total_match, per_page, purl) }}
   {% endif %}
