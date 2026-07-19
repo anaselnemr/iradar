@@ -247,6 +247,13 @@ TEXT_JS = r"""
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME',
                         'SVG','CANVAS','VIDEO','AUDIO','OBJECT']);
   const TRACK = '""" + CAROUSEL_TRACK_SEL + r"""';
+  // The header language switcher (English / 中文 / 日本語) is the same on every
+  // page and is not page content. Worse, the account-menu copy renders its
+  // active item twice on some captures and once on others, so an identical
+  // re-run reported a change: one stray "English" line added. There are three
+  // of these widgets per page; skip them all. Nothing page-specific lives
+  // here, so no real signal is lost - only the language chrome leaves.
+  const LANG = '.language-dropdown, .lang-list';
   const walk = (node, sink) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent.replace(/\s+/g, ' ').trim();
@@ -255,6 +262,7 @@ TEXT_JS = r"""
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     if (SKIP.has(node.tagName)) return;
+    if (node.matches && node.matches(LANG)) return;
     // Order WITHIN a slide is real content (title, then blurb) and is kept.
     // Only the order OF the slides is normalised, and nothing is dropped -
     // every line still appears exactly once.
