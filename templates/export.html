@@ -72,6 +72,23 @@
   .xitem { max-width: 420px; white-space: normal !important; }
   .xn { text-align: right; font-variant-numeric: tabular-nums; }
   .xzero { color: var(--muted); opacity: .35; }
+  /* an option with nothing behind it stays visible - "we looked, there are
+     none" is an answer - but it stops looking like something worth ticking */
+  .xopt.xdim { opacity: .38; }
+  .xopt.xdim:hover { background: none; }
+  .xopt.xdim .ct { text-decoration: line-through; }
+  .xhead { display: flex; align-items: baseline; justify-content: space-between;
+           gap: 10px; margin-bottom: 3px; }
+  .xhead h3 { margin: 0; font-size: 14px; }
+  /* the everything-workbook is not a variant of the builder, so it sits apart
+     from it rather than becoming a third mode card */
+  .xall-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+              margin-top: 16px; padding: 13px 16px; border-radius: 12px;
+              border: 1px dashed var(--line); background: var(--panel); }
+  .xall-row .t { font-size: 13.5px; }
+  .xall-row .t b { display: block; }
+  .xall-row .t span { color: var(--muted); font-size: 12.5px; }
+  .xall-row a { margin-left: auto; }
 </style>
 
 <div class="hero">
@@ -98,13 +115,75 @@
 {% if mode == 'items' %}<input type="hidden" name="mode" value="items">{% endif %}
 <div class="xbuild">
 
+  {% if mode == 'items' %}
   <div class="xpane">
-    <h3>Rows</h3>
+    <div class="xhead"><h3>Rows</h3>
+      <button type="button" class="xall" data-pick="kind">all</button></div>
+    <p class="hint">One row per document, video or board. Nothing ticked means
+      every kind.</p>
+    <div class="xrows">
+      {% for key, label in kinds_all %}
+      <label class="xopt" data-for="{{ key }}">
+        <input type="checkbox" name="kind" value="{{ key }}" data-grp="kind"
+               {% if key in sel_kinds %}checked{% endif %}>
+        <span class="nm">{{ label }}</span>
+        <span class="ct" data-av="{{ key }}">{{ '{:,}'.format(avail.get(key, 0)) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="xpane">
+    <h3>Columns</h3>
+    <p class="hint">A column per page type counts how many pages of that type
+      carry the item. The data columns are the item's own — read off its row
+      exactly as the site shows it.</p>
+
+    <div class="xgrouphead">Page types
+      <button type="button" class="xall" data-pick="lv">all</button></div>
+    <div class="xcols">
+      {% for l in levels_all %}
+      <label class="xopt" data-for="lv_{{ l }}">
+        <input type="checkbox" name="lv" value="{{ l }}" data-grp="lv"
+               {% if l in sel_levels %}checked{% endif %}>
+        <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+        <span class="nm">{{ level_names.get(l, l) }}</span>
+        <span class="ct" data-av="lv_{{ l }}">{{ '{:,}'.format(avail.get('lv_' + l, 0)) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="xgrouphead">Item data
+      <button type="button" class="xall" data-pick="f">all</button></div>
+    <div class="xcols">
+      {% for key, label in item_fields %}
+      <label class="xopt" data-for="f_{{ key }}">
+        <input type="checkbox" name="col" value="f_{{ key }}" data-grp="f"
+               {% if 'f_' + key in sel_cols %}checked{% endif %}>
+        <span class="nm">{{ label }}</span>
+        <span class="ct" data-av="f_{{ key }}">{{ '{:,}'.format(avail.get('f_' + key, 0)) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="xactions">
+      <button name="go" value="1">Build table</button>
+      {% if ran %}
+      <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">Download as Excel</a>
+      <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} item{{ 's' if shown != 1 }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% else %}
+  <div class="xpane">
+    <div class="xhead"><h3>Rows</h3>
+      <button type="button" class="xall" data-pick="lv">all</button></div>
     <p class="hint">Which pages. Nothing ticked means every page.</p>
     <div class="xrows">
       {% for l in levels_all %}
       <label class="xopt">
-        <input type="checkbox" name="lv" value="{{ l }}"
+        <input type="checkbox" name="lv" value="{{ l }}" data-grp="lv"
                {% if l in sel_levels %}checked{% endif %}>
         <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
         <span class="nm">{{ level_names.get(l, l) }}</span>
@@ -113,7 +192,7 @@
       {% endfor %}
       {% if counts.get('') %}
       <label class="xopt">
-        <input type="checkbox" name="lv" value=""
+        <input type="checkbox" name="lv" value="" data-grp="lv"
                {% if '' in sel_levels %}checked{% endif %}>
         <span class="nm muted">No level assigned</span>
         <span class="ct">{{ '{:,}'.format(counts['']) }}</span>
@@ -122,40 +201,34 @@
     </div>
   </div>
 
-  {% if mode == 'items' %}
-  <div class="xpane">
-    <h3>Which content</h3>
-    <p class="hint">Each row is one document, video or board; each column is a
-      page type, showing how many pages of that type carry it. Nothing ticked
-      means every kind.</p>
-    <div class="xcols">
-      {% for key, label in kinds_all %}
-      <label class="xopt"><input type="checkbox" name="kind" value="{{ key }}"
-             {% if key in sel_kinds %}checked{% endif %}>
-        <span class="nm">{{ label }}</span></label>
-      {% endfor %}
-    </div>
-    <div class="xactions">
-      <button name="go" value="1">Build table</button>
-      {% if ran %}
-      <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">⬇ Download as Excel</a>
-      <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} item{{ 's' if shown != 1 }}</span>
-      {% endif %}
-    </div>
-  </div>
-  {% else %}
   <div class="xpane">
     <h3>Columns</h3>
-    <p class="hint">Ownership comes from the report; every component is answered
-      yes or no per page, by the same rule the page itself uses.</p>
+    <p class="hint">The number beside each is how many of the pages you picked
+      actually have it — so you can see what a column will hold before building
+      anything.</p>
 
     <div class="xgrouphead">Ownership
       <button type="button" class="xall" data-pick="meta">all</button></div>
     <div class="xcols">
       {% for key, label in meta_cols %}
-      <label class="xopt"><input type="checkbox" name="col" value="{{ key }}"
-             data-grp="meta" {% if key in sel_cols %}checked{% endif %}>
-        <span class="nm">{{ label }}</span></label>
+      <label class="xopt" data-for="{{ key }}">
+        <input type="checkbox" name="col" value="{{ key }}"
+               data-grp="meta" {% if key in sel_cols %}checked{% endif %}>
+        <span class="nm">{{ label }}</span>
+        <span class="ct" data-av="{{ key }}">{{ '{:,}'.format(avail.get(key, 0)) }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="xgrouphead">Page status
+      <button type="button" class="xall" data-pick="pf">all</button></div>
+    <div class="xcols">
+      {% for key, label in page_fields %}
+      <label class="xopt">
+        <input type="checkbox" name="col" value="{{ key }}"
+               data-grp="pf" {% if key in sel_cols %}checked{% endif %}>
+        <span class="nm">{{ label }}</span>
+      </label>
       {% endfor %}
     </div>
 
@@ -163,16 +236,19 @@
       <button type="button" class="xall" data-pick="comp">all</button></div>
     <div class="xcols">
       {% for key, label in comp_cols %}
-      <label class="xopt"><input type="checkbox" name="col" value="{{ key }}"
-             data-grp="comp" {% if key in sel_cols %}checked{% endif %}>
-        <span class="nm">{{ label }}</span></label>
+      <label class="xopt" data-for="{{ key }}">
+        <input type="checkbox" name="col" value="{{ key }}"
+               data-grp="comp" {% if key in sel_cols %}checked{% endif %}>
+        <span class="nm">{{ label }}</span>
+        <span class="ct" data-av="{{ key }}">{{ '{:,}'.format(avail.get(key, 0)) }}</span>
+      </label>
       {% endfor %}
     </div>
 
     <div class="xactions">
       <button name="go" value="1">Build table</button>
       {% if ran %}
-      <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">⬇ Download as Excel</a>
+      <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">Download as Excel</a>
       <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} row{{ 's' if shown != 1 }}</span>
       {% endif %}
     </div>
@@ -180,6 +256,14 @@
   {% endif %}
 </div>
 </form>
+
+<div class="xall-row">
+  <div class="t"><b>Or take everything at once</b>
+    <span>One workbook: every page with all of its content, then a sheet per
+      kind of content with its own data and every page it is assigned to.</span>
+  </div>
+  <a class="btn" href="{{ url_for('export_xlsx') }}">Export everything</a>
+</div>
 
 {% if ran and mode == 'items' %}
 <div class="card" style="margin-top:16px">
@@ -191,7 +275,9 @@
       <thead>
         <tr>
           <th class="stick">Item</th>
-          <th>Kind</th><th>Type</th><th class="xn">Pages</th>
+          <th>Kind</th>
+          {% for f in ifields %}<th>{{ dict(item_fields)[f] }}</th>{% endfor %}
+          <th class="xn">Pages</th>
           {% for l in ilevels %}<th class="xn">{{ l or '—' }}</th>{% endfor %}
           <th>Assigned to</th>
         </tr>
@@ -203,7 +289,12 @@
             <a href="{{ url_for('item_detail', key=e.key) }}">{{ e.title or e.url }}</a>
           </td>
           <td>{{ labels.get(e.category, e.category) if labels is defined else e.category }}</td>
-          <td>{% if e.dtype %}{{ e.dtype }}{% else %}<span class="xempty">—</span>{% endif %}</td>
+          {% for f in ifields %}
+            {% set v = e.fields.get(f, '') %}
+            {% if f == 'link' and v %}<td><a href="{{ v }}" target="_blank" rel="noopener">open</a></td>
+            {% elif v %}<td>{{ v }}</td>
+            {% else %}<td class="xempty">—</td>{% endif %}
+          {% endfor %}
           <td class="xn"><b>{{ e.levels.values()|sum }}</b></td>
           {% for l in ilevels %}
             {% set c = e.levels.get(l, 0) %}
@@ -247,6 +338,8 @@
           {% for v in r.vals %}
             {% if v == 'yes' %}<td class="yes">yes</td>
             {% elif v == 'no' %}<td class="no">no</td>
+            {# a count of 0 is an answer, not a blank - only an empty string is #}
+            {% elif v == 0 %}<td class="xzero">0</td>
             {% elif v %}<td>{{ v }}</td>
             {% else %}<td class="xempty">—</td>{% endif %}
           {% endfor %}
@@ -273,7 +366,49 @@ document.querySelectorAll('.xall').forEach(function (b) {
     var boxes = document.querySelectorAll('input[data-grp="' + b.dataset.pick + '"]');
     var every = Array.prototype.every.call(boxes, function (c) { return c.checked; });
     boxes.forEach(function (c) { c.checked = !every; });
+    refresh();
   });
 });
+
+// Change the rows and every column count re-answers "how much of this is
+// actually in there" - before you build anything. A count of zero would only
+// ever produce a column of dashes, so that option dims and stops being
+// tickable; one you have already ticked stays live so you can untick it.
+var MODE = {{ (mode == 'items')|tojson }};
+var timer = null, seq = 0;
+function refresh() {
+  clearTimeout(timer);
+  timer = setTimeout(function () {
+    var p = new URLSearchParams();
+    if (MODE) p.set('mode', 'items');
+    document.querySelectorAll('input[data-grp="lv"]:checked')
+      .forEach(function (c) { p.append('lv', c.value); });
+    document.querySelectorAll('input[data-grp="kind"]:checked')
+      .forEach(function (c) { p.append('kind', c.value); });
+    var mine = ++seq;
+    // built off location.origin, not a relative path: reached through a URL
+    // that carries basic-auth credentials, a relative fetch inherits them and
+    // Chrome refuses to construct the request at all
+    fetch(location.origin + '{{ url_for("export_avail") }}?' + p.toString(),
+          {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (mine !== seq) return;          // a later click already answered
+        document.querySelectorAll('.ct[data-av]').forEach(function (el) {
+          var n = d[el.dataset.av];
+          if (n === undefined) return;
+          el.textContent = n.toLocaleString();
+          var lab = el.closest('.xopt');
+          var box = lab.querySelector('input');
+          lab.classList.toggle('xdim', n === 0 && !box.checked);
+          box.disabled = (n === 0 && !box.checked);
+        });
+      })
+      .catch(function (e) { console.warn('count refresh failed', e); });
+  }, 90);
+}
+document.querySelectorAll('input[data-grp="lv"], input[data-grp="kind"]')
+  .forEach(function (c) { c.addEventListener('change', refresh); });
+refresh();
 </script>
 {% endblock %}

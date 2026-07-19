@@ -4221,10 +4221,12 @@ def _export_rows(con, levels, cols, verbose=False):
     comp_keys = [k for k, _l, _kind, _a in registry]
     want_comps = [k for k in comp_keys if k in cols]
     want_meta = [k for k, _l in _export_meta_cols() if k in cols]
+    want_page = [k for k, _l in PAGE_FIELDS if k in cols]
 
     cat_of = {k: a for k, _l, kind, a in registry if kind == "cat"}
     q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.cm, u.owner,"
          " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
+         " u.last_checked,"
          " COALESCE(NULLIF(u.title_override,''),"
          "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
          "    AND s.status='ok' AND s.page_title<>''"
@@ -4237,6 +4239,11 @@ def _export_rows(con, levels, cols, verbose=False):
     q += " ORDER BY u.level, lower(COALESCE(NULLIF(u.title_override,''), u.url))"
     pages = con.execute(q, args).fetchall()
 
+    open_changes = {}
+    if "changes" in cols:
+        for r in con.execute("SELECT url_id, COUNT(*) n FROM changes"
+                             " WHERE reviewed=0 GROUP BY url_id"):
+            open_changes[r["url_id"]] = r["n"]
     # which content categories each page actually captured - one query for the
     # whole set rather than one per page
     cats = {}
@@ -4275,6 +4282,19 @@ def _export_rows(con, levels, cols, verbose=False):
                "status": p["last_status"] or "", "vals": []}
         for k in want_meta:
             row["vals"].append(p[k] or "")
+        for k in want_page:
+            if k == "live":
+                http = p["last_http"]
+                row["vals"].append(
+                    "no" if (http in (404, 410)
+                             or (p["last_status"] or "") in ("blank", "error"))
+                    else ("yes" if http else "—"))
+            elif k == "status":
+                row["vals"].append(p["last_status"] or "not captured yet")
+            elif k == "last_captured":
+                row["vals"].append((p["last_checked"] or "")[:19])
+            else:
+                row["vals"].append(open_changes.get(p["id"], 0))
         if want_comps:
             have = _page_component_set(p["components"], p["detail_tabs"], flags,
                                        cats.get(p["id"], set()), registry)
@@ -4291,14 +4311,66 @@ def _export_rows(con, levels, cols, verbose=False):
                     # a nav label or a flag: presence is all there ever was
                     row["vals"].append("yes" if k in have else "no")
         out.append(row)
-    return out, want_meta, want_comps
+    return out, want_meta, want_comps, want_page
 
 
-def _export_headers(want_meta, want_comps):
+def _export_headers(want_meta, want_comps, want_page=()):
     labels = dict(_export_meta_cols())
+    plabels = dict(PAGE_FIELDS)
     clabels = {k: l for k, l, _k2, _a in _all_components()}
     return ([labels[k] for k in want_meta]
+            + [plabels[k] for k in want_page]
             + [clabels.get(k, k) for k in want_comps])
+
+
+# Page facts that are not components and not ownership - the dashboard columns.
+PAGE_FIELDS = [("live", "Live"), ("status", "Status"),
+               ("last_captured", "Last captured"), ("changes", "Changes")]
+
+# What an item's meta line can yield. The order of those fields differs by
+# category - a document reads "Type | PDF | Public | EN | 01_00 | 1.9MB | date"
+# and a design resource "ZIP | 01_00 | EN | 11.39 mb | date" - so each field is
+# recognised by its SHAPE rather than its position. Position-based parsing
+# would quietly file a version as a language the moment a category differs.
+ITEM_FIELDS = [("dtype", "Type"), ("format", "Format"), ("language", "Language"),
+               ("version", "Version"), ("size", "Size"), ("date", "Date"),
+               ("duration", "Duration"), ("access", "Access"),
+               ("backend", "Backend"), ("group", "Group"), ("link", "Link")]
+
+_MF_DATE = re.compile(r"^[A-Z][a-z]{2}\.?\s+\d{1,2},\s*\d{4}$")
+_MF_SIZE = re.compile(r"^[\d.,]+\s*[KMG]B$", re.I)
+_MF_VER = re.compile(r"^v?\d{1,2}[._]\d{1,2}[A-Za-z]?$")
+_MF_LANG = re.compile(r"^[A-Z]{2}(\s*,\s*[A-Z]{2})*$")
+_MF_FMT = re.compile(r"^(PDF|ZIP|EXE|PPTX?|DOCX?|XLSX?|TXT|CSV|MP4|HTML?|"
+                     r"RAR|7Z|MSI|DMG|JPG|PNG|SVG|GZ|TAR|BIN|HEX)$", re.I)
+_MF_DUR = re.compile(r"^\d{1,3}:\d{2}(:\d{2})?$")
+_MF_ACCESS = re.compile(r"^(public|myinfineon|login|restricted)$", re.I)
+
+
+def parse_item_meta(meta, doc_type=""):
+    """Split an item's meta line into named fields, by shape not position."""
+    out = {"dtype": (doc_type or "").strip()}
+    for raw in (meta or "").split("|"):
+        p = raw.strip()
+        if not p:
+            continue
+        if _MF_DATE.match(p):
+            out.setdefault("date", p)
+        elif _MF_SIZE.match(p):
+            out.setdefault("size", p)
+        elif _MF_VER.match(p):
+            out.setdefault("version", p)
+        elif _MF_DUR.match(p):
+            out.setdefault("duration", p)
+        elif _MF_FMT.match(p):
+            out.setdefault("format", p.upper())
+        elif _MF_ACCESS.match(p):
+            out.setdefault("access", p)
+        elif _MF_LANG.match(p):
+            out.setdefault("language", p.replace(" ", ""))
+        elif not out.get("dtype"):
+            out["dtype"] = p          # the leading descriptive field
+    return out
 
 
 ITEM_KINDS = [("documents", "Documents"), ("videos", "Videos"),
@@ -4308,7 +4380,7 @@ ITEM_KINDS = [("documents", "Documents"), ("videos", "Videos"),
               ("news", "News & highlights")]
 
 
-def _export_item_rows(con, kinds, levels):
+def _export_item_rows(con, kinds, levels, cols=()):
     """One row per ITEM, with a column per page type saying where it is used.
 
     The other view answers "what does this page have". This answers the
@@ -4318,8 +4390,10 @@ def _export_item_rows(con, kinds, levels):
     """
     if not kinds:
         kinds = [k for k, _l in ITEM_KINDS]
+    want_f = [f for f, _l in ITEM_FIELDS if "f_" + f in cols]
     q = ("SELECT i.item_key, i.category, i.title, i.item_url, i.meta,"
-         " i.doc_type, IFNULL(u.level,'') AS lv, u.id AS pid, u.url AS purl,"
+         " i.doc_type, i.grp, IFNULL(u.level,'') AS lv, u.id AS pid,"
+         " u.url AS purl,"
          " COALESCE(NULLIF(u.title_override,''),"
          "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
          "    AND s.status='ok' AND s.page_title<>''"
@@ -4337,7 +4411,15 @@ def _export_item_rows(con, kinds, levels):
             "key": r["item_key"], "category": r["category"],
             "title": r["title"] or "", "url": r["item_url"] or "",
             "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
-            "levels": {}, "pages": []})
+            "fields": {}, "levels": {}, "pages": []})
+        if want_f and not e["fields"]:
+            got = parse_item_meta(r["meta"], r["doc_type"])
+            got["group"] = r["grp"] or ""
+            got["link"] = r["item_url"] or ""
+            got["backend"] = backend_system(r["category"], r["meta"],
+                                            r["doc_type"], r["grp"],
+                                            r["item_url"] or "")
+            e["fields"] = {f: got.get(f, "") for f in want_f}
         e["levels"][r["lv"]] = e["levels"].get(r["lv"], 0) + 1
         if len(e["pages"]) < 40:
             e["pages"].append({"id": r["pid"], "title": r["ptitle"] or r["purl"]})
@@ -4345,7 +4427,122 @@ def _export_item_rows(con, kinds, levels):
                   key=lambda e: (e["category"], e["title"].lower()))
     used = [l for l in (levels or sorted(
         {l for e in rows for l in e["levels"]}))]
-    return rows, used
+    return rows, used, want_f
+
+
+def _export_avail(con, mode, levels, kinds):
+    """How much of each option actually exists for the current selection.
+
+    Shown beside every checkbox so the answer to "do these pages even have
+    ordering tabs" is on screen before you build anything - and an option with
+    nothing behind it greys out instead of producing a column of dashes.
+    """
+    out = {}
+    if mode == "items":
+        ks = kinds or [k for k, _l in ITEM_KINDS]
+        lv_sql, lv_args = "", []
+        if levels:
+            lv_sql = (" AND IFNULL(u.level,'') IN ("
+                      + ",".join("?" * len(levels)) + ")")
+            lv_args = list(levels)
+        for k, _l in ITEM_KINDS:
+            out[k] = con.execute(
+                "SELECT COUNT(DISTINCT i.item_key) FROM items i"
+                " JOIN urls u ON u.id=i.url_id WHERE u.active=1"
+                " AND i.category=?" + lv_sql, [k] + lv_args).fetchone()[0]
+        # Which meta fields the chosen kinds actually carry. GROUP BY item_key,
+        # not one row per placement: the table below is one row per distinct
+        # item, so a field count of raw rows would read 47,833 beside a table
+        # of 6,146. Deduping first also makes this the cheaper query.
+        rows = con.execute(
+            "SELECT i.meta, i.doc_type, i.grp, i.item_url, i.category"
+            " FROM items i"
+            " JOIN urls u ON u.id=i.url_id WHERE u.active=1 AND i.category IN ("
+            + ",".join("?" * len(ks)) + ")" + lv_sql + " GROUP BY i.item_key",
+            ks + lv_args).fetchall()
+        seen = {f: 0 for f, _l in ITEM_FIELDS}
+        for r in rows:
+            f = parse_item_meta(r["meta"], r["doc_type"])
+            for key in seen:
+                if key == "group":
+                    seen[key] += 1 if (r["grp"] or "").strip() else 0
+                elif key == "link":
+                    seen[key] += 1 if (r["item_url"] or "").strip() else 0
+                elif key == "backend":
+                    seen[key] += 1 if backend_system(
+                        r["category"], r["meta"], r["doc_type"], r["grp"],
+                        r["item_url"] or "") else 0
+                elif f.get(key):
+                    seen[key] += 1
+        out.update({"f_" + k: v for k, v in seen.items()})
+        # and how many pages of each level carry any of the chosen kinds
+        for lv in con.execute(
+                "SELECT IFNULL(u.level,'') lv, COUNT(DISTINCT u.id) n"
+                " FROM urls u JOIN items i ON i.url_id=u.id"
+                " WHERE u.active=1 AND i.category IN ("
+                + ",".join("?" * len(ks)) + ") GROUP BY lv", ks):
+            out["lv_" + lv["lv"]] = lv["n"]
+        return out
+
+    # pages mode: how many of the chosen pages carry each component
+    lv_sql, lv_args = "", []
+    if levels:
+        lv_sql = (" AND IFNULL(level,'') IN ("
+                  + ",".join("?" * len(levels)) + ")")
+        lv_args = list(levels)
+    total = con.execute("SELECT COUNT(*) FROM urls WHERE active=1" + lv_sql,
+                        lv_args).fetchone()[0]
+    out["_total"] = total
+    for k, _l in _export_meta_cols():
+        out[k] = con.execute(
+            f"SELECT COUNT(*) FROM urls WHERE active=1 AND IFNULL({k},'')<>''"
+            + lv_sql, lv_args).fetchone()[0]
+    for k, _l in PAGE_FIELDS:
+        out[k] = total
+    cat_of = {k: a for k, _l, kind, a in _all_components() if kind == "cat"}
+    for k, a in cat_of.items():
+        out[k] = con.execute(
+            "SELECT COUNT(DISTINCT u.id) FROM urls u JOIN items i ON i.url_id=u.id"
+            " WHERE u.active=1 AND i.category=?" + lv_sql,
+            [a] + lv_args).fetchone()[0]
+    # nav/flag/tab components live in the page's own component list
+    navs = [(k, a) for k, _l, kind, a in _all_components() if kind in ("nav", "tab")]
+    if navs:
+        rows = con.execute(
+            "SELECT components, detail_tabs FROM urls WHERE active=1" + lv_sql,
+            lv_args).fetchall()
+        pools = []
+        for r in rows:
+            try:
+                nav = {s.lower() for s in json.loads(r["components"] or "[]")}
+                nav |= {s.lower() for s in json.loads(r["detail_tabs"] or "[]")}
+            except Exception:
+                nav = set()
+            pools.append(nav)
+        for k, a in navs:
+            args = a if isinstance(a, tuple) else (a,)
+            out[k] = sum(1 for p in pools if any(x in p for x in args))
+    # json_valid first: a row with an empty or half-written flags column makes
+    # json_extract abort the whole query rather than skip that row
+    for k, a in [(k, a) for k, _l, kind, a in _all_components() if kind == "flag"]:
+        out[k] = con.execute(
+            "SELECT COUNT(*) FROM urls WHERE active=1 AND json_valid(flags)"
+            f" AND json_extract(flags, '$.{a}.exists') = 1" + lv_sql,
+            lv_args).fetchone()[0]
+    return out
+
+
+@app.route("/export/avail")
+def export_avail():
+    """Live counts for the builder's checkboxes - no page reload, no build."""
+    con = db.connect()
+    try:
+        data = _export_avail(con, request.args.get("mode", "pages"),
+                             request.args.getlist("lv"),
+                             request.args.getlist("kind"))
+    finally:
+        con.close()
+    return jsonify(data)
 
 
 @app.route("/export")
@@ -4376,21 +4573,26 @@ def export_builder():
              if k in dict(ITEM_KINDS)]
     mode = "items" if request.args.get("mode") == "items" else "pages"
     ran = bool(request.args.get("go"))
-    rows, want_meta, want_comps, irows, ilevels = ([], [], [], [], [])
+    rows, want_meta, want_comps, want_page = [], [], [], []
+    irows, ilevels, ifields = [], [], []
     if ran and mode == "items":
-        irows, ilevels = _export_item_rows(con, kinds, levels)
+        irows, ilevels, ifields = _export_item_rows(con, kinds, levels, cols)
     elif ran:
-        rows, want_meta, want_comps = _export_rows(con, levels, cols)
-    con.close()
+        rows, want_meta, want_comps, want_page = _export_rows(con, levels, cols)
+    try:
+        avail = _export_avail(con, mode, levels, kinds)
+    finally:
+        con.close()
     return render_template(
         "export.html", levels_all=known, counts=counts, sel_levels=levels,
-        meta_cols=_export_meta_cols(),
+        meta_cols=_export_meta_cols(), page_fields=PAGE_FIELDS,
+        item_fields=ITEM_FIELDS,
         comp_cols=[(k, l) for k, l, _k, _a in _all_components()],
-        sel_cols=cols, rows=rows, ran=ran, mode=mode,
+        sel_cols=cols, rows=rows, ran=ran, mode=mode, avail=avail,
         kinds_all=ITEM_KINDS, sel_kinds=kinds, labels=dict(SECTION_LABELS),
         irows=irows, ilevels=ilevels,
-        headers=_export_headers(want_meta, want_comps),
-        level_names=LEVEL_NAMES,
+        headers=_export_headers(want_meta, want_comps, want_page),
+        ifields=ifields, level_names=LEVEL_NAMES,
         shown=len(irows) if mode == "items" else len(rows))
 
 
@@ -4407,29 +4609,32 @@ def export_builder_download():
     wb = Workbook(write_only=True)
     if mode == "items":
         kinds = [k for k in request.args.getlist("kind") if k in dict(ITEM_KINDS)]
-        irows, ilevels = _export_item_rows(con, kinds, levels)
+        irows, ilevels, ifields = _export_item_rows(con, kinds, levels, cols)
+        flab = dict(ITEM_FIELDS)
         ws = wb.create_sheet("Items")
-        ws.append(["Kind", "Title", "Type", "URL", "Meta", "Pages"]
-                  + list(ilevels)
+        ws.append(["Kind", "Title", "URL"]
+                  + [flab[f] for f in ifields]
+                  + ["Pages"] + [l or "No level" for l in ilevels]
                   + ["Assigned to"])
         klab = dict(ITEM_KINDS)
         for e in irows:
             ws.append([klab.get(e["category"], e["category"]), e["title"],
-                       e["dtype"], e["url"], e["meta"],
-                       sum(e["levels"].values())]
+                       e["url"]]
+                      + [e["fields"].get(f, "") for f in ifields]
+                      + [sum(e["levels"].values())]
                       + [e["levels"].get(l, 0) for l in ilevels]
                       + ["; ".join(p["title"] for p in e["pages"])])
     else:
         # verbose: the sheet carries what is on the page, not a yes/no you would
         # then have to open the page to resolve
-        rows, want_meta, want_comps = _export_rows(con, levels, cols,
-                                                   verbose=True)
+        rows, want_meta, want_comps, want_page = _export_rows(
+            con, levels, cols, verbose=True)
         ws = wb.create_sheet("Pages")
-        ws.append(["Level", "Type", "Page", "URL", "Status"]
-                  + _export_headers(want_meta, want_comps))
+        ws.append(["Level", "Type", "Page", "URL"]
+                  + _export_headers(want_meta, want_comps, want_page))
         for r in rows:
-            ws.append([r["level"], r["ptype"], r["title"], r["url"],
-                       r["status"]] + r["vals"])
+            ws.append([r["level"], r["ptype"], r["title"], r["url"]]
+                      + r["vals"])
     con.close()
     f = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     f.close()
