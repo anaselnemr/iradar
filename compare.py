@@ -2,6 +2,7 @@
 import difflib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw
@@ -301,6 +302,20 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     height_threshold = int(settings.get("height_threshold", 80))
 
     t_changed, t_added, t_removed, _ = text_diff(old_dir, new_dir, ignore_patterns)
+    # SAME LINES, NEW ORDER is not a content change. The line diff is
+    # positional, so a block that merely moved reads as removals plus
+    # additions - the homepage reported the same four AURIX part numbers
+    # cycling by one position, and the interactive-expansion pass returns its
+    # panels in whatever order they hydrate. Compare the line MULTISET: equal
+    # multisets mean nothing was added, removed or edited, only rearranged.
+    # Anything genuinely new, gone or reworded changes the counts and still
+    # flags. Duplication changes them too, so a block rendered twice is not
+    # mistaken for a move.
+    t_reordered = False
+    if t_changed:
+        if Counter(_load_text_lines(old_dir, ignore_patterns)) == \
+           Counter(_load_text_lines(new_dir, ignore_patterns)):
+            t_reordered, t_changed = True, False
     i_changed, i_added, i_removed = images_diff(old_dir, new_dir,
                                                 ignore_image_patterns)
     lib = library_diff(old_dir, new_dir)
@@ -326,6 +341,7 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
         "library_changed": lib["changed"],
         "library": lib,
         "text_changed": t_changed,
+        "text_reordered": t_reordered,
         "lines_added": t_added,
         "lines_removed": t_removed,
         "images_changed": i_changed,
