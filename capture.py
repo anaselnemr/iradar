@@ -1419,6 +1419,24 @@ async def _settle_section_nav(page, cap_s=12.0):
 
 IN_NAV_JS = "el => !!el.closest('header, nav, [role=\"navigation\"], footer')"
 
+async def _dom_click(el):
+    """Fire the element's click handler directly, without Playwright's
+    actionability wait.
+
+    click() first insists the element is visible, stable, enabled and able to
+    receive events. Infineon's sticky header covers most tabs, so that check
+    ran to its FULL timeout and then threw - 43 controls on a part page, ~30 s
+    spent waiting to do nothing, and the tab left unclicked either way. The
+    codebase already used a DOM click for the design-resources tabs for exactly
+    this reason; this is that, everywhere.
+
+    The click SEQUENCE is deliberately unchanged - one control at a time, with
+    the same pause after each. Firing them all in one pass is faster still, but
+    a panel that hydrates over XHR needs to land before the next tab replaces
+    it: doing that dropped the partner-solutions content from part pages.
+    """
+    await el.evaluate("el => el.click()")
+
 MORE_BUTTON_RE = re.compile(
     r"(load more|show more|view more|see more|show all|view all|load all|mehr anzeigen)", re.I)
 
@@ -1449,13 +1467,16 @@ async def _expand_interactive(page):
     start_url = page.url
 
     # 1. Tabs — click each so tab panels that lazy-load via XHR get fetched.
+    #    ONE AT A TIME, with a beat between: batching every click into a single
+    #    pass was 40 s faster and lost content, because a panel that hydrates
+    #    over XHR needs to land before the next tab replaces it.
     try:
         tabs = await page.query_selector_all('[role="tab"]')
         for tab in tabs[:40]:
             try:
                 if await tab.evaluate(IN_NAV_JS):
                     continue
-                await tab.click(timeout=1500)
+                await _dom_click(tab)
                 await page.wait_for_timeout(400)
             except Exception:
                 pass
@@ -1471,7 +1492,7 @@ async def _expand_interactive(page):
             try:
                 if await btn.evaluate(IN_NAV_JS):
                     continue
-                await btn.click(timeout=1200)
+                await _dom_click(btn)
                 await page.wait_for_timeout(200)
             except Exception:
                 pass
@@ -1481,11 +1502,10 @@ async def _expand_interactive(page):
 
     # 2b. Design-resources tabs are <button>s (not role=tab): click each so
     # every pane hydrates (training items only load when their tab activates).
-    # DOM-level clicks - the sticky header intercepts coordinate clicks.
     try:
         for b in await page.query_selector_all('[id^="ds-tab-"]'):
             try:
-                await b.evaluate("el => el.click()")
+                await _dom_click(b)
                 await page.wait_for_timeout(450)
             except Exception:
                 pass
@@ -1506,7 +1526,7 @@ async def _expand_interactive(page):
                         continue
                     if not await btn.is_visible():
                         continue
-                    await btn.click(timeout=1500)
+                    await _dom_click(btn)
                     await page.wait_for_timeout(900)
                     clicked = True
                 except Exception:

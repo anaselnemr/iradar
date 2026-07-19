@@ -8,6 +8,7 @@ can always open old diffs). This keeps disk usage flat even at 3-4k URLs.
 import asyncio
 import hashlib
 import json
+import os
 import re
 import shutil
 import threading
@@ -430,7 +431,10 @@ def run_check(kind="manual", url_ids=None):
 def _run_check_inner(kind, url_ids):
     db.init_db()
     settings = db.get_settings()
-    concurrency = max(1, int(settings.get("concurrency", 4)))
+    # Default one tab per core. Measured on 16 real part pages: 8 tabs ran at
+    # 22.3 s/page, 16 at 12.7 s/page (1.76x), 24 at 12.8 s/page - so throughput
+    # saturates at core count, with no errors or CDN pushback at any level.
+    concurrency = max(1, int(settings.get("concurrency", os.cpu_count() or 8)))
 
     con = db.connect()
     # Crash recovery: a 'pending' snapshot is a suspected change whose verify

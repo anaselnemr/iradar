@@ -35,8 +35,12 @@
           <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}">
         </label>
       </div>
-      <label style="display:block; margin-top:16px">Parallel browser tabs (8 is safe on this machine; higher = faster but heavier)
-        <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
+      <label style="display:block; margin-top:16px">Parallel browser tabs
+        <span class="muted" style="font-weight:400">— measured on this machine:
+          16 is 1.76&times; faster than 8 and 24 is no better, so throughput
+          saturates at one tab per core. Lower it if the site starts refusing
+          requests.</span>
+        <input type="number" name="concurrency" min="1" max="32" value="{{ s.concurrency }}">
       </label>
     </div>
 
