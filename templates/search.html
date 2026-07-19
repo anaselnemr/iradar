@@ -138,37 +138,6 @@
      click and the shape of the row tells you where you are in the list. The
      "go to page N of 15" box it replaces made you read, type and submit to do
      what a number does in one click. */
-  .pgr { display: flex; gap: 14px; align-items: center; justify-content: flex-end;
-         flex-wrap: wrap; margin-top: 18px; }
-  .pgr-top { margin: 0 0 16px; }
-  .pgr-count { font-size: 12.5px; color: var(--muted); padding: 0 10px 0 4px;
-               border-right: 1px solid var(--line); margin-right: 5px;
-               font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .pgr-count b { color: var(--ink); font-weight: 600; }
-  .pgr-nav { display: flex; align-items: center; gap: 3px;
-             background: var(--panel); border: 1px solid var(--line);
-             border-radius: 11px; padding: 4px 6px; }
-  .pnum, .pstep {
-      min-width: 32px; height: 32px; padding: 0 9px; border-radius: 8px;
-      display: inline-flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 550; line-height: 1;
-      color: var(--ink) !important; text-decoration: none !important;
-      font-variant-numeric: tabular-nums;
-      transition: background .12s, color .12s; }
-  .pnum:hover, .pstep:hover { background: var(--hover); }
-  .pnum.on { background: var(--accent); color: #fff !important; font-weight: 650; }
-  .pstep svg { width: 16px; height: 16px; }
-  /* a dead end reads dead: no hover, no pointer, and out of the tab order */
-  .pstep.off { opacity: .32; pointer-events: none; }
-  /* the ellipsis IS the jump box - it looks like a gap until you click it */
-  .pgap { width: 30px; height: 32px; text-align: center; color: var(--muted);
-          font-size: 13px; padding: 0; border: 1px solid transparent;
-          border-radius: 8px; background: transparent;
-          font-variant-numeric: tabular-nums; }
-  .pgap:hover { border-color: var(--line); color: var(--ink); cursor: text; }
-  .pgap.typing { width: 46px; border-color: var(--accent); color: var(--ink);
-                 background: var(--card); }
-  .pgap:focus { outline: none; }
 
   /* ---- search -------------------------------------------------------------
      Centred, because it is the one thing this page is for. The dropdown that
