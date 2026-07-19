@@ -313,6 +313,7 @@ STATUS_FILTERS = {
 _CONTENT_ATTRS = [
     ("docs",       "documents",        "documents"),
     ("videos",     "videos",           "videos"),
+    ("images",     "images",           "images"),
 ]
 # section-content we already index. The nav-only components (Product details,
 # Diagrams, ...) join this group from urls.components once a re-capture fills it.
@@ -413,20 +414,28 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
     ATTR_FILTERS["has" + _stem] = ("Has " + _disp, _navjson(_col, _lbl))
     ATTR_FILTERS["no" + _stem] = ("No " + _disp, _no_navjson(_col, _lbl))
 
-# the two dropdown groups, in display order (Has + No shown together per row).
-# Page-state (Captured/Live/Not live) stays at the top of Content, as before.
-CONTENT_KEYS = ["checked", "live", "notlive"]
+# One question per dropdown. Content used to open with Captured / Live / Not
+# live, which are page STATES and belong under Status, and it carried price but
+# not images - so the one group that should have been three things and their
+# opposites was four unrelated ones. Content is now the three kinds of asset;
+# Components is every component; Status is every state.
+CONTENT_KEYS = []
 for _stem, _c, _l in _CONTENT_ATTRS:
     CONTENT_KEYS += ["has" + _stem, "no" + _stem]
-CONTENT_KEYS += ["hasprice", "noprice"]
 COMPONENT_KEYS = []
 for _stem, _c, _l in _COMPONENT_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
-COMPONENT_KEYS += ["hastable", "notable", "hastablerows",
-                   "hascommunity", "nocommunity", "hasthreads",
-                   "hashero", "nohero", "herodefault"]
+COMPONENT_KEYS += ["hastable", "notable", "hasprice", "noprice",
+                   "hascommunity", "nocommunity", "hashero", "nohero"]
 for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
+# Qualifiers, not components: they say something ABOUT a component that is
+# already listed above, so they have no meaningful opposite and sit last.
+COMPONENT_KEYS += ["hastablerows", "hasthreads", "herodefault"]
+# Page states that live in ATTR_FILTERS rather than STATUS_FILTERS. They are
+# still statuses, so they are shown with the statuses - the dropdown renders
+# them as attr checkboxes because that is the parameter they filter on.
+STATUS_ATTR_KEYS = ["checked", "live"]
 
 # The canonical component registry - the ONE list of trackable components and,
 # for each, how we know it is present on a page:
@@ -771,9 +780,16 @@ def _url_filter(q, statuses, ptypes, attrs):
     """
     where, params = [], []
     if q:
+        # The page's OWN TITLE, which is the thing on screen and the thing
+        # people type. Searching only url/label meant "page not found" matched
+        # nothing while 682 pages were titled exactly that - the title lives in
+        # the snapshot, so it needs the EXISTS (14 ms on the whole corpus).
         where.append("(u.url LIKE ? OR u.label LIKE ?"
-                     " OR u.canonical_url LIKE ?)")
-        params += [f"%{q}%"] * 3
+                     " OR u.canonical_url LIKE ?"
+                     " OR IFNULL(u.title_override,'') LIKE ?"
+                     " OR EXISTS(SELECT 1 FROM snapshots s WHERE s.url_id=u.id"
+                     "   AND s.status='ok' AND s.page_title LIKE ?))")
+        params += [f"%{q}%"] * 5
     picked = ["(" + STATUS_FILTERS[s][1] + ")"
               for s in statuses if s in STATUS_FILTERS]
     if picked:
@@ -1004,6 +1020,19 @@ def index():
         {"kind": "status", "vals": ["test"], "label": "Test set",
          "n": len(TEST_PAGE_IDS), "always": True},
     ) if c["n"] or c.get("always")]
+    # A chip is one more filter, not a fresh start. It used to link to
+    # ?status=x with everything else dropped, so picking a type and then a chip
+    # silently threw the type away - and the chip could never light up while
+    # any other filter was set, so it did not even look selected.
+    for c in quick_chips:
+        cur = statuses if c["kind"] == "status" else attrs
+        c["on"] = all(v in cur for v in c["vals"])
+        nxt = ([v for v in cur if v not in c["vals"]] if c["on"]
+               else cur + [v for v in c["vals"] if v not in cur])
+        c["href"] = url_for(
+            "index", q=q or None, ptype=sel_types or None,
+            status=(nxt if c["kind"] == "status" else statuses) or None,
+            attr=(nxt if c["kind"] == "attr" else attrs) or None)
 
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            last_run=last_run, total_open=total_open,
@@ -1019,6 +1048,7 @@ def index():
                            sel_attrs=attrs, status_filters=STATUS_FILTERS,
                            attr_filters=ATTR_FILTERS,
                            content_keys=CONTENT_KEYS, component_keys=COMPONENT_KEYS,
+                           status_attr_keys=STATUS_ATTR_KEYS,
                            sel_content_n=sum(1 for a in attrs if a in CONTENT_KEYS),
                            sel_comp_n=sum(1 for a in attrs if a in COMPONENT_KEYS),
                            status_counts=status_counts, attr_counts=attr_counts,

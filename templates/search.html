@@ -181,7 +181,7 @@
   .sugwrap { position: relative; }
   /* a quiet pulse while a query is in flight - the only feedback left once the
      button is gone, and enough to explain a slow answer */
-  .sspin { position: absolute; right: 14px; top: 50%; width: 15px; height: 15px;
+  .sspin { position: absolute; right: 40px; top: 50%; width: 15px; height: 15px;
            margin-top: -7.5px; border-radius: 50%; opacity: 0;
            border: 2px solid var(--line); border-top-color: var(--accent);
            transition: opacity .15s; pointer-events: none; }
@@ -221,19 +221,22 @@
 </style>
 
 <div class="hero">
-  <h1>Content</h1>
   <p class="muted" style="margin:0">Everything we captured, in one library —
     <b>{{ '{:,}'.format(indexed) }}</b> assets{% if ccounts.get('pages') %} across
     <b>{{ '{:,}'.format(ccounts['pages']) }}</b> live pages{% endif %}.
     Browse it all, filter by type, search before or after.</p>
   <form method="get" class="bigsearch" id="sform" autocomplete="off">
-    <span class="grow sugwrap">
-      <svg class="sicon-lead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input class="grow" type="search" name="q" value="{{ q }}" autofocus id="sq"
+    {#- type=text, not type=search: every input rule on the site is written
+        against input[type=text], so a search input silently loses all of them
+        and collapses to its placeholder width. -#}
+    <span class="sbar sbar-lg grow sugwrap">
+      <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <input type="text" name="q" value="{{ q }}" autofocus id="sq"
              placeholder="AN85951 · CY8CKIT-042 · datasheet · TRACE32 · IBIS model…">
       <span class="sspin" id="sspin" aria-hidden="true"></span>
+      <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
     </span>
     <input type="hidden" name="cat" value="{{ cat }}">
     <button id="sbtn">Search</button>

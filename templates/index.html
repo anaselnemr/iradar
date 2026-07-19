@@ -113,7 +113,10 @@
     .dd .panel label.optdim .cnt { text-decoration: line-through; }
   </style>
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
-    <input class="grow" type="text" name="q" value="{{ q }}" placeholder="Search page URL or name…">
+    <span class="sbar grow"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <input type="text" name="q" value="{{ q }}"
+             placeholder="Search pages — name, title or address…"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+    </span>
 
     <details class="dd" name="filters">
       <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
@@ -145,6 +148,14 @@
         <label data-opt><input type="checkbox" name="status" value="{{ key }}"
                  {% if key in sel_status %}checked{% endif %}> {{ sf[0] }}
           <span class="cnt" data-av="s_{{ key }}">{{ status_counts.get(key, 0) }}</span></label>
+        {% endfor %}
+        {#- Captured and Live are page states too; they filter on attr rather
+            than status, which is a parameter detail, not a reason to file them
+            under Content where they were sitting above the documents. -#}
+        {% for key in status_attr_keys %}
+        <label data-opt><input type="checkbox" name="attr" value="{{ key }}"
+                 {% if key in sel_attrs %}checked{% endif %}> {{ attr_filters[key][0] }}
+          <span class="cnt" data-av="a_{{ key }}">{{ attr_counts.get(key, 0) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -180,19 +191,11 @@
   <div class="quickchips">
     <span class="muted" style="font-size:12px; align-self:center; margin-right:3px">Quick filters:</span>
     {% for c in quick_chips %}
-      {# an active chip's link points at the CLEARED state - clicking it again
-         deselects, so every chip is a toggle #}
-      {% if c.kind == 'status' %}
-      {% set on = sel_status == c.vals and not sel_types and not sel_attrs %}
-      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if on }}"
-         title="{{ 'Click again to clear this filter' if on }}"
-         href="{{ url_for('index', q=q or None) if on else url_for('index', status=c.vals, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
-      {% else %}
-      {% set on = sel_attrs == c.vals and not sel_types and not sel_status %}
-      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if on }}"
-         title="{{ 'Click again to clear this filter' if on }}"
-         href="{{ url_for('index', q=q or None) if on else url_for('index', attr=c.vals, q=q or None) }}">{{ c.label }} <b>{{ c.n }}</b></a>
-      {% endif %}
+      {# href and on are worked out server-side: a chip keeps every other
+         filter and toggles only its own #}
+      <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if c.on }}"
+         title="{{ 'Click again to drop this filter' if c.on else 'Adds to the filters already set' }}"
+         href="{{ c.href }}">{{ c.label }} <b>{{ c.n }}</b></a>
     {% endfor %}
     {% if sel_status or sel_types or sel_attrs or q %}
       <a class="chip" href="{{ url_for('index') }}">✕ clear</a>

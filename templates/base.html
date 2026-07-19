@@ -36,13 +36,33 @@
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
          background: var(--bg); color: var(--ink); font-size: 15px; }
-  header { background: #17161c; color: #fff; padding: 14px 28px;
-           display: flex; align-items: center; gap: 24px; }
-  header .logo { font-weight: 700; font-size: 18px; letter-spacing: .3px; }
+  /* Three tracks, so the nav is centred on the PAGE rather than on whatever is
+     left over after the logo - with a plain flex row it drifts left or right
+     as the logo or the buttons change width. */
+  header { background: #17161c; color: #fff; padding: 10px 22px;
+           display: grid; grid-template-columns: 1fr auto 1fr;
+           align-items: center; gap: 18px;
+           border-bottom: 1px solid rgba(255,255,255,.07); }
+  header .logo { font-weight: 700; font-size: 17px; letter-spacing: .2px; }
   header .logo span { color: #8b93e8; }
-  header nav a { color: #b9b8c6; text-decoration: none; margin-right: 18px;
-                 font-size: 14px; }
-  header nav a:hover { color: #fff; }
+  header nav { display: flex; gap: 2px; justify-self: center;
+               background: rgba(255,255,255,.05); padding: 3px;
+               border-radius: 11px; border: 1px solid rgba(255,255,255,.06); }
+  header nav a { color: #b9b8c6; text-decoration: none; font-size: 13.5px;
+                 padding: 6px 13px; border-radius: 8px; white-space: nowrap;
+                 transition: background .14s, color .14s; }
+  header nav a:hover { color: #fff; background: rgba(255,255,255,.07); }
+  /* which page you are on, since the pages no longer say so themselves */
+  header nav a.on { color: #fff; background: rgba(255,255,255,.14);
+                    font-weight: 600;
+                    box-shadow: inset 0 0 0 1px rgba(255,255,255,.09); }
+  header .hactions { justify-self: end; display: flex; gap: 8px;
+                     align-items: center; }
+  @media (max-width: 900px) {
+    header { grid-template-columns: 1fr auto; row-gap: 10px; }
+    header nav { grid-column: 1 / -1; justify-self: stretch;
+                 overflow-x: auto; }
+  }
   main { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
   .card { background: var(--card); border: 1px solid var(--line);
           border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
@@ -354,27 +374,11 @@
   .hero h1 { font-size: 23px; margin: 0 0 5px; }
   .bigsearch { display: flex; gap: 9px; margin-top: 15px; max-width: 660px; }
   .bigsearch .sugwrap { display: flex; flex: 1 1 auto; }
-  .bigsearch .sicon-lead { position: absolute; left: 13px; top: 50%;
-                           transform: translateY(-50%); width: 17px; height: 17px;
-                           color: var(--muted); pointer-events: none; z-index: 1; }
-  .bigsearch input[type=text], .bigsearch input[type=search] { font-size: 15px; padding: 11px 14px 11px 40px;
-                                border-radius: 10px; width: 100%; background: var(--panel); color: var(--ink);
-                                color: var(--ink); border: 1.5px solid var(--line);
-                                box-sizing: border-box;
-                                transition: border-color .15s, box-shadow .15s; }
-  .bigsearch input[type=text]::placeholder,
-  .bigsearch input[type=search]::placeholder { color: var(--muted); }
-  .bigsearch input[type=text]:focus,
-  .bigsearch input[type=search]:focus { outline: none; border-color: var(--accent);
-                                box-shadow: 0 0 0 3px rgba(183, 0, 45, .14); }
-  /* the native clear (x) that type=search provides: tinted to the theme
-     instead of the browser's default black square */
-  .bigsearch input[type=search]::-webkit-search-cancel-button {
-      -webkit-appearance: none; appearance: none;
-      width: 13px; height: 13px; cursor: pointer; margin-right: 22px;
-      background: var(--muted);
-      -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M18 6L6 18M6 6l12 12' stroke='black' stroke-width='2.4' stroke-linecap='round'/></svg>") center/contain no-repeat;
-              mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M18 6L6 18M6 6l12 12' stroke='black' stroke-width='2.4' stroke-linecap='round'/></svg>") center/contain no-repeat; }
+  /* The content bar's own input styling used to live here. It is a .sbar now,
+     like the other three, and two rules of equal specificity both aiming at
+     input[type=text] would have been decided by source order alone - the exact
+     collision that leaves a box looking different on one page for no reason
+     anyone can find later. The wrapper rules above and below still apply. */
   .bigsearch button { padding: 10px 22px; border-radius: 10px; font-size: 14.5px;
                       font-weight: 600; }
   .pills { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
@@ -518,14 +522,56 @@
   .lvlopt-check { margin-left: auto; color: var(--ok); font-weight: 700; }
   .lvlopt-clear { color: var(--muted); }
 
-  /* header buttons (theme, palette) */
-  .hbtn { background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.16);
-          color: #e2e8f0; border-radius: 8px; padding: 6px 11px; cursor: pointer;
-          font-size: 13.5px; display: inline-flex; gap: 7px; align-items: center; }
-  .hbtn:hover { background: rgba(255,255,255,.17); }
-  .hkey { font-size: 10.5px; border: 1px solid rgba(255,255,255,.28);
-          border-radius: 5px; padding: 1px 5px; opacity: .8;
-          font-family: Consolas, monospace; }
+  /* Header buttons. Emoji were doing the work here - a 🔍 and a 🌙 render in
+     whatever colour and weight the platform font decides, which is why they sat
+     outside the design. Stroked SVG inherits currentColor and matches the type. */
+  .hbtn { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.11);
+          color: #cfced9; border-radius: 9px; padding: 6px 10px; cursor: pointer;
+          font-size: 13px; display: inline-flex; gap: 8px; align-items: center;
+          transition: background .14s, color .14s, border-color .14s; }
+  .hbtn:hover { background: rgba(255,255,255,.13); color: #fff;
+                border-color: rgba(255,255,255,.2); }
+  .hbtn svg { width: 15px; height: 15px; flex-shrink: 0; }
+  .hbtn.icon-only { padding: 7px; }
+  .hkey { font-size: 10.5px; border: 1px solid rgba(255,255,255,.2);
+          border-radius: 5px; padding: 1px 5px; opacity: .75;
+          font-family: Consolas, monospace; letter-spacing: .3px; }
+  /* one icon per theme, swapped by the attribute the toggle already sets */
+  .themeicon-dark { display: none; }
+  [data-theme="dark"] .themeicon-dark { display: block; }
+  [data-theme="dark"] .themeicon-light { display: none; }
+
+  /* ---- ONE search bar, used in all four places ------------------------
+     Whole-site (Ctrl+K), the dashboard's page search, the content library and
+     the hierarchy filter were four different boxes - different heights, borders
+     and focus rings - which made them read as four unrelated features rather
+     than the same one pointed at different things. The shape is shared here;
+     only what each searches, and what it shows back, differs. */
+  .sbar { position: relative; display: flex; align-items: center; width: 100%; }
+  .sbar > svg.slead { position: absolute; left: 14px; width: 17px; height: 17px;
+                      color: var(--muted); pointer-events: none; }
+  .sbar input[type=text], .sbar input:not([type]) {
+    width: 100%; font: inherit; font-size: 15px; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 11px; padding: 11px 40px 11px 42px; outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s; }
+  .sbar input::placeholder { color: var(--muted); opacity: .85; }
+  .sbar input:hover { border-color: var(--muted); }
+  .sbar input:focus { border-color: var(--accent); background: var(--card);
+                      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  /* clear button, only once there is something to clear */
+  .sbar .sclear { position: absolute; right: 9px; width: 24px; height: 24px;
+                  border: 0; border-radius: 7px; background: none; cursor: pointer;
+                  color: var(--muted); display: none; align-items: center;
+                  justify-content: center; padding: 0; line-height: 1; }
+  .sbar .sclear svg { width: 13px; height: 13px; }
+  .sbar .sclear:hover { background: var(--hover); color: var(--ink); }
+  .sbar.has-text .sclear { display: flex; }
+  /* the big one on the content page keeps its extra presence, same shape */
+  .sbar-lg input[type=text] { font-size: 16px; padding: 14px 44px 14px 46px;
+                              border-radius: 13px; }
+  .sbar-lg > svg.slead { left: 16px; width: 19px; height: 19px; }
+  .sbar-hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 
   /* command palette */
   .pal { position: fixed; inset: 0; z-index: 200; background: rgba(10, 14, 25, .45);
@@ -629,18 +675,30 @@
 <body>
 <header>
   <div class="logo">Infineon<span>Watch</span></div>
+  {#- the nav carries which page you are on, so the pages themselves no longer
+      repeat their own name in a heading -#}
   <nav>
-    <a href="{{ url_for('index') }}">Dashboard</a>
-    <a href="{{ url_for('search_items') }}">Content</a>
-    <a href="{{ url_for('hierarchy') }}">Hierarchy</a>
-    <a href="{{ url_for('export_builder') }}">Export</a>
-    <a href="{{ url_for('history') }}">Run history</a>
-    <a href="{{ url_for('settings_view') }}">Settings</a>
+    {% for ep, label in (('index', 'Dashboard'), ('search_items', 'Content'),
+                         ('hierarchy', 'Hierarchy'), ('export_builder', 'Export'),
+                         ('history', 'Run history'), ('settings_view', 'Settings')) %}
+    <a href="{{ url_for(ep) }}"
+       class="{{ 'on' if request.endpoint == ep }}"
+       {% if request.endpoint == ep %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
   </nav>
-  <div style="margin-left:auto; display:flex; gap:10px; align-items:center">
-    <button type="button" class="hbtn" onclick="openPalette()" title="Search everything (Ctrl+K)">
-      🔍 <span class="hkey">Ctrl K</span></button>
-    <button type="button" class="hbtn" id="themebtn" onclick="toggleTheme()" title="Light / dark mode">🌙</button>
+  <div class="hactions">
+    <button type="button" class="hbtn" onclick="openPalette()"
+            title="Search everything (Ctrl+K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <span class="hkey">Ctrl K</span></button>
+    <button type="button" class="hbtn icon-only" id="themebtn" onclick="toggleTheme()"
+            title="Light / dark mode" aria-label="Toggle light or dark mode">
+      <svg class="themeicon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+      <svg class="themeicon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.3 8.3 0 1 0 20 14.5z"/></svg>
+    </button>
   </div>
 </header>
 <main>
@@ -657,8 +715,10 @@
 {# ---- command palette: Ctrl+K from anywhere ---- #}
 <div id="pal" class="pal" hidden>
   <div class="pal-box" role="dialog" aria-label="Search everything">
-    <input id="pal-in" type="text" placeholder="Search documents, boards, videos, pages…"
-           autocomplete="off" spellcheck="false">
+    <span class="sbar sbar-lg"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <input id="pal-in" type="text" placeholder="Search everything — documents, boards, videos, pages…"
+             autocomplete="off" spellcheck="false"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+    </span>
     <div id="pal-list" class="pal-list"></div>
     <div class="pal-foot">↑↓ choose · Enter open · Esc close</div>
   </div>
@@ -713,13 +773,9 @@
     var dark = root.dataset.theme === "dark";
     if (dark) { delete root.dataset.theme; localStorage.setItem("theme", "light"); }
     else { root.dataset.theme = "dark"; localStorage.setItem("theme", "dark"); }
-    var b = document.getElementById("themebtn");
-    if (b) b.textContent = dark ? "🌙" : "☀️";
+    // the icon itself is swapped in CSS off data-theme - setting textContent
+    // here used to replace the whole button, SVG included
   }
-  (function () {
-    var b = document.getElementById("themebtn");
-    if (b && document.documentElement.dataset.theme === "dark") b.textContent = "☀️";
-  })();
 
   var palSel = -1, palItems = [], palTimer = null;
   function openPalette() {
@@ -808,6 +864,42 @@ function closePopovers(except) {
     if (!dirty) d.open = false;
   });
 }
+// Every search bar gets the same clear button and the same "/" shortcut,
+// wherever it is - the four of them are one control pointed at four things.
+document.querySelectorAll('.sbar').forEach(function (bar) {
+  var input = bar.querySelector('input');
+  if (!input) return;
+  var btn = bar.querySelector('.sclear');
+  function sync() { bar.classList.toggle('has-text', !!input.value); }
+  input.addEventListener('input', sync);
+  if (btn) btn.addEventListener('click', function () {
+    input.value = '';
+    sync();
+    // whatever the page does on typing, it must also do on clearing
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.focus();
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && input.value) {
+      input.value = ''; sync();
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      e.stopPropagation();          // do not also close a popover
+    }
+  });
+  sync();
+});
+// "/" focuses the search on the page you are on; Ctrl+K stays the whole-site one
+document.addEventListener('keydown', function (e) {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  var t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  var first = document.querySelector('.sbar input');
+  if (!first) return;
+  e.preventDefault();
+  first.focus();
+  first.select();
+});
+
 document.addEventListener('click', function (ev) { closePopovers(ev.target); });
 // Escape closes the innermost one and hands focus back to what opened it
 document.addEventListener('keydown', function (ev) {
