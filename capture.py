@@ -1463,7 +1463,22 @@ async def _ensure_on(page, start_url):
 async def _expand_interactive(page):
     """Click tabs, expand accordions, press 'load more' buttons.
 
-    Skips anything inside header/nav/footer so we don't pop open menus."""
+    Skips anything inside header/nav/footer so we don't pop open menus.
+
+    THE FLAT SLEEPS BELOW ARE LOAD-BEARING. They look like the obvious thing to
+    optimise - ~47 s per part page - and they are not. Two things were measured:
+
+    * Replacing them with "wait until the DOM goes quiet, cap well above the old
+      sleep" was 4% faster and DROPPED an image: a partner logo on 1 of 22 pages
+      that both baseline passes captured. Mutation silence is not the same as
+      loaded; a lazily-fetched asset can arrive after the DOM has gone still.
+    * The 47 s figure came from profiling ONE page at a time. At the real
+      concurrency of 8 these sleeps overlap other pages' work, so they are very
+      nearly free - which is why removing them bought almost nothing.
+
+    Anything touched here must be diffed against two same-code baseline passes
+    (the noise floor is essentially zero: 0/22 pages differ), never against a
+    single run and never on wall-clock alone."""
     start_url = page.url
 
     # 1. Tabs — click each so tab panels that lazy-load via XHR get fetched.
