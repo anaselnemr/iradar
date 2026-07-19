@@ -1252,7 +1252,16 @@ SECTIONS_JS = r"""
   const navSeen = new Set();
   out.components = [];
   document.querySelectorAll(NAV_ANCHORS).forEach(a => {
-    const t = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
+    // A nav entry the page does not DISPLAY is not a component it carries.
+    // Infineon's template ships modules it has nothing for - Documents is the
+    // common one - collapsed to zero height rather than leaving them out, so
+    // the anchor is in the DOM at 0x0. innerText is empty for those, and the
+    // `|| a.textContent` fallback that used to be here read them anyway: the
+    // adapters-chargers page reported a Documents section that nobody can see.
+    const r = a.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    if (a.checkVisibility && !a.checkVisibility()) return;
+    const t = (a.innerText || '').replace(/\s+/g, ' ').trim();
     const k = t.toLowerCase();
     if (t && t.length < 40 && !navSeen.has(k)) { navSeen.add(k); out.components.push(t); }
   });

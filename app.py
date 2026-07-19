@@ -535,8 +535,21 @@ def _all_components():
     return COMPONENTS + _custom_components()
 
 
+# Until this moment the section-nav list could contain entries the page does
+# not display: Infineon ships modules it has nothing for - Documents most
+# often - collapsed to zero height, and the extractor read them through a
+# textContent fallback. capture.py now requires a nav anchor to be rendered.
+# Snapshots older than this were taken with the old rule, so their nav list
+# cannot support an "offered but empty" claim; those components read as
+# absent, which is what the page actually shows, until they are re-captured.
+# The flag-backed blocks (hero image, developer community, products table)
+# are unaffected - they measure exists/has_content on the block itself and
+# never consult the nav.
+NAV_VISIBILITY_FIX = "2026-07-19 11:00:00"
+
+
 def _page_component_states(components_json, detail_tabs_json, flags, cat_present,
-                           registry=None):
+                           registry=None, captured_at=None):
     """Per component: "content", "empty" or "absent".
 
     Present and empty is a real, common state and it was being read as absent:
@@ -573,7 +586,8 @@ def _page_component_states(components_json, detail_tabs_json, flags, cat_present
             # nav OR tabs: a page offers Benefits as a Product-details sub-tab,
             # never as a section-nav entry, so checking only the nav missed
             # every empty one of those
-            elif label.lower() in nav or label.lower() in tabs:
+            elif ((label.lower() in nav or label.lower() in tabs)
+                  and (captured_at or "") >= NAV_VISIBILITY_FIX):
                 out[key] = "empty"
             else:
                 out[key] = "absent"
@@ -591,14 +605,15 @@ def _page_component_states(components_json, detail_tabs_json, flags, cat_present
 
 
 def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
-                        registry=None):
+                        registry=None, captured_at=None):
     """The set of component keys PRESENT on one page - content OR empty.
 
     Kept as the presence answer for everything that only asks "is it there";
     _page_component_states is the one that distinguishes the two.
     """
     return {k for k, v in _page_component_states(
-        components_json, detail_tabs_json, flags, cat_present, registry).items()
+        components_json, detail_tabs_json, flags, cat_present, registry,
+        captured_at).items()
         if v != "absent"}
 
 
@@ -2215,7 +2230,8 @@ def url_detail(url_id):
     this_cats = {cat for cat in _CAT_TO_COMP
                  if sections and sections.get(cat)}
     states = _page_component_states(u["components"], u["detail_tabs"], flags,
-                                    this_cats)
+                                    this_cats,
+                                    captured_at=u["last_checked"])
     have = {k for k, v in states.items() if v != "absent"}
     con5 = db.connect()
     etype = _etype(u["ptype"] or "", u["url"], u["level"])
@@ -4546,7 +4562,8 @@ def _export_rows(con, levels, cols, verbose=False):
         if want_comps:
             states = _page_component_states(
                 p["components"], p["detail_tabs"], flags,
-                cats.get(p["id"], set()), registry)
+                cats.get(p["id"], set()), registry,
+                captured_at=p["last_checked"])
             for k in want_comps:
                 st = states.get(k, "absent")
                 # "empty" is its own answer here too - a column of yes/no
@@ -5192,7 +5209,8 @@ def export_xlsx():
         except Exception:
             flags = {}
         have = _page_component_set(u["components"], u["detail_tabs"], flags,
-                                   cats.get(u["id"], set()), registry)
+                                   cats.get(u["id"], set()), registry,
+                                   captured_at=u["last_checked"])
         comp_cells = []
         for k, _l, kind, arg in registry:
             if kind == "cat":
