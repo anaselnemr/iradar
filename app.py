@@ -4180,18 +4180,32 @@ def _export_meta_cols():
     return [("bl", "BL"), ("pl", "PL"), ("cm", "CM"), ("owner", "Owner")]
 
 
-def _export_rows(con, levels, cols):
+# an Excel cell holds 32,767 characters; a page with two hundred documents can
+# reach that, and a truncated cell is better than a corrupt workbook
+_CELL_CAP = 30000
+
+
+def _export_rows(con, levels, cols, verbose=False):
     """One row per page: its identity, then whichever columns were ticked.
 
     Component presence comes from the same resolver the page view uses, so a
     "yes" here means exactly what a green chip there means - never a second
     definition of the same fact drifting away from the first.
+
+    verbose=True fills each component cell with what is actually ON the page
+    rather than yes/no. On screen yes/no is what you want - a wall of document
+    titles is unreadable at a glance - but in a spreadsheet the cell should
+    carry the thing itself, because that is what you opened the spreadsheet
+    for. Only the eleven components whose content we store can do this; the
+    other fourteen are nav labels and flags with no text behind them, so they
+    stay yes/no rather than pretending to be empty.
     """
     registry = _all_components()          # resolved ONCE, not per page
     comp_keys = [k for k, _l, _kind, _a in registry]
     want_comps = [k for k in comp_keys if k in cols]
     want_meta = [k for k, _l in _export_meta_cols() if k in cols]
 
+    cat_of = {k: a for k, _l, kind, a in registry if kind == "cat"}
     q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.cm, u.owner,"
          " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
          " COALESCE(NULLIF(u.title_override,''),"
@@ -4209,6 +4223,7 @@ def _export_rows(con, levels, cols):
     # which content categories each page actually captured - one query for the
     # whole set rather than one per page
     cats = {}
+    texts = {}
     if want_comps and pages:
         ids = [p["id"] for p in pages]
         for i in range(0, len(ids), 800):
@@ -4218,6 +4233,19 @@ def _export_rows(con, levels, cols):
                     + ",".join("?" * len(chunk)) + ") GROUP BY url_id, category",
                     chunk):
                 cats.setdefault(r["url_id"], set()).add(r["category"])
+        if verbose:
+            wanted = {cat_of[k] for k in want_comps if k in cat_of}
+            if wanted:
+                for i in range(0, len(ids), 800):
+                    chunk = ids[i:i + 800]
+                    for r in con.execute(
+                            "SELECT url_id, category, title FROM items"
+                            " WHERE url_id IN (" + ",".join("?" * len(chunk))
+                            + ") AND category IN ("
+                            + ",".join("?" * len(wanted)) + ")"
+                            " ORDER BY id", chunk + list(wanted)):
+                        texts.setdefault((r["url_id"], r["category"]),
+                                         []).append(r["title"] or "")
 
     out = []
     for p in pages:
@@ -4234,7 +4262,17 @@ def _export_rows(con, levels, cols):
             have = _page_component_set(p["components"], p["detail_tabs"], flags,
                                        cats.get(p["id"], set()), registry)
             for k in want_comps:
-                row["vals"].append("yes" if k in have else "no")
+                if not verbose:
+                    row["vals"].append("yes" if k in have else "no")
+                elif k in cat_of:
+                    lines = texts.get((p["id"], cat_of[k]), [])
+                    row["vals"].append(chr(10).join(lines)[:_CELL_CAP])
+                elif k == "hero_image":
+                    row["vals"].append((flags.get("hero_image") or {}).get("src", "")
+                                       or ("yes" if k in have else "no"))
+                else:
+                    # a nav label or a flag: presence is all there ever was
+                    row["vals"].append("yes" if k in have else "no")
         out.append(row)
     return out, want_meta, want_comps
 
@@ -4365,7 +4403,10 @@ def export_builder_download():
                       + [e["levels"].get(l, 0) for l in ilevels]
                       + ["; ".join(p["title"] for p in e["pages"])])
     else:
-        rows, want_meta, want_comps = _export_rows(con, levels, cols)
+        # verbose: the sheet carries what is on the page, not a yes/no you would
+        # then have to open the page to resolve
+        rows, want_meta, want_comps = _export_rows(con, levels, cols,
+                                                   verbose=True)
         ws = wb.create_sheet("Pages")
         ws.append(["Level", "Type", "Page", "URL", "Status"]
                   + _export_headers(want_meta, want_comps))
@@ -4425,6 +4466,16 @@ def export_xlsx():
     for r in con.execute("SELECT url_id, title FROM items"
                          " WHERE category='overview'"):
         overview_by.setdefault(r["url_id"], r["title"] or "")
+    # every stored component's actual text, so the workbook carries content
+    # rather than a yes you would have to go and resolve
+    cat_args = {a for _k, _l, kind, a in registry if kind == "cat"}
+    text_by = {}
+    for r in con.execute(
+            "SELECT url_id, category, title FROM items WHERE category IN ("
+            + ",".join("?" * len(cat_args)) + ") ORDER BY id",
+            list(cat_args)):
+        text_by.setdefault((r["url_id"], r["category"]), []).append(
+            r["title"] or "")
     snap_by = {}
     for r in con.execute(
             "SELECT url_id, MAX(id) AS id, text_lines, image_count"
@@ -4443,6 +4494,16 @@ def export_xlsx():
             flags = {}
         have = _page_component_set(u["components"], u["detail_tabs"], flags,
                                    cats.get(u["id"], set()), registry)
+        comp_cells = []
+        for k, _l, kind, arg in registry:
+            if kind == "cat":
+                comp_cells.append(chr(10).join(
+                    text_by.get((u["id"], arg), []))[:_CELL_CAP])
+            elif k == "hero_image":
+                comp_cells.append((flags.get("hero_image") or {}).get("src", "")
+                                  or ("yes" if k in have else "no"))
+            else:
+                comp_cells.append("yes" if k in have else "no")
         ws.append([u["id"], u["url"], u["label"] or "", u["ptype"] or "",
                    u["level"] or "", u["last_status"] or "", u["last_http"],
                    u["last_checked"] or "", u["bl"] or "", u["pl"] or "",
@@ -4450,7 +4511,7 @@ def export_xlsx():
                    snap["text_lines"] if snap else 0,
                    snap["image_count"] if snap else 0]
                   + counts
-                  + ["yes" if k in have else "no" for k, _l, _x, _y in registry]
+                  + comp_cells
                   + [ov[0].get("title", "") if ov else ""])
 
     # one sheet per kind: the item's own data, then every page carrying it
