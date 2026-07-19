@@ -446,7 +446,14 @@ document.addEventListener('change', (e) => {
   if (!t) return;
   if (t.id === 'selall') {
     const am = document.getElementById('all-matching'); if (am) am.value = '0';
-    document.querySelectorAll('.rowsel').forEach(cb => { cb.checked = t.checked; });
+    // Tick the boxes AND record them in SEL. Without the SEL update the ticks
+    // were cosmetic: selcount stayed 0, the action bar never appeared, and the
+    // selection was empty the moment you turned the page - which is exactly
+    // what "select all does nothing" looked like.
+    document.querySelectorAll('.rowsel').forEach(cb => {
+      cb.checked = t.checked;
+      if (t.checked) SEL.add(cb.value); else SEL.delete(cb.value);
+    });
     refreshCount();
   } else if (t.classList && t.classList.contains('rowsel')) {
     if (t.checked) SEL.add(t.value); else SEL.delete(t.value);
