@@ -3152,6 +3152,11 @@ def _substring_keys(con, toks, cat):
 
 
 BROWSE_PER_PAGE = 60
+# How many per page, and how large the cards are. Fixed sets rather than free
+# numbers: any value is a valid query string, and an unbounded one is a way to
+# ask the server for 200,000 rows.
+PER_PAGE_CHOICES = (24, 60, 120, 240)
+SIZE_CHOICES = ("s", "m", "l")
 
 # browse-mode SQL per chip: plain, index-friendly filters (search mode keeps
 # the richer per-item functions; browse trades the edge cases for pagination)
@@ -3272,7 +3277,18 @@ ITEM_SORT_LABELS = [("az", "A → Z"), ("za", "Z → A"),
 _IMG_URL_RE = re.compile(r"\.(png|jpe?g|gif|webp|svg)(\?|$)|/is/image/", re.I)
 
 
-def item_thumb(cat, item_url, img, item_key=""):
+def is_gated(meta):
+    """Does this document sit behind a MyInfineon login?
+
+    It matters for the preview: our server fetches the file to render its first
+    page, and for a gated one it gets the login wall instead. So these show a
+    locked icon rather than a preview that was never going to arrive - the
+    absence of a picture is explained instead of just being an absence.
+    """
+    return "myinfineon" in (meta or "").lower()
+
+
+def item_thumb(cat, item_url, img, item_key="", meta=""):
     """The picture to show beside an item, or "" for none.
 
     Nothing new is stored: every one of these is an address the capture already
@@ -3284,7 +3300,7 @@ def item_thumb(cat, item_url, img, item_key=""):
         return item_url if _IMG_URL_RE.search(item_url or "") else ""
     if img:                       # partners, and design-resource cards
         return img
-    if cat == "documents" and item_key:
+    if cat == "documents" and item_key and not is_gated(meta):
         return url_for("doc_preview_png", key=item_key)
     return ""
 
@@ -3362,6 +3378,15 @@ def search_items():
     if sort not in _PAGE_SORT_SQL:
         sort = "az"
     try:
+        per_page = int(request.args.get("per", BROWSE_PER_PAGE))
+    except Exception:
+        per_page = BROWSE_PER_PAGE
+    if per_page not in PER_PAGE_CHOICES:
+        per_page = BROWSE_PER_PAGE
+    size = request.args.get("size", "m")
+    if size not in SIZE_CHOICES:
+        size = "m"
+    try:
         pageno = max(1, int(request.args.get("page", 1)))
     except Exception:
         pageno = 1
@@ -3386,7 +3411,7 @@ def search_items():
             " FROM urls u WHERE u.active=1 AND " + ATTR_FILTERS["live"][1] +
             " ORDER BY " + _PAGE_SORT_SQL[sort] +
             " LIMIT ? OFFSET ?",
-            (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
+            (per_page, (pageno - 1) * per_page)).fetchall()
         page_hits = [{"id": r["id"], "url": r["url"],
                       "level": r["level"] or "",
                       "snap_id": r["snap_id"],
@@ -3410,7 +3435,7 @@ def search_items():
             # size: sorting every group first cost 922 ms, this costs 4 ms.
             # It also makes paging deterministic when titles repeat.
             " ORDER BY " + _ITEM_SORT_SQL[sort] + " LIMIT ? OFFSET ?",
-            (BROWSE_PER_PAGE, (pageno - 1) * BROWSE_PER_PAGE)).fetchall()
+            (per_page, (pageno - 1) * per_page)).fetchall()
         for r in rows:
             _bk = backend_system(r["category"], r["meta"], r["doc_type"],
                                  r["grp"], r["item_url"])
@@ -3422,7 +3447,9 @@ def search_items():
                            "npages": r["npages"], "pages": [],
                            "backend": _bk,
                            "thumb": item_thumb(r["category"], r["item_url"],
-                                               r["img"], r["item_key"]),
+                                               r["img"], r["item_key"],
+                                               r["meta"]),
+                           "gated": is_gated(r["meta"]),
                            "is_video": is_video_item(r["category"],
                                                      r["item_url"], r["meta"]),
                            "aname": asset_name(r["category"], r["item_url"]),
@@ -3676,7 +3703,9 @@ def search_items():
                                "aname": asset_name(r["category"],
                                                    r["item_url"]),
                                "thumb": item_thumb(r["category"], r["item_url"],
-                                                   r["img"], r["item_key"]),
+                                                   r["img"], r["item_key"],
+                                                   r["meta"]),
+                               "gated": is_gated(r["meta"]),
                                "bsearch": backend_search_link(
                                    _bk, asset_name(r["category"],
                                                    r["item_url"]), _sset)}
@@ -3691,7 +3720,7 @@ def search_items():
         groups.sort(key=lambda g: (g["rank"], -len(g["pages"])))
         total = sum(len(g["pages"]) for g in groups)
     con.close()
-    has_more = browse and pageno * BROWSE_PER_PAGE < browse_total
+    has_more = browse and pageno * per_page < browse_total
     return render_template("search.html", q=q, cat=cat,
                            pills=[(k, l) for k, l, _f in SEARCH_PILLS],
                            pill_labels=PILL_LABELS, page_hits=page_hits,
@@ -3699,7 +3728,8 @@ def search_items():
                            groups=groups, total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS),
                            ccounts=ccounts, browse=browse, pageno=pageno,
-                           has_more=has_more, per_page=BROWSE_PER_PAGE,
+                           has_more=has_more, per_page=per_page, size=size,
+                           per_choices=PER_PAGE_CHOICES,
                            sort=sort,
                            sort_opts=(SORT_LABELS if cat == "pages"
                                       else ITEM_SORT_LABELS))
@@ -4312,6 +4342,26 @@ def _sweep_images():
         " (lower(item_url) LIKE '%community.infineon.com%'"
         "  OR lower(item_url) LIKE '%infineon-developer-community.png%')"
     ).rowcount
+    # rows filed as images that are not images. A lightbox trigger is written
+    # <img src="#">, which the browser resolves against the document - so the
+    # page's own address arrived in the picture library, titled "modalImg", on
+    # 126 pages. The capture refuses these now; this clears the ones already
+    # stored, which would otherwise sit there until each page is next captured.
+    notimg = con.execute(
+        "DELETE FROM items WHERE category='images'"
+        " AND item_url NOT LIKE '%/is/image/%'"
+        " AND item_url NOT LIKE '%/jcr:content/renditions/%'"
+        " AND lower(item_url) NOT LIKE '%.png%'"
+        " AND lower(item_url) NOT LIKE '%.jpg%'"
+        " AND lower(item_url) NOT LIKE '%.jpeg%'"
+        " AND lower(item_url) NOT LIKE '%.gif%'"
+        " AND lower(item_url) NOT LIKE '%.webp%'"
+        " AND lower(item_url) NOT LIKE '%.svg%'"
+        " AND lower(item_url) NOT LIKE '%.avif%'"
+        " AND lower(item_url) NOT LIKE '%.bmp%'"
+        " AND lower(item_url) NOT LIKE '%.ico%'").rowcount
+    if notimg:
+        print(f"  dropped {notimg} row(s) filed as images that are not images")
     seen, dropped = {}, 0
     for r in con.execute("SELECT id, url_id, item_url FROM items"
                          " WHERE category='images' ORDER BY id").fetchall():

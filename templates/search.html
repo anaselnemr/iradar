@@ -35,6 +35,16 @@
   {% if g.thumb %}
   <img class="bthumb" src="{{ g.thumb }}" alt="" loading="lazy"
        onerror="this.style.display='none'">
+  {% elif g.gated %}
+  {#- a MyInfineon file: our server gets the login wall, not the document, so
+      there was never going to be a preview. Say so with a lock rather than
+      leaving a blank where a picture should be. -#}
+  <span class="thumbfall gated" title="Behind a MyInfineon login — no preview available">
+    {{ ticon(g.category) }}
+    <svg class="lockbadge" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+         aria-label="Login required"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+  </span>
   {% else %}
   <span class="thumbfall">{{ ticon('videos' if g.is_video else g.category) }}</span>
   {% endif %}
@@ -48,6 +58,9 @@
 {% set pageno = pageno if pageno is defined else 1 %}
 {% set has_more = has_more if has_more is defined else False %}
 {% set per_page = per_page if per_page is defined else 60 %}
+{% set size = size if size is defined else 'm' %}
+{% set per_choices = per_choices if per_choices is defined else (24, 60, 120, 240) %}
+{% set sort = sort if sort is defined else 'az' %}
 
 <style>
   .launchpad { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
@@ -77,8 +90,32 @@
      the same size, so rows keep a single left edge instead of ragging */
   .thumbfall { width: 74px; height: 56px; border: 1px solid var(--line);
                border-radius: 8px; background: var(--hover); flex-shrink: 0;
-               display: flex; align-items: center; justify-content: center; }
+               display: flex; align-items: center; justify-content: center;
+               position: relative; }
   .thumbfall .ticon { width: 22px; height: 22px; color: var(--muted); }
+  /* the lock sits ON the file icon, bottom-right, so the row still reads as a
+     document first and a locked one second */
+  .thumbfall.gated .ticon { opacity: .55; }
+  .lockbadge { position: absolute; right: 5px; bottom: 4px;
+               width: 15px; height: 15px; color: var(--warn);
+               background: var(--card); border-radius: 4px; padding: 1px; }
+
+  /* card size: same rows, three densities */
+  .sz-s .bthumb, .sz-s .thumbfall { width: 52px; height: 40px; }
+  .sz-l .bthumb, .sz-l .thumbfall { width: 118px; height: 88px; }
+  .sz-s .pageshot { aspect-ratio: 16 / 7; }
+  .sz-l .pageshot { aspect-ratio: 4 / 3; }
+  .sz-s .pagegrid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .sz-l .pagegrid { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+
+  .ctrls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+           margin: 0 2px 12px; }
+  .ctrls .grp { display: flex; gap: 6px; align-items: center; }
+  .ctrls .lbl { font-size: 12px; color: var(--muted); }
+  .jump { display: flex; gap: 5px; align-items: center; }
+  .jump input { width: 62px; padding: 3px 7px; font-size: 12.5px;
+                border: 1px solid var(--line); border-radius: 7px;
+                background: var(--panel); color: var(--ink); }
   /* page cards: the screenshot IS the recognisable thing about a page.
      Cropped from the TOP, because that is the masthead you recognise; a
      contained full-page shot at this size is an unreadable grey ribbon. */
@@ -116,7 +153,7 @@
       <div class="suggest" id="suggest" role="listbox"></div>
     </span>
     <input type="hidden" name="cat" value="{{ cat }}">
-    <button>Search</button>
+    <button id="sbtn">Search</button>
   </form>
   <div class="pills">
     {% for k, lbl in pills %}
@@ -126,31 +163,65 @@
   </div>
 </div>
 
-{% macro pager() %}
+{#- Every browse link carries the whole view: which chip, which order, how many
+    per page, how big. Drop any one of them and paging quietly resets it, which
+    is what the old pager did with the sort. -#}
+{% macro burl(page=None, o=None, n=None, z=None) %}{{ url_for('search_items',
+    cat=cat, sort=(o or sort), per=(n or per_page), size=(z or size),
+    page=page, q=q or None) }}{% endmacro %}
+
+{% set last_page = ((total + per_page - 1) // per_page) if per_page else 1 %}
+
+{% macro pager(where='bottom') %}
 {% if browse and (pageno > 1 or has_more) %}
-<div class="pgr">
+<div class="pgr" style="{{ 'margin:0 0 12px; justify-content:flex-start' if where == 'top' }}">
   <span class="muted" style="font-size:12.5px">{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }} of {{ '{:,}'.format(total) }}</span>
-  {#- carry the sort across pages: turning the list round and then paging
-      used to silently drop you back into A-Z on page 2 -#}
-  {% if pageno > 1 %}<a class="pill" href="{{ url_for('search_items', cat=cat, sort=sort, page=pageno-1) }}">‹ Prev</a>{% endif %}
-  {% if has_more %}<a class="pill" href="{{ url_for('search_items', cat=cat, sort=sort, page=pageno+1) }}">Next ›</a>{% endif %}
+  {% if pageno > 1 %}<a class="pill" href="{{ burl(page=1) }}" title="First page">« First</a>{% endif %}
+  {% if pageno > 1 %}<a class="pill" href="{{ burl(page=pageno-1) }}">‹ Prev</a>{% endif %}
+  {% if has_more %}<a class="pill" href="{{ burl(page=pageno+1) }}">Next ›</a>{% endif %}
+  {% if has_more %}<a class="pill" href="{{ burl(page=last_page) }}" title="Last page">Last »</a>{% endif %}
+  {#- a 240-page list needs a way to reach page 137 without 136 clicks -#}
+  <form class="jump" method="get" action="{{ url_for('search_items') }}">
+    <input type="hidden" name="cat" value="{{ cat }}">
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="per" value="{{ per_page }}">
+    <input type="hidden" name="size" value="{{ size }}">
+    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    <span class="muted" style="font-size:12px">Go to</span>
+    <input type="number" name="page" min="1" max="{{ last_page }}"
+           value="{{ pageno }}" aria-label="Page number">
+    <span class="muted" style="font-size:12px">of {{ '{:,}'.format(last_page) }}</span>
+  </form>
 </div>
 {% endif %}
 {% endmacro %}
 
-{#- Order the list from either end. A 3,500-page list has a far end you can
-    otherwise never reach, and "what did we check last" is a real question. -#}
-{% macro sortbar() %}
-{% if sort_opts is defined and sort_opts %}
-<div class="sortbar">
-  <span class="lbl">Order</span>
-  {% for key, label in sort_opts %}
-  <a class="sortopt {{ 'on' if sort == key }}"
-     href="{{ url_for('search_items', cat=cat, sort=key, q=q or None) }}">{{ label }}</a>
-  {% endfor %}
+{#- order, page size and card size, in one bar above the list -#}
+{% macro controls() %}
+{% if browse %}
+<div class="ctrls">
+  {% if sort_opts is defined and sort_opts %}
+  <span class="grp"><span class="lbl">Order</span>
+    {% for key, label in sort_opts %}
+    <a class="sortopt {{ 'on' if sort == key }}" href="{{ burl(o=key) }}">{{ label }}</a>
+    {% endfor %}
+  </span>
+  {% endif %}
+  <span class="grp"><span class="lbl">Per page</span>
+    {% for nper in per_choices %}
+    <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ burl(n=nper, page=1) }}">{{ nper }}</a>
+    {% endfor %}
+  </span>
+  <span class="grp"><span class="lbl">Size</span>
+    {% for key, label in [('s','Small'), ('m','Medium'), ('l','Large')] %}
+    <a class="sortopt {{ 'on' if size == key }}" href="{{ burl(z=key) }}">{{ label }}</a>
+    {% endfor %}
+  </span>
 </div>
 {% endif %}
 {% endmacro %}
+
+<div class="sz-{{ size }}" id="results">
 
 {% if not q and cat == 'all' and ccounts %}
   {# THE LIBRARY, all of it in front of you: one tile per content type #}
@@ -178,7 +249,8 @@
 {% elif browse and cat == 'pages' %}
   <div class="card">
     <h2>Live Pages <span class="muted" style="font-weight:400">— {{ '{:,}'.format(total) }} tracked</span></h2>
-    {{ sortbar() }}
+    {{ controls() }}
+    {{ pager('top') }}
     <div class="pagegrid">
       {% for p in page_hits %}
       <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
@@ -200,7 +272,8 @@
   <div class="muted" style="margin:0 2px 12px">
     Browsing <b>{{ pill_labels.get(cat, cat) }}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}. Type above to search instead.
   </div>
-  {{ sortbar() }}
+  {{ controls() }}
+  {{ pager('top') }}
   {% for g in groups %}
   <div class="rescard">
     <div class="browse-row">
@@ -352,6 +425,8 @@
   {% endif %}
 {% endif %}
 
+</div><!-- /sz -->
+
 <script>
 // Type-ahead over the real item index: no static word list, it answers from
 // whatever has been captured so far.
@@ -427,6 +502,71 @@
     } else if (e.key === 'Escape') { close(); }
   });
   document.addEventListener('click', (e) => { if (!box.contains(e.target) && e.target !== input) close(); });
+})();
+
+// ---------------------------------------------------------------------------
+// Search as you type. The server already renders these results; rather than
+// build a second, JS-only rendering of them that could drift from the real
+// one, this fetches the SAME page and swaps in its results block. So there is
+// exactly one definition of what a result looks like, and pressing Enter or
+// arriving with ?q= in the URL gives byte-identical output.
+// ---------------------------------------------------------------------------
+(function () {
+  const input = document.getElementById('sq');
+  const form  = document.getElementById('sform');
+  const btn   = document.getElementById('sbtn');
+  if (!input || !form || !window.fetch || !window.DOMParser) return;
+
+  const view = () => {
+    const p = new URLSearchParams(location.search);
+    return {cat: p.get('cat') || 'all', sort: p.get('sort') || '',
+            per: p.get('per') || '', size: p.get('size') || ''};
+  };
+  let timer = null, seq = 0, lastSent = null;
+
+  async function run(q) {
+    const v = view();
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    p.set('cat', v.cat);
+    for (const k of ['sort', 'per', 'size']) if (v[k]) p.set(k, v[k]);
+    const url = location.pathname + '?' + p.toString();
+    if (url === lastSent) return;
+    lastSent = url;
+    const mine = ++seq;
+    document.body.style.cursor = 'progress';
+    try {
+      const r = await fetch(url, {headers: {'X-Requested-With': 'fetch'}});
+      const html = await r.text();
+      // a slower earlier request must never overwrite a newer answer
+      if (mine !== seq) return;
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const fresh = doc.getElementById('results');
+      const here  = document.getElementById('results');
+      if (fresh && here) here.replaceWith(fresh);
+      // keep the address bar honest, so refresh and back both work
+      history.replaceState(null, '', url);
+    } catch (e) {
+      /* leave the current results in place; the form still submits */
+    } finally {
+      if (mine === seq) document.body.style.cursor = '';
+    }
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    // 220ms: long enough that a normal typist sends one request per word,
+    // short enough that it feels like the list is following you
+    timer = setTimeout(() => run(q), 220);
+  });
+  // Enter should not reload the page when we can answer in place
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    clearTimeout(timer);
+    run(input.value.trim());
+  });
+  if (btn) btn.style.display = 'none';   // nothing left for it to do
 })();
 </script>
 {% endblock %}

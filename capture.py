@@ -263,11 +263,21 @@ NON_CONTENT_IMG_JS = \
 IMAGES_JS = r"""
 () => {
   const NON_CONTENT_IMG = """ + NON_CONTENT_IMG_JS + r""";
+  // An image has to actually BE one. A lightbox trigger is written
+  // <img src="#">, and the browser resolves that against the document - so
+  // ".../part/CYW54591#" was collected as a picture of the part, on 126 pages.
+  // Scene7 serves from /is/image/ without an extension, and AEM from
+  // /jcr:content/renditions/, so both of those count as well.
+  const LOOKS_LIKE_IMG = u =>
+    /\/is\/image\//i.test(u) ||
+    /\/jcr:content\/renditions\//i.test(u) ||
+    /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)(\?|#|:|$)/i.test(u);
+  const ok = u => u && !u.startsWith('data:') && !NON_CONTENT_IMG.test(u)
+                    && LOOKS_LIKE_IMG(u);
   const urls = new Set();
   document.querySelectorAll('img').forEach(img => {
     const src = img.currentSrc || img.src;
-    if (src && !src.startsWith('data:') && !NON_CONTENT_IMG.test(src))
-      urls.add(src);
+    if (ok(src)) urls.add(src);
   });
   // srcset: split ONLY on commas that start a new candidate URL. Scene7 URLs
   // carry commas inside their query ("?qlt=55,0&op_usm=1.75,0.3,2,0"), and a
@@ -817,7 +827,14 @@ SECTIONS_JS = r"""
       const bits = [];
       if (cta) bits.push((cta.innerText || '').replace(/\s+/g, ' ').trim());
       if (bullets.length) bits.push(bullets.slice(0, 8).join(' • '));
-      push('products', title, href, bits.join(' | '), label);
+      // the card's product shot, same rule as the design-resource cards: a
+      // data: URI is the lazy-load placeholder, never the picture
+      let pthumb = '';
+      for (const im of card.querySelectorAll('img')) {
+        pthumb = realImgSrc(im);
+        if (pthumb) break;
+      }
+      push('products', title, href, bits.join(' | '), label, '', false, pthumb);
     }
   }
 
