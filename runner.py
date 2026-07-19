@@ -13,6 +13,7 @@ import re
 import shutil
 import threading
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -94,7 +95,8 @@ def _follow_redirect(con, url_id, old_url, final_url):
             or _same_page(old_url, final_url):
         return False, ""
     existing = con.execute(
-        "SELECT id, bl, pl, cm, owner FROM urls WHERE id<>? AND rtrim(url,'/')=?",
+        "SELECT id, bl, pl, cm, owner, redirect_from FROM urls"
+        " WHERE id<>? AND rtrim(url,'/')=?",
         (url_id, final_url.rstrip("/"))).fetchone()
     if existing:
         # the destination is already on the list: drop the stale twin rather
@@ -531,6 +533,7 @@ def _run_check_inner(kind, url_ids):
         RUN_STATE["message"] = res["url"]
         row = url_by_addr.get(res["url"])
         if row is not None:
+            before = dict(counters)
             try:
                 _handle_result(con, res, row, ts_label, counters, suspects)
                 con.commit()
@@ -539,7 +542,17 @@ def _run_check_inner(kind, url_ids):
                     con.rollback()
                 except Exception:
                     pass
-                print("row error:", res.get("url"), exc, flush=True)
+                # The rollback undoes the DATABASE work; these counters are a
+                # Python dict and it cannot touch them. So a row that captured
+                # fine and then threw on the way to disk was still being
+                # reported "ok" - a run said "61 ok, 0 saved" while not one of
+                # the 61 had moved. Put the counters back where the row found
+                # them and count it for what it was.
+                counters.clear()
+                counters.update(before)
+                counters["errors"] += 1
+                print("row error:", res.get("url"), repr(exc), flush=True)
+                traceback.print_exc()
         RUN_STATE["changed"] = counters["changed"]
         RUN_STATE["errors"] = counters["errors"]
         RUN_STATE["saved"] = counters["saved"]
