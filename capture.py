@@ -232,22 +232,50 @@ BANNER_SELECTORS = ("#onetrust-consent-sdk, #usercentrics-root, #usercentrics-cm
 
 # Extracts ALL text nodes (textContent walk), so text inside hidden tab
 # panels and collapsed sections is captured too.
+# A rotating carousel advances on a JS timer and physically moves its first
+# slide to the end of the DOM. The CSS above stops ANIMATION, not that - so the
+# slide order we observed was a function of how long the capture happened to
+# take, and the homepage reported a text change every run with the same four
+# AURIX part numbers cycling by one position. Slides are emitted in a fixed
+# order instead: the same set of slides reads identically run to run, while a
+# slide added, removed or edited still shows as a real change.
+CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
+                      ' .splide__list, [class*="carousel__track" i]')
+
 TEXT_JS = r"""
 () => {
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME',
                         'SVG','CANVAS','VIDEO','AUDIO','OBJECT']);
-  const out = [];
-  const walk = (node) => {
+  const TRACK = '""" + CAROUSEL_TRACK_SEL + r"""';
+  const walk = (node, sink) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent.replace(/\s+/g, ' ').trim();
-      if (t) out.push(t);
+      if (t) sink.push(t);
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     if (SKIP.has(node.tagName)) return;
-    for (const c of node.childNodes) walk(c);
+    // Order WITHIN a slide is real content (title, then blurb) and is kept.
+    // Only the order OF the slides is normalised, and nothing is dropped -
+    // every line still appears exactly once.
+    if (node.children.length > 1 && node.matches && node.matches(TRACK)) {
+      const blocks = [];
+      for (const slide of node.children) {
+        const sub = [];
+        walk(slide, sub);
+        if (sub.length) blocks.push(sub);
+      }
+      blocks.sort((a, b) => {
+        const x = a.join('\n'), y = b.join('\n');
+        return x < y ? -1 : (x > y ? 1 : 0);
+      });
+      for (const b of blocks) for (const l of b) sink.push(l);
+      return;
+    }
+    for (const c of node.childNodes) walk(c, sink);
   };
-  if (document.body) walk(document.body);
+  const out = [];
+  if (document.body) walk(document.body, out);
   return out.join('\n');
 }
 """
