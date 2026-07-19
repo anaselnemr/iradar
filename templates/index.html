@@ -76,10 +76,7 @@
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <div class="muted" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
       <span>
-        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span>{#- the count says how far, the percentage says how far to go; the bar
-    below already knows this number and was the only thing showing it -#}<span id="run-pct" class="runpct">{{ (100 * state.done // state.total) if state.total else 0 }}%</span>
-        · <b><span id="run-saved">0</span></b> saved
-        <b id="run-eta" style="color:var(--accent)"></b>
+        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span><span id="run-pct" class="runpct">{{ (100 * state.done // state.total) if state.total else 0 }}%</span>
       </span>
       <span id="run-paused" style="display:none; color:#ea580c; font-weight:600">⏸ paused</span>
       <span id="run-stopping" style="display:none; color:#dc2626; font-weight:600">⏹ ending…</span>
@@ -88,8 +85,19 @@
         <button id="run-stop" class="linkbtn" type="button" onclick="stopRun()" style="color:#dc2626">⏹ End check</button>
       </span>
     </div>
-    <div class="muted" style="margin-top:4px"><span id="run-msg" style="font-size:12px"></span></div>
     <div class="progress"><div id="run-bar" style="width:0%"></div></div>
+    {#- The breakdown of what the run has done so far, so you always know where
+        it is: settled (saved), held for the end-of-run double-check, and
+        errored. In the double-check pass the middle number flips to how many
+        of those held pages have been confirmed as real updates. -#}
+    <div class="muted" style="margin-top:7px; display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; align-items:center">
+      <span><b id="run-saved" style="color:#16a34a">0</b> <span id="run-saved-lbl">saved</span></span>
+      <span id="run-recheck-wrap"><b id="run-suspects" style="color:#ea580c">0</b> <span id="run-recheck-lbl">to re-check</span></span>
+      <span id="run-err-wrap"><b id="run-errors" style="color:#dc2626">0</b> errors</span>
+      <span id="run-rate" style="margin-left:auto; opacity:.85"></span>
+      <b id="run-eta" style="color:var(--accent)"></b>
+    </div>
+    <div class="muted" style="margin-top:5px"><span id="run-msg" style="font-size:12px"></span></div>
   </div>
   {% if last_run and last_run.finished and not state.running %}
   <div class="muted" style="margin-top:10px">
@@ -622,6 +630,7 @@ function reflectPause() {
   if (isStopping) { btn.disabled = true; if (sbtn) sbtn.disabled = true; }
 }
 let rateHist = [];
+let inVerify = false, prevSuspects = 0;
 async function poll() {
   try {
     const r = await fetch('/status'); const s = await r.json();
@@ -634,6 +643,25 @@ async function poll() {
       document.getElementById('run-done').textContent = s.done;
       document.getElementById('run-total').textContent = s.total;
       document.getElementById('run-saved').textContent = s.saved != null ? s.saved : '—';
+      document.getElementById('run-errors').textContent = s.errors != null ? s.errors : 0;
+      // Which phase are we in? The run captures every page first, holding any
+      // that look changed; then a double-check pass re-captures only those held
+      // pages. The runner resets suspects to 0 and its message says
+      // "double-check" when that pass starts - latch on either so a per-page
+      // message ticking by afterwards doesn't flip us back.
+      if (/double-check/i.test(s.message || '')) inVerify = true;
+      if (prevSuspects > 0 && (s.suspects || 0) === 0) inVerify = true;
+      prevSuspects = s.suspects || 0;
+      const recheckLbl = document.getElementById('run-recheck-lbl');
+      const suspectsEl = document.getElementById('run-suspects');
+      if (inVerify) {
+        // the held pages are now being re-checked; show how many are confirmed
+        recheckLbl.textContent = 'confirmed as updated';
+        suspectsEl.textContent = s.changed != null ? s.changed : 0;
+      } else {
+        recheckLbl.textContent = 'held to re-check';
+        suspectsEl.textContent = s.suspects != null ? s.suspects : 0;
+      }
       const verb = document.getElementById('run-verb');
       const bar = document.getElementById('run-bar');
       // When pausing/ending, a page already mid-capture can't be interrupted,
@@ -652,19 +680,21 @@ async function poll() {
           'Finishing the pages already in progress, then it holds. Press Resume to continue.';
         if (bar) bar.style.background = '#ea580c';
       } else {
-        if (verb) verb.textContent = 'Capturing';
-        // live throughput from the last ~3 min of polls, shown with the ETA
+        if (verb) verb.textContent = inVerify ? 'Double-checking updates' : 'Capturing';
+        // live throughput from the last ~3 min of polls
         rateHist.push({t: Date.now(), done: s.done});
         rateHist = rateHist.filter(x => Date.now() - x.t < 180000);
-        let eta = fmtEta(s.eta_s);
+        let rate = '';
         if (rateHist.length > 2) {
           const a = rateHist[0], b = rateHist[rateHist.length - 1];
           const perMin = (b.done - a.done) / ((b.t - a.t) / 60000);
-          if (perMin > 0) eta += ' · ' + perMin.toFixed(1) + ' pages/min';
+          if (perMin > 0) rate = perMin.toFixed(1) + ' pages/min';
         }
-        if (s.suspects) eta += ' · ' + s.suspects + ' held for a double-check at the end';
-        document.getElementById('run-eta').textContent = eta;
-        document.getElementById('run-msg').textContent = s.message || '';
+        document.getElementById('run-rate').textContent = rate;
+        document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
+        document.getElementById('run-msg').textContent =
+          inVerify && !/double-check/i.test(s.message || '')
+            ? 're-checking ' + (s.message || '') : (s.message || '');
         if (bar) bar.style.background = '';
       }
       reflectPause();
