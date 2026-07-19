@@ -275,8 +275,14 @@
   /* the table can never be wider than the card it sits in; if a row does
      demand more, that row scrolls rather than the page breaking */
   .tablewrap { overflow-x: auto; }
-  .urlcell { max-width: 480px; overflow: hidden; }
-  .urlcell a { display: inline-block; max-width: 100%; overflow: hidden;
+  /* A DEFINITE width, not max-width:100%. Percentages resolve against the
+     cell, and the cell sizes to its content, so the pair was circular and the
+     browser fell back to the natural width of the longest address - which grew
+     the table past its card as soon as a page of 100 rows contained a long
+     one. A fixed cap gives the cell something real to truncate against. */
+  .urlcell { max-width: 430px; overflow: hidden; }
+  .urlcell a, .urlcell .pgtitle-txt {
+               display: inline-block; max-width: 430px; overflow: hidden;
                text-overflow: ellipsis; white-space: nowrap;
                vertical-align: bottom; }
   .liveurl { font-size: 12px; color: #5e6ad2 !important; }
