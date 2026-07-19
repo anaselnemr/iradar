@@ -336,7 +336,10 @@
           <td>{{ labels.get(e.kind, e.kind) }}</td>
           {% for f in ifields %}
             {% set v = e.fields.get(f, '') %}
-            {% if f == 'link' and v %}<td><a href="{{ v }}" target="_blank" rel="noopener">open</a></td>
+            {#- the same two clicks the spreadsheet carries: the asset itself,
+                and a backend search already filled in for it -#}
+            {% if f == 'link' and v %}<td><a href="{{ v }}" target="_blank" rel="noopener">open ↗</a></td>
+            {% elif f == 'backend' and v and e.backend_url %}<td><a href="{{ e.backend_url }}" target="_blank" rel="noopener" title="Opens {{ v }} search for this asset">{{ v }} ↗</a></td>
             {% elif v %}<td>{{ v }}</td>
             {% else %}<td class="xempty">—</td>{% endif %}
           {% endfor %}

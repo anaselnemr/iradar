@@ -1190,11 +1190,22 @@ def _doc_typed(d):
 
 
 def _videolike(d):
-    r"""A news/trainings item that is actually a video: a media URL or a
-    duration (\d:\d\d) in its meta."""
+    r"""A news/trainings card that is really a video.
+
+    Four signals, any one of which is enough: an .mp4, a /videos/ path, an
+    m:ss duration, or the site's own "Video" label as a field of the meta line.
+
+    It used to accept any /is/content/ URL, which is just Infineon's asset
+    host - it serves stills and documents too, so that read "delivered by the
+    CDN" as "is a video". The last signal is what the loose rule was standing
+    in for, and it is exact: three gated items say Video in the meta and have
+    no direct URL at all to look at, so nothing else would have found them.
+    """
     u = (d.get("url") or "").lower()
-    return (".mp4" in u or "/is/content/" in u
-            or bool(re.search(r"\d{1,2}:\d{2}", d.get("meta") or "")))
+    m = d.get("meta") or ""
+    return (".mp4" in u or "/videos/" in u
+            or bool(re.search(r"\d{1,2}:\d{2}", m))
+            or "video" in [f.strip().lower() for f in m.split("|")])
 
 
 SEARCH_PILLS = [
@@ -3197,8 +3208,11 @@ SIZE_CHOICES = ("s", "m", "l")
 # on it; two of them need its negation, to say "the news cards that are NOT
 # already counted as videos" without double-counting.
 _VIDEOLIKE_SQL = ("(lower(item_url) LIKE '%.mp4%'"
-                  " OR item_url LIKE '%/is/content/%'"
-                  " OR meta GLOB '*[0-9]:[0-9][0-9]*')")
+                  " OR lower(item_url) LIKE '%/videos/%'"
+                  " OR meta GLOB '*[0-9]:[0-9][0-9]*'"
+                  # the site's own label, as a whole field of the meta line -
+                  # a bare LIKE '%video%' would swallow "Video Doorbell"
+                  " OR ('|' || replace(meta,' ','') || '|') LIKE '%|Video|%')")
 
 _BROWSE_SQL = {
     "docs":     "category='documents'",
@@ -4361,6 +4375,24 @@ def _export_rows(con, levels, cols, verbose=False):
     return out, want_meta, want_comps, want_page
 
 
+def _xl_link(ws, text, url):
+    """A cell that is the link, not a cell next to one.
+
+    A spreadsheet full of bare addresses makes you copy and paste to follow
+    anything; the backend column in particular is the same click the badge on
+    the site gives you. Falls back to plain text when there is nothing to open.
+    """
+    if not text:
+        return ""
+    if not url:
+        return text
+    from openpyxl.cell import WriteOnlyCell
+    c = WriteOnlyCell(ws, value=text)
+    c.hyperlink = url
+    c.style = "Hyperlink"
+    return c
+
+
 def _export_headers(want_meta, want_comps, want_page=()):
     labels = dict(_export_meta_cols())
     plabels = dict(PAGE_FIELDS)
@@ -4379,10 +4411,14 @@ PAGE_FIELDS = [("live", "Live"), ("status", "Status"),
 # and a design resource "ZIP | 01_00 | EN | 11.39 mb | date" - so each field is
 # recognised by its SHAPE rather than its position. Position-based parsing
 # would quietly file a version as a language the moment a category differs.
+# In the order a row of them reads: what the thing is, then what it is made
+# of, then when. A videos sheet drops the columns it has nothing for and comes
+# out Time / Language / Date; a documents sheet keeps the lot.
 ITEM_FIELDS = [("source", "Found in"),
-               ("dtype", "Type"), ("format", "Format"), ("language", "Language"),
-               ("version", "Version"), ("size", "Size"), ("date", "Date"),
-               ("duration", "Duration"), ("access", "Access"),
+               ("dtype", "Document type"), ("format", "File type"),
+               ("duration", "Time"), ("access", "Access"),
+               ("language", "Language"), ("version", "Version"),
+               ("size", "Size"), ("date", "Date"),
                ("backend", "Backend"), ("group", "Group"), ("link", "Link")]
 
 _MF_DATE = re.compile(r"^[A-Z][a-z]{2}\.?\s+\d{1,2},\s*\d{4}$")
@@ -4567,6 +4603,7 @@ def _export_item_rows(con, kinds, levels, cols=()):
     if not kinds:
         kinds = [k for k, _l in ITEM_KINDS_ALL]
     want_f = [f for f, _l in ITEM_FIELDS if "f_" + f in cols]
+    _sset = db.get_settings()          # once per build, not once per item
     kind_sql = " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")" for k in kinds)
     # Label each row by the kind it MATCHED, not by the category it was scraped
     # from: a video captured as a news card is a video, and saying "News &
@@ -4606,7 +4643,11 @@ def _export_item_rows(con, kinds, levels, cols=()):
             got["backend"] = backend_system(r["category"], r["meta"],
                                             r["doc_type"], r["grp"],
                                             r["item_url"] or "")
+            got["backend_url"] = backend_search_link(
+                got["backend"], asset_name(r["category"], r["item_url"] or ""),
+                _sset) if got["backend"] else ""
             e["fields"] = {f: got.get(f, "") for f in want_f}
+            e["backend_url"] = got.get("backend_url", "")
         e["levels"][r["lv"]] = e["levels"].get(r["lv"], 0) + 1
         if len(e["pages"]) < 40:
             e["pages"].append({"id": r["pid"], "title": r["ptitle"] or r["purl"]})
@@ -4859,6 +4900,7 @@ def export_xlsx():
     from openpyxl import Workbook
 
     wb = Workbook(write_only=True)
+    _sset = db.get_settings()          # backend search URLs, read once
     cat_keys = [c for c, _ in SECTION_LABELS]
     registry = _all_components()
     comp_labels = [l for _k, l, _x, _y in registry]
@@ -4959,20 +5001,43 @@ def export_xlsx():
             e = by.setdefault(_item_dedup_key(r), {
                 "title": r["title"] or "", "url": r["item_url"] or "",
                 "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
-                "cat": r["category"],
+                "cat": r["category"], "cats": set(),
                 "grp": r["grp"] or "", "img": r["img"] or "", "pages": []})
+            e["cats"].add(r["category"])
             e["pages"].append(r)
+        for e in by.values():
+            e["f"] = parse_item_meta(e["meta"], e["dtype"])
+        # One column per fact, not one cell holding "Article | PDF | Public |
+        # EN | 01_00 | 0.48MB | May 04, 2017" - you cannot sort or filter a
+        # spreadsheet on the fourth thing after the third pipe. Only the fields
+        # this kind actually carries get a column, so the videos sheet is Time /
+        # Language / Date rather than a row of empty document columns.
+        have = [(k, l) for k, l in ITEM_FIELDS
+                if k not in ("link", "backend", "source", "group")
+                and any(e["f"].get(k) for e in by.values())]
+        multi = len({c for e in by.values() for c in e["cats"]}) > 1
         wsx = wb.create_sheet(label[:31])
-        wsx.append(["Title", "Type", "Group", "Link", "Details", "Thumbnail",
-                    "Backend", "On pages", "Levels", "Assigned to (URLs)"])
+        wsx.append(["Title"] + (["Found in"] if multi else [])
+                   + [l for _k, l in have]
+                   + ["Group", "Link", "Thumbnail", "Backend", "On pages",
+                      "Levels", "Assigned to (URLs)"])
         for e in by.values():
             lv = sorted({p["lv"] for p in e["pages"] if p["lv"]})
-            wsx.append([e["title"], e["dtype"], e["grp"], e["url"], e["meta"],
-                        e["img"],
-                        backend_system(e["cat"], e["meta"], e["dtype"],
-                                       e["grp"], e["url"]) or "",
-                        len(e["pages"]), ", ".join(lv),
-                        chr(10).join(p["purl"] for p in e["pages"][:200])])
+            bk = backend_system(e["cat"], e["meta"], e["dtype"], e["grp"],
+                                e["url"]) or ""
+            wsx.append(
+                [e["title"]] + ([item_source(e["cats"])] if multi else [])
+                + [e["f"].get(k, "") for k, _l in have]
+                + [e["grp"],
+                   _xl_link(wsx, e["url"], e["url"]),
+                   e["img"],
+                   # the backend badge on the site opens a search for this
+                   # asset; the cell should be the same click, not a word you
+                   # then have to go and look up by hand
+                   _xl_link(wsx, bk, backend_search_link(
+                       bk, asset_name(e["cat"], e["url"]), _sset)),
+                   len(e["pages"]), ", ".join(lv),
+                   chr(10).join(p["purl"] for p in e["pages"][:200])])
 
     ws_ch = wb.create_sheet("Changes")
     ws_ch.append(["Change ID", "URL", "When (UTC)", "Summary", "Components",
