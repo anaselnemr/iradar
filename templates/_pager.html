@@ -1,0 +1,53 @@
+{#- One pager, imported wherever a list is paged.
+
+    The Content library, the dashboard and the export table each grew their
+    own: numbered pages here, a bare "1 / 42" there. Same job, so the same
+    control - the caller passes a purl(n) macro that knows how to build its own
+    page link, and everything else is shared.
+-#}
+
+{% macro pagenums(pageno, last_page, purl) %}
+  {% set lo = [1, pageno - 2]|max %}
+  {% set hi = [last_page, pageno + 2]|min %}
+  {% if lo > 1 %}
+    <a class="pnum" href="{{ purl(1) }}">1</a>
+    {% if lo > 2 %}<span class="pgap" title="Jump to a page">…</span>{% endif %}
+  {% endif %}
+  {% for n in range(lo, hi + 1) %}
+    {% if n == pageno %}
+    <span class="pnum on" aria-current="page">{{ n }}</span>
+    {% else %}
+    <a class="pnum" href="{{ purl(n) }}">{{ n }}</a>
+    {% endif %}
+  {% endfor %}
+  {% if hi < last_page %}
+    {% if hi < last_page - 1 %}<span class="pgap" title="Jump to a page">…</span>{% endif %}
+    <a class="pnum" href="{{ purl(last_page) }}">{{ last_page }}</a>
+  {% endif %}
+{% endmacro %}
+
+{% macro pager(pageno, last_page, total, per_page, purl, where='bottom') %}
+{% if last_page > 1 %}
+<nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination">
+  {#- the count sits WITH the control, not exiled to the far side of a wide
+      screen where the two ends had nothing to do with each other -#}
+  <span class="pgr-nav">
+    <span class="pgr-count">
+      <b>{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }}</b>
+      of {{ '{:,}'.format(total) }}
+    </span>
+    <a class="pstep {{ 'off' if pageno == 1 }}"
+       href="{{ purl(pageno-1) if pageno > 1 else '#' }}" aria-label="Previous page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+    {{ pagenums(pageno, last_page, purl) }}
+    <a class="pstep {{ 'off' if pageno >= last_page }}"
+       href="{{ purl(pageno+1) if pageno < last_page else '#' }}" aria-label="Next page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+    </a>
+  </span>
+</nav>
+{% endif %}
+{% endmacro %}

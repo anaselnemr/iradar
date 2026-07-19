@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Export — InfineonWatch{% endblock %}
+{% import "_pager.html" as pg with context %}
+{#- keeps the whole selection in the link, so paging never drops a column -#}
+{% macro purl(n) %}?{{ request.query_string.decode()|replace('&page=' ~ page, '')|replace('page=' ~ page ~ '&', '') }}&page={{ n }}{% endmacro %}
 {% block content %}
 
 <style>
@@ -86,6 +89,8 @@
      that a percentage-width title column collapses to one word per line */
   .xitem { min-width: 230px; max-width: 420px; white-space: normal !important; }
   .xn { text-align: right; font-variant-numeric: tabular-nums; }
+  /* the row number, like the dashboard's # column */
+  .xnum { width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .xzero { color: var(--muted); opacity: .35; }
   /* an option with nothing behind it stays visible - "we looked, there are
      none" is an answer - but it stops looking like something worth ticking */
@@ -319,11 +324,13 @@
   {% if not irows %}
     <p class="muted" style="margin:0">Nothing matches that selection.</p>
   {% else %}
+  {{ pg.pager(page, pages, shown, per_page, purl, 'top') }}
   <div class="xtable-wrap">
     <table class="xt">
       <thead>
         <tr>
-          <th class="stick">Item</th>
+          <th class="stick xnum">#</th>
+          <th>Item</th>
           <th>Kind</th>
           {% for f in ifields %}<th>{{ dict(item_fields)[f] }}</th>{% endfor %}
           <th class="xn">Pages</th>
@@ -334,7 +341,8 @@
       <tbody>
         {% for e in irows %}
         <tr>
-          <td class="stick xitem">
+          <td class="stick xnum muted">{{ first_row + loop.index }}</td>
+          <td class="xitem">
             <a href="{{ url_for('item_detail', key=e.key) }}">{{ e.title or e.url }}</a>
           </td>
           <td>{{ labels.get(e.kind, e.kind) }}</td>
@@ -361,6 +369,7 @@
       </tbody>
     </table>
   </div>
+  {{ pg.pager(page, pages, shown, per_page, purl) }}
   {% endif %}
 </div>
 {% elif ran %}
@@ -368,11 +377,13 @@
   {% if not rows %}
     <p class="muted" style="margin:0">Nothing matches that selection.</p>
   {% else %}
+  {{ pg.pager(page, pages, shown, per_page, purl, 'top') }}
   <div class="xtable-wrap">
     <table class="xt">
       <thead>
         <tr>
-          <th class="stick">Level</th>
+          <th class="stick xnum">#</th>
+          <th>Level</th>
           <th>Page</th>
           {% for h in headers %}<th>{{ h }}</th>{% endfor %}
         </tr>
@@ -380,7 +391,8 @@
       <tbody>
         {% for r in rows %}
         <tr>
-          <td class="stick">
+          <td class="stick xnum muted">{{ first_row + loop.index }}</td>
+          <td>
             {% if r.level %}<span class="lvl lvl-{{ r.level|lower }}">{{ r.level }}</span>
             {% else %}<span class="xempty">—</span>{% endif %}
           </td>
@@ -404,6 +416,7 @@
       </tbody>
     </table>
   </div>
+  {{ pg.pager(page, pages, shown, per_page, purl) }}
   {% endif %}
 </div>
 {% else %}

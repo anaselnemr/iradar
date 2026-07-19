@@ -4668,6 +4668,8 @@ def _export_headers(want_meta, want_comps, want_page=()):
 
 
 # Page facts that are not components and not ownership - the dashboard columns.
+EXPORT_PER_PAGE = 100
+
 PAGE_FIELDS = [("live", "Live"), ("status", "Status"),
                ("last_captured", "Last captured"), ("changes", "Updates")]
 
@@ -5198,12 +5200,28 @@ def export_builder():
         avail = _export_avail(con, mode, levels, kinds, cols)
     finally:
         con.close()
+    # The table is paged like every other list here. The counts above it
+    # still describe the whole result - you are looking at a window on it,
+    # and the spreadsheet still contains all of it.
+    shown_total = len(irows) if mode == "items" else len(rows)
+    xpages = max(1, -(-shown_total // EXPORT_PER_PAGE))
+    try:
+        xpage = min(max(1, int(request.args.get("page", 1))), xpages)
+    except ValueError:
+        xpage = 1
+    _lo = (xpage - 1) * EXPORT_PER_PAGE
+    if mode == "items":
+        irows = irows[_lo:_lo + EXPORT_PER_PAGE]
+    else:
+        rows = rows[_lo:_lo + EXPORT_PER_PAGE]
     return render_template(
         "export.html", levels_all=known, counts=counts, sel_levels=levels,
         meta_cols=_export_meta_cols(), page_fields=PAGE_FIELDS,
         item_fields=ITEM_FIELDS,
         comp_cols=[(k, l) for k, l, _k, _a in _all_components()],
         sel_cols=cols, rows=rows, ran=ran, mode=mode, avail=avail,
+        page=xpage, pages=xpages, per_page=EXPORT_PER_PAGE,
+        first_row=(xpage - 1) * EXPORT_PER_PAGE,
         kinds_all=ITEM_KINDS, kinds_more=ITEM_KINDS_MORE,
         level_groups=LEVEL_GROUPS, loose_levels=[
             l for l in known if l not in _GROUPED_LEVELS],
@@ -5211,7 +5229,7 @@ def export_builder():
         irows=irows, ilevels=ilevels,
         headers=_export_headers(want_meta, want_comps, want_page),
         ifields=ifields, level_names=LEVEL_NAMES,
-        shown=len(irows) if mode == "items" else len(rows))
+        shown=shown_total)
 
 
 @app.route("/export/download")
