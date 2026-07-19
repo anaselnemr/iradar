@@ -2778,6 +2778,38 @@ def _infer_missing_levels():
 # calls it.
 
 
+def _housekeeping(why):
+    """Every tidy-up job, in dependency order, run as one unit.
+
+    These used to be startup-only, which was backwards: a RUN is what creates
+    the mess they clean. A run adds pages it was redirected to, writes fresh
+    item rows, and re-flags heroes - so the tracking-param strip, the furniture
+    sweep, the responsive-image dedup and the hero re-check all had to wait for
+    the next restart to catch up. On a weekly schedule that could be days of
+    the dashboard describing a state that had already moved.
+
+    All five together cost about 150 ms on the full corpus, so there is no
+    reason to be clever about when they run. Order matters, though: the sweeps
+    rewrite item titles and urls, so the search index is rebuilt after them,
+    and the site-wide-image decision is refreshed last because it reads the
+    swept, deduplicated result.
+    """
+    t0 = time.time()
+    _normalize_statuses()      # retired status names -> current ones
+    _normalize_urls()          # strip tracking params, merge duplicate pages
+    _sweep_furniture()         # drop spinner/logo rows that are not content
+    _sweep_images()            # collapse ?wid= renditions, drop avatars
+    _sweep_hero_flags()        # a placeholder hero is not a real hero
+    _refresh_item_index(why)   # substring search index, after the rewrites
+    try:
+        _AGG_CACHE.pop("generic_images", None)
+        n = len(_generic_images())
+        print(f"[housekeeping] {why}: done in {time.time() - t0:.1f}s"
+              f" ({n} site-wide images)", flush=True)
+    except Exception as e:
+        print(f"[housekeeping] {why}: {e}", flush=True)
+
+
 def _refresh_item_index(why):
     """Rebuild the item substring index if items have moved since it was built.
 
@@ -2824,9 +2856,9 @@ def _post_run_watcher():
                     print(f"[post-run] matrix learned {len(joined)} new"
                           f" component slot(s): {', '.join(joined[:6])}"
                           + ("…" if len(joined) > 6 else ""), flush=True)
-                # a run is what actually moves items, so this is where the
-                # search index earns its keep being rebuilt
-                _refresh_item_index("after run")
+                # a run is what CREATES the mess these clean up, so this is
+                # where they belong - not only at the next restart
+                _housekeeping("after run")
             except Exception:
                 pass
         prev = running
@@ -4319,14 +4351,7 @@ def _sweep_furniture():
 
 if __name__ == "__main__":
     db.init_db()
-    _normalize_statuses()
-    _normalize_urls()
-    _sweep_furniture()
-    _sweep_images()
-    _sweep_hero_flags()
-    # AFTER the sweeps, which rewrite item titles and urls: an index built
-    # before them would describe items that no longer exist
-    _refresh_item_index("startup")
+    _housekeeping("startup")
     scheduler.start()
     reschedule()
     # warm the document previews in the background so item pages open instantly
