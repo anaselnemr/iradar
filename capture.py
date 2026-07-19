@@ -1121,6 +1121,10 @@ SECTIONS_JS = r"""
       const pi = document.querySelector('.para-info, [class*="subheadline" i]');
       if (pi) sub = pi.textContent;
     }
+    // A PTP (part) page has no subheadline. Its title is followed straight by
+    // the datasheet/package/board links - there is no tagline. The lead text
+    // in the Product details "Description" pane is a DESCRIPTION, a different
+    // field, and must not be promoted into this one.
     sub = (sub || '').replace(/\s+/g, ' ').trim();
     if (sub.length > 15) push('subheadline', sub.slice(0, 400), '', '');
   })();
