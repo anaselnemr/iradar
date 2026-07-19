@@ -1109,10 +1109,15 @@ SECTIONS_JS = r"""
     vDone.add(durl);
     const title = (vp.getAttribute('data-title') || '').trim();
     const dsec = parseFloat(vp.getAttribute('data-duration') || '');
-    let meta = vp.getAttribute('data-poster') ? 'has poster' : '';
+    // the poster IS the video's thumbnail, and it was already right here -
+    // recorded as the words "has poster", which said a picture existed while
+    // discarding the address of it. Store the address.
+    const poster = (vp.getAttribute('data-poster') || '').trim();
+    let meta = poster ? 'has poster' : '';
     if (dsec > 0) meta = Math.floor(dsec / 60) + ':' +
                          String(Math.round(dsec % 60)).padStart(2, '0');
-    push('videos', title || decodeURIComponent(durl.split('/').pop()), durl, meta);
+    push('videos', title || decodeURIComponent(durl.split('/').pop()), durl,
+         meta, '', '', false, /^data:/i.test(poster) ? '' : poster);
   });
   document.querySelectorAll('video').forEach(v => {
     const vp = v.closest('[data-videourl]');
@@ -1128,8 +1133,10 @@ SECTIONS_JS = r"""
     }
     // only accept real media: a poster-bearing player, or a media-looking URL
     if (!v.poster && !/\.(mp4|webm|m3u8|mov)([?#]|$)|\/is\/content\/|video-cdn|brightcove|youtube/i.test(src)) return;
+    const vposter = /^data:/i.test(v.poster || '') ? '' : (v.poster || '');
     push('videos', (title || '').replace(/\s+/g, ' ').trim() ||
-         (src ? decodeURIComponent(src.split('/').pop()) : 'video'), src, meta);
+         (src ? decodeURIComponent(src.split('/').pop()) : 'video'), src, meta,
+         '', '', false, vposter);
   });
   document.querySelectorAll(
       'iframe[src*="youtube" i], iframe[src*="video" i], iframe[src*="brightcove" i]')

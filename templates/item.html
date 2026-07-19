@@ -108,21 +108,36 @@
 
 <div class="card">
   <h2>Assigned to {{ pages|length }} page{{ '' if pages|length == 1 else 's' }}</h2>
+  {#- Same cards as the content library, so a page looks the same wherever you
+      meet it. Collapsed by type: an item on forty pages should open as a list
+      you can read, not forty cards you have to scroll past. -#}
   {% for ptype, plist in by_type %}
-    <div class="grouphead">{{ ptype }} <span class="muted">({{ plist|length }})</span></div>
-    <div class="pagegrid">
-      {% for p in plist %}
-      <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
-        <div class="pagecard-title">{{ (p.title|clean_title) or p.url }}</div>
-        <div class="pagecard-url">{{ p.url }}</div>
-        {% if p.grp %}<div class="muted" style="font-size:12px; margin-top:6px">in {{ p.grp }}</div>{% endif %}
-      </a>
-      {% endfor %}
-    </div>
+    <details class="asn" {% if by_type|length == 1 and plist|length <= 4 %}open{% endif %}>
+      <summary>{{ ptype }} <span class="n">{{ plist|length }}</span></summary>
+      <div class="pagegrid">
+        {% for p in plist %}
+        <div class="pagecard">
+          <a class="pc-open" href="{{ url_for('url_detail', url_id=p.id) }}"
+             title="Open what we captured for this page">
+            {% if p.snap_id %}
+            <img class="pageshot" loading="lazy" alt=""
+                 src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
+            {% endif %}
+            <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ (p.title|clean_title) or p.url }}</div>
+          </a>
+          {#- its own link, so the live page is one click and not two -#}
+          <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
+             title="Open the live page on infineon.com">{{ p.url }} <span class="ext">↗</span></a>
+          {% if p.grp %}<div class="muted" style="font-size:12px; margin-top:5px">in {{ p.grp }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
   {% endfor %}
   <p class="muted" style="margin:14px 0 0; font-size:13px">
-    Each card opens that page's library here. This list is rebuilt from the
-    captured pages, so it follows the site rather than a static mapping.
+    The title opens what we captured; the address opens the live page. This list
+    is rebuilt from the captured pages, so it follows the site rather than a
+    static mapping.
   </p>
 </div>
 

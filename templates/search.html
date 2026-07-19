@@ -324,17 +324,22 @@
     {{ pager('top') }}
     <div class="pagegrid">
       {% for p in page_hits %}
-      <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
-        {#- the page as it actually looks. Served from the snapshot we already
-            store, downsized on first request - no new capture, no full-size
-            megabyte per card. -#}
-        {% if p.snap_id %}
-        <img class="pageshot" loading="lazy" alt=""
-             src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
-        {% endif %}
-        <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
-        <div class="pagecard-url">{{ p.url }}</div>
-      </a>
+      <div class="pagecard">
+        <a class="pc-open" href="{{ url_for('url_detail', url_id=p.id) }}"
+           title="Open what we captured for this page">
+          {#- the page as it actually looks. Served from the snapshot we already
+              store, downsized on first request - no new capture, no full-size
+              megabyte per card. -#}
+          {% if p.snap_id %}
+          <img class="pageshot" loading="lazy" alt=""
+               src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
+          {% endif %}
+          <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
+        </a>
+        {#- the address is a link in its own right: infineon.com in one click -#}
+        <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
+           title="Open the live page on infineon.com">{{ p.url }} <span class="ext">↗</span></a>
+      </div>
       {% endfor %}
     </div>
     {{ pager() }}
@@ -380,22 +385,26 @@
     <h2>In page text <span class="muted" style="font-weight:400">— {{ text_hits|length }} page{{ 's' if text_hits|length != 1 }}</span></h2>
     <div style="display:flex; flex-direction:column; gap:10px">
       {% for h in text_hits %}
-      <a class="pagecard" href="{{ url_for('url_detail', url_id=h.id) }}">
-        <div class="pagecard-title">{% if h.level %}<span class="lvl lvl-{{ h.level|lower }}">{{ h.level }}</span> {% endif %}{{ h.title|clean_title }}
-          <span style="float:right; display:inline-flex; gap:5px">
-            {% for c2 in h.comps %}<span class="badge b-sys" style="font-weight:500">{{ c2 }}</span>{% endfor %}
-          </span>
-        </div>
-        <div class="muted" style="font-size:13px; line-height:1.5; margin:4px 0 3px">{{ h.snip|safe }}</div>
-        {% if h.bullets %}
-        <div style="display:flex; flex-direction:column; gap:3px; margin:2px 0 4px">
-          {% for lbl, b in h.bullets %}
-          <div style="font-size:12.5px"><span class="badge b-sys" style="font-weight:500">{{ lbl }}</span> <span class="muted">“{{ b|safe }}”</span></div>
-          {% endfor %}
-        </div>
-        {% endif %}
-        <div class="pagecard-url">{{ h.url }}</div>
-      </a>
+      <div class="pagecard">
+        <a class="pc-open" href="{{ url_for('url_detail', url_id=h.id) }}"
+           title="Open what we captured for this page">
+          <div class="pagecard-title">{% if h.level %}<span class="lvl lvl-{{ h.level|lower }}">{{ h.level }}</span> {% endif %}{{ h.title|clean_title }}
+            <span style="float:right; display:inline-flex; gap:5px">
+              {% for c2 in h.comps %}<span class="badge b-sys" style="font-weight:500">{{ c2 }}</span>{% endfor %}
+            </span>
+          </div>
+          <div class="muted" style="font-size:13px; line-height:1.5; margin:4px 0 3px">{{ h.snip|safe }}</div>
+          {% if h.bullets %}
+          <div style="display:flex; flex-direction:column; gap:3px; margin:2px 0 4px">
+            {% for lbl, b in h.bullets %}
+            <div style="font-size:12.5px"><span class="badge b-sys" style="font-weight:500">{{ lbl }}</span> <span class="muted">“{{ b|safe }}”</span></div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </a>
+        <a class="pagecard-url" href="{{ h.url }}" target="_blank" rel="noopener"
+           title="Open the live page on infineon.com">{{ h.url }} <span class="ext">↗</span></a>
+      </div>
       {% endfor %}
     </div>
   </div>
@@ -413,14 +422,22 @@
     <h2>Pages <span class="muted" style="font-weight:400">— {{ page_hits|length }} match{{ 'es' if page_hits|length != 1 }}</span></h2>
     <div class="pagegrid">
       {% for p in page_hits %}
-      <a class="pagecard" href="{{ url_for('url_detail', url_id=p.id) }}">
-        {% if p.snap_id %}
-        <img class="pageshot" loading="lazy" alt=""
-             src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
-        {% endif %}
-        <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
-        <div class="pagecard-url">{{ p.url }}</div>
-      </a>
+      <div class="pagecard">
+        <a class="pc-open" href="{{ url_for('url_detail', url_id=p.id) }}"
+           title="Open what we captured for this page">
+          {#- the page as it actually looks. Served from the snapshot we already
+              store, downsized on first request - no new capture, no full-size
+              megabyte per card. -#}
+          {% if p.snap_id %}
+          <img class="pageshot" loading="lazy" alt=""
+               src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
+          {% endif %}
+          <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ p.title|clean_title }}</div>
+        </a>
+        {#- the address is a link in its own right: infineon.com in one click -#}
+        <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
+           title="Open the live page on infineon.com">{{ p.url }} <span class="ext">↗</span></a>
+      </div>
       {% endfor %}
     </div>
   </div>

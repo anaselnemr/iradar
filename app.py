@@ -4044,10 +4044,12 @@ def item_detail(key):
     is the view that answers "where does this thing appear?"."""
     con = db.connect()
     rows = con.execute("""
-        SELECT i.*, u.url AS page_url, u.ptype, u.label, u.last_status,
+        SELECT i.*, u.url AS page_url, u.ptype, u.level, u.label, u.last_status,
                (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
                  AND s.status='ok' AND s.page_title<>''
-                 ORDER BY s.id DESC LIMIT 1) AS page_title
+                 ORDER BY s.id DESC LIMIT 1) AS page_title,
+               (SELECT s.id FROM snapshots s WHERE s.url_id=u.id
+                 AND s.status='ok' ORDER BY s.id DESC LIMIT 1) AS snap_id
         FROM items i JOIN urls u ON u.id=i.url_id
         WHERE i.item_key=? ORDER BY u.ptype, page_title""", (key,)).fetchall()
     if not rows:
@@ -4083,6 +4085,7 @@ def item_detail(key):
     pages = [{"id": r["url_id"], "url": r["page_url"],
               "title": r["page_title"] or r["label"] or "",
               "ptype": r["ptype"] or "", "grp": r["grp"] or "",
+              "level": r["level"] or "", "snap_id": r["snap_id"],
               "status": r["last_status"] or ""} for r in rows]
     by_type = {}
     for p in pages:
@@ -4119,11 +4122,13 @@ def hierarchy():
         pages = _breadcrumbs(con, mem)
         product_tree = any(m in ("Product", "Part") for m in mem)
         tree = _hierarchy_tree(pages, tracked, product_tree)
-        all_levels |= {p.get("live_level") for p in pages
-                       if p.get("live_level")}
+        mine = {p.get("live_level") for p in pages if p.get("live_level")}
+        all_levels |= mine
         disagreements += sum(1 for p in pages if p.get("level_disagrees"))
+        # which badges this group actually uses, so picking a filter can narrow
+        # the legend to it - a promo filter has no business explaining PSFP
         groups.append({"label": lbl, "tree": tree, "shown": len(pages),
-                       "total": total})
+                       "total": total, "levels": sorted(mine)})
     # the audit trail: every automatic level assignment, newest first, so
     # "did anything move?" is a glance, not a guess. Empty after a run means
     # exactly that - the site's structure did not change.
@@ -4145,7 +4150,13 @@ def hierarchy():
         sel = "Products & Eval Boards"
     seen_levels = sorted(all_levels,
                          key=lambda l: order.index(l) if l in order else 99)
+    # level -> the groups that use it, for the client-side legend filter
+    lvl_groups = {}
+    for g in groups:
+        for l in g["levels"]:
+            lvl_groups.setdefault(l, []).append(g["label"])
     return render_template("hierarchy.html", groups=groups, sel=sel,
+                           lvl_groups=lvl_groups,
                            levels=seen_levels, level_names=LEVEL_NAMES,
                            disagreements=disagreements, level_log=level_log,
                            home=home)

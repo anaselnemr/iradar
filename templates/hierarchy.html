@@ -38,7 +38,10 @@
 {% macro node(n) %}
   {% if n.name %}
     {% if n.children or n.pages %}
-    <details class="tnode" {% if n.depth < 2 %}open{% endif %}>
+    {#- only the root opens. Its children are all visible as summaries, and
+        everything under them stays shut: the top of the tree should be a list
+        you can scan, not two levels already unfolded. -#}
+    <details class="tnode" {% if n.depth < 1 %}open{% endif %}>
       <summary>
         {{ nodelabel(n) }}
         <span class="tcount">{{ n.count }}</span>
@@ -104,9 +107,13 @@
   {% if levels %}
   <div class="pills" style="margin-top:12px; align-items:center">
     <span class="muted" style="font-size:12px">Levels:</span>
+    {#- each entry knows which groups use it, so choosing a filter above can
+        narrow this to the badges that filter can actually show -#}
     {% for l in levels %}
-      <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
-      <span class="muted" style="font-size:12px; margin-right:8px">{{ level_names.get(l, '') }}</span>
+      <span class="lvlentry" data-groups="{{ (lvl_groups.get(l, []))|join('|') }}">
+        <span class="lvl lvl-{{ l|lower }}">{{ l }}</span>
+        <span class="muted" style="font-size:12px; margin-right:8px">{{ level_names.get(l, '') }}</span>
+      </span>
     {% endfor %}
   </div>
   {% endif %}
@@ -191,6 +198,12 @@
     if (hr) hr.hidden = (name === 'Promo');   // promo pages don't descend from Home
     document.querySelectorAll('.gpill').forEach(function (p) {
       p.classList.toggle('on', p.dataset.group === name);
+    });
+    // the legend follows the filter: a Promo view has no business explaining
+    // PSFP, and a legend listing badges the tree cannot show is just noise
+    document.querySelectorAll('.lvlentry').forEach(function (e) {
+      var gs = (e.dataset.groups || '').split('|').filter(Boolean);
+      e.hidden = (name !== 'All' && gs.indexOf(name) === -1);
     });
     activeGroup = name;
     try {
