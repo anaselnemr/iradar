@@ -148,6 +148,12 @@ def init_db():
     -- columns the wrong way round for that, so it scanned the table (160 ms);
     -- this way round it is a covering index scan (16 ms).
     CREATE INDEX IF NOT EXISTS idx_items_cat_url ON items(category, url_id);
+    -- the item page looks an asset up by what it IS (title + link) rather than
+    -- by one of its per-section keys, so that a thing filed under two headings
+    -- still lists every page it sits on. Without the category prefix the index
+    -- above cannot serve that, and it was a 109 ms full scan per view.
+    CREATE INDEX IF NOT EXISTS idx_items_ltitle_url
+        ON items(lower(title), item_url);
     -- Substring search over item titles/meta/urls. A LIKE '%foo%' cannot use an
     -- index, so searching the library scanned all ~199k rows: two full seconds
     -- per query. The TRIGRAM tokenizer is the one FTS5 mode that indexes

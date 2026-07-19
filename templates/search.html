@@ -416,7 +416,7 @@
           <span class="hit-title-row">
             <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
           </span>
-          <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
+          <span class="badge b-type"{% if g.is_video %} title="Which section this video was captured from"{% endif %}>{{ (g.cats|isource) if g.is_video else labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
           <a class="badge {{ 'b-changed' if g.npages > 1 else 'b-unchanged' }}" href="{{ url_for('item_detail', key=g.item_key) }}" title="Every page this is assigned to">{{ g.npages }} page{{ 's' if g.npages != 1 }}</a>
           {% if g.bsearch %}<a class="badge b-sys" href="{{ g.bsearch }}" target="_blank" data-aname="{{ g.aname }}" title="Opens {{ g.backend }} search and copies the asset name — just paste">{{ g.backend }}</a>{% elif g.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ g.backend }}</span>{% endif %}
           {% if g.url %}<a href="{{ g.url }}" target="_blank" class="liveurl">open ↗</a>{% endif %}
@@ -566,7 +566,7 @@
           <a href="{{ url_for('item_detail', key=g.item_key) }}" class="hit-title">{{ g.title }}</a>
           {% endif %}
         </span>
-        <span class="badge b-type">{{ labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
+        <span class="badge b-type"{% if g.is_video %} title="Which section this video was captured from"{% endif %}>{{ (g.cats|isource) if g.is_video else labels.get(g.category, g.category) }}{% if g.grp %} · {{ g.grp }}{% endif %}</span>
         {% if not is_overview %}
         <span class="badge {{ 'b-changed' if g.pages|length > 1 else 'b-unchanged' }}">{{ g.pages|length }} page{{ 's' if g.pages|length > 1 }}</span>
         {% endif %}

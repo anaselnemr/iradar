@@ -13,6 +13,9 @@
         Video</span>
       {% endif %}
       <span class="badge b-type">{{ item.label }}</span>
+      {#- which section of the page this was captured from. Only interesting
+          for videos, where the library merges three of them. -#}
+      {% if item.is_video and item.source %}<span class="badge b-new" title="Which section this video was captured from">Found in: {{ item.source }}</span>{% endif %}
       {% if item.grp %}<span class="badge b-new">{{ item.grp }}</span>{% endif %}
       {% if item.doc_type %}<span class="badge b-new">{{ item.doc_type }}</span>{% endif %}
       {% if item.bsearch %}

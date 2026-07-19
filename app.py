@@ -1227,6 +1227,9 @@ PILL_SQL_CATS = {
 # type: it lives in the page's text, and the In-page-text search names the
 # section a match sits in. Keeping them as asset chips doubled every answer.
 PROSE_CATS = ("features", "benefits", "applications", "subheadline")
+# a page's own words rather than a shared asset: never deduped across pages by
+# title, because two pages saying the same sentence are not sharing an object
+NON_ASSET_CATS = frozenset(PROSE_CATS) | {"about", "overview"}
 # old links used raw category names - keep them working. Boards folded INTO
 # design resources, so that one redirects. "text" is different: it lost its
 # tile because Everything now searches page text too, but it is still a real
@@ -3457,7 +3460,11 @@ def search_items():
         browse_total = ccounts[cat]
         _sset = db.get_settings()
         rows = con.execute(
-            "SELECT title, item_url, category, grp, meta,"
+            # a bare category under GROUP BY is whichever row SQLite reached
+            # first; the videos library needs every section the asset was found
+            # in, since eighteen sit in two
+            "SELECT title, item_url, category,"
+            " group_concat(DISTINCT category) AS cats, grp, meta,"
             " MIN(item_key) AS item_key, MIN(doc_type) AS doc_type,"
             " MAX(IFNULL(img,'')) AS img,"
             " COUNT(DISTINCT url_id) AS npages"
@@ -3475,7 +3482,9 @@ def search_items():
             _ttl = (pretty_image_title(r["title"], r["item_url"])
                     if r["category"] == "images" else r["title"])
             groups.append({"title": _ttl, "url": r["item_url"],
-                           "category": r["category"], "grp": r["grp"],
+                           "category": r["category"],
+                           "cats": (r["cats"] or "").split(","),
+                           "grp": r["grp"],
                            "meta": r["meta"], "item_key": r["item_key"],
                            "npages": r["npages"], "pages": [],
                            "backend": _bk,
@@ -3725,7 +3734,8 @@ def search_items():
                 _ttl = (pretty_image_title(r["title"], r["item_url"])
                         if r["category"] == "images" else r["title"])
                 by_item[gk] = {"title": _ttl, "url": r["item_url"],
-                               "category": r["category"], "grp": r["grp"],
+                               "category": r["category"], "cats": set(),
+                               "grp": r["grp"],
                                "meta": r["meta"], "pages": [],
                                "item_key": r["item_key"],
                                "rank": rank.get(r["item_key"], 10 ** 9),
@@ -3746,6 +3756,7 @@ def search_items():
             else:
                 by_item[gk]["rank"] = min(by_item[gk]["rank"],
                                           rank.get(r["item_key"], 10 ** 9))
+            by_item[gk]["cats"].add(r["category"])
             by_item[gk]["pages"].append(
                 {"id": r["url_id"], "url": r["page_url"],
                  "title": r["page_title"] or r["label"] or r["page_url"]})
@@ -4076,8 +4087,32 @@ def doc_preview_png(key):
 def item_detail(key):
     """One real-world item - a document, video, image, board - and every page
     it is assigned to. The same datasheet can sit on forty product pages; this
-    is the view that answers "where does this thing appear?"."""
+    is the view that answers "where does this thing appear?".
+
+    Keyed on the ASSET (its title and link), not on one item_key. A thing filed
+    under two headings gets a key per heading, so keying on one of them made
+    this page contradict the library that linked to it: 177 assets showed
+    fewer pages here than the badge you clicked promised, hiding 1,959
+    assignments between them - a video in both a News card and the page's own
+    video section, a product also listed under Browse by category.
+    """
     con = db.connect()
+    ident = con.execute("SELECT title, item_url, category FROM items"
+                        " WHERE item_key=? LIMIT 1", (key,)).fetchone()
+    if not ident:
+        con.close()
+        abort(404)
+    # Prose is not an asset: a key features bullet and a Browse-by-category
+    # card can read the same and point at the same link without being the same
+    # thing, so widening to title+url must not sweep the prose in. Matching the
+    # library's own exclusion keeps this page and the badge that linked to it
+    # counting the same set.
+    if ident["category"] in NON_ASSET_CATS:
+        where, args = "i.item_key=?", (key,)
+    else:
+        where = ("lower(i.title)=lower(?) AND i.item_url=? AND i.category NOT IN ("
+                 + ",".join("?" * len(NON_ASSET_CATS)) + ")")
+        args = (ident["title"], ident["item_url"], *sorted(NON_ASSET_CATS))
     rows = con.execute("""
         SELECT i.*, u.url AS page_url, u.ptype, u.level, u.label, u.last_status,
                (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
@@ -4086,7 +4121,7 @@ def item_detail(key):
                (SELECT s.id FROM snapshots s WHERE s.url_id=u.id
                  AND s.status='ok' ORDER BY s.id DESC LIMIT 1) AS snap_id
         FROM items i JOIN urls u ON u.id=i.url_id
-        WHERE i.item_key=? ORDER BY u.ptype, page_title""", (key,)).fetchall()
+        WHERE """ + where + " ORDER BY u.ptype, page_title", args).fetchall()
     if not rows:
         con.close()
         abort(404)
@@ -4116,12 +4151,18 @@ def item_detail(key):
             "doc_type": (dtype or document_type_of(meta))
             if first["category"] == "documents" else "",
             "label": dict(SECTION_LABELS).get(first["category"],
-                                              first["category"])}
-    pages = [{"id": r["url_id"], "url": r["page_url"],
-              "title": r["page_title"] or r["label"] or "",
-              "ptype": r["ptype"] or "", "grp": r["grp"] or "",
-              "level": r["level"] or "", "snap_id": r["snap_id"],
-              "status": r["last_status"] or ""} for r in rows]
+                                              first["category"]),
+            "source": item_source({r["category"] for r in rows})}
+    pages, _seen_pg = [], set()
+    for r in rows:
+        if r["url_id"] in _seen_pg:      # same asset twice on one page
+            continue
+        _seen_pg.add(r["url_id"])
+        pages.append({"id": r["url_id"], "url": r["page_url"],
+                      "title": r["page_title"] or r["label"] or "",
+                      "ptype": r["ptype"] or "", "grp": r["grp"] or "",
+                      "level": r["level"] or "", "snap_id": r["snap_id"],
+                      "status": r["last_status"] or ""})
     by_type = {}
     for p in pages:
         by_type.setdefault(p["ptype"] or "Other", []).append(p)
@@ -4338,7 +4379,8 @@ PAGE_FIELDS = [("live", "Live"), ("status", "Status"),
 # and a design resource "ZIP | 01_00 | EN | 11.39 mb | date" - so each field is
 # recognised by its SHAPE rather than its position. Position-based parsing
 # would quietly file a version as a language the moment a category differs.
-ITEM_FIELDS = [("dtype", "Type"), ("format", "Format"), ("language", "Language"),
+ITEM_FIELDS = [("source", "Found in"),
+               ("dtype", "Type"), ("format", "Format"), ("language", "Language"),
                ("version", "Version"), ("size", "Size"), ("date", "Date"),
                ("duration", "Duration"), ("access", "Access"),
                ("backend", "Backend"), ("group", "Group"), ("link", "Link")]
@@ -4434,6 +4476,36 @@ LEVEL_GROUPS = [
 ]
 _GROUPED_LEVELS = {l for _t, ls in LEVEL_GROUPS for l in ls}
 _FAMILY_OF = {l: t for t, ls in LEVEL_GROUPS for l in ls}
+
+# WHERE an item was found, which only becomes a question once a library stops
+# matching the section it was scraped from. Videos are the case: the same
+# library holds the page's own video section, the videos inside News &
+# highlights cards and the ones inside Trainings & webinars cards, and "which
+# of the three" is a real property of the asset that nothing else records.
+ITEM_SOURCE_LABELS = dict(SECTION_LABELS)
+ITEM_SOURCE_LABELS["videos"] = "On page"
+
+
+_SOURCE_ORDER = [c for c, _l in SECTION_LABELS]
+
+
+def item_source(cats):
+    """The section(s) an item was captured from, in the site's own order.
+
+    A set rather than a value: eighteen videos sit in a News & highlights card
+    on one page and in the page's own video section on another, so picking
+    whichever row the dedup happened to see first would label them at random.
+    """
+    if isinstance(cats, str):
+        cats = [cats]
+    seen = [c for c in _SOURCE_ORDER if c in set(cats)]
+    seen += sorted(set(cats) - set(_SOURCE_ORDER))
+    return ", ".join(ITEM_SOURCE_LABELS.get(c, c) for c in seen if c)
+
+
+@app.template_filter("isource")
+def _isource(cats):
+    return item_source(cats)
 # above this a group is clutter rather than content, so it arrives folded. Below
 # it nothing is hidden - a search that returns six pages should still just show
 # six pages rather than making you open a box to find them.
@@ -4522,10 +4594,11 @@ def _export_item_rows(con, kinds, levels, cols=()):
     for r in con.execute(q, args):
         e = by.setdefault(_item_dedup_key(r), {
             "key": r["item_key"], "category": r["category"],
-            "kind": r["kind"] or r["category"],
+            "kind": r["kind"] or r["category"], "cats": set(),
             "title": r["title"] or "", "url": r["item_url"] or "",
             "meta": r["meta"] or "", "dtype": r["doc_type"] or "",
             "fields": {}, "levels": {}, "pages": []})
+        e["cats"].add(r["category"])
         if want_f and not e["fields"]:
             got = parse_item_meta(r["meta"], r["doc_type"])
             got["group"] = r["grp"] or ""
@@ -4537,6 +4610,10 @@ def _export_item_rows(con, kinds, levels, cols=()):
         e["levels"][r["lv"]] = e["levels"].get(r["lv"], 0) + 1
         if len(e["pages"]) < 40:
             e["pages"].append({"id": r["pid"], "title": r["ptitle"] or r["purl"]})
+    for e in by.values():
+        e["source"] = item_source(e["cats"])
+        if "source" in want_f:          # only known once every row is in
+            e["fields"]["source"] = e["source"]
     rows = sorted(by.values(),
                   key=lambda e: (e["category"], e["title"].lower()))
     used = [l for l in (levels or sorted(
@@ -4580,7 +4657,9 @@ def _export_avail(con, mode, levels, kinds):
         for r in rows:
             f = parse_item_meta(r["meta"], r["doc_type"])
             for key in seen:
-                if key == "group":
+                if key == "source":
+                    seen[key] += 1 if item_source(r["category"]) else 0
+                elif key == "group":
                     seen[key] += 1 if (r["grp"] or "").strip() else 0
                 elif key == "link":
                     seen[key] += 1 if (r["item_url"] or "").strip() else 0
