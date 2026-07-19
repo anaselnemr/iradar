@@ -82,14 +82,60 @@
   .bc-item:hover { background: var(--hover); text-decoration: none !important; }
   .bc-item.cur { font-weight: 600; background: var(--hover); }
   .bc-tick { color: var(--ok); }
+
+  /* ---- page header -------------------------------------------------------
+     Title and its pencil on one line; then a row that reads left to right as
+     what KIND of page, which page, and how it answered; then the dates. */
+  .pgtitle { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+  .pgtitle h1 { font-size: 19px; margin: 0; }
+  .pgpen > summary { list-style: none; cursor: pointer; padding: 2px 5px;
+                     border-radius: 6px; line-height: 1; }
+  .pgpen > summary::-webkit-details-marker { display: none; }
+  .pgpen > summary:hover { background: var(--hover); }
+  .pgaddr { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+            margin: 9px 0 0; }
+  .pgurl { font-size: 13.5px; word-break: break-all; }
+  .pgfacts { font-size: 12.5px; margin-top: 7px; }
+  /* the level editor sits in the row, so its popover anchors to itself */
+  .pgaddr .lvledit { display: inline-flex; align-items: center; }
+  .pgaddr .lvledit > summary { display: inline-flex; align-items: center;
+                               gap: 5px; cursor: pointer; list-style: none;
+                               padding: 2px 5px; border-radius: 6px; }
+  .pgaddr .lvledit > summary::-webkit-details-marker { display: none; }
+  .pgaddr .lvledit > summary:hover { background: var(--hover); }
+
+  /* ---- ownership ---------------------------------------------------------
+     Values, not form fields: these are already set, and a row of empty-looking
+     boxes asks to be filled in. */
+  .ownrow { display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+            margin: 12px 0 14px; padding: 9px 13px; border-radius: 10px;
+            border: 1px solid var(--line); background: var(--panel); }
+  .ownrow-warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  .ownfield { display: inline-flex; align-items: baseline; gap: 7px;
+              min-width: 0; }
+  .ownlbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--muted); font-weight: 700; white-space: nowrap; }
+  .ownval { font-size: 13.5px; color: var(--ink); }
+  .ownval-none { color: var(--muted); opacity: .55; font-style: italic; }
+  .ownpen { margin-left: auto; }
+  .ownpen > summary { list-style: none; cursor: pointer; padding: 3px 6px;
+                      border-radius: 6px; line-height: 1; }
+  .ownpen > summary::-webkit-details-marker { display: none; }
+  .ownpen > summary:hover { background: var(--hover); }
+  .ownedit { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+  .ownedit input { padding: 6px 9px; border: 1px solid var(--line);
+                   border-radius: 7px; background: var(--card); color: var(--ink);
+                   font-size: 13.5px; width: 100%; }
+  .ownedit input:focus { border-color: var(--accent); outline: none; }
+  .ownflag { font-size: 12px; color: var(--warn); font-weight: 600;
+             flex-basis: 100%; }
 </style>
 <div class="card">
   {% set disp = u.title_override or ((latest.page_title if latest and latest.page_title else u.label) | clean_title) %}
-  <h1 style="font-size:17px; word-break:break-all">
-    {% if disp %}{{ disp }}<br><span class="muted" style="font-weight:400; font-size:14px">{% endif %}<a href="{{ u.url }}" target="_blank">{{ u.url }}</a>{% if disp %}</span>{% endif %}
-  </h1>
-  <details class="lvledit" style="display:inline-block; margin:-4px 0 8px">
-    <summary title="Rename this page's display name"><span class="lvlpen">✎</span> <span style="font-size:12px" class="muted">rename{% if u.title_override %} · custom name{% endif %}</span></summary>
+  <div class="pgtitle">
+    <h1>{{ disp or u.url }}</h1>
+  <details class="lvledit pgpen">
+    <summary title="Rename this page's display name"><span class="lvlpen">✎</span></summary>
     <form method="post" action="{{ url_for('url_set_title', url_id=u.id) }}" class="lvlmenu" style="padding:12px; min-width:280px">
       <div class="lvlmenu-head">Display name
         <span>{{ 'custom' if u.title_override else 'from the page title' }}</span>
@@ -105,17 +151,20 @@
         re-capture. Leave empty to restore the page's own title.</p>
     </form>
   </details>
-  <div class="muted">Added {{ u.created_at|localtime }} · Last checked: {{ u.last_checked|localtime }}
-    · Status: {{ u.last_status or 'not checked' }}
+  </div>
+
+  {#- Reading order: what KIND of page, then which page, then how it
+      answered. The level badge used to sit after the status text, three
+      facts away from the address it describes. -#}
+  <div class="pgaddr">
     {% set scheme = {'Product': ['PC','PFP','PSFP','PEFP'],
                      'Application': ['ADP','AOP','ASP','AFB'],
                      'Design resources': ['DRC','DRF','DRSF'],
                      'Part': ['PTP','EB']}.get(u.ptype) %}
     {% if scheme %}
-    · <details class="lvledit">
-        <summary title="Level: {{ level_names.get(u.level, 'none') }} — source: {{ u.level_src or 'not set' }}. Click to change.">
+    <details class="lvledit">
+        <summary title="Level: {{ level_names.get(u.level, 'none') }} — source: {{ {'report':'the report','inferred':'auto-detected','manual':'your edit','structure':'the site structure walk'}.get(u.level_src, 'not set') }}. Click to change.">
           {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}">{{ u.level }}</span>{% else %}<span class="badge b-off">no level</span>{% endif %}
-          <span class="lvlsrc">{{ {'report':'report','inferred':'auto','manual':'edited','structure':'site walk'}.get(u.level_src, '') }}</span>
           <span class="lvlpen">✎</span>
         </summary>
         <form method="post" action="{{ url_for('url_set_level', url_id=u.id) }}" class="lvlmenu">
@@ -145,39 +194,52 @@
         </form>
       </details>
     {% endif %}
-    {% if u.last_http %} · <span class="badge {{ 'b-live' if u.last_http < 400 else 'b-error' }}">HTTP {{ u.last_http }}</span>{% endif %}
-    {% if settings and settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %} · <span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open">PIM</span>{% elif aurl %} · <a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
-    {% if u.canonical_url %} · <span class="muted" style="font-size:12px" title="The page's long/canonical address from its own breadcrumb — used for duplicate detection, search and the AEM link">long URL: <a href="{{ u.canonical_url }}" target="_blank">{{ u.canonical_url }}</a></span>{% endif %}
+    <a class="pgurl" href="{{ u.url }}" target="_blank" rel="noopener">{{ u.url }}</a>
+    {% if u.last_http %}<span class="badge {{ 'b-live' if u.last_http < 400 else 'b-error' }}">HTTP {{ u.last_http }}</span>{% endif %}
+    {% if settings and settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %}<span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open">PIM</span>{% elif aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
+  </div>
+
+  <div class="muted pgfacts">Added {{ u.created_at|localtime }} · Last checked: {{ u.last_checked|localtime }} · Status:
+    {{ u.last_status or 'not checked' }}
+    {% if u.canonical_url %} · <span title="The page's long/canonical address from its own breadcrumb — used for duplicate detection, search and the AEM link">long URL: <a href="{{ u.canonical_url }}" target="_blank">{{ u.canonical_url }}</a></span>{% endif %}
   </div>
 
   {% if meta_fields %}
-  <form method="post" action="{{ url_for('url_set_meta', url_id=u.id) }}" class="metabox">
+  {#- These are FACTS ABOUT THE PAGE, so they read as facts. A row of empty-
+      looking input boxes said "fill this in" about values that were already
+      set, and put a Save button on screen permanently for something edited
+      once a year. Same pencil as the title and the level, one for the row. -#}
+  <div class="ownrow{{ ' ownrow-warn' if u.meta_flag }}">
+    {% for f in meta_fields %}
+    <span class="ownfield">
+      <span class="ownlbl">{{ meta_labels.get(f, f)|upper if f in ('bl','pl') else meta_labels.get(f, f) }}</span>
+      {% if u[f] %}<span class="ownval">{{ u[f] }}</span>
+      {% else %}<span class="ownval ownval-none" title="Not set">not set</span>{% endif %}
+    </span>
+    {% endfor %}
+    <details class="lvledit ownpen">
+      <summary title="Edit ownership"><span class="lvlpen">✎</span></summary>
+      <form method="post" action="{{ url_for('url_set_meta', url_id=u.id) }}"
+            class="lvlmenu" style="padding:12px; min-width:290px">
+        <div class="lvlmenu-head">Ownership
+          <span>from the CSS report unless edited</span>
+        </div>
+        {% for f in meta_fields %}
+        <label class="ownedit">
+          <span class="ownlbl">{{ meta_labels.get(f, f)|upper if f in ('bl','pl') else meta_labels.get(f, f) }}</span>
+          <input type="text" name="{{ f }}" value="{{ u[f] or '' }}"
+                 placeholder="not set" autocomplete="off">
+        </label>
+        {% endfor %}
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px">
+          <button type="submit" class="linkbtn" style="font-weight:600">Save</button>
+        </div>
+      </form>
+    </details>
     {% if u.meta_flag %}
-    <div class="meta-warn" title="Imported from the CSS report; a mismatch was detected. Editing any field clears this flag.">⚠ {{ u.meta_flag }}</div>
+    <span class="ownflag" title="Imported from the CSS report; a mismatch was detected. Editing any field clears this flag.">— {{ u.meta_flag }}</span>
     {% endif %}
-    <div class="metagrid">
-      {% for f in meta_fields %}
-      <label class="metafield">
-        <span class="metalbl">{{ meta_labels.get(f, f)|upper if f in ('bl','pl') else meta_labels.get(f, f) }}</span>
-        <input type="text" name="{{ f }}" value="{{ u[f] or '' }}"
-               placeholder="—" autocomplete="off">
-      </label>
-      {% endfor %}
-      <button class="metasave" title="Save ownership fields">Save</button>
-    </div>
-  </form>
-  <style>
-    .metabox { margin: 8px 0 14px; padding: 10px 12px; border: 1px solid var(--line);
-               border-radius: 10px; background: var(--panel); }
-    .meta-warn { font-size: 12.5px; color: var(--warn); margin-bottom: 8px; font-weight: 600; }
-    .metagrid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
-    .metafield { display: flex; flex-direction: column; gap: 3px; }
-    .metalbl { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-    .metafield input { padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px;
-                       background: var(--card); color: var(--ink); font-size: 13.5px; min-width: 150px; }
-    .metafield input:focus { border-color: var(--accent); outline: none; }
-    .metasave { padding: 6px 16px; }
-  </style>
+  </div>
   {% endif %}
   {% if redirect_to %}
   {# the listed address is not the page that answered: say so plainly, or the
@@ -265,26 +327,24 @@
       <div class="compbox">
         <div class="comphead">
           <span>Components</span>
-          <span class="muted">{{ components|selectattr('exists')|list|length }} of
-            {{ components|length }} this page type carries are on this page</span>
+          <span class="muted">{{ components|selectattr('state', 'eq', 'content')|list|length }} with content{% set nempty = components|selectattr('state', 'eq', 'empty')|list|length %}{% if nempty %}, {{ nempty }} present but empty{% endif %}, of {{ components|length }} this page type carries</span>
         </div>
         <div class="compchips">
+        {#- Three states, the same three for every component, because "there is
+            no Documents section" and "there is a Documents section with nothing
+            in it" are different findings and only one of them is a mistake.
+            Hero image says it in its own words: an empty one is the site's
+            default placeholder rather than a page image. -#}
         {% for c in components %}
-          {% if c.key in ('product_table', 'developer_community', 'hero_image') %}
-            {% set f = flags.get(c.key) %}
-            {% if c.key == 'hero_image' and f is none %}
-              <span class="cchip off" style="opacity:.5" title="Not measured yet — this page was captured before hero detection; its next capture fills this in">◌ {{ c.label }}</span>
-            {% elif not f or not f.exists %}
-              <span class="cchip off" title="{{ 'No hero image assigned' if c.key == 'hero_image' else 'Not on this page' }}">{{ c.label }}</span>
-            {% elif f.has_content %}
-              <span class="cchip on" title="{{ 'A page-specific image is assigned' if c.key == 'hero_image' else 'Present, has content' }}">✓ {{ c.label }}</span>
-            {% else %}
-              <span class="cchip mid" title="{{ 'The DEFAULT image is assigned — not a page-specific one' if c.key == 'hero_image' else 'Present but empty' }}">◐ {{ c.label }}{{ ' (default)' if c.key == 'hero_image' }}</span>
-            {% endif %}
-          {% elif c.exists %}
-            <span class="cchip on" title="Present on this page">✓ {{ c.label }}</span>
+          {% set hero = c.key == 'hero_image' %}
+          {% if hero and flags.get('hero_image') is none %}
+            <span class="cchip off" style="opacity:.5" title="Not measured yet — this page was captured before hero detection; its next capture fills this in">◌ {{ c.label }}</span>
+          {% elif c.state == 'content' %}
+            <span class="cchip on" title="{{ 'A page-specific image is assigned' if hero else 'On this page, with content' }}">✓ {{ c.label }}</span>
+          {% elif c.state == 'empty' %}
+            <span class="cchip mid" title="{{ 'The DEFAULT image is assigned — not a page-specific one' if hero else 'The page offers this section, but it is empty' }}">◐ {{ 'Default hero image' if hero else c.label }}{{ '' if hero else ' — empty' }}</span>
           {% else %}
-            <span class="cchip off" title="Not on this page — other {{ u.ptype }} pages have it">{{ c.label }}</span>
+            <span class="cchip off" title="{{ 'No hero image at all' if hero else 'Not on this page — other ' ~ (u.ptype or 'similar') ~ ' pages have it' }}">{{ c.label }}</span>
           {% endif %}
         {% endfor %}
         </div>

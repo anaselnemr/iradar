@@ -269,6 +269,25 @@ def _nohas(cat):
     return _KNOWN_GOOD + " AND NOT " + _has(cat)
 
 
+def _offered(label):
+    """The page OFFERS this section - it is in the section nav or the
+    Product-details sub-tabs - whether or not anything is behind it."""
+    lit = chr(34) + label.lower() + chr(34)
+    return ("(instr(lower(IFNULL(u.components,'')), '" + lit + "') > 0"
+            " OR instr(lower(IFNULL(u.detail_tabs,'')), '" + lit + "') > 0)")
+
+
+def _empty(cat, label):
+    """Offered and empty: the section is on the page with nothing in it.
+
+    This used to fall into "No X" alongside pages that never had the
+    section at all, which reads them as one finding. They are not: a
+    missing section is a page built differently, an empty one is a page
+    built right and never filled in - and only the second is a mistake.
+    """
+    return _KNOWN_GOOD + " AND " + _offered(label) + " AND NOT " + _has(cat)
+
+
 def _flag(block, key):
     """Filter on a presence-only boolean stored in urls.flags (JSON)."""
     return (f"(u.flags IS NOT NULL AND u.flags<>''"
@@ -342,7 +361,15 @@ ATTR_FILTERS = {
 }
 for _stem, _cat, _label in _CONTENT_ATTRS + _COMPONENT_ATTRS:
     ATTR_FILTERS["has" + _stem] = ("Has " + _label, _has(_cat))
-    ATTR_FILTERS["no" + _stem] = ("No " + _label, _nohas(_cat))
+    # "Has an empty documents" is not English; this reads for singular and
+    # plural labels alike and says exactly what the state is
+    ATTR_FILTERS["empty" + _stem] = (
+        _label[0].upper() + _label[1:] + " present but empty",
+        _empty(_cat, _label))
+    # NOT offered at all; the empty ones are their own answer above
+    ATTR_FILTERS["no" + _stem] = (
+        "No " + _label,
+        _nohas(_cat) + " AND NOT " + _offered(_label))
 # a video is a video wherever it appears - a video card inside News &
 # highlights counts too ("if a video is in the news it should also count").
 _VIDEO_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
@@ -359,24 +386,26 @@ ATTR_FILTERS["noprice"] = ("No price",
                            " AND u.components IS NOT NULL AND u.components<>''"
                            " AND IFNULL(u.price,'')=''")
 # presence-only blocks (content itself never stored) - each with its inverse
-ATTR_FILTERS["hastable"] = ("Has products table",
-                            _flag("product_table", "exists"))
-ATTR_FILTERS["notable"] = ("No products table",
-                           _noflag("product_table", "exists"))
-ATTR_FILTERS["hastablerows"] = ("Products table has rows",
-                                _flag("product_table", "has_content"))
-ATTR_FILTERS["hascommunity"] = ("Has developer community",
-                                _flag("developer_community", "exists"))
-ATTR_FILTERS["nocommunity"] = ("No developer community",
-                               _noflag("developer_community", "exists"))
-ATTR_FILTERS["hasthreads"] = ("Developer community has threads",
-                              _flag("developer_community", "has_content"))
-ATTR_FILTERS["hashero"] = ("Has hero image", _flag("hero_image", "exists"))
-ATTR_FILTERS["nohero"] = ("No hero image", _noflag("hero_image", "exists"))
-ATTR_FILTERS["herodefault"] = (
-    "Hero image is the default",
-    "(" + _flag("hero_image", "exists") + " AND NOT "
-    + _flag("hero_image", "has_content") + ")")
+# The three blocks the capture already measures twice over - exists AND
+# has_content - so their three states need no new signal, only saying.
+# "Has X" means has X with something in it, which is what people read it as.
+def _flag3(stem, block, label, empty_label):
+    ATTR_FILTERS["has" + stem] = ("Has " + label,
+                                  _flag(block, "has_content"))
+    ATTR_FILTERS["empty" + stem] = (
+        empty_label,
+        "(" + _flag(block, "exists") + " AND NOT "
+        + _flag(block, "has_content") + ")")
+    ATTR_FILTERS["no" + stem] = ("No " + label, _noflag(block, "exists"))
+
+
+_flag3("table", "product_table", "products table",
+       "Products table present but empty")
+_flag3("community", "developer_community", "developer community",
+       "Developer community present but empty")
+# a hero image that "exists" without content IS the site default placeholder,
+# so its empty state is named for what you would actually see
+_flag3("hero", "hero_image", "hero image", "Has the default hero image")
 
 # Components read from the page's own section-nav / Product-details sub-tabs
 # (urls.components / urls.detail_tabs, filled by the component re-capture).
@@ -421,17 +450,21 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # Components is every component; Status is every state.
 CONTENT_KEYS = []
 for _stem, _c, _l in _CONTENT_ATTRS:
-    CONTENT_KEYS += ["has" + _stem, "no" + _stem]
+    CONTENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
 COMPONENT_KEYS = []
 for _stem, _c, _l in _COMPONENT_ATTRS:
-    COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
-COMPONENT_KEYS += ["hastable", "notable", "hasprice", "noprice",
-                   "hascommunity", "nocommunity", "hashero", "nohero"]
+    COMPONENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
+for _stem in ("table", "community", "hero"):
+    COMPONENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
+COMPONENT_KEYS += ["hasprice", "noprice"]
+# A nav entry is a LINK, not a container: there is nothing inside it to be
+# empty, so these two states are the whole truth for them.
 for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "no" + _stem]
 # Qualifiers, not components: they say something ABOUT a component that is
 # already listed above, so they have no meaningful opposite and sit last.
-COMPONENT_KEYS += ["hastablerows", "hasthreads", "herodefault"]
+# (hastablerows / hasthreads / herodefault used to live here as one-off
+#  qualifiers; each is now the middle state of its own component)
 # Page states that live in ATTR_FILTERS rather than STATUS_FILTERS. They are
 # still statuses, so they are shown with the statuses - the dropdown renders
 # them as attr checkboxes because that is the parameter they filter on.
@@ -502,15 +535,22 @@ def _all_components():
     return COMPONENTS + _custom_components()
 
 
-def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
-                        registry=None):
-    """The set of component keys PRESENT on one page, from its four signals:
-    captured categories (a set of category names), the Product-details sub-tabs,
-    flags dict, and the nav labels stored in urls.components (JSON).
+def _page_component_states(components_json, detail_tabs_json, flags, cat_present,
+                           registry=None):
+    """Per component: "content", "empty" or "absent".
 
-    Pass `registry` when calling this in a loop: _all_components() re-reads the
-    settings row every time, which is invisible for one page and three seconds
-    across three thousand.
+    Present and empty is a real, common state and it was being read as absent:
+    2,285 pages carry Infineon's default placeholder where a hero image should
+    be, 333 have a Developer community block with nothing in it, and 91 offer a
+    Documents section holding no documents. "No hero image" and "a hero image
+    that is the site's placeholder" are different findings - one is missing, the
+    other is filled in wrong - and only one of them is anybody's fault.
+
+    How each kind knows:
+      cat  - items in the category means content; the page's own section-nav
+             offering the section with no items behind it means empty
+      flag - the capture already records exists AND has_content per block
+      nav  - a nav entry is a link, not a container, so it has no empty state
     """
     def _loadset(j):
         try:
@@ -524,18 +564,42 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
         return (any(a in pool for a in arg) if isinstance(arg, tuple)
                 else arg in pool)
 
-    have = set()
-    for key, _label, kind, arg in (registry if registry is not None
-                                   else _all_components()):
-        if kind == "cat" and arg in cat_present:
-            have.add(key)
-        elif kind == "flag" and (flags.get(arg) or {}).get("exists"):
-            have.add(key)
-        elif kind == "nav" and _in(arg, nav):
-            have.add(key)
-        elif kind == "tab" and _in(arg, tabs):
-            have.add(key)
-    return have
+    out = {}
+    for key, label, kind, arg in (registry if registry is not None
+                                  else _all_components()):
+        if kind == "cat":
+            if arg in cat_present:
+                out[key] = "content"
+            # nav OR tabs: a page offers Benefits as a Product-details sub-tab,
+            # never as a section-nav entry, so checking only the nav missed
+            # every empty one of those
+            elif label.lower() in nav or label.lower() in tabs:
+                out[key] = "empty"
+            else:
+                out[key] = "absent"
+        elif kind == "flag":
+            b = flags.get(arg) or {}
+            out[key] = ("content" if b.get("has_content")
+                        else ("empty" if b.get("exists") else "absent"))
+        elif kind == "nav":
+            out[key] = "content" if _in(arg, nav) else "absent"
+        elif kind == "tab":
+            out[key] = "content" if _in(arg, tabs) else "absent"
+        else:
+            out[key] = "absent"
+    return out
+
+
+def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
+                        registry=None):
+    """The set of component keys PRESENT on one page - content OR empty.
+
+    Kept as the presence answer for everything that only asks "is it there";
+    _page_component_states is the one that distinguishes the two.
+    """
+    return {k for k, v in _page_component_states(
+        components_json, detail_tabs_json, flags, cat_present, registry).items()
+        if v != "absent"}
 
 
 # the levels that are their own page SHAPE: each gets its own component
@@ -2150,15 +2214,17 @@ def url_detail(url_id):
     # union comes from the settings matrix once saved, else from the data.
     this_cats = {cat for cat in _CAT_TO_COMP
                  if sections and sections.get(cat)}
-    have = _page_component_set(u["components"], u["detail_tabs"], flags,
-                               this_cats)
+    states = _page_component_states(u["components"], u["detail_tabs"], flags,
+                                    this_cats)
+    have = {k for k, v in states.items() if v != "absent"}
     con5 = db.connect()
     etype = _etype(u["ptype"] or "", u["url"], u["level"])
     type_comps = _effective_matrix(con5).get(etype, set())
     con5.close()
     # hero_image rides on every page ("almost all should have it") even where
     # its shape has no measurement yet - the chip then says so instead of lying
-    comp_rows = [{"key": k, "label": lbl, "exists": k in have}
+    comp_rows = [{"key": k, "label": lbl, "exists": k in have,
+                  "state": states.get(k, "absent")}
                  for k, lbl, _kind, _arg in _all_components()
                  if k in type_comps or k in have or k == "hero_image"]
 
