@@ -107,20 +107,18 @@
   /* ---- ownership ---------------------------------------------------------
      Values, not form fields: these are already set, and a row of empty-looking
      boxes asks to be filled in. */
-  .ownrow { display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-            margin: 12px 0 14px; padding: 9px 13px; border-radius: 10px;
-            border: 1px solid var(--line); background: var(--panel); }
-  .ownrow-warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
-  .ownfield { display: inline-flex; flex-direction: column; gap: 1px;
+  /* No panel around it: it is a line of facts about the page, like the dates
+     above it, not a form. Label bold and inline with its value, pencil after
+     the row the same way the title carries one. */
+  .ownrow { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+            margin: 10px 0 14px; font-size: 13.5px; }
+  .ownfield { display: inline-flex; align-items: baseline; gap: 5px;
               min-width: 0; }
-  /* the label reads as a heading over its value rather than as a word in front
-     of it - same weight and case as a column header elsewhere on the site */
-  .ownlbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
-            color: var(--muted); font-weight: 700; white-space: nowrap; }
-  .ownval { font-size: 14px; color: var(--ink); font-weight: 600; }
-  .ownval-none { color: var(--muted); opacity: .55; font-style: italic; }
-  .ownpen { margin-left: auto; }
-  .ownpen > summary { list-style: none; cursor: pointer; padding: 3px 6px;
+  .ownlbl { font-weight: 700; color: var(--ink); white-space: nowrap; }
+  .ownlbl::after { content: ":"; font-weight: 700; }
+  .ownval { color: var(--ink); }
+  .ownval-none { color: var(--muted); font-style: italic; }
+  .ownpen > summary { list-style: none; cursor: pointer; padding: 2px 5px;
                       border-radius: 6px; line-height: 1; }
   .ownpen > summary::-webkit-details-marker { display: none; }
   .ownpen > summary:hover { background: var(--hover); }
@@ -211,7 +209,7 @@
       looking input boxes said "fill this in" about values that were already
       set, and put a Save button on screen permanently for something edited
       once a year. Same pencil as the title and the level, one for the row. -#}
-  <div class="ownrow{{ ' ownrow-warn' if u.meta_flag }}">
+  <div class="ownrow">
     {% for f in meta_fields %}
     <span class="ownfield">
       <span class="ownlbl">{{ meta_labels.get(f, f) }}</span>
@@ -344,7 +342,7 @@
           {% elif c.state == 'content' %}
             <span class="cchip on" title="{{ 'A page-specific image is assigned' if hero else 'On this page, with content' }}">✓ {{ c.label }}</span>
           {% elif c.state == 'empty' %}
-            <span class="cchip mid" title="{{ 'The DEFAULT image is assigned — not a page-specific one' if hero else 'The page offers this section, but it is empty' }}">◐ {{ 'Default hero image' if hero else c.label }}{{ '' if hero else ' — empty' }}</span>
+            <span class="cchip mid" title="{{ 'The DEFAULT image is assigned, not a page-specific one' if hero else "This page offers " ~ c.label ~ " in its own On-this-page nav, and the section renders no items" }}">◐ {{ 'Default hero image' if hero else c.label }}{{ '' if hero else ' — empty' }}</span>
           {% else %}
             <span class="cchip off" title="{{ 'No hero image at all' if hero else 'Not on this page — other ' ~ (u.ptype or 'similar') ~ ' pages have it' }}">{{ c.label }}</span>
           {% endif %}
