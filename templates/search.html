@@ -87,7 +87,7 @@
      left a pale margin round every screenshot and made the frame look like
      the wrong shape. Black behind it, so anything that still cannot cover
      reads as a border rather than a gap. */
-  .bthumb { width: 92px; height: 66px; object-fit: cover;
+  .bthumb { width: 124px; height: 88px; object-fit: cover;
             object-position: top center; border: 1px solid var(--line);
             border-radius: 8px; background: #000; flex-shrink: 0; }
   .browse-row { display: flex; gap: 12px; align-items: flex-start; }
@@ -96,7 +96,7 @@
   .rescard { padding: 11px 14px; }
   /* the fallback when an item has no picture of its own: the type icon, at
      the same size, so rows keep a single left edge instead of ragging */
-  .thumbfall { width: 74px; height: 56px; border: 1px solid var(--line);
+  .thumbfall { width: 124px; height: 88px; border: 1px solid var(--line);
                border-radius: 8px; background: var(--hover); flex-shrink: 0;
                display: flex; align-items: center; justify-content: center;
                position: relative; }
@@ -109,8 +109,8 @@
                background: var(--card); border-radius: 4px; padding: 1px; }
 
   /* card size: same rows, three densities */
-  .sz-s .bthumb, .sz-s .thumbfall { width: 52px; height: 40px; }
-  .sz-l .bthumb, .sz-l .thumbfall { width: 118px; height: 88px; }
+  .sz-s .bthumb, .sz-s .thumbfall { width: 88px; height: 62px; }
+  .sz-l .bthumb, .sz-l .thumbfall { width: 176px; height: 124px; }
 
   /* A thumbnail should be the shape of the thing it shows. One size for all of
      them made a page screenshot too small to recognise and a PDF the wrong way
@@ -120,18 +120,18 @@
   /* A page preview is the point of this library, and the row is already
      this tall for the title and address beside it - a smaller picture
      just leaves the space empty. */
-  .pgshot .bthumb, .pgshot .thumbfall { width: 232px; height: 146px; }
-  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 168px; height: 106px; }
-  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 320px; height: 200px; }
+  .pgshot .bthumb, .pgshot .thumbfall { width: 268px; height: 168px; }
+  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 196px; height: 123px; }
+  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 372px; height: 233px; }
 
-  .kind-videos .bthumb, .kind-videos .thumbfall { width: 96px; height: 62px; }
-  .sz-s .kind-videos .bthumb, .sz-s .kind-videos .thumbfall { width: 68px; height: 44px; }
-  .sz-l .kind-videos .bthumb, .sz-l .kind-videos .thumbfall { width: 148px; height: 96px; }
+  .kind-videos .bthumb, .kind-videos .thumbfall { width: 138px; height: 88px; }
+  .sz-s .kind-videos .bthumb, .sz-s .kind-videos .thumbfall { width: 100px; height: 64px; }
+  .sz-l .kind-videos .bthumb, .sz-l .kind-videos .thumbfall { width: 196px; height: 126px; }
 
   /* 1 : 1.414, the proportions of the page inside */
-  .kind-docs .bthumb, .kind-docs .thumbfall { width: 62px; height: 88px; }
-  .sz-s .kind-docs .bthumb, .sz-s .kind-docs .thumbfall { width: 46px; height: 65px; }
-  .sz-l .kind-docs .bthumb, .sz-l .kind-docs .thumbfall { width: 88px; height: 124px; }
+  .kind-docs .bthumb, .kind-docs .thumbfall { width: 88px; height: 124px; }
+  .sz-s .kind-docs .bthumb, .sz-s .kind-docs .thumbfall { width: 64px; height: 90px; }
+  .sz-l .kind-docs .bthumb, .sz-l .kind-docs .thumbfall { width: 120px; height: 170px; }
   .sz-s .pageshot { aspect-ratio: 16 / 7; }
   .sz-l .pageshot { aspect-ratio: 4 / 3; }
   .sz-s .pagegrid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
