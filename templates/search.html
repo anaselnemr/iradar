@@ -103,6 +103,24 @@
   /* card size: same rows, three densities */
   .sz-s .bthumb, .sz-s .thumbfall { width: 52px; height: 40px; }
   .sz-l .bthumb, .sz-l .thumbfall { width: 118px; height: 88px; }
+
+  /* A thumbnail should be the shape of the thing it shows. One size for all of
+     them made a page screenshot too small to recognise and a PDF the wrong way
+     round. Pages get the most room - the whole point of that library is what
+     the page looks like - videos a little more than the default, and documents
+     stand up, because they are almost all portrait A4. */
+  .pgshot .bthumb, .pgshot .thumbfall { width: 168px; height: 104px; }
+  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 124px; height: 78px; }
+  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 232px; height: 145px; }
+
+  .kind-videos .bthumb, .kind-videos .thumbfall { width: 96px; height: 62px; }
+  .sz-s .kind-videos .bthumb, .sz-s .kind-videos .thumbfall { width: 68px; height: 44px; }
+  .sz-l .kind-videos .bthumb, .sz-l .kind-videos .thumbfall { width: 148px; height: 96px; }
+
+  /* 1 : 1.414, the proportions of the page inside */
+  .kind-docs .bthumb, .kind-docs .thumbfall { width: 62px; height: 88px; }
+  .sz-s .kind-docs .bthumb, .sz-s .kind-docs .thumbfall { width: 46px; height: 65px; }
+  .sz-l .kind-docs .bthumb, .sz-l .kind-docs .thumbfall { width: 88px; height: 124px; }
   .sz-s .pageshot { aspect-ratio: 16 / 7; }
   .sz-l .pageshot { aspect-ratio: 4 / 3; }
   .sz-s .pagegrid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
@@ -223,7 +241,7 @@
     <input type="hidden" name="cat" value="{{ cat }}">
     <button id="sbtn">Search</button>
   </form>
-  <div class="pills">
+  <div class="pills pills-center">
     {% for k, lbl in pills %}
     <a class="pill {{ 'pill-on' if cat == k }}"
        href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}{% if ccounts.get(k) %}<span class="cchip-count">{{ '{:,}'.format(ccounts[k]) }}</span>{% endif %}</a>
@@ -403,7 +421,7 @@
   {{ pager('top') }}
   {% for g in groups %}
   <div class="rescard">
-    <div class="browse-row">
+    <div class="browse-row kind-{{ 'videos' if g.is_video else ('docs' if g.category == 'documents' else g.category) }}">
       {{ thumb(g) }}
       <div style="flex:1; min-width:0">
         <div class="hit-head">

@@ -249,7 +249,11 @@ def parse_uploaded_file(file_storage):
 # --------------------------------------------------------------------------
 # Routes
 # --------------------------------------------------------------------------
-PER_PAGE = 100
+# One set of page sizes for every list on the site - the dashboard, the
+# content library and the export table. 20 is the default: a screenful
+# you can read, rather than a hundred rows you scroll past.
+PER_PAGE_CHOICES = (10, 20, 50, 100)
+PER_PAGE = 20
 
 def _has(cat):
     return ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
@@ -3329,11 +3333,10 @@ def _substring_keys(con, toks, cat):
         f" AND {' AND '.join(conds)}{catf} LIMIT 500", params + catp)]
 
 
-BROWSE_PER_PAGE = 60
+BROWSE_PER_PAGE = PER_PAGE
 # How many per page, and how large the cards are. Fixed sets rather than free
 # numbers: any value is a valid query string, and an unbounded one is a way to
 # ask the server for 200,000 rows.
-PER_PAGE_CHOICES = (24, 60, 120, 240)
 SIZE_CHOICES = ("s", "m", "l")
 
 # browse-mode SQL per chip: plain, index-friendly filters (search mode keeps
@@ -4672,7 +4675,7 @@ def _export_headers(want_meta, want_comps, want_page=()):
 
 
 # Page facts that are not components and not ownership - the dashboard columns.
-EXPORT_PER_PAGE = 100
+EXPORT_PER_PAGE = PER_PAGE
 
 PAGE_FIELDS = [("live", "Live"), ("status", "Status"),
                ("last_captured", "Last captured"), ("changes", "Updates")]
