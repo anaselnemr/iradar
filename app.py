@@ -3971,7 +3971,8 @@ def search_items():
                            text_hits=text_hits,
                            text_fams=by_family(text_hits),
                            page_fams=by_family(page_hits),
-                           groups=groups, total=total, indexed=indexed,
+                           groups=groups, kind_groups=by_kind(groups),
+                           total=total, indexed=indexed,
                            labels=dict(SECTION_LABELS),
                            ccounts=ccounts, browse=browse, pageno=pageno,
                            has_more=has_more, per_page=per_page, size=size,
@@ -4599,7 +4600,7 @@ def _export_headers(want_meta, want_comps, want_page=()):
 
 # Page facts that are not components and not ownership - the dashboard columns.
 PAGE_FIELDS = [("live", "Live"), ("status", "Status"),
-               ("last_captured", "Last captured"), ("changes", "Changes")]
+               ("last_captured", "Last captured"), ("changes", "Updates")]
 
 # What an item's meta line can yield. The order of those fields differs by
 # category - a document reads "Type | PDF | Public | EN | 01_00 | 1.9MB | date"
@@ -4743,6 +4744,45 @@ def _isource(cats):
 FAMILY_FOLD_AT = 12
 
 
+def item_kind(category, url="", meta=""):
+    """Which library an item belongs to - the Python twin of ITEM_KIND_SQL.
+
+    Same order and same rules, so a search result lands in the group whose
+    count the tile above it shows. Videos first, because a video captured
+    from a News card is a video and not a news item.
+    """
+    if is_video_item(category, url, meta):
+        return "videos"
+    return {"documents": "docs", "images": "images",
+            "design_resources": "design", "products": "products",
+            "trainings": "trainings", "news": "news",
+            "partners": "partners"}.get(category, category)
+
+
+def by_kind(groups):
+    """Search hits split into the libraries, biggest first.
+
+    A flat list mixes documents, boards and images into one column and
+    leaves you counting which is which; the page-text hits above them have
+    been grouped since the families went in, and these are the same problem.
+    """
+    buckets = {}
+    for g in groups:
+        buckets.setdefault(
+            item_kind(g.get("category", ""), g.get("url", ""),
+                      g.get("meta", "")), []).append(g)
+    order = [k for k, _l in ITEM_KINDS_ALL] + sorted(
+        set(buckets) - {k for k, _l in ITEM_KINDS_ALL})
+    labels = dict(ITEM_KINDS_ALL)
+    out = [{"key": k, "name": labels.get(k, SECTION_LABELS_D.get(k, k)),
+            "hits": buckets[k], "n": len(buckets[k])}
+           for k in order if k in buckets]
+    # one group is not a grouping - open it, and open the largest either way
+    for i, gr in enumerate(out):
+        gr["open"] = len(out) == 1 or i == 0
+    return out
+
+
 def by_family(hits):
     """Search results split into the page families, in the site's own order.
 
@@ -4770,6 +4810,7 @@ ITEM_KINDS_MORE = [("trainings", "Trainings & webinars"),
                    ("news", "News & highlights"),
                    ("partners", "Partner solutions")]
 ITEM_KINDS_ALL = ITEM_KINDS + ITEM_KINDS_MORE
+SECTION_LABELS_D = dict(SECTION_LABELS)
 # two kinds are keyed by what they ARE rather than by the category they were
 # scraped from. An old link carrying the scrape name must not silently drop to
 # "every kind" - that answers a different question and still looks like a
@@ -5234,7 +5275,7 @@ def export_xlsx():
                    len(e["pages"]), ", ".join(lv),
                    chr(10).join(p["purl"] for p in e["pages"][:200])])
 
-    ws_ch = wb.create_sheet("Changes")
+    ws_ch = wb.create_sheet("Updates")
     ws_ch.append(["Change ID", "URL", "When (UTC)", "Summary", "Components",
                   "Verdict"])
     for c in con.execute(

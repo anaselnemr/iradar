@@ -63,7 +63,7 @@
 
 {% if hunks %}
 <div class="card">
-  <h2>Text changes <span class="muted">(red = removed, green = added)</span></h2>
+  <h2>Text updates <span class="muted">(red = removed, green = added)</span></h2>
   {% for h in hunks %}
   <div class="diff">
     <div class="h">around line {{ h.old_start }}</div>
@@ -77,7 +77,7 @@
 
 {% if lib_diff %}
 <div class="card">
-  <h2>Library changes <span class="muted">(documents / resources / videos / news)</span></h2>
+  <h2>Library updates <span class="muted">(documents / resources / videos / news)</span></h2>
   {% for label, d in lib_diff.items() %}
     <h3 style="font-size:14.5px; margin:14px 0 4px">{{ label }}</h3>
     {% if d.added %}
@@ -96,7 +96,7 @@
 
 {% if img_added or img_removed %}
 <div class="card">
-  <h2>Image changes</h2>
+  <h2>Image updates</h2>
   {% if img_added %}
     <h3 style="font-size:14px; color:#166534">Added ({{ img_added|length }})</h3>
     <ul>{% for i in img_added %}<li style="word-break:break-all"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
@@ -114,14 +114,14 @@
   <p class="muted">Each strip shows the same spot on the page: left = before, right = after.</p>
   {% for r in art.regions %}
   <a href="{{ url_for('change_art', change_id=c.id, name=r) }}" target="_blank" title="Open full size" class="regionstrip">
-    <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=r) }}" alt="Changed area {{ loop.index }}">
+    <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=r) }}" alt="Updated area {{ loop.index }}">
   </a>
   {% endfor %}
 </div>
 {% endif %}
 
 <div class="card">
-  <h2>Full-page screenshots <span class="muted">(changed areas boxed in red — click to open full size)</span></h2>
+  <h2>Full-page screenshots <span class="muted">(updated areas boxed in red — click to open full size)</span></h2>
   <div class="shots shots2">
     <figure>
       <figcaption>BEFORE ({{ old_snap.ts|localtime if old_snap else '' }})</figcaption>
@@ -138,13 +138,13 @@
   </div>
   {% if art.legacy and not art.boxed %}
   <figure style="margin-top:14px">
-    <figcaption class="muted">DIFFERENCE (older format — changed pixels in red)</figcaption>
+    <figcaption class="muted">DIFFERENCE (older format — updated pixels in red)</figcaption>
     <a href="{{ url_for('change_visualdiff', change_id=c.id) }}" target="_blank"><img loading="lazy" style="max-width:420px; width:100%; border:1px solid var(--line); border-radius:6px" src="{{ url_for('change_visualdiff', change_id=c.id) }}"></a>
   </figure>
   {% endif %}
   <p class="muted" style="margin-top:12px">ℹ Screenshots can only show what is visible on the page.
     A change inside a collapsed tab or accordion has no screenshot to appear in —
-    it is always caught in the <b>Text changes</b> section above, so when a change
+    it is always caught in the <b>Text updates</b> section above, so when a change
     says TEXT but shows little or nothing visual, look there.</p>
 </div>
 {% endblock %}

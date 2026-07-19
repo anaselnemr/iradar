@@ -198,6 +198,15 @@
      is cropped to the masthead rather than shown whole */
   .pgshot { flex-shrink: 0; display: block; }
   .pgshot .bthumb { object-fit: cover; object-position: top center; }
+  /* a whole result section that folds - the heading stays a heading */
+  .secfold > .sec-head { list-style: none; cursor: pointer; display: flex;
+                         align-items: baseline; gap: 10px; }
+  .secfold > .sec-head::-webkit-details-marker { display: none; }
+  .secfold > .sec-head h2 { margin: 0; }
+  .secfold > .sec-head::before { content: "b8"; color: var(--muted);
+                                 font-size: 12px; transition: transform .15s; }
+  .secfold[open] > .sec-head::before { transform: rotate(90deg); }
+  .secfold[open] > .sec-head { margin-bottom: 12px; }
   .fams { display: flex; flex-direction: column; gap: 8px; }
   .fam { border: 1px solid var(--line); border-radius: 11px;
          background: var(--panel); overflow: hidden; }
@@ -478,12 +487,17 @@
 {% endmacro %}
 
 {% if q and cat in ('text', 'all') and text_hits %}
-  <div class="card">
-    <h2>In page text <span class="muted" style="font-weight:400">— {{ text_hits|length }} page{{ 's' if text_hits|length != 1 }}</span>
+  {#- the whole section folds, not just the families inside it: on a term that
+      lives in the site navigation this is the longest thing on the page and
+      you may want it out of the way entirely -#}
+  <details class="card secfold" open>
+    <summary class="sec-head">
+      <h2>In page text <span class="muted" style="font-weight:400">— {{ text_hits|length }} page{{ 's' if text_hits|length != 1 }}</span></h2>
       {% if text_fams|length > 1 or not text_fams[0].open %}
-      <button type="button" class="famall" data-scope="tf">expand all</button>
+      <button type="button" class="famall" data-scope="tf"
+              onclick="event.preventDefault(); event.stopPropagation()">expand all</button>
       {% endif %}
-    </h2>
+    </summary>
     {# Grouped by family so a wall of near-identical part pages folds into one
        line. A term in the site navigation matches every page that carries the
        menu, so this section is routinely dominated by one family. #}
@@ -500,7 +514,7 @@
       </details>
       {% endfor %}
     </div>
-  </div>
+  </details>
 {% endif %}
 
 {# text mode is page text ONLY - it must swallow its own branch so the item
@@ -563,8 +577,22 @@
     <b>{{ groups|length }}</b> item{{ 's' if groups|length != 1 }} ·
     {{ total }} occurrence{{ 's' if total != 1 }} across pages
     {% if total > 2000 %}<span> (showing the first 2000)</span>{% endif %}
+    {% if kind_groups|length > 1 %}
+    <button type="button" class="famall" data-scope="kinds">expand all</button>
+    {% endif %}
   </div>
-    {% for g in groups %}
+  <div class="fams" data-scope="kinds">
+    {#- One collapsible group per library, so a search that finds documents,
+        boards and images does not run them together into one column. Same
+        disclosure as the page-text families above. -#}
+    {% for kg in kind_groups %}
+    <details class="fam"{% if kg.open %} open{% endif %}>
+      <summary class="fam-head">
+        <span class="fam-name">{{ kg.name }}</span>
+        <span class="fam-n">{{ '{:,}'.format(kg.n) }} item{{ 's' if kg.n != 1 }}</span>
+      </summary>
+      <div class="fam-body">
+    {% for g in kg.hits %}
     {# an overview is a page's own text, unique to that one page - so it is
        searchable like anything else, but has no "assigned to N pages" view;
        it just links straight to its page. #}
@@ -618,6 +646,10 @@
       </div></div>
     </div>
     {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
   {% endif %}
 {% endif %}
 

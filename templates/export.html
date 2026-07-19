@@ -35,20 +35,25 @@
   .xactions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
               margin-top: 16px; }
 
-  /* the result: a plain dense table, because that is what it is */
+  /* The result table is the SAME table as the dashboard's: same header
+     treatment, same row height, same hover. It had its own smaller type and
+     tighter padding, so the two tables of pages on this site read as two
+     different components. What it keeps that the dashboard does not need is a
+     header and first column that stay put - a matrix you have to remember the
+     edges of is unreadable. */
   .xtable-wrap { overflow: auto; max-height: 74vh; border: 1px solid var(--line);
                  border-radius: 11px; background: var(--panel); }
   table.xt { border-collapse: separate; border-spacing: 0; width: 100%;
-             font-size: 13px; }
-  table.xt th, table.xt td { padding: 7px 11px; text-align: left;
+             font-size: 14px; }
+  table.xt th, table.xt td { padding: 9px 10px; text-align: left;
                              border-bottom: 1px solid var(--line);
                              white-space: nowrap; }
-  /* both the header row and the first columns stay put while you scan a wide,
-     long table - a matrix you have to remember the edges of is unreadable */
+  table.xt td { font-variant-numeric: tabular-nums; vertical-align: middle; }
   table.xt thead th { position: sticky; top: 0; z-index: 3;
-                      background: var(--card); font-size: 10.5px;
-                      text-transform: uppercase; letter-spacing: .07em;
-                      color: var(--muted); font-weight: 700; }
+                      background: var(--card); font-size: 12.5px;
+                      text-transform: uppercase; letter-spacing: .4px;
+                      color: var(--muted); font-weight: 600;
+                      border-bottom: 2px solid var(--line); }
   table.xt td.stick, table.xt th.stick { position: sticky; left: 0; z-index: 2;
                                          background: var(--panel); }
   table.xt thead th.stick { z-index: 4; background: var(--card); }

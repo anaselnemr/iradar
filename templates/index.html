@@ -216,17 +216,20 @@
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
-  <div class="bulkbar" id="bulkbar">
-    <b id="bulkhint">☑ Tick pages below, then act on them →</b>
-    <b id="selsummary" style="display:none"><span id="selcount">0</span> selected</b>
+  {#- Nothing here until a row is ticked. It docks at the bottom of the window
+      so it stays reachable however far down the table you have scrolled, and
+      it never pushes the table around. -#}
+  <div class="bulkbar" id="bulkbar" hidden>
+    <b><span id="selcount">0</span> selected</b>
     <a href="#" id="matchall-link" style="display:none; font-size:13px"
        onclick="selectAllMatching(); return false">Select all {{ '{:,}'.format(total_match) }} matching</a>
     <span style="flex:1"></span>
-    <button class="btn-ghost btn-sm act" onclick="bulk('check', this)" disabled>Capture</button>
-    <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)" disabled>Approve changes</button>
-    <button class="btn-ghost btn-sm act" onclick="bulk('pause', this)" disabled>Pause</button>
-    <button class="btn-ghost btn-sm act" onclick="bulk('resume', this)" disabled>Resume</button>
-    <button class="btn-ghost btn-sm act" style="color:#dc2626" onclick="bulk('delete', this)" disabled>Remove</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('check', this)">Capture</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)">Approve updates</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('pause', this)">Pause</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('resume', this)">Resume</button>
+    <button class="btn-ghost btn-sm act" style="color:#dc2626" onclick="bulk('delete', this)">Remove</button>
+    <button class="btn-ghost btn-sm" onclick="clearSel()" title="Clear the selection (Esc)">Done</button>
   </div>
 
   {# one clean line above the table: count on the left, compact pager right #}
@@ -253,7 +256,7 @@
       <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
       <th>Type</th><th>Live</th><th>Status</th>
       <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
-      <th><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has changed (click again for least-changed first)">Changes{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
+      <th><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has been updated (click again for fewest first)">Changes{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
     </tr>
     {% for u in urls %}
     <tr>
@@ -299,7 +302,7 @@
         {% elif u.last_status == 'changed' %}<span class="badge b-changed">updated</span>
         {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected an update: the old version stays the current version until the site matches it again">awaiting fix</span>
         {% elif u.last_status in ('unchanged', 'baseline') %}<span class="badge b-unchanged">unchanged</span>
-        {% elif u.last_status == 'notlive' %}<span class="badge b-off" title="Infineon serves this URL as an error page. It is still watched, so a revival shows up as a change.">dead page</span>
+        {% elif u.last_status == 'notlive' %}<span class="badge b-off" title="Infineon serves this URL as an error page. It is still watched, so a revival shows up as an update.">dead page</span>
         {% elif u.last_status == 'blank' %}<span class="badge b-error" title="The page answers with an HTTP success code but an empty body - nothing renders, for us or for a visitor. This is a fault on the page itself.">serves blank page</span>
         {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>
         {% else %}<span class="badge b-new">not captured yet</span>{% endif %}
@@ -312,7 +315,7 @@
              title="{{ wc|join(' · ') if wc else 'Open the diff' }}"><b>{{ u.open_changes }} to review</b></a>
           {% if wc %}<div class="muted" style="font-size:11.5px; line-height:1.35; margin-top:2px">{{ wc[:3]|join(' · ') }}{% if wc|length > 3 %} · +{{ wc|length - 3 }} more{% endif %}</div>{% endif %}
         {% elif u.change_total %}
-          <span class="muted" title="{{ u.change_total }} recorded change{{ 's' if u.change_total != 1 }} over time (all reviewed)">{{ u.change_total }}×</span>
+          <span class="muted" title="{{ u.change_total }} recorded update{{ 's' if u.change_total != 1 }} over time (all reviewed)">{{ u.change_total }}×</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </td>
     </tr>
@@ -341,17 +344,22 @@ function toggleAdd() {
   const box = document.getElementById('addbox');
   if (box) box.style.display = (box.style.display === 'none') ? 'block' : 'none';
 }
+function clearSel() {
+  document.querySelectorAll('.rowsel:checked').forEach(c => { c.checked = false; });
+  const am = document.getElementById('all-matching');
+  if (am) am.value = '0';
+  refreshCount();
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && selected()) clearSel();
+});
 function refreshCount() {
-  const hint = document.getElementById('bulkhint');
-  const summ = document.getElementById('selsummary');
+  const bar = document.getElementById('bulkbar');
   const link = document.getElementById('matchall-link');
   const n = selected();
   const active = allMatching() ? TOTAL_MATCH : n;
-  // actions light up only once something is selected - that's the cue that
-  // ticking a row is what gives you actions
-  document.querySelectorAll('.bulkbar .act').forEach(b => { b.disabled = !active; });
-  if (hint) hint.style.display = active ? 'none' : '';
-  if (summ) summ.style.display = active ? '' : 'none';
+  // the bar IS the cue: it appears when there is something to act on
+  if (bar) bar.hidden = !active;
   if (allMatching()) {
     document.getElementById('selcount').textContent = TOTAL_MATCH.toLocaleString() + ' (all matching)';
     if (link) { link.textContent = 'Clear selection'; link.style.display = ''; }
