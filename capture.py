@@ -1517,6 +1517,19 @@ async def _settle_section_nav(page, cap_s=12.0):
 
 IN_NAV_JS = "el => !!el.closest('header, nav, [role=\"navigation\"], footer')"
 
+# A filter dropdown is not an accordion. These in-page menu toggles sit in the
+# page body, not in header/nav, so IN_NAV_JS lets them through - and opening
+# one injects the site's entire application/product taxonomy as menu options.
+# A part page carries SEVEN copies of the same filter bar (duplicate ids and
+# all), so expanding them added 1,824 lines of menu text: every part page then
+# read as changed, and the extra DOM dragged the run down to 3.2 pages/min.
+# Menu OPTIONS are not page content; the filtered content itself is already in
+# the DOM and is captured either way.
+MENU_TOGGLE_SEL = ('[data-bs-toggle="dropdown"], [data-toggle="dropdown"],'
+                   ' .dropdown-toggle, .family-filter, #filter-container')
+SKIP_CLICK_JS = ("el => !!el.closest('header, nav, [role=\"navigation\"], footer')"
+                 " || !!el.closest('" + MENU_TOGGLE_SEL + "')")
+
 # Bring any still-unswapped card image into view so the page loads it.
 # These cards ship a 1x1 data: URI and swap the real icon in when the image
 # intersects the viewport, so a card below the fold of a freshly-opened tab
@@ -1629,7 +1642,7 @@ async def _expand_interactive(page):
         tabs = await page.query_selector_all('[role="tab"]')
         for tab in tabs[:40]:
             try:
-                if await tab.evaluate(IN_NAV_JS):
+                if await tab.evaluate(SKIP_CLICK_JS):
                     continue
                 await _dom_click(tab)
                 await page.wait_for_timeout(400)
@@ -1645,7 +1658,7 @@ async def _expand_interactive(page):
             'button[aria-expanded="false"], [role="button"][aria-expanded="false"]')
         for btn in btns[:60]:
             try:
-                if await btn.evaluate(IN_NAV_JS):
+                if await btn.evaluate(SKIP_CLICK_JS):
                     continue
                 await _dom_click(btn)
                 await page.wait_for_timeout(200)
@@ -1677,7 +1690,7 @@ async def _expand_interactive(page):
             for i in range(n):
                 btn = more.nth(i)
                 try:
-                    if await btn.evaluate(IN_NAV_JS):
+                    if await btn.evaluate(SKIP_CLICK_JS):
                         continue
                     if not await btn.is_visible():
                         continue
