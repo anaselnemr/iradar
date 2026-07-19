@@ -74,9 +74,16 @@
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">Tracked pages
       <span class="muted" style="font-weight:400; font-size:14px">— {{ '{:,}'.format(total_match) }} shown</span>
-      {# reloading is about THIS table's counts, so the control belongs on it #}
-      <button type="button" class="iconbtn" onclick="location.reload()"
-              title="Reload the table">⟳</button></h2>
+      {#- reloading is about THIS table's counts, so the control belongs on it.
+          An SVG, not the ⟳ character: a text glyph renders at a different
+          weight and baseline on every machine, and there is no aligning it. -#}
+      <button type="button" class="reload" onclick="this.classList.add('spin'); location.reload()"
+              title="Reload the table" aria-label="Reload the table">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/>
+        </svg>
+      </button></h2>
     <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
       <button type="button" class="btn" onclick="toggleAdd()">＋ Add pages</button>
       <span class="exports">Export:

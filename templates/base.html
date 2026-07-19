@@ -268,9 +268,24 @@
              width: 38px; height: 38px; border-radius: 8px; font-size: 16px;
              cursor: pointer; line-height: 1; }
   .iconbtn:hover { color: var(--ink); border-color: var(--muted); }
-  /* sits inline beside a heading, so it matches the text rather than the toolbar */
-  h2 > .iconbtn { width: 26px; height: 26px; font-size: 13px; vertical-align: 2px;
-                  margin-left: 6px; }
+
+  /* A minor action sitting next to a heading. It had a permanent box around
+     it, which made a refresh shout as loudly as the title it stood beside -
+     so the frame only appears under the cursor. Round, because the thing it
+     draws is round. */
+  .reload { background: none; border: 0; padding: 0; margin-left: 8px;
+            width: 28px; height: 28px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            color: var(--muted); cursor: pointer; vertical-align: -6px;
+            transition: background .15s, color .15s; }
+  .reload svg { width: 15px; height: 15px; }
+  .reload:hover { background: var(--hover); color: var(--accent); }
+  .reload:active { transform: scale(.92); }
+  .reload:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* one turn on click, so the press is acknowledged before the page goes */
+  .reload.spin svg { animation: reloadspin .6s ease-in-out; }
+  @keyframes reloadspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .reload.spin svg { animation: none; } }
   .linkbtn { background: none; border: 0; color: var(--link); font-size: 13px;
              cursor: pointer; padding: 0; text-decoration: underline; }
   /* the partial-run options: available, but not standing open under the
