@@ -83,9 +83,17 @@
      came from browsing or searching. `contain` on white: these are logos,
      icons and document pages, and cropping them to fill would cut the very
      part that identifies them. */
-  .bthumb { width: 74px; height: 56px; object-fit: contain; border: 1px solid var(--line);
-            border-radius: 8px; background: #fff; flex-shrink: 0; }
+  /* The picture FILLS its frame - it used to be letterboxed on white, which
+     left a pale margin round every screenshot and made the frame look like
+     the wrong shape. Black behind it, so anything that still cannot cover
+     reads as a border rather than a gap. */
+  .bthumb { width: 92px; height: 66px; object-fit: cover;
+            object-position: top center; border: 1px solid var(--line);
+            border-radius: 8px; background: #000; flex-shrink: 0; }
   .browse-row { display: flex; gap: 12px; align-items: flex-start; }
+  /* the card is the height of its contents; it had picked up the slack of
+     an oversized thumbnail and left a band of empty space beside the text */
+  .rescard { padding: 11px 14px; }
   /* the fallback when an item has no picture of its own: the type icon, at
      the same size, so rows keep a single left edge instead of ragging */
   .thumbfall { width: 74px; height: 56px; border: 1px solid var(--line);
@@ -109,9 +117,9 @@
      round. Pages get the most room - the whole point of that library is what
      the page looks like - videos a little more than the default, and documents
      stand up, because they are almost all portrait A4. */
-  .pgshot .bthumb, .pgshot .thumbfall { width: 168px; height: 104px; }
-  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 124px; height: 78px; }
-  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 232px; height: 145px; }
+  .pgshot .bthumb, .pgshot .thumbfall { width: 132px; height: 84px; }
+  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 104px; height: 66px; }
+  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 190px; height: 120px; }
 
   .kind-videos .bthumb, .kind-videos .thumbfall { width: 96px; height: 62px; }
   .sz-s .kind-videos .bthumb, .sz-s .kind-videos .thumbfall { width: 68px; height: 44px; }
@@ -265,13 +273,11 @@
 {#- The gap between page runs is where you want to go when the page you want
     is not on screen - so it IS the way to get there. Type a number, press
     Enter. It reads as an ellipsis until you touch it. -#}
-{% macro pjump() %}
-<input class="pgap" type="text" inputmode="numeric" value="…"
-       size="1" aria-label="Jump to page"
-       data-base="{{ burl(page=0) }}" data-last="{{ last_page }}"
-       onfocus="this.value=''; this.classList.add('typing')"
-       onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">
-{% endmacro %}
+{#- A gap in the numbers, nothing more. It used to be a text box you could
+    type a page into, which rendered as an empty field with a border - two of
+    them, on a deep page - and read as something that had failed to load. The
+    first and last page are one click away either side of it. -#}
+{% macro pjump() %}<span class="pgap" aria-hidden="true">…</span>{% endmacro %}
 
 {% macro pagenums() %}
   {% set lo = [1, pageno - 2]|max %}
@@ -296,6 +302,7 @@
 {% macro pager(where='bottom') %}
 {% if browse and (pageno > 1 or has_more) %}
 <nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination">
+  {{ viewopts() if where == 'top' }}
   {#- the count sits WITH the control, not exiled to the far side of a wide
       screen where the two ends had nothing to do with each other -#}
   <span class="pgr-nav">
@@ -321,9 +328,8 @@
 
 {#- order, page size and card size, in one bar above the list -#}
 {% macro controls() %}
-{% if browse %}
+{% if browse and sort_opts is defined and sort_opts %}
 <div class="ctrls">
-  {% if sort_opts is defined and sort_opts %}
   <span class="grp"><span class="lbl">Order</span>
     <span class="opts">
     {% for key, label in sort_opts %}
@@ -331,22 +337,38 @@
     {% endfor %}
     </span>
   </span>
-  {% endif %}
-  <span class="grp"><span class="lbl">Per page</span>
-    <span class="opts">
-    {% for nper in per_choices %}
-    <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ burl(n=nper, page=1) }}">{{ nper }}</a>
-    {% endfor %}
-    </span>
-  </span>
-  <span class="grp"><span class="lbl">Size</span>
-    <span class="opts">
-    {% for key, label in [('s','Small'), ('m','Medium'), ('l','Large')] %}
-    <a class="sortopt {{ 'on' if size == key }}" href="{{ burl(z=key) }}">{{ label }}</a>
-    {% endfor %}
-    </span>
-  </span>
 </div>
+{% endif %}
+{% endmacro %}
+
+{#- How many and how big: two settings you set once and forget, so they live
+    behind one control in the pager row rather than taking two rows of buttons
+    above every list. -#}
+{% macro viewopts() %}
+{% if browse %}
+<details class="dd viewdd">
+  <summary title="How many per page, and how big">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/>
+    </svg>
+    <span class="viewnow">{{ per_page }}</span>
+  </summary>
+  <div class="panel viewpanel">
+    <div class="viewhead">Per page</div>
+    <div class="viewrow">
+      {% for nper in per_choices %}
+      <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ burl(n=nper, page=1) }}">{{ nper }}</a>
+      {% endfor %}
+    </div>
+    <div class="viewhead">Size</div>
+    <div class="viewrow">
+      {% for key, label in [('s','Small'), ('m','Medium'), ('l','Large')] %}
+      <a class="sortopt {{ 'on' if size == key }}" href="{{ burl(z=key) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</details>
 {% endif %}
 {% endmacro %}
 
