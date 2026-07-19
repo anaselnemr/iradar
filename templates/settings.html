@@ -36,11 +36,12 @@
         </label>
       </div>
       <label style="display:block; margin-top:16px">Parallel browser tabs
-        <span class="muted" style="font-weight:400">— measured on this machine:
-          16 is 1.76&times; faster than 8 and 24 is no better, so throughput
-          saturates at one tab per core. Lower it if the site starts refusing
-          requests.</span>
-        <input type="number" name="concurrency" min="1" max="32" value="{{ s.concurrency }}">
+        <span class="muted" style="font-weight:400">— 8 is the tested value.
+          Raising it is faster and <b>quietly captures less</b>: at 16 tabs the
+          same pages came back missing items on 6 of 14, with no error raised,
+          because a contended page misses its load deadline and gets read
+          half-finished. Two passes at 8 are identical.</span>
+        <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
       </label>
     </div>
 
