@@ -49,14 +49,21 @@
      panel, a border and a rounded box around it, so the two read as different
      components however closely the type matched. What it keeps is the sticky
      header and first column, which a matrix needs to stay readable sideways. */
-  .xtable-wrap { overflow: auto; max-height: 74vh; }
+  /* All 100 rows down the page, like the dashboard, rather than a short box
+     you scroll inside while the page around it stays still. Only the SIDEWAYS
+     overflow is a scroller - the table can be wider than the screen, but it is
+     never taller than its own rows. overflow-y:hidden clips nothing here,
+     because without a max-height the wrapper is exactly as tall as the table;
+     it is there to stop the browser turning overflow-x:auto into a vertical
+     scroller as well. */
+  .xtable-wrap { overflow-x: auto; overflow-y: hidden; }
   table.xt { border-collapse: separate; border-spacing: 0; width: 100%;
              font-size: 14px; background: var(--card); }
   table.xt th, table.xt td { padding: 9px 10px; text-align: left;
                              border-bottom: 1px solid var(--line);
                              white-space: nowrap; }
   table.xt td { font-variant-numeric: tabular-nums; vertical-align: middle; }
-  table.xt thead th { position: sticky; top: 0; z-index: 3;
+  table.xt thead th { z-index: 3;
                       background: var(--card); font-size: 12.5px;
                       text-transform: uppercase; letter-spacing: .4px;
                       color: var(--muted); font-weight: 600;
