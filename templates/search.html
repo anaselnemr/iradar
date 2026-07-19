@@ -117,9 +117,12 @@
      round. Pages get the most room - the whole point of that library is what
      the page looks like - videos a little more than the default, and documents
      stand up, because they are almost all portrait A4. */
-  .pgshot .bthumb, .pgshot .thumbfall { width: 132px; height: 84px; }
-  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 104px; height: 66px; }
-  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 190px; height: 120px; }
+  /* A page preview is the point of this library, and the row is already
+     this tall for the title and address beside it - a smaller picture
+     just leaves the space empty. */
+  .pgshot .bthumb, .pgshot .thumbfall { width: 232px; height: 146px; }
+  .sz-s .pgshot .bthumb, .sz-s .pgshot .thumbfall { width: 168px; height: 106px; }
+  .sz-l .pgshot .bthumb, .sz-l .pgshot .thumbfall { width: 320px; height: 200px; }
 
   .kind-videos .bthumb, .kind-videos .thumbfall { width: 96px; height: 62px; }
   .sz-s .kind-videos .bthumb, .sz-s .kind-videos .thumbfall { width: 68px; height: 44px; }
