@@ -333,9 +333,34 @@
       {% endif %}
 
       {% for cat in library %}
-      <details class="libcat" {% if cat['items'] and loop.index <= 3 %}open{% endif %}>
-        <summary>{{ cat['label'] }} <b>{{ cat['items']|length }}</b></summary>
-        {% if not cat['items'] %}
+      {#- Images repeat the site's own furniture - partner logos and tool icons
+          that sit on thousands of pages. They stay captured and assigned, but
+          the count and the list show THIS page's pictures, with the rest one
+          click away rather than gone. -#}
+      {% set own = cat['items'] if cat['cat'] != 'images'
+                   else cat['items']|rejectattr('is_generic')|list %}
+      {% set generic = [] if cat['cat'] != 'images'
+                       else cat['items']|selectattr('is_generic')|list %}
+      <details class="libcat" {% if own and loop.index <= 3 %}open{% endif %}>
+        <summary>{{ cat['label'] }} <b>{{ own|length }}</b>{% if generic %}
+          <span class="muted" style="font-weight:400">+{{ generic|length }} site-wide</span>{% endif %}</summary>
+        {% if cat['cat'] == 'images' and (own or generic) %}
+        <ul class="liblist">
+          {% for it in own %}{{ libitem(it) }}{% endfor %}
+        </ul>
+        {% if generic %}
+        <details class="genimgs">
+          <summary>{{ generic|length }} site-wide image{{ 's' if generic|length != 1 }}
+            (partner logos, tool icons — on this page and thousands of others)</summary>
+          <ul class="liblist">
+            {% for it in generic %}{{ libitem(it) }}{% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+        {% if not own %}
+        <p class="muted" style="margin:8px 0 4px 4px">No images of its own on this page.</p>
+        {% endif %}
+        {% elif not cat['items'] %}
           <p class="muted" style="margin:8px 0 4px 4px">None found on this page.</p>
         {% elif cat['groups'] %}
           {% for gname, gitems in cat['groups'] %}

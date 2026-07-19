@@ -383,6 +383,15 @@
   .liblist { margin: 8px 0 4px; padding-left: 20px; font-size: 13.5px;
              max-height: 340px; overflow-y: auto; }
   .liblist li { margin: 3px 0; word-break: break-word; }
+  /* the site-wide images, tucked under this page's own. Deliberately quieter
+     than the section heading it sits inside - it is an aside, not a category.
+     Needs .libcat in the selector to outrank ".libcat summary" above. */
+  .libcat .genimgs { margin-top: 6px; border-top: 1px dashed var(--line);
+                     padding-top: 7px; }
+  .libcat .genimgs > summary { font-weight: 400; font-size: 12.5px;
+                               color: var(--muted); }
+  .libcat .genimgs > summary:hover { color: var(--ink); }
+  .libcat .genimgs .liblist { opacity: .75; }
   /* browse-by-category hierarchy */
   .cattree { list-style: none; margin: 8px 0 2px; padding-left: 6px;
              font-size: 13.5px; }

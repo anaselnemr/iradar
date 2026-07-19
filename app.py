@@ -1995,6 +1995,7 @@ def url_detail(url_id):
 
     library = []
     _settings_now = db.get_settings()   # backend search URLs, read once
+    _generic_imgs = _generic_images()
     if sections:
         for cat, label in SECTION_LABELS:
             if cat == "categories":
@@ -2018,12 +2019,29 @@ def url_detail(url_id):
                         continue
                     _seen_img.add(canon)
                     orig = i.get("title", "") or ""
+                    # The row was INDEXED under the raw alt and the raw URL.
+                    # Below we give it a readable title and a canonical URL for
+                    # display - deriving the item key from those instead sent
+                    # every prettified image ("name" -> "Absint") to a 404,
+                    # because no row is stored under that name. Keep the
+                    # identity the indexer used; mirror its empty-alt fallback.
+                    i["_key_title"] = (orig.strip()
+                                       or runner.img_title_fallback(
+                                           i.get("url", "") or ""))
+                    i["_key_url"] = i.get("url", "") or ""
                     # the page's main visual: its alt/url calls it a banner,
                     # hero or key-visual - flag it so it reads as THE main one
                     i["is_main"] = bool(re.search(
                         r"banner|hero|key.?visual", orig + " " + canon, re.I))
                     i["url"] = canon
                     i["title"] = pretty_image_title(orig, canon)
+                    # a logo or tool icon that rides along on a large slice of
+                    # the site is the site's furniture, not this page's picture.
+                    # NEVER the page's own banner though - a hero photo shared
+                    # by a family of application pages is exactly the image
+                    # someone opened this page to look at.
+                    i["is_generic"] = (canon in _generic_imgs
+                                       and not i["is_main"])
                     _deduped.append(i)
                 # the main image floats to the top of the Images section
                 items = sorted(_deduped, key=lambda x: not x.get("is_main"))
@@ -2033,8 +2051,9 @@ def url_detail(url_id):
                 continue
             for it in items:
                 if isinstance(it, dict):
-                    it["item_key"] = runner.item_key(cat, it.get("title", ""),
-                                                     it.get("url", ""))
+                    it["item_key"] = runner.item_key(
+                        cat, it.get("_key_title", it.get("title", "")),
+                        it.get("_key_url", it.get("url", "")))
                     it["backend"] = backend_system(cat, it.get("meta", ""),
                                                    it.get("dtype"),
                                                    it.get("group"),
@@ -3143,6 +3162,40 @@ def _count_browse(con, key):
     return con.execute(
         "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE " + _BROWSE_SQL[key] +
         " GROUP BY lower(title), item_url)").fetchone()[0]
+
+
+def _generic_images():
+    """Canonical URLs of images that are site furniture rather than a page's
+    own content, judged by how many pages carry them.
+
+    Partner logos and tool icons ride along on nearly every page - one sits on
+    2,357 of 3,506 - and they crowd out the handful of pictures that actually
+    belong to the page being looked at. The corpus tells us which those are
+    without anyone maintaining a list: a picture on a twentieth of the site is
+    the site's, not this page's. The measured gap is wide, 24 images above 150
+    pages and the next band down at 20-59, so the exact cut is not delicate.
+
+    They stay captured, stored and assigned - this only decides what the page
+    SHOWS. A change to one is still detected and still flagged.
+    """
+    def build():
+        # its own connection: the caller's is long closed by render time, and
+        # a cache hit needs no database at all
+        c = db.connect()
+        try:
+            live = c.execute(
+                "SELECT COUNT(*) FROM urls WHERE active=1"
+                " AND last_http IS NOT NULL"
+                " AND last_http NOT IN (404,410)").fetchone()[0]
+            cut = max(25, int(live * 0.04))
+            return {r[0] for r in c.execute(
+                "SELECT item_url FROM items WHERE category='images'"
+                " AND item_url<>'' GROUP BY item_url"
+                " HAVING COUNT(DISTINCT url_id) >= ?", (cut,))}
+        finally:
+            c.close()
+
+    return _cached_by_db("generic_images", build)
 
 
 def _dash_counts(con):

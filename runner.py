@@ -177,7 +177,13 @@ def _snapshot_item_count(snap_dir):
 # footer logos. Not page content: listing them says nothing about the page and
 # drowns the one real image (the banner) in noise identical across the site.
 _FURNITURE_IMG = re.compile(
-    r"/etc\.clientlibs/|/content/dam/ifx/infineon_logo", re.I)
+    r"/etc\.clientlibs/|/content/dam/ifx/infineon_logo"
+    # developer-community thread avatars and the community section icon: forum
+    # users' pictures, not the page's content. These were only ever removed by
+    # a boot sweep that DELETED the rows, so the indexer kept writing them and
+    # the page kept RENDERING them - every one linking to an item page that
+    # had just been swept away. One rule, so index and display cannot drift.
+    r"|community\.infineon\.com|infineon-developer-community\.png", re.I)
 
 
 def is_furniture_img(url):
