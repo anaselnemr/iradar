@@ -255,6 +255,15 @@ def parse_uploaded_file(file_storage):
 PER_PAGE_CHOICES = (10, 20, 50, 100)
 PER_PAGE = 20
 
+
+def _per_page(default=None):
+    """The page size asked for, if it is one we offer."""
+    try:
+        n = int(request.args.get("per", default or PER_PAGE))
+    except (TypeError, ValueError):
+        return default or PER_PAGE
+    return n if n in PER_PAGE_CHOICES else (default or PER_PAGE)
+
 def _has(cat):
     return ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
             f" AND i.category='{cat}')")
@@ -960,7 +969,8 @@ def index():
     con = db.connect()
     total_match = con.execute(
         f"SELECT COUNT(*) FROM urls u {wsql}", params).fetchone()[0]
-    pages = max(1, -(-total_match // PER_PAGE))
+    per_page = _per_page()
+    pages = max(1, -(-total_match // per_page))
     page = min(page, pages)
     # days on which a big batch was imported (the initial ~4k load) are NOT
     # "new pages you added" - only badge NEW for small, individual additions
@@ -989,7 +999,7 @@ def index():
         FROM urls u {wsql}
         ORDER BY {order_by}, u.id
         LIMIT ? OFFSET ?
-    """, params + [PER_PAGE, (page - 1) * PER_PAGE]).fetchall()
+    """, params + [per_page, (page - 1) * per_page]).fetchall()
 
     counts = con.execute("""
         SELECT COUNT(*) AS total,
@@ -1148,7 +1158,8 @@ def index():
                            pending_total=pending_total,
                            level_names=LEVEL_NAMES,
                            total_match=total_match, counts=counts,
-                           per_page=PER_PAGE, ptypes=ptypes,
+                           per_page=per_page, per_choices=PER_PAGE_CHOICES,
+                           ptypes=ptypes,
                            sel_status=statuses, sel_types=sel_types,
                            sel_attrs=attrs, status_filters=STATUS_FILTERS,
                            attr_filters=ATTR_FILTERS,
@@ -5211,24 +5222,26 @@ def export_builder():
     # still describe the whole result - you are looking at a window on it,
     # and the spreadsheet still contains all of it.
     shown_total = len(irows) if mode == "items" else len(rows)
-    xpages = max(1, -(-shown_total // EXPORT_PER_PAGE))
+    xper = _per_page(EXPORT_PER_PAGE)
+    xpages = max(1, -(-shown_total // xper))
     try:
         xpage = min(max(1, int(request.args.get("page", 1))), xpages)
     except ValueError:
         xpage = 1
-    _lo = (xpage - 1) * EXPORT_PER_PAGE
+    _lo = (xpage - 1) * xper
     if mode == "items":
-        irows = irows[_lo:_lo + EXPORT_PER_PAGE]
+        irows = irows[_lo:_lo + xper]
     else:
-        rows = rows[_lo:_lo + EXPORT_PER_PAGE]
+        rows = rows[_lo:_lo + xper]
     return render_template(
         "export.html", levels_all=known, counts=counts, sel_levels=levels,
         meta_cols=_export_meta_cols(), page_fields=PAGE_FIELDS,
         item_fields=ITEM_FIELDS,
         comp_cols=[(k, l) for k, l, _k, _a in _all_components()],
         sel_cols=cols, rows=rows, ran=ran, mode=mode, avail=avail,
-        page=xpage, pages=xpages, per_page=EXPORT_PER_PAGE,
-        first_row=(xpage - 1) * EXPORT_PER_PAGE,
+        page=xpage, pages=xpages, per_page=xper,
+        per_choices=PER_PAGE_CHOICES,
+        first_row=(xpage - 1) * xper,
         kinds_all=ITEM_KINDS, kinds_more=ITEM_KINDS_MORE,
         level_groups=LEVEL_GROUPS, loose_levels=[
             l for l in known if l not in _GROUPED_LEVELS],

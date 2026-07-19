@@ -26,11 +26,14 @@
   {% endif %}
 {% endmacro %}
 
-{% macro pager(pageno, last_page, total, per_page, purl, where='bottom') %}
+{% macro pager(pageno, last_page, total, per_page, purl, where='bottom',
+               viewctl=None) %}
 {% if last_page > 1 %}
 <nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination">
   {#- the count sits WITH the control, not exiled to the far side of a wide
       screen where the two ends had nothing to do with each other -#}
+  {#- how many per page, if the caller offers the choice -#}
+  {{ viewctl() if viewctl and where == 'top' }}
   <span class="pgr-nav">
     <span class="pgr-count">
       <b>{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }}</b>

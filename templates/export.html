@@ -3,6 +3,28 @@
 {% import "_pager.html" as pg with context %}
 {#- keeps the whole selection in the link, so paging never drops a column -#}
 {% macro purl(n) %}?{{ request.query_string.decode()|replace('&page=' ~ page, '')|replace('page=' ~ page ~ '&', '') }}&page={{ n }}{% endmacro %}
+{% macro perurl(n) %}?{{ request.query_string.decode()|replace('&page=' ~ page, '')|replace('page=' ~ page ~ '&', '')|replace('&per=' ~ per_page, '')|replace('per=' ~ per_page ~ '&', '') }}&per={{ n }}&page=1{% endmacro %}
+{#- Per page, behind the same icon the content library uses. No Size here:
+    these are tables, there is nothing to make bigger or smaller. -#}
+{% macro viewopts() %}
+<details class="dd viewdd">
+  <summary title="How many rows per page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/>
+    </svg>
+    <span class="viewnow">{{ per_page }}</span>
+  </summary>
+  <div class="panel viewpanel">
+    <div class="viewhead">Per page</div>
+    <div class="viewrow">
+      {% for nper in per_choices %}
+      <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ perurl(nper) }}">{{ nper }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</details>
+{% endmacro %}
 {% block content %}
 
 <style>
@@ -327,7 +349,7 @@
   {% if not irows %}
     <p class="muted" style="margin:0">Nothing matches that selection.</p>
   {% else %}
-  {{ pg.pager(page, pages, shown, per_page, purl, 'top') }}
+  {{ pg.pager(page, pages, shown, per_page, purl, 'top', viewopts) }}
   <div class="xtable-wrap">
     <table class="xt">
       <thead>
@@ -380,7 +402,7 @@
   {% if not rows %}
     <p class="muted" style="margin:0">Nothing matches that selection.</p>
   {% else %}
-  {{ pg.pager(page, pages, shown, per_page, purl, 'top') }}
+  {{ pg.pager(page, pages, shown, per_page, purl, 'top', viewopts) }}
   <div class="xtable-wrap">
     <table class="xt">
       <thead>

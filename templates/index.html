@@ -2,8 +2,31 @@
 {% import "_pager.html" as pg with context %}
 {#- how this table builds a page link; everything else about the pager is
     shared with the Content library and the export table -#}
-{% macro purl(n) %}{{ url_for('index', page=n, q=q or None,
+{% macro purl(n) %}{{ url_for('index', page=n, per=per_page, q=q or None,
    status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}{% endmacro %}
+{% macro perurl(n) %}{{ url_for('index', page=1, per=n, q=q or None,
+   status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}{% endmacro %}
+{#- Per page, behind the same icon the content library uses. No Size here:
+    these are tables, there is nothing to make bigger or smaller. -#}
+{% macro viewopts() %}
+<details class="dd viewdd">
+  <summary title="How many rows per page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/>
+    </svg>
+    <span class="viewnow">{{ per_page }}</span>
+  </summary>
+  <div class="panel viewpanel">
+    <div class="viewhead">Per page</div>
+    <div class="viewrow">
+      {% for nper in per_choices %}
+      <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ perurl(nper) }}">{{ nper }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</details>
+{% endmacro %}
 {% block content %}
 
 <div class="card">
@@ -245,7 +268,7 @@
   {# one clean line above the table: count on the left, compact pager right #}
   <div class="tabletop">
     <span style="flex:1"></span>
-    {{ pg.pager(page, pages, total_match, per_page, purl, 'top') }}
+    {{ pg.pager(page, pages, total_match, per_page, purl, 'top', viewopts) }}
   </div>
 
   <table>
