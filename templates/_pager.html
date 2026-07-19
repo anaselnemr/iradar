@@ -11,7 +11,11 @@
   {% set hi = [last_page, pageno + 2]|min %}
   {% if lo > 1 %}
     <a class="pnum" href="{{ purl(1) }}">1</a>
-    {% if lo > 2 %}<span class="pgap" title="Jump to a page">…</span>{% endif %}
+    {% if lo > 2 %}<input class="pgap" type="text" inputmode="numeric" value="…" size="1"
+           aria-label="Jump to a page" title="Type a page number"
+           data-base="{{ purl(0) }}" data-last="{{ last_page }}"
+           onfocus="this.value=''; this.classList.add('typing')"
+           onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">{% endif %}
   {% endif %}
   {% for n in range(lo, hi + 1) %}
     {% if n == pageno %}
@@ -21,7 +25,11 @@
     {% endif %}
   {% endfor %}
   {% if hi < last_page %}
-    {% if hi < last_page - 1 %}<span class="pgap" title="Jump to a page">…</span>{% endif %}
+    {% if hi < last_page - 1 %}<input class="pgap" type="text" inputmode="numeric" value="…" size="1"
+           aria-label="Jump to a page" title="Type a page number"
+           data-base="{{ purl(0) }}" data-last="{{ last_page }}"
+           onfocus="this.value=''; this.classList.add('typing')"
+           onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">{% endif %}
     <a class="pnum" href="{{ purl(last_page) }}">{{ last_page }}</a>
   {% endif %}
 {% endmacro %}

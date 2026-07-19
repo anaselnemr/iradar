@@ -628,9 +628,35 @@
   /* just a gap in the numbers. It used to be a 30px box you could type into,
      which read as an empty field someone forgot to fill in - and there were
      two of them. */
-  .pgap { display: inline-flex; align-items: center; justify-content: center;
-          width: 18px; height: 32px; color: var(--muted); font-size: 13px;
-          letter-spacing: 1px; user-select: none; }
+  /* A gap in the numbers that will take one. It reads as an ellipsis -
+     no border, no field - until you click it, which is when being a
+     text box becomes useful rather than confusing. */
+  .pgap { width: 22px; height: 32px; text-align: center; padding: 0;
+          color: var(--muted); font-size: 13px; letter-spacing: 1px;
+          border: 1px solid transparent; border-radius: 8px;
+          background: transparent; font-variant-numeric: tabular-nums;
+          transition: width .12s, border-color .12s; }
+  .pgap:hover { border-color: var(--line); color: var(--ink); cursor: text; }
+  .pgap.typing { width: 48px; border-color: var(--accent);
+                 color: var(--ink); background: var(--card);
+                 letter-spacing: 0; }
+  .pgap:focus { outline: none; }
+  /* .pgr-nav input.pgap, not .pgap: the global input[type=text] rule ties
+     on specificity and comes later, so it was setting the width and
+     painting a border round what should read as an ellipsis. */
+  .pgr-nav input.pgap { width: 24px; min-width: 0; padding: 0;
+                        border: 1px solid transparent; background: transparent;
+                        font-size: 13px; box-shadow: none; }
+  .pgr-nav input.pgap:hover { border-color: var(--line); color: var(--ink); }
+  .pgr-nav input.pgap.typing { width: 52px; border-color: var(--accent);
+                               background: var(--card); color: var(--ink); }
+
+  .sortopt { font-size: 12.5px; padding: 3px 10px; border-radius: 999px;
+             border: 1px solid var(--line); color: var(--ink) !important;
+             text-decoration: none !important; white-space: nowrap; }
+  .sortopt:hover { background: var(--hover); }
+  .sortopt.on { background: var(--accent); border-color: var(--accent);
+                color: #fff !important; font-weight: 600; }
 
   /* how many, and how big - one control, in the pager row */
   .viewdd { position: relative; margin-right: 4px; }
@@ -892,6 +918,21 @@ function closePopovers(except) {
   window.addEventListener('scroll', sync, {passive: true});
   sync();
 })();
+
+// The ellipsis between page runs is a text box: type a page, press Enter.
+// Delegated, so it keeps working after the results block is swapped out.
+document.addEventListener('keydown', function (e) {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('pgap')) return;
+  if (e.key === 'Escape') { el.blur(); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const n = parseInt(el.value, 10);
+  const last = parseInt(el.dataset.last, 10) || 1;
+  if (!n || n < 1 || n > last) { el.value = ''; return; }
+  // the macro rendered this href with page=0; swap in the number asked for
+  location.href = (el.dataset.base || '').replace(/([?&]page=)0\b/, '$1' + n);
+});
 
 document.addEventListener('click', function (ev) { closePopovers(ev.target); });
 // Escape closes the innermost one and hands focus back to what opened it
