@@ -132,7 +132,56 @@
   .sortopt:hover { background: var(--hover); }
   .sortopt.on { background: var(--accent); border-color: var(--accent);
                 color: #fff !important; font-weight: 600; }
-  .pgr { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 14px; }
+  /* ---- pagination ---------------------------------------------------------
+     One control, not a row of loose pills. The count sits to the left as
+     quiet metadata; the numbers are the control, so the nearby pages are one
+     click and the shape of the row tells you where you are in the list. The
+     "go to page N of 15" box it replaces made you read, type and submit to do
+     what a number does in one click. */
+  .pgr { display: flex; gap: 14px; align-items: center; justify-content: space-between;
+         flex-wrap: wrap; margin-top: 18px; }
+  .pgr-top { margin: 0 0 16px; }
+  .pgr-count { font-size: 12.5px; color: var(--muted);
+               font-variant-numeric: tabular-nums; }
+  .pgr-count b { color: var(--ink); font-weight: 600; }
+  .pgr-nav { display: flex; align-items: center; gap: 3px;
+             background: var(--panel); border: 1px solid var(--line);
+             border-radius: 11px; padding: 4px; }
+  .pnum, .pstep {
+      min-width: 32px; height: 32px; padding: 0 9px; border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 550; line-height: 1;
+      color: var(--ink) !important; text-decoration: none !important;
+      font-variant-numeric: tabular-nums;
+      transition: background .12s, color .12s; }
+  .pnum:hover, .pstep:hover { background: var(--hover); }
+  .pnum.on { background: var(--accent); color: #fff !important; font-weight: 650; }
+  .pstep svg { width: 16px; height: 16px; }
+  /* a dead end reads dead: no hover, no pointer, and out of the tab order */
+  .pstep.off { opacity: .32; pointer-events: none; }
+  .pgap { min-width: 20px; text-align: center; color: var(--muted);
+          font-size: 13px; user-select: none; }
+
+  /* ---- search -------------------------------------------------------------
+     Centred, because it is the one thing this page is for. The dropdown that
+     used to hang under it is gone: the results below already update as you
+     type, so a second list of guesses covered the answer it was guessing at. */
+  .hero { text-align: center; }
+  .hero p { max-width: 60ch; margin-left: auto !important; margin-right: auto !important; }
+  .bigsearch { margin: 18px auto 0 !important; }
+  .bigsearch input { text-align: left; }
+  .sugwrap { position: relative; }
+  /* a quiet pulse while a query is in flight - the only feedback left once the
+     button is gone, and enough to explain a slow answer */
+  .sspin { position: absolute; right: 14px; top: 50%; width: 15px; height: 15px;
+           margin-top: -7.5px; border-radius: 50%; opacity: 0;
+           border: 2px solid var(--line); border-top-color: var(--accent);
+           transition: opacity .15s; pointer-events: none; }
+  .sspin.on { opacity: 1; animation: sspin .7s linear infinite; }
+  @keyframes sspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .sspin.on { animation: none; border-top-color: var(--accent); }
+  }
 </style>
 
 <div class="hero">
@@ -146,11 +195,9 @@
       <svg class="sicon-lead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input class="grow" type="text" name="q" value="{{ q }}" autofocus id="sq"
-             role="combobox" aria-expanded="false" aria-controls="suggest"
-             aria-autocomplete="list"
+      <input class="grow" type="search" name="q" value="{{ q }}" autofocus id="sq"
              placeholder="AN85951 · CY8CKIT-042 · datasheet · TRACE32 · IBIS model…">
-      <div class="suggest" id="suggest" role="listbox"></div>
+      <span class="sspin" id="sspin" aria-hidden="true"></span>
     </span>
     <input type="hidden" name="cat" value="{{ cat }}">
     <button id="sbtn">Search</button>
@@ -172,27 +219,51 @@
 
 {% set last_page = ((total + per_page - 1) // per_page) if per_page else 1 %}
 
+{#- A window of page numbers around the current one, with the first and last
+    always reachable and gaps shown as an ellipsis. Numbers beat a "go to" box:
+    the nearby pages are one click, and the shape of the list tells you where
+    you are in it. -#}
+{% macro pagenums() %}
+  {% set lo = [1, pageno - 2]|max %}
+  {% set hi = [last_page, pageno + 2]|min %}
+  {% if lo > 1 %}
+    <a class="pnum" href="{{ burl(page=1) }}">1</a>
+    {% if lo > 2 %}<span class="pgap">…</span>{% endif %}
+  {% endif %}
+  {% for n in range(lo, hi + 1) %}
+    {% if n == pageno %}
+    <span class="pnum on" aria-current="page">{{ n }}</span>
+    {% else %}
+    <a class="pnum" href="{{ burl(page=n) }}">{{ n }}</a>
+    {% endif %}
+  {% endfor %}
+  {% if hi < last_page %}
+    {% if hi < last_page - 1 %}<span class="pgap">…</span>{% endif %}
+    <a class="pnum" href="{{ burl(page=last_page) }}">{{ last_page }}</a>
+  {% endif %}
+{% endmacro %}
+
 {% macro pager(where='bottom') %}
 {% if browse and (pageno > 1 or has_more) %}
-<div class="pgr" style="{{ 'margin:0 0 12px; justify-content:flex-start' if where == 'top' }}">
-  <span class="muted" style="font-size:12.5px">{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }} of {{ '{:,}'.format(total) }}</span>
-  {% if pageno > 1 %}<a class="pill" href="{{ burl(page=1) }}" title="First page">« First</a>{% endif %}
-  {% if pageno > 1 %}<a class="pill" href="{{ burl(page=pageno-1) }}">‹ Prev</a>{% endif %}
-  {% if has_more %}<a class="pill" href="{{ burl(page=pageno+1) }}">Next ›</a>{% endif %}
-  {% if has_more %}<a class="pill" href="{{ burl(page=last_page) }}" title="Last page">Last »</a>{% endif %}
-  {#- a 240-page list needs a way to reach page 137 without 136 clicks -#}
-  <form class="jump" method="get" action="{{ url_for('search_items') }}">
-    <input type="hidden" name="cat" value="{{ cat }}">
-    <input type="hidden" name="sort" value="{{ sort }}">
-    <input type="hidden" name="per" value="{{ per_page }}">
-    <input type="hidden" name="size" value="{{ size }}">
-    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
-    <span class="muted" style="font-size:12px">Go to</span>
-    <input type="number" name="page" min="1" max="{{ last_page }}"
-           value="{{ pageno }}" aria-label="Page number">
-    <span class="muted" style="font-size:12px">of {{ '{:,}'.format(last_page) }}</span>
-  </form>
-</div>
+<nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination">
+  <span class="pgr-count">
+    <b>{{ '{:,}'.format((pageno-1)*per_page + 1) }}–{{ '{:,}'.format([pageno*per_page, total]|min) }}</b>
+    of {{ '{:,}'.format(total) }}
+  </span>
+  <span class="pgr-nav">
+    <a class="pstep {{ 'off' if pageno == 1 }}"
+       href="{{ burl(page=pageno-1) if pageno > 1 else '#' }}" aria-label="Previous page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+    {{ pagenums() }}
+    <a class="pstep {{ 'off' if not has_more }}"
+       href="{{ burl(page=pageno+1) if has_more else '#' }}" aria-label="Next page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+    </a>
+  </span>
+</nav>
 {% endif %}
 {% endmacro %}
 
@@ -428,82 +499,6 @@
 </div><!-- /sz -->
 
 <script>
-// Type-ahead over the real item index: no static word list, it answers from
-// whatever has been captured so far.
-(function () {
-  const input = document.getElementById('sq');
-  const box = document.getElementById('suggest');
-  const form = document.getElementById('sform');
-  if (!input || !box) return;
-  const ICONS = {{ ICONS|tojson }};
-  const iconFor = (c) => ICONS[c] || ICONS._default;
-  const cat = form.querySelector('input[name=cat]').value || 'all';
-  let items = [], sel = -1, timer = null, lastQ = null;
-
-  const close = () => { box.classList.remove('on'); input.setAttribute('aria-expanded', 'false'); sel = -1; };
-  const draw = () => {
-    if (!items.length) return close();
-    box.innerHTML = '';
-    items.forEach((it, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.setAttribute('role', 'option');
-      if (i === sel) b.className = 'sel';
-      const ic = document.createElement('span');
-      ic.className = 'sicon';
-      ic.innerHTML = iconFor(it.cat);
-      const col = document.createElement('span');
-      col.className = 'scol';
-      const t = document.createElement('span');
-      t.className = 'stitle';
-      t.textContent = it.title;
-      const m = document.createElement('span');
-      m.className = 'smeta';
-      m.textContent = it.category + (it.lang ? ' · ' + it.lang : '')
-                    + ' · ' + it.pages + ' page' + (it.pages === 1 ? '' : 's');
-      col.append(t, m);
-      b.append(ic, col);
-      b.addEventListener('click', () => { input.value = it.title; close(); form.submit(); });
-      box.appendChild(b);
-    });
-    box.classList.add('on');
-    input.setAttribute('aria-expanded', 'true');
-  };
-
-  input.addEventListener('input', () => {
-    const q = input.value.trim();
-    clearTimeout(timer);
-    if (q.length < 2) return close();
-    timer = setTimeout(async () => {
-      if (q === lastQ) return;
-      lastQ = q;
-      try {
-        const r = await fetch('/api/suggest?q=' + encodeURIComponent(q) + '&cat=' + encodeURIComponent(cat));
-        items = await r.json();
-        sel = -1;
-        draw();
-      } catch (e) { close(); }
-    }, 140);
-  });
-
-  input.addEventListener('keydown', (e) => {
-    if (!box.classList.contains('on')) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      sel += (e.key === 'ArrowDown' ? 1 : -1);
-      if (sel < 0) sel = items.length - 1;
-      if (sel >= items.length) sel = 0;
-      draw();
-    } else if (e.key === 'Enter' && sel >= 0) {
-      e.preventDefault();
-      input.value = items[sel].title;
-      close();
-      form.submit();
-    } else if (e.key === 'Escape') { close(); }
-  });
-  document.addEventListener('click', (e) => { if (!box.contains(e.target) && e.target !== input) close(); });
-})();
-
 // ---------------------------------------------------------------------------
 // Search as you type. The server already renders these results; rather than
 // build a second, JS-only rendering of them that could drift from the real
@@ -515,6 +510,7 @@
   const input = document.getElementById('sq');
   const form  = document.getElementById('sform');
   const btn   = document.getElementById('sbtn');
+  const spin  = document.getElementById('sspin');
   if (!input || !form || !window.fetch || !window.DOMParser) return;
 
   const view = () => {
@@ -534,7 +530,7 @@
     if (url === lastSent) return;
     lastSent = url;
     const mine = ++seq;
-    document.body.style.cursor = 'progress';
+    if (spin) spin.classList.add('on');
     try {
       const r = await fetch(url, {headers: {'X-Requested-With': 'fetch'}});
       const html = await r.text();
@@ -549,7 +545,7 @@
     } catch (e) {
       /* leave the current results in place; the form still submits */
     } finally {
-      if (mine === seq) document.body.style.cursor = '';
+      if (mine === seq && spin) spin.classList.remove('on');
     }
   }
 
