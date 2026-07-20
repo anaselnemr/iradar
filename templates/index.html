@@ -449,7 +449,22 @@ function syncSelall() {
   selall.checked = on > 0 && on === boxes.length;
   selall.indeterminate = on > 0 && on < boxes.length;
 }
-document.addEventListener('change', (e) => {
+// Turn the implicit "all N matching" into an explicit set of every matching
+// id, so it can then be trimmed one row at a time. /urls/range with the
+// current filter and from=1..TOTAL_MATCH is the same list the table pages
+// through, so the set is exactly what "all matching" meant.
+async function materializeAllMatching() {
+  const p = new URLSearchParams(location.search);
+  p.set('from', '1'); p.set('to', String(TOTAL_MATCH)); p.delete('page');
+  try {
+    const r = await fetch(location.origin + '/urls/range?' + p.toString(),
+                          {credentials: 'same-origin'});
+    const d = await r.json();
+    SEL.clear();
+    d.ids.forEach(id => SEL.add(String(id)));
+  } catch (e) { console.warn('materialize all-matching failed', e); }
+}
+document.addEventListener('change', async (e) => {
   const t = e.target;
   if (!t) return;
   if (t.id === 'selall') {
@@ -464,8 +479,13 @@ document.addEventListener('change', (e) => {
     });
     refreshCount();
   } else if (t.classList && t.classList.contains('rowsel')) {
+    const am = document.getElementById('all-matching');
+    // Un-ticking a row while "all N matching" is on must leave "all N except
+    // this one", not collapse to the page's rows. Make the whole set explicit
+    // first, THEN drop this id - so the count goes 471 -> 470, not -> 19.
+    if (!t.checked && am && am.value === '1') await materializeAllMatching();
     if (t.checked) SEL.add(t.value); else SEL.delete(t.value);
-    const am = document.getElementById('all-matching'); if (am) am.value = '0';
+    if (am) am.value = '0';
     syncSelall();
     refreshCount();
   }
@@ -651,10 +671,30 @@ async function poll() {
       // change is real (not a one-off flake). The runner resets suspects to 0
       // and its message says "double-check" when stage 2 starts - latch on
       // either so a per-page message ticking by afterwards can't flip us back.
+      // Restore the latched stage from a prior load of THIS run (keyed by its
+      // start time) so a page reload in the middle of the double-check no
+      // longer drops the bar back to "Capturing".
+      const runKey = 'ifw_run_' + (s.started_ts || '0');
+      if (!inVerify && sessionStorage.getItem(runKey + '_v') === '1') inVerify = true;
+      if (!captureTotal) {
+        const ct = parseInt(sessionStorage.getItem(runKey + '_ct') || '', 10);
+        if (!isNaN(ct)) captureTotal = ct;
+      }
+      // Stage 2 detection - any one is enough, and it only ever latches ON:
+      //  - the runner names it in the message at the hand-off
+      //  - suspects were held, then reset to 0 when the double-check begins
+      //  - "changed" only ever climbs during the double-check, never capture,
+      //    so it is a reload-proof signal even after the message has moved on
       if (/double-check/i.test(s.message || '')) inVerify = true;
       if (prevSuspects > 0 && (s.suspects || 0) === 0) inVerify = true;
+      if ((s.changed || 0) > 0) inVerify = true;
       prevSuspects = s.suspects || 0;
-      if (!inVerify) captureTotal = s.total;   // remembered before stage 2 grows it
+      if (!inVerify) {
+        captureTotal = s.total;                       // before stage 2 grows it
+        try { sessionStorage.setItem(runKey + '_ct', captureTotal); } catch (e) {}
+      } else {
+        try { sessionStorage.setItem(runKey + '_v', '1'); } catch (e) {}
+      }
 
       const savedEl = document.getElementById('run-saved');
       const savedLbl = document.getElementById('run-saved-lbl');
