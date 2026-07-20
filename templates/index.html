@@ -34,7 +34,7 @@
     <div class="stat"><div class="n" style="color:var(--accent)">{{ counts.total }}</div><div class="l">Total Pages</div></div>
     <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Pages Captured</div></div>
     <a class="stat statlink" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring"><div class="n" style="color:#16a34a">{{ counts.live or 0 }}</div><div class="l">Live</div></a>
-    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review"><div class="n" style="color:{{ '#ea580c' if total_open else 'var(--muted)' }}">{{ total_open }}</div><div class="l">Updated</div></a>
+    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review{% if total_open and total_open != counts.changed %} ({{ total_open }} changes across them){% endif %}"><div class="n" style="color:{{ '#ea580c' if counts.changed else 'var(--muted)' }}">{{ counts.changed or 0 }}</div><div class="l">Updated</div></a>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
@@ -107,7 +107,7 @@
   {% endif %}
 </div>
 
-<div class="card" id="trackpanel">
+<div class="card" id="trackpanel" data-total="{{ total_match }}">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">Tracked pages
       <span class="muted" style="font-weight:400; font-size:14px">— {{ '{:,}'.format(total_match) }} shown</span>
@@ -496,7 +496,7 @@ document.addEventListener('click', async (e) => {
   syncSelall();
   refreshCount();
 });
-function initTable() { applySel(); syncSelall(); }
+function initTable() { applySel(); syncSelall(); refreshCount(); }
 initTable();
 
 // Filter in place instead of a full page reload. Every filter control (the
@@ -541,11 +541,17 @@ function pjax(url) {
         .getElementById('trackpanel');
       if (!fresh) { window.location.href = url; return; }
       panel.innerHTML = fresh.innerHTML;
-      // keep the bulk "select all N matching" count in step with the new filter
-      const showing = Array.from(panel.querySelectorAll('.muted'))
-        .map(e => e.textContent).find(t => /Showing.*of\s+[\d,]/.test(t)) || '';
-      const m = /of\s+([\d,]+)/.exec(showing);
-      if (m) TOTAL_MATCH = parseInt(m[1].replace(/,/g, ''));
+      // keep the bulk "select all N matching" count in step with the new filter.
+      // Read it from the panel's own data-total, which the server stamps with
+      // the filtered count - the old regex hunted for "Showing X of Y" text
+      // that no longer exists ("N shown"), so TOTAL_MATCH stayed stuck at the
+      // whole-set count and "select all" offered 4,188 while 471 were shown.
+      const dt = parseInt(fresh.getAttribute('data-total') || '', 10);
+      if (!isNaN(dt)) TOTAL_MATCH = dt;
+      // a filter change makes the old selection meaningless - clear it so the
+      // count and the "select all N matching" offer describe THIS result set
+      SEL.clear();
+      const am0 = document.getElementById('all-matching'); if (am0) am0.value = '0';
       history.pushState(null, '', url);
       panel.style.opacity = '';
       initTable();
