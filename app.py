@@ -1215,7 +1215,7 @@ def urls_bulk():
                     f" WHERE id IN ({marks}) AND last_status IN ('changed','rejected')",
                     ids)
         con.commit()
-        flash(f"Approved changes on {len(ids)} URL(s) — marked unchanged.")
+        flash(f"Approved updates on {len(ids)} URL(s) — marked unchanged.")
     elif action == "check":
         if runner.run_check_background(kind="manual", url_ids=ids):
             flash(f"Checking {len(ids)} selected URL(s) now…")
@@ -5457,7 +5457,7 @@ def export_xlsx():
                    chr(10).join(p["purl"] for p in e["pages"][:200])])
 
     ws_ch = wb.create_sheet("Updates")
-    ws_ch.append(["Change ID", "URL", "When (UTC)", "Summary", "Components",
+    ws_ch.append(["Update ID", "URL", "When (UTC)", "Summary", "Components",
                   "Verdict"])
     for c in con.execute(
             "SELECT c.*, u.url AS u_url FROM changes c"

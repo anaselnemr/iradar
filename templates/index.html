@@ -34,7 +34,7 @@
     <div class="stat"><div class="n" style="color:var(--accent)">{{ counts.total }}</div><div class="l">Total Pages</div></div>
     <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Pages Captured</div></div>
     <a class="stat statlink" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring"><div class="n" style="color:#16a34a">{{ counts.live or 0 }}</div><div class="l">Live</div></a>
-    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review{% if total_open and total_open != counts.changed %} ({{ total_open }} changes across them){% endif %}"><div class="n" style="color:{{ '#ea580c' if counts.changed else 'var(--muted)' }}">{{ counts.changed or 0 }}</div><div class="l">Updated</div></a>
+    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review{% if total_open and total_open != counts.changed %} ({{ total_open }} updates across them){% endif %}"><div class="n" style="color:{{ '#ea580c' if counts.changed else 'var(--muted)' }}">{{ counts.changed or 0 }}</div><div class="l">Updated</div></a>
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
@@ -292,7 +292,7 @@
       <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
       <th>Type</th><th>Live</th><th>Status</th>
       <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
-      <th><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has been updated (click again for fewest first)">Changes{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
+      <th><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has been updated (click again for fewest first)">Updates{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
     </tr>
     {% for u in urls %}
     <tr>
@@ -714,7 +714,7 @@ async function poll() {
         savedEl.textContent = confirmed; savedEl.style.color = '#ea580c';
         savedLbl.textContent = 'confirmed as real updates';
         midEl.textContent = cleared; midEl.style.color = '#16a34a';
-        midLbl.textContent = 'were false alarms (no change)';
+        midLbl.textContent = 'were false alarms (no update)';
       } else {
         // Stage 1: capturing every page; some are held for stage 2.
         dispDone = s.done; dispTotal = s.total;
@@ -743,7 +743,7 @@ async function poll() {
           'Finishing the pages already in progress, then it holds. Press Resume to continue.';
         if (bar) bar.style.background = '#ea580c';
       } else {
-        if (verb) verb.textContent = inVerify ? 'Double-checking the changes' : 'Capturing all pages';
+        if (verb) verb.textContent = inVerify ? 'Double-checking the updates' : 'Capturing all pages';
         // live throughput from the last ~3 min of polls
         rateHist.push({t: Date.now(), done: s.done});
         rateHist = rateHist.filter(x => Date.now() - x.t < 180000);

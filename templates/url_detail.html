@@ -163,7 +163,7 @@
                      'Part': ['PTP','EB']}.get(u.ptype) %}
     {% if scheme %}
     <details class="lvledit">
-        <summary title="Level: {{ level_names.get(u.level, 'none') }} — source: {{ {'report':'the report','inferred':'auto-detected','manual':'your edit','structure':'the site structure walk'}.get(u.level_src, 'not set') }}. Click to change.">
+        <summary title="Level: {{ level_names.get(u.level, 'none') }} — source: {{ {'report':'the report','inferred':'auto-detected','manual':'your edit','structure':'the site structure walk'}.get(u.level_src, 'not set') }}. Click to edit.">
           {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}">{{ u.level }}</span>{% else %}<span class="badge b-off">no level</span>{% endif %}
           <span class="lvlpen">✎</span>
         </summary>
@@ -451,7 +451,7 @@
       </details>
       {% endfor %}
       <p class="muted" style="margin-top:10px">Every list is part of the tracked
-        groundtruth: when an approved change adds or removes an item, this
+        groundtruth: when an approved update adds or removes an item, this
         library updates with it. Full raw data:
         <a href="{{ url_for('snapshot_text', snap_id=latest.id) }}" target="_blank">all text lines</a> ·
         <a href="{{ url_for('snapshot_images', snap_id=latest.id) }}" target="_blank">all image URLs</a></p>
@@ -466,7 +466,7 @@
   {% if not changes %}<p class="muted">No updates detected so far.</p>
   {% else %}
   <table>
-    <tr><th>When (local)</th><th>What changed</th><th>Verdict</th><th></th></tr>
+    <tr><th>When (local)</th><th>What updated</th><th>Verdict</th><th></th></tr>
     {% for c in changes %}
     <tr>
       <td class="muted">{{ c.ts|localtime }}</td>
