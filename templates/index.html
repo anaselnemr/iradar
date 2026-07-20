@@ -630,7 +630,7 @@ function reflectPause() {
   if (isStopping) { btn.disabled = true; if (sbtn) sbtn.disabled = true; }
 }
 let rateHist = [];
-let inVerify = false, prevSuspects = 0;
+let inVerify = false, prevSuspects = 0, captureTotal = 0;
 async function poll() {
   try {
     const r = await fetch('/status'); const s = await r.json();
@@ -640,28 +640,45 @@ async function poll() {
       isPaused = !!s.paused;
       isStopping = !!s.stopping;
       box.style.display = 'block';
-      document.getElementById('run-done').textContent = s.done;
-      document.getElementById('run-total').textContent = s.total;
-      document.getElementById('run-saved').textContent = s.saved != null ? s.saved : '—';
-      document.getElementById('run-errors').textContent = s.errors != null ? s.errors : 0;
-      // Which phase are we in? The run captures every page first, holding any
-      // that look changed; then a double-check pass re-captures only those held
-      // pages. The runner resets suspects to 0 and its message says
-      // "double-check" when that pass starts - latch on either so a per-page
-      // message ticking by afterwards doesn't flip us back.
+      // A run has two stages. STAGE 1 captures every page and holds any that
+      // look changed. STAGE 2 re-captures only those held pages to confirm the
+      // change is real (not a one-off flake). The runner resets suspects to 0
+      // and its message says "double-check" when stage 2 starts - latch on
+      // either so a per-page message ticking by afterwards can't flip us back.
       if (/double-check/i.test(s.message || '')) inVerify = true;
       if (prevSuspects > 0 && (s.suspects || 0) === 0) inVerify = true;
       prevSuspects = s.suspects || 0;
-      const recheckLbl = document.getElementById('run-recheck-lbl');
-      const suspectsEl = document.getElementById('run-suspects');
+      if (!inVerify) captureTotal = s.total;   // remembered before stage 2 grows it
+
+      const savedEl = document.getElementById('run-saved');
+      const savedLbl = document.getElementById('run-saved-lbl');
+      const midEl = document.getElementById('run-suspects');
+      const midLbl = document.getElementById('run-recheck-lbl');
+      document.getElementById('run-errors').textContent = s.errors != null ? s.errors : 0;
+      let dispDone, dispTotal;
       if (inVerify) {
-        // the held pages are now being re-checked; show how many are confirmed
-        recheckLbl.textContent = 'confirmed as updated';
-        suspectsEl.textContent = s.changed != null ? s.changed : 0;
+        // Stage 2: the bar and count track progress through the RE-CHECKS only,
+        // so you can see the double-check on its own terms - not lost in the
+        // full-set total. Each re-checked page is either a confirmed update or
+        // a false alarm that cleared.
+        dispTotal = Math.max(1, s.total - captureTotal);
+        dispDone = Math.max(0, Math.min(dispTotal, s.done - captureTotal));
+        const confirmed = s.changed != null ? s.changed : 0;
+        const cleared = Math.max(0, dispDone - confirmed);
+        savedEl.textContent = confirmed; savedEl.style.color = '#ea580c';
+        savedLbl.textContent = 'confirmed as real updates';
+        midEl.textContent = cleared; midEl.style.color = '#16a34a';
+        midLbl.textContent = 'were false alarms (no change)';
       } else {
-        recheckLbl.textContent = 'held to re-check';
-        suspectsEl.textContent = s.suspects != null ? s.suspects : 0;
+        // Stage 1: capturing every page; some are held for stage 2.
+        dispDone = s.done; dispTotal = s.total;
+        savedEl.textContent = s.saved != null ? s.saved : 0; savedEl.style.color = '#16a34a';
+        savedLbl.textContent = 'saved';
+        midEl.textContent = s.suspects != null ? s.suspects : 0; midEl.style.color = '#ea580c';
+        midLbl.textContent = 'will be double-checked';
       }
+      document.getElementById('run-done').textContent = dispDone;
+      document.getElementById('run-total').textContent = dispTotal;
       const verb = document.getElementById('run-verb');
       const bar = document.getElementById('run-bar');
       // When pausing/ending, a page already mid-capture can't be interrupted,
@@ -680,7 +697,7 @@ async function poll() {
           'Finishing the pages already in progress, then it holds. Press Resume to continue.';
         if (bar) bar.style.background = '#ea580c';
       } else {
-        if (verb) verb.textContent = inVerify ? 'Double-checking updates' : 'Capturing';
+        if (verb) verb.textContent = inVerify ? 'Double-checking the changes' : 'Capturing all pages';
         // live throughput from the last ~3 min of polls
         rateHist.push({t: Date.now(), done: s.done});
         rateHist = rateHist.filter(x => Date.now() - x.t < 180000);
@@ -698,7 +715,9 @@ async function poll() {
         if (bar) bar.style.background = '';
       }
       reflectPause();
-      const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
+      // bar + percent follow the CURRENT stage (stage 2 shows re-check progress,
+      // not the full-set total) so 100% means "this stage is done"
+      const pct = dispTotal ? Math.round(100 * dispDone / dispTotal) : 0;
       bar.style.width = pct + '%';
       const pctEl = document.getElementById('run-pct');
       if (pctEl) pctEl.textContent = pct + '%';
