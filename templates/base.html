@@ -153,6 +153,13 @@
      which is the part you recognise. */
   .asn .pagegrid { margin-top: 11px;
                    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
+  /* The full .pageshot rule lived only in search.html, so on the item page
+     (which just had the aspect-ratio override below) the thumbnail had no
+     width cap and rendered at its intrinsic ~1440px - a screenshot far bigger
+     than its card. Give it the same constrained treatment everywhere. */
+  .pageshot { width: 100%; object-fit: cover; object-position: top center;
+              border-radius: 8px; border: 1px solid var(--line);
+              background: var(--hover); margin-bottom: 8px; display: block; }
   .asn .pageshot { aspect-ratio: 16 / 6.5; }
 
   /* --- hierarchy tree --- */

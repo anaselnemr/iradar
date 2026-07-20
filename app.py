@@ -2194,6 +2194,12 @@ def url_detail(url_id):
                 items = [i for i in items
                          if not (isinstance(i, dict)
                                  and runner.is_furniture_img(i.get("url", "")))]
+                # the page's captured hero/main image, matched by URL so a
+                # part's product photo (class ptp-product-img, named after its
+                # package - not "hero") still reads as THE main one. The src is
+                # already stored in the hero_image flag; we just honour it here.
+                _hero_src = ((flags.get("hero_image") or {}).get("src") or "")
+                _hero_src = _hero_src.split("?")[0].split(":asset")[0]
                 _seen_img, _deduped = set(), []
                 for i in items:
                     if not isinstance(i, dict):
@@ -2216,7 +2222,8 @@ def url_detail(url_id):
                     # the page's main visual: its alt/url calls it a banner,
                     # hero or key-visual - flag it so it reads as THE main one
                     i["is_main"] = bool(re.search(
-                        r"banner|hero|key.?visual", orig + " " + canon, re.I))
+                        r"banner|hero|key.?visual", orig + " " + canon, re.I)) \
+                        or (bool(_hero_src) and canon == _hero_src)
                     i["url"] = canon
                     i["title"] = pretty_image_title(orig, canon)
                     # a logo or tool icon that rides along on a large slice of
