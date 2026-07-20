@@ -703,18 +703,22 @@ async function poll() {
       document.getElementById('run-errors').textContent = s.errors != null ? s.errors : 0;
       let dispDone, dispTotal;
       if (inVerify) {
-        // Stage 2: the bar and count track progress through the RE-CHECKS only,
-        // so you can see the double-check on its own terms - not lost in the
-        // full-set total. Each re-checked page is either a confirmed update or
-        // a false alarm that cleared.
+        // The double-check RE-CAPTURES every held page first (this progress),
+        // and only compares them all at the very end. So a page is not
+        // "cleared" just because it has been re-captured - nothing is judged
+        // until the compare step. Show only what is honest during the
+        // re-capture: how many updates are confirmed SO FAR, and how many are
+        // still to re-check. (The old code showed re-captured-minus-confirmed
+        // as "false alarms", which read as "everything is being thrown out"
+        // while in fact nothing had been judged yet.)
         dispTotal = Math.max(1, s.total - captureTotal);
         dispDone = Math.max(0, Math.min(dispTotal, s.done - captureTotal));
         const confirmed = s.changed != null ? s.changed : 0;
-        const cleared = Math.max(0, dispDone - confirmed);
+        const remaining = Math.max(0, dispTotal - dispDone);
         savedEl.textContent = confirmed; savedEl.style.color = '#ea580c';
-        savedLbl.textContent = 'confirmed as real updates';
-        midEl.textContent = cleared; midEl.style.color = '#16a34a';
-        midLbl.textContent = 'were false alarms (no update)';
+        savedLbl.textContent = 'confirmed as real updates so far';
+        midEl.textContent = remaining; midEl.style.color = '#6b7280';
+        midLbl.textContent = 'still to re-check';
       } else {
         // Stage 1: capturing every page; some are held for stage 2.
         dispDone = s.done; dispTotal = s.total;
