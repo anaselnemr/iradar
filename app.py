@@ -2198,7 +2198,11 @@ def url_detail(url_id):
                 # part's product photo (class ptp-product-img, named after its
                 # package - not "hero") still reads as THE main one. The src is
                 # already stored in the hero_image flag; we just honour it here.
-                _hero_src = ((flags.get("hero_image") or {}).get("src") or "")
+                # Only when it has_content: a DEFAULT placeholder (missing-
+                # product-images) is not this page's picture and must never be
+                # starred as the main one.
+                _hero = flags.get("hero_image") or {}
+                _hero_src = (_hero.get("src") or "") if _hero.get("has_content") else ""
                 _hero_src = _hero_src.split("?")[0].split(":asset")[0]
                 _seen_img, _deduped = set(), []
                 for i in items:
