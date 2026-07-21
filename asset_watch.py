@@ -16,6 +16,7 @@ HTML ETag moves on every deploy without the content changing.
 import json
 import re
 import threading
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -29,7 +30,12 @@ _FILE_RE = re.compile(
     r"\.(pdf|zip|xlsx?|docx?|pptx?|csv|txt|exe|msi|hex|bin|gz|7z|rar)(\?|#|$)"
     r"|/is/image/|/is/content/|/jcr:content/renditions/", re.I)
 
-CONCURRENCY = 24
+# www.infineon.com's document store throttles header-request bursts the same
+# way it blocks capture bursts (the first seeding pass lost 8k of 12k files to
+# it at 24 threads). 8 is gentle enough to pass; the retry round below picks
+# up whatever still slipped.
+CONCURRENCY = 8
+RETRY_CONCURRENCY = 3
 TIMEOUT = 12
 
 # progress for the dashboard ("checking 3 120/14 000 assets…")
@@ -105,6 +111,8 @@ def fingerprint(url):
                 pass
         return fp
     except Exception:
+        # throttled or hiccuped: give the store a breath, then one ranged GET
+        time.sleep(1.5)
         try:
             return _ask("GET", {"Range": "bytes=0-0"})
         except Exception:
@@ -129,59 +137,91 @@ def bytes_changed(old, fp):
     return False
 
 
+def _record(con, u, kind, fp, known, now):
+    """Store one fingerprint result. Returns 1 when a byte-change was recorded."""
+    old = known.get(u)
+    if old is None:
+        con.execute(
+            "INSERT OR REPLACE INTO assets(url, kind, etag, last_modified,"
+            " content_length, http_status, first_seen, last_checked)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (u, kind, fp["etag"], fp["last_modified"], fp["content_length"],
+             fp["status"], now, now))
+        return 0
+    if bytes_changed(old, fp):
+        con.execute(
+            "INSERT INTO asset_changes(url, kind, ts, old_etag, new_etag,"
+            " old_modified, new_modified, old_length, new_length)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
+            (u, old["kind"] or kind, now, old["etag"], fp["etag"],
+             old["last_modified"], fp["last_modified"],
+             old["content_length"], fp["content_length"]))
+        con.execute(
+            "UPDATE assets SET etag=?, last_modified=?, content_length=?,"
+            " http_status=?, last_checked=? WHERE url=?",
+            (fp["etag"], fp["last_modified"], fp["content_length"],
+             fp["status"], now, u))
+        return 1
+    empty = not (old["etag"] or old["last_modified"] or old["content_length"])
+    if empty and fp.get("status") in (200, 206):
+        # SEED-FILL: the earlier pass could not read this file's validators
+        # (throttled); a row seeded empty must not stay blind forever - store
+        # what the server says now, still without raising anything
+        con.execute(
+            "UPDATE assets SET etag=?, last_modified=?, content_length=?,"
+            " http_status=?, last_checked=? WHERE url=?",
+            (fp["etag"], fp["last_modified"], fp["content_length"],
+             fp["status"], now, u))
+    else:
+        con.execute("UPDATE assets SET http_status=?, last_checked=?"
+                    " WHERE url=?", (fp["status"], now, u))
+    return 0
+
+
 def run_asset_check():
     """Fingerprint every referenced asset; record the ones whose bytes moved.
-    First sighting of a URL just seeds its fingerprint (no alarm)."""
+    First sighting of a URL just seeds its fingerprint (no alarm). Files the
+    store throttled get a second, slower round after a pause."""
     con = db.connect()
     try:
         targets = collect_asset_urls(con)
         known = {r["url"]: r for r in con.execute("SELECT * FROM assets")}
         ASSET_STATE.update(running=True, done=0, total=len(targets), changed=0,
                            message="checking asset files…")
-        now = db.now_iso()
         changed = 0
-        with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
-            futs = {ex.submit(fingerprint, u): u for u in targets}
-            for fut in as_completed(futs):
-                u = futs[fut]
-                fp = fut.result()
-                ASSET_STATE["done"] += 1
-                old = known.get(u)
-                if old is None:
-                    con.execute(
-                        "INSERT OR REPLACE INTO assets(url, kind, etag,"
-                        " last_modified, content_length, http_status,"
-                        " first_seen, last_checked) VALUES(?,?,?,?,?,?,?,?)",
-                        (u, targets[u], fp["etag"], fp["last_modified"],
-                         fp["content_length"], fp["status"], now, now))
-                elif bytes_changed(old, fp):
-                    changed += 1
+        failed = []
+
+        def wave(urls, workers):
+            nonlocal changed
+            now = db.now_iso()
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = {ex.submit(fingerprint, u): u for u in urls}
+                for fut in as_completed(futs):
+                    u = futs[fut]
+                    fp = fut.result()
+                    ASSET_STATE["done"] += 1
+                    if fp["status"] is None:
+                        failed.append(u)
+                    changed += _record(con, u, targets[u], fp, known, now)
                     ASSET_STATE["changed"] = changed
-                    con.execute(
-                        "INSERT INTO asset_changes(url, kind, ts, old_etag,"
-                        " new_etag, old_modified, new_modified, old_length,"
-                        " new_length) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (u, old["kind"] or targets[u], now, old["etag"],
-                         fp["etag"], old["last_modified"], fp["last_modified"],
-                         old["content_length"], fp["content_length"]))
-                    con.execute(
-                        "UPDATE assets SET etag=?, last_modified=?,"
-                        " content_length=?, http_status=?, last_checked=?"
-                        " WHERE url=?",
-                        (fp["etag"], fp["last_modified"], fp["content_length"],
-                         fp["status"], now, u))
-                else:
-                    con.execute(
-                        "UPDATE assets SET http_status=?, last_checked=?"
-                        " WHERE url=?", (fp["status"], now, u))
-                if ASSET_STATE["done"] % 200 == 0:
-                    ASSET_STATE["message"] = (
-                        f"checking asset files… {ASSET_STATE['done']}"
-                        f"/{ASSET_STATE['total']}")
-                    con.commit()
+                    if ASSET_STATE["done"] % 200 == 0:
+                        ASSET_STATE["message"] = (
+                            f"checking asset files… {ASSET_STATE['done']}"
+                            f"/{ASSET_STATE['total']}")
+                        con.commit()
+
+        wave(list(targets), CONCURRENCY)
+        if failed:
+            # the throttled tail: breathe, then retry slowly
+            retry, failed = failed, []
+            ASSET_STATE.update(total=ASSET_STATE["total"] + len(retry),
+                               message=f"retrying {len(retry)} throttled file(s)…")
+            time.sleep(20)
+            wave(retry, RETRY_CONCURRENCY)
         con.commit()
         print(f"[assets] checked {len(targets)} files: {changed} changed"
-              " behind an unchanged URL", flush=True)
+              f" behind an unchanged URL; {len(failed)} unreachable",
+              flush=True)
     finally:
         ASSET_STATE.update(running=False, message="")
         con.close()
