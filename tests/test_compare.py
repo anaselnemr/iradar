@@ -28,6 +28,15 @@ def _cmp(old_lines, new_lines, old_imgs=None, new_imgs=None, settings=None):
         change_dir=None, settings=settings or {})
 
 
+def _snap_rev(lines=None, images=None, rev=None):
+    """A snapshot whose meta.json carries a text_rev (or none, = rev 1)."""
+    d = Path(_snap(lines, images))
+    if rev is not None:
+        (Path(d) / "meta.json").write_text(json.dumps({"text_rev": rev}),
+                                           encoding="utf-8")
+    return str(d)
+
+
 # --- text diff -------------------------------------------------------------
 
 def test_text_diff_counts_adds_and_removes():
@@ -126,6 +135,48 @@ def _mk_sections(sections):
     (d / "text.txt").write_text("", encoding="utf-8")
     (d / "images.json").write_text("[]", encoding="utf-8")
     return d
+
+
+# --- text-extractor revision boundary (the silent re-baseline) -------------
+
+def test_text_diff_suppressed_across_rev_change():
+    # baseline on the old walk (rev 1), new capture on the new walk (rev 2):
+    # the text is not comparable, so even a big line diff must NOT flag - this
+    # is what stops 4,000 pages "updating" the run after a TEXT_JS change
+    old = cmp.compare_snapshots(
+        _snap_rev(["Home", "Forum thread A", "Member001"], rev=1),
+        _snap_rev(["Home"], rev=2), change_dir=None, settings={})
+    assert old["text_changed"] is False, "text diff not suppressed across revs"
+    assert old["any_changed"] is False, "re-normalised page wrongly flagged"
+
+
+def test_text_diff_active_within_same_rev():
+    # both sides on the new rev -> normal diffing resumes and a real edit flags
+    r = cmp.compare_snapshots(
+        _snap_rev(["Home", "Old copy"], rev=2),
+        _snap_rev(["Home", "New copy"], rev=2), change_dir=None, settings={})
+    assert r["text_changed"] is True, "same-rev text edit must still flag"
+
+
+def test_missing_meta_counts_as_rev1():
+    # a legacy snapshot (no meta.json) is rev 1; against a rev-2 capture the
+    # text is still cross-rev and suppressed
+    r = cmp.compare_snapshots(
+        _snap(["A", "B", "C"]),                       # no meta.json -> rev 1
+        _snap_rev(["A"], rev=2), change_dir=None, settings={})
+    assert r["text_changed"] is False
+
+
+def test_non_text_signal_still_fires_across_rev():
+    # the rev boundary suppresses TEXT ONLY. A genuine change that lands during
+    # the re-baseline - here a swapped image - must still be caught, or the
+    # re-baseline run would be a blind spot.
+    r = cmp.compare_snapshots(
+        _snap_rev(["Home"], images=["https://a/1.png"], rev=1),
+        _snap_rev(["Home"], images=["https://a/2.png"], rev=2),
+        change_dir=None, settings={})
+    assert r["images_changed"] is True, "image change lost across rev boundary"
+    assert r["any_changed"] is True, "real change hidden during re-baseline"
 
 
 # --- whole verdict ---------------------------------------------------------

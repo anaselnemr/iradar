@@ -44,6 +44,22 @@ def _load_images(snap_dir):
         return []
 
 
+def _text_rev(snap_dir):
+    """Which revision of TEXT_JS produced this snapshot's text.txt.
+
+    Stamped into meta.json by capture (capture.TEXT_REV). Snapshots taken
+    before the stamp existed have none and are revision 1 - the original
+    walk. Used only to tell whether two snapshots' text is comparable.
+    """
+    p = Path(snap_dir) / "meta.json"
+    if not p.exists():
+        return 1
+    try:
+        return int(json.loads(p.read_text(encoding="utf-8")).get("text_rev", 1))
+    except Exception:
+        return 1
+
+
 def text_diff(old_dir, new_dir, ignore_patterns=None):
     """Returns (changed, added_count, removed_count, hunks).
 
@@ -301,21 +317,32 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     visual_threshold = float(settings.get("visual_threshold", 0.5))
     height_threshold = int(settings.get("height_threshold", 80))
 
-    t_changed, t_added, t_removed, _ = text_diff(old_dir, new_dir, ignore_patterns)
-    # SAME LINES, NEW ORDER is not a content change. The line diff is
-    # positional, so a block that merely moved reads as removals plus
-    # additions - the homepage reported the same four AURIX part numbers
-    # cycling by one position, and the interactive-expansion pass returns its
-    # panels in whatever order they hydrate. Compare the line MULTISET: equal
-    # multisets mean nothing was added, removed or edited, only rearranged.
-    # Anything genuinely new, gone or reworded changes the counts and still
-    # flags. Duplication changes them too, so a block rendered twice is not
-    # mistaken for a move.
+    # ACROSS A TEXT-EXTRACTOR REVISION the text is not comparable: when the
+    # baseline was captured under an older TEXT_REV, its text.txt was built by a
+    # different walk (e.g. one that still included the forum/news feeds), so a
+    # line diff would report every page that was re-normalised as an "update".
+    # Skip the text signal for that one comparison and let the new capture
+    # become the clean baseline; the image / screenshot / library signals still
+    # apply, so a genuine change in the same run is not missed, and the very
+    # next run - both sides on the new rev - resumes normal text diffing.
     t_reordered = False
-    if t_changed:
-        if Counter(_load_text_lines(old_dir, ignore_patterns)) == \
-           Counter(_load_text_lines(new_dir, ignore_patterns)):
-            t_reordered, t_changed = True, False
+    if _text_rev(old_dir) != _text_rev(new_dir):
+        t_changed, t_added, t_removed = False, 0, 0
+    else:
+        t_changed, t_added, t_removed, _ = text_diff(old_dir, new_dir, ignore_patterns)
+        # SAME LINES, NEW ORDER is not a content change. The line diff is
+        # positional, so a block that merely moved reads as removals plus
+        # additions - the homepage reported the same four AURIX part numbers
+        # cycling by one position, and the interactive-expansion pass returns
+        # its panels in whatever order they hydrate. Compare the line MULTISET:
+        # equal multisets mean nothing was added, removed or edited, only
+        # rearranged. Anything genuinely new, gone or reworded changes the
+        # counts and still flags. Duplication changes them too, so a block
+        # rendered twice is not mistaken for a move.
+        if t_changed:
+            if Counter(_load_text_lines(old_dir, ignore_patterns)) == \
+               Counter(_load_text_lines(new_dir, ignore_patterns)):
+                t_reordered, t_changed = True, False
     i_changed, i_added, i_removed = images_diff(old_dir, new_dir,
                                                 ignore_image_patterns)
     lib = library_diff(old_dir, new_dir)

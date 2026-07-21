@@ -43,6 +43,30 @@ def _extract_all():
     except Exception:
         raise Skip("playwright not installed")
 
+    # lines that exist ONLY inside the mega-menu flyout panels in this DOM
+    # (in the panels, and nowhere outside them) - used by the flyout-leak test
+    _FLYOUT_ONLY_JS = r"""
+    () => {
+      const SUB = '.secondary-navigation-submenu';
+      const grab = root => {
+        const s = new Set();
+        const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let n;
+        while (n = tw.nextNode()) {
+          const t = n.textContent.replace(/\s+/g, ' ').trim();
+          if (t.length > 15) {
+            const inSub = !!(n.parentElement && n.parentElement.closest(SUB));
+            if (root === document.body ? !inSub : true) s.add(t);
+          }
+        }
+        return s;
+      };
+      const outside = grab(document.body);
+      const inside = new Set();
+      document.querySelectorAll(SUB).forEach(p => grab(p).forEach(t => inside.add(t)));
+      return Array.from(inside).filter(t => !outside.has(t)).slice(0, 40);
+    }
+    """
     out = {}
     with sync_playwright() as pw:
         b = pw.chromium.launch()
@@ -53,7 +77,9 @@ def _extract_all():
             t1 = pg.evaluate(C.TEXT_JS)
             t2 = pg.evaluate(C.TEXT_JS)
             imgs = pg.evaluate(C.IMAGES_JS)
-            out[f.stem] = {"text1": t1, "text2": t2, "images": imgs}
+            fly = pg.evaluate(_FLYOUT_ONLY_JS)
+            out[f.stem] = {"text1": t1, "text2": t2, "images": imgs,
+                           "flyout_only": fly}
         b.close()
     _CACHE = out
     return out
@@ -75,6 +101,49 @@ def test_no_bare_language_names_in_text():
         hits = [l for l in lines if l.strip() in LANG]
         assert not hits, (f"{name}: language-switcher chrome leaked into text "
                           f"({len(hits)} line(s)) — header exclusion regressed")
+
+
+# --- live feeds (developer community + Latest news) are chrome, not text ----
+
+def test_no_live_feed_leaks_into_text():
+    # The #community forum widget and the .news-container "Latest news" feed
+    # both re-sort / re-date themselves between two captures of an unchanged
+    # page - they read as 48+ false "updates" in one run. Both are dropped from
+    # the text walk (the forum is tracked on its own as developer_community; the
+    # news feed is identical global chrome). These strings live INSIDE those
+    # containers, so none may reappear in the extracted text. The stable
+    # "Developer community" section-nav TAB label is deliberately NOT listed: it
+    # sits outside the widget, is identical every capture, and must stay.
+    FEED = ["Latest news", "View all news",              # .news-container
+            "Ask the community", "View all discussions"]  # #community feed
+    for name, r in _extract_all().items():
+        leaked = [m for m in FEED if m in r["text1"]]
+        assert not leaked, (f"{name}: live-feed text leaked into page text "
+                            f"{leaked} - the #community / .news-container "
+                            f"exclusion regressed")
+
+
+# --- mega-menu flyout is chrome, not page text ------------------------------
+
+def test_no_menu_flyout_leaks_into_text():
+    # The mega-menu flyout panels (.secondary-navigation-submenu) carry the
+    # same ~1,900-line global product taxonomy on every page, and it flaps
+    # between captures (hydration + a live rebrand) - 10 of one run's 62 false
+    # "updates" were nothing but this menu. The walk drops the panels; the
+    # top-bar labels and the breadcrumb live outside them and must stay.
+    # Markers are self-calibrating: lines that exist ONLY inside the panels in
+    # this fixture's DOM, so a body line that legitimately repeats menu text
+    # can never fail the test.
+    for name, r in _extract_all().items():
+        # exact-line match: a marker may legitimately occur as a SUBSTRING of a
+        # longer body line ("... Product Information ...") - only a line that
+        # IS the flyout text is a leak
+        lines = set(r["text1"].split("\n"))
+        leaked = [m for m in r["flyout_only"] if m in lines]
+        assert not leaked, (
+            f"{name}: {len(leaked)} mega-menu flyout line(s) leaked into page "
+            f"text, e.g. {leaked[:3]} - the .secondary-navigation-submenu "
+            f"exclusion regressed")
 
 
 # --- image filters ---------------------------------------------------------

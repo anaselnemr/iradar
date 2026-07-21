@@ -1,3 +1,5 @@
 1) find real path of ptp
 2) get all data from product table
 3) replan redirect and how to store
+4) play button positon for videos, can we make video playable, photo openable, document reader on the website?  Some video posters not loading after search
+

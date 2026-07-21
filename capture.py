@@ -242,6 +242,23 @@ BANNER_SELECTORS = ("#onetrust-consent-sdk, #usercentrics-root, #usercentrics-cm
 CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
                       ' .splide__list, [class*="carousel__track" i]')
 
+# Revision of what TEXT_JS counts as "page text". Stamped into every snapshot's
+# meta.json and read back by compare.py: when a baseline was captured under an
+# OLDER rev, the text signal is not comparable (we changed the definition), so
+# that one comparison skips the text diff and silently accepts the new text as
+# the baseline - no page flags a text "update" merely because the extractor
+# changed. Bump this whenever a TEXT_JS edit adds/removes what gets walked.
+#   1 - original (implicit; all pre-2026-07-21 snapshots have no stamp)
+#   2 - drop the #community forum feed and the .news-container "Latest news"
+#       feed (both live feeds, on 67% / 100% of pages, that re-sort or re-date
+#       between captures and never carry page-specific words)
+#   3 - drop the mega-menu flyout panels (.secondary-navigation-submenu): the
+#       same ~1,900-line global product taxonomy on every page, mid-rebrand
+#       (XELOC->AIROC) and hydration-flappy - one menu shuffle on Infineon's
+#       side read as an "update" on thousands of pages at once. The top-bar
+#       labels and the breadcrumb live outside these panels and are kept.
+TEXT_REV = 3
+
 TEXT_JS = r"""
 () => {
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME',
@@ -262,6 +279,34 @@ TEXT_JS = r"""
   // content, so drop it. Restricted to <header>: a document's language cell
   // ("English") lives in the body and must be kept.
   const LANGNAMES = new Set(['English', '中文', '日本語']);
+  // Two LIVE FEEDS are dropped from the page text for the same reason the
+  // language switcher is: they are not this page's content, and they re-sort
+  // or re-date themselves between two captures of an unchanged page.
+  //   #community      the developer-community forum widget - recent thread
+  //                   titles + usernames ("uTasker", "Member009527") + "solved"
+  //                   flags + "1 hour ago". Already tracked on its own as
+  //                   developer_community (SECTIONS_JS ~1247) and its avatars
+  //                   already dropped from the image inventory (IMAGES_JS
+  //                   ~1224); the text walk was the last place it leaked in.
+  //                   Present on ~67% of pages.
+  //   .news-container the global "Latest news" corporate press feed - dated
+  //                   headlines ("Infineon wins ...", "Jun 19, 2026"). Byte-for
+  //                   -byte identical on ~100% of pages, changing only by date.
+  //   .secondary-navigation-submenu  the mega-menu FLYOUT panels (one per
+  //                   top-bar tab) - the same ~1,900-line global product
+  //                   taxonomy on every page, which flaps between captures
+  //                   (partial hydration, and a live rebrand: XELOC->AIROC).
+  //                   Verified on the frozen fixtures: every churny flyout
+  //                   element (li.fourthlist, .colContainer3, .mobileViewTitle,
+  //                   li.staticnews, .labelText) sits inside these panels, and
+  //                   the top-bar labels + the body breadcrumb sit OUTSIDE, so
+  //                   they stay tracked. A real page edit cannot live only in
+  //                   a menu that is identical site-wide.
+  // None of these holds a word specific to the page it sits on, so nothing
+  // real is lost - only the churn that read as 58 false "updates" in one run.
+  // Removing one bumps TEXT_REV so existing baselines re-normalise silently.
+  const FEED = 'react-component#community, #community, .news-container, ' +
+               '.secondary-navigation-submenu';
   const walk = (node, sink) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent.replace(/\s+/g, ' ').trim();
@@ -275,6 +320,7 @@ TEXT_JS = r"""
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     if (SKIP.has(node.tagName)) return;
     if (node.matches && node.matches(LANG)) return;
+    if (node.matches && node.matches(FEED)) return;
     // Order WITHIN a slide is real content (title, then blurb) and is kept.
     // Only the order OF the slides is normalised, and nothing is dropped -
     // every line still appears exactly once.
@@ -2329,6 +2375,7 @@ async def capture_one(browser, url, out_dir):
             "title": title,
             "http_status": result["http_status"],
             "captured_at": datetime.now(timezone.utc).isoformat(),
+            "text_rev": TEXT_REV,
         }, indent=1), encoding="utf-8")
 
         result.update(status="ok", title=title,
