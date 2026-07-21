@@ -35,6 +35,16 @@
   {% if g.thumb %}
   <img class="bthumb" src="{{ g.thumb }}" alt="" loading="lazy"
        onerror="this.style.display='none'">
+  {% elif g.is_video and g.url and '/is/content/' in g.url %}
+  {#- News and on-page videos store no thumbnail of their own, so most video
+      rows showed only the play placeholder. Scene7 serves a poster frame for
+      a video at the same asset name under /is/image/ instead of /is/content/,
+      so derive the still here - nothing new is stored, the browser fetches it
+      from Infineon's CDN like any other picture. If a video has no poster the
+      image hides itself and the play placeholder shows as before. -#}
+  <img class="bthumb" src="{{ g.url|replace('/is/content/', '/is/image/') }}" alt="" loading="lazy"
+       onerror="this.style.display='none'; if(this.nextElementSibling)this.nextElementSibling.style.display='flex'">
+  <span class="thumbfall" style="display:none">{{ ticon('videos') }}</span>
   {% elif g.gated %}
   {#- a MyInfineon file: our server gets the login wall, not the document, so
       there was never going to be a preview. Say so with a lock rather than

@@ -255,7 +255,7 @@
   {# this row IS a redirect destination: a stale address 301'd here and the
      list was repointed to the page that actually answers #}
   <div class="notice" style="margin-top:10px">
-    <span class="badge b-redir">↪ redirect</span>
+    <span class="badge b-redir" title="Reached by a 301 redirect"><span style="display:inline-block; transform:scaleX(-1)">↪</span></span>
     Reached by a 301 redirect from
     <a href="{{ u.redirect_from }}" target="_blank" style="word-break:break-all">{{ u.redirect_from }}</a>.
     The list tracks this destination, not the old address.

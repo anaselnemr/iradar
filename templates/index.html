@@ -76,7 +76,10 @@
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <div class="muted" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
       <span>
-        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total">{{ state.total }}</span><span id="run-pct" class="runpct">{{ (100 * state.done // state.total) if state.total else 0 }}%</span>
+        {#- the total INCLUDES the pages held for the end-of-run double-check
+            (each owes one more capture), so the percentage is honest about the
+            work still ahead rather than jumping when the double-check starts -#}
+        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total" title="Includes one re-capture for every page held for the double-check">{{ state.total + (state.suspects or 0) }}</span><span id="run-pct" class="runpct">{{ (100 * state.done // (state.total + (state.suspects or 0))) if state.total else 0 }}%</span>
       </span>
       <span id="run-paused" style="display:none; color:#ea580c; font-weight:600">⏸ paused</span>
       <span id="run-stopping" style="display:none; color:#dc2626; font-weight:600">⏹ ending…</span>
@@ -315,7 +318,7 @@
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
         {% if settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %}<span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open">PIM</span>{% elif aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
         {% if u.redirect_from %}
-        <span class="badge b-redir" title="A listed address 301-redirected here, so the list now tracks the destination — not the stale link.&#10;Redirected from: {{ u.redirect_from }}">↪ redirect</span>
+        <span class="badge b-redir" title="A listed address 301-redirected here, so the list now tracks the destination — not the stale link.&#10;Redirected from: {{ u.redirect_from }}"><span style="display:inline-block; transform:scaleX(-1)">↪</span></span>
         {% endif %}
       </td>
       <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
@@ -717,15 +720,28 @@ async function poll() {
         const remaining = Math.max(0, dispTotal - dispDone);
         savedEl.textContent = confirmed; savedEl.style.color = '#ea580c';
         savedLbl.textContent = 'confirmed as real updates so far';
+        savedLbl.title = 'Captured a second time and compared: the update showed again, so it is real.';
         midEl.textContent = remaining; midEl.style.color = '#6b7280';
         midLbl.textContent = 'still to re-check';
+        midLbl.title = 'Held pages waiting for their second capture and compare.';
       } else {
-        // Stage 1: capturing every page; some are held for stage 2.
-        dispDone = s.done; dispTotal = s.total;
-        savedEl.textContent = s.saved != null ? s.saved : 0; savedEl.style.color = '#16a34a';
-        savedLbl.textContent = 'saved';
+        // Stage 1: checking every page; some get held for stage 2. The total
+        // INCLUDES one coming re-capture per held page, so the percentage is
+        // honest about the double-check work still owed - the denominator
+        // grows as pages are held instead of the bar jumping later.
+        dispDone = s.done;
+        dispTotal = s.total + (s.suspects != null ? s.suspects : 0);
+        // "saved" in the runner = settled and filed. Errors are broken out on
+        // their own, so what remains is pages that were captured AND compared:
+        // no update found, finished, never re-checked. Say exactly that.
+        const errs1 = s.errors != null ? s.errors : 0;
+        const noUpd = Math.max(0, (s.saved != null ? s.saved : 0) - errs1);
+        savedEl.textContent = noUpd; savedEl.style.color = '#16a34a';
+        savedLbl.textContent = 'no update (finished)';
+        savedLbl.title = 'Captured and already compared against the last capture — no update found. These pages are done and are not looked at again this run.';
         midEl.textContent = s.suspects != null ? s.suspects : 0; midEl.style.color = '#ea580c';
-        midLbl.textContent = 'will be double-checked';
+        midLbl.textContent = 'held to double-check';
+        midLbl.title = 'Looked updated on the first capture. Each is captured a second time at the end of the run, and only an update that shows again is confirmed.';
       }
       document.getElementById('run-done').textContent = dispDone;
       document.getElementById('run-total').textContent = dispTotal;
