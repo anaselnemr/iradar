@@ -1,0 +1,29 @@
+{
+ "url": "https://www.infineon.com/",
+ "text_lines": 2658,
+ "images": [
+  "https://assets.infineon.com/is/image/infineon/advantics-adb-pc-dc01-converter.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/automotive-ecostystem-summit-2026.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/coolgan-transistor-100v.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/inf-airoc-uwb-pg-vqfn-40-29-package.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/lowres-rasic-ctrx8188f-lf2bga-457-combi.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/lowres-ric70115-lcc-16-x-combi.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/moderncar.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/secora-id-key-s-usb-slj38dua-vqfn-28-901-combi-vb.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/sensors-key-visual-main-stage-banner.png?$IMG-1400%E2%80%8A-933-D$&qlt=55",
+  "https://assets.infineon.com/is/image/infineon/sensors-key-visual-main-stage-banner.png?$IMG-412%E2%80%8A-933-M$&qlt=55",
+  "https://assets.infineon.com/is/image/infineon/sensors-key-visual-main-stage-banner.png?$IMG-992%E2%80%8A-933-T$&qlt=55",
+  "https://assets.infineon.com/is/image/infineon/tiktoklaunch.png?$IMG-1400%E2%80%8A-933-D$&qlt=55",
+  "https://assets.infineon.com/is/image/infineon/tiktoklaunch.png?$IMG-412%E2%80%8A-933-M$&qlt=55",
+  "https://assets.infineon.com/is/image/infineon/tiktoklaunch.png?$IMG-992%E2%80%8A-933-T$&qlt=55",
+  "https://assets.infineon.com/is/image/infineon/woman-drinking-coffe-balcon.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/woman-looking-at-sky.png:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://www.infineon.com/assets/row/public/images/stage-banner/en-3-infineon-werkseroeffnung-2026-webbanner-1280x720px-en-72ppi.jpg?$IMG-1400%E2%80%8A-933-D$&qlt=55",
+  "https://www.infineon.com/assets/row/public/images/stage-banner/en-3-infineon-werkseroeffnung-2026-webbanner-1280x720px-en-72ppi.jpg?$IMG-412%E2%80%8A-933-M$&qlt=55",
+  "https://www.infineon.com/assets/row/public/images/stage-banner/en-3-infineon-werkseroeffnung-2026-webbanner-1280x720px-en-72ppi.jpg?$IMG-992%E2%80%8A-933-T$&qlt=55",
+  "https://www.infineon.com/assets/web/dummy-images/chip-dummy-default.svg",
+  "https://www.infineon.com/content/dam/ifx/Infineon_Logo_Inverted.svg",
+  "https://www.infineon.com/etc.clientlibs/ifx/clientlibs/clientlibs-iconpackage/resources/icons/spinner-48.svg",
+  "https://www.infineon.com/etc.clientlibs/ifx/components/common/mainnavigation/clientlibs/resources/logo.svg"
+ ]
+}

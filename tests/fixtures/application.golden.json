@@ -1,0 +1,17 @@
+{
+ "url": "https://www.infineon.com/applications/consumer-electronics",
+ "text_lines": 2695,
+ "images": [
+  "https://assets.infineon.com/is/image/infineon/mobile-service-robot-is-walking-with-colleagues.jpg:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/office-meeting-renewables.png:asset-1200-23x9?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/office-meeting-renewables.png:asset-680-3x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/office-meeting-renewables.png:asset-880-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/thumbnail-webinar-discreteigan.png:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/webinar-gan-thumbnail-modsim.png:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/webinar-gan-thumbnail-quality.png:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://assets.infineon.com/is/image/infineon/webinar-pcb-layout.png:asset-680-2x1?qlt=55,0&resMode=sharp2&op_usm=1.75,0.3,2,0",
+  "https://www.infineon.com/content/dam/ifx/Infineon_Logo_Inverted.svg",
+  "https://www.infineon.com/etc.clientlibs/ifx/clientlibs/clientlibs-iconpackage/resources/icons/spinner-48.svg",
+  "https://www.infineon.com/etc.clientlibs/ifx/components/common/mainnavigation/clientlibs/resources/logo.svg"
+ ]
+}

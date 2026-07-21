@@ -13,3 +13,4 @@ qa/*.jsonl
 qa/*.log
 
 cloudflared.exe
+tests/fixtures/*.html
