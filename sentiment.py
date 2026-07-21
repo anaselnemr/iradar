@@ -161,19 +161,41 @@ def parse_reddit(payload):
     return [m for m in out if m["url"] and m["title"]]
 
 
+# Brand names that mean something ELSE out in the world: XMC is also a PCIe
+# mezzanine standard (VITA 42), Calypso an orchid genus / music / a transit
+# standard, TriCore generic-sounding. A bare word-match is not enough for
+# these - the text must also carry one of the family's context words.
+_AMBIGUOUS_CTX = {
+    "xmc": ("infineon", "microcontroller", "mcu", "xmc1", "xmc4", "dave"),
+    "calypso": ("infineon", "smart card", "smartcard", "javacard", "nfc",
+                "transit"),
+    "tricore": ("infineon", "aurix", "mcu", "microcontroller"),
+}
+
+
 def _relevant(m, query):
     """Does the STORED text actually involve the searched product?
     Full-text APIs match words anywhere in a discussion, so a search for
     'infineon Smart card' returns threads whose stored title/body never says
     either - and unrelated chatter poisons a sentiment average far worse than
     a dropped borderline mention. Precision first: the distinctive token (or
-    'infineon', or the family phrase) must appear in what we keep."""
+    'infineon', or the family phrase) must appear AS A WORD in what we keep -
+    'Calypsoinae' (an orchid) must not pass as Calypso - and the ambiguous
+    brands additionally need a context word."""
     text = (m.get("title", "") + " " + m.get("body", "")).lower()
     toks = query.lower().split()
     if "infineon" in toks:
         rest = " ".join(t for t in toks if t != "infineon")
         return "infineon" in text or (rest and rest in text)
-    return any(t in text for t in toks)
+    for t in toks:
+        # left edge hard; right edge allows digits/symbols but not letters,
+        # so 'psoc6' and 'xmc4700' match while 'calypsoinae' does not
+        if not re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z])", text):
+            continue
+        ctx = _AMBIGUOUS_CTX.get(t)
+        if not ctx or any(c in text for c in ctx):
+            return True
+    return False
 
 
 # --- collectors -------------------------------------------------------------

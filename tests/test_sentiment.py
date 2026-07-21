@@ -103,3 +103,16 @@ def test_relevance_gate_keeps_on_topic_and_drops_noise():
     # the body counts too (HN comments carry the substance)
     assert sn._relevant({"title": "Ask HN: MCU picks?",
                          "body": "the AURIX toolchain is painful"}, "AURIX")
+
+
+def test_relevance_gate_word_boundaries_and_ambiguous_brands():
+    # substring traps: an orchid genus is not the Calypso smart-card family
+    assert not sn._relevant({"title": "Calypsoinae orchid germination", "body": ""}, "Calypso")
+    # ambiguous brands need context: XMC the PCIe mezzanine standard is not
+    # XMC the Infineon MCU family
+    assert not sn._relevant({"title": "XMC mezzanine module for 10 GbE", "body": ""}, "XMC")
+    assert sn._relevant({"title": "XMC4700 ADC jitter", "body": ""}, "XMC")
+    assert sn._relevant({"title": "XMC dev board", "body": "an infineon eval kit"}, "XMC")
+    assert sn._relevant({"title": "Calypso applet on a JavaCard", "body": ""}, "Calypso")
+    # model-number suffixes still count as the word (psoc6, xmc4700)
+    assert sn._relevant({"title": "psoc6 ble pairing", "body": ""}, "PSOC")
