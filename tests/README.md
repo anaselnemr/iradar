@@ -29,9 +29,32 @@ pass after.
 - **test_extractors.py** — runs the real `TEXT_JS` / `IMAGES_JS` against
   **frozen HTML fixtures** (offline). Encodes field fixes as invariants:
   extraction is deterministic on a fixed DOM; the header language switcher
-  never leaks into page text; tracking / community / no-image URLs never appear
-  as images; no line is duplicated absurdly (the filter-dropdown / mega-menu
-  bug). Skips cleanly if there are no fixtures or Playwright is absent.
+  never leaks into page text; the live feeds (developer-community forum,
+  "Latest news") and the mega-menu flyout panels never leak into page text;
+  tracking / community / no-image URLs never appear as images; no line is
+  duplicated absurdly. Skips cleanly if there are no fixtures or Playwright
+  is absent.
+- **test_sections.py** — runs the real `SECTIONS_JS` (the library extractor)
+  against the fixtures: deterministic, part pages yield their documents and
+  boards, application pages their subheadline and news, every item names
+  itself. A markup rename that blinds the extractor fails here first.
+- **test_dom_mutations.py** — the END-TO-END sight test: mutates the frozen
+  page DOM itself (edit a feature line, rename a document, wipe the documents
+  pane, edit the subheadline, remove an image), runs the full
+  extract-then-compare chain, and asserts the change is seen. A field the
+  extractor silently stopped reading fails here and nowhere else.
+- **test_battery.py** — the compare mutation battery on synthetic snapshots:
+  every class of edit that must flag (text/images/visual/videos/documents/
+  subheadline/price), every trap that must stay silent (reorder, stock tick,
+  lazy poster, ignored patterns, rev boundary), robustness (truncated
+  screenshot, corrupt/missing sections.json), and the settle rule (an
+  accepted mutant compares clean against itself).
+- **test_load_guard.py** — the section-load-failure guard: the "could not be
+  loaded" apology only counts when it is ADDED vs the baseline, so the
+  permanent pricing-box apology on part pages never trips it.
+- **test_assets.py** — the file-fingerprint logic that catches a document or
+  image republished at the SAME URL (validator diff rules, asset-URL
+  classification). Pure logic, no network.
 
 ## Fixtures
 
