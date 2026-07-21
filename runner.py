@@ -438,6 +438,64 @@ def _prune_snapshot(con, snap_row):
     con.execute("DELETE FROM snapshots WHERE id=?", (snap_row["id"],))
 
 
+def _mark_item(con, run_id, url_id, state, prev_snap_id=None, snap_id=None):
+    """Record a page's state within a run (queued -> suspect/done), so an
+    interrupted run can resume. Best-effort: a failure here must never sink the
+    run - it only costs the ability to resume THIS one page."""
+    try:
+        con.execute(
+            "INSERT INTO run_items(run_id, url_id, state, prev_snap_id, snap_id)"
+            " VALUES(?,?,?,?,?)"
+            " ON CONFLICT(run_id, url_id) DO UPDATE SET state=excluded.state,"
+            " prev_snap_id=COALESCE(excluded.prev_snap_id, run_items.prev_snap_id),"
+            " snap_id=COALESCE(excluded.snap_id, run_items.snap_id)",
+            (run_id, url_id, state, prev_snap_id, snap_id))
+    except Exception:
+        pass
+
+
+def _resumable_run(con):
+    """The most recent run that died mid-flight - unfinished, with items still
+    to do - or None. Only a FULL run is auto-resumed; a partial (specific-ids)
+    run is cheap to just re-issue, and telling them apart keeps resume simple."""
+    r = con.execute(
+        "SELECT * FROM runs WHERE finished IS NULL ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if not r:
+        return None
+    left = con.execute(
+        "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
+        (r["id"],)).fetchone()[0]
+    return r if left else None
+
+
+def _rebuild_suspects(con, run_id):
+    """Reconstruct the held-suspect queue of an interrupted run from run_items,
+    so its double-check resumes instead of being thrown away. A suspect whose
+    pending snapshot or baseline is gone cannot be rebuilt - its url_id is
+    returned to be re-captured cleanly instead."""
+    suspects, requeue = [], []
+    rows = con.execute(
+        "SELECT url_id, prev_snap_id, snap_id FROM run_items"
+        " WHERE run_id=? AND state='suspect'", (run_id,)).fetchall()
+    for it in rows:
+        row = con.execute("SELECT * FROM urls WHERE id=? AND active=1",
+                          (it["url_id"],)).fetchone()
+        prev = con.execute("SELECT * FROM snapshots WHERE id=?",
+                          (it["prev_snap_id"],)).fetchone() if it["prev_snap_id"] else None
+        new1 = con.execute("SELECT * FROM snapshots WHERE id=?",
+                          (it["snap_id"],)).fetchone() if it["snap_id"] else None
+        ok = (row and prev and new1 and new1["dir"]
+              and os.path.isdir(new1["dir"]) and prev["dir"]
+              and os.path.isdir(prev["dir"]))
+        if ok:
+            suspects.append({"row": row, "new1_id": new1["id"],
+                             "new1_dir": new1["dir"], "prev": prev, "res": None})
+        elif row is not None:
+            requeue.append(row["id"])
+    return suspects, requeue
+
+
 def run_check(kind="manual", url_ids=None):
     """Run a full check. Returns run summary dict, or None if already running."""
     if not RUN_LOCK.acquire(blocking=False):
@@ -466,21 +524,6 @@ def _run_check_inner(kind, url_ids):
     # that the next run diffs against.
     concurrency = max(1, int(settings.get("concurrency", 8)))
 
-    con = db.connect()
-    # Crash recovery: a 'pending' snapshot is a suspected change whose verify
-    # pass never ruled on it (server restarted/died mid-run). It must not
-    # linger - it is unverified, excluded from baseline lookups, and its
-    # change will be re-detected cleanly this run against the real baseline.
-    stale = con.execute("SELECT id, dir FROM snapshots"
-                        " WHERE status='pending'").fetchall()
-    for s in stale:
-        if s["dir"]:
-            shutil.rmtree(s["dir"], ignore_errors=True)
-        con.execute("DELETE FROM snapshots WHERE id=?", (s["id"],))
-    if stale:
-        con.commit()
-        print(f"[recovery] dropped {len(stale)} unverified snapshot(s) from"
-              " an interrupted run", flush=True)
     # Work the queue in NEED order, not id order: a page never captured has
     # no library at all (highest priority), a baseline page has only its first
     # capture, a failed page (blank/error) has no good current state - all of
@@ -490,33 +533,91 @@ def _run_check_inner(kind, url_ids):
                 " WHEN IFNULL(last_status,'') IN ('blank','error') THEN 1"
                 " WHEN IFNULL(last_status,'')='notlive' THEN 3"
                 " ELSE 2 END")
-    if url_ids:
-        marks = ",".join("?" * len(url_ids))
-        urls = con.execute(
-            f"SELECT * FROM urls WHERE active=1 AND id IN ({marks})"
-            f" ORDER BY {priority}, id", url_ids).fetchall()
-    else:
-        urls = con.execute(
-            f"SELECT * FROM urls WHERE active=1"
-            f" ORDER BY {priority}, id").fetchall()
-    con.close()
-
-    RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
-                     total=len(urls), done=0, saved=0, changed=0, errors=0,
-                     suspects=0, started=db.now_iso(), started_ts=time.time(),
-                     message="")
-    if not urls:
-        RUN_STATE["message"] = "No active URLs to check."
-        return {"total": 0, "ok": 0, "changed": 0, "errors": 0}
-
     ts_label = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     con = db.connect()
-    run_cur = con.execute(
-        "INSERT INTO runs(started, kind, total) VALUES(?, ?, ?)",
-        (RUN_STATE["started"], kind, len(urls)))
-    run_id = run_cur.lastrowid
-    con.commit()
+    suspects = []
+    is_resume = False
+    keep_pending = set()
+
+    # RESUME: if the last run died mid-flight, continue it instead of redoing
+    # its captured work. Only a full run (no explicit id list) is auto-resumed;
+    # a specific-ids run is cheap to just re-issue. Anything unexpected here
+    # leaves is_resume False, so the worst case is a normal fresh run.
+    resumable = _resumable_run(con) if not url_ids else None
+    if resumable is not None:
+        run_id = resumable["id"]
+        suspects, requeue = _rebuild_suspects(con, run_id)
+        keep_pending = {s["new1_id"] for s in suspects}
+        want = set(requeue) | {r["url_id"] for r in con.execute(
+            "SELECT url_id FROM run_items WHERE run_id=? AND state='queued'",
+            (run_id,)).fetchall()}
+        urls = []
+        if want:
+            marks = ",".join("?" * len(want))
+            urls = con.execute(
+                f"SELECT * FROM urls WHERE active=1 AND id IN ({marks})"
+                f" ORDER BY {priority}, id", list(want)).fetchall()
+        is_resume = True
+        print(f"[resume] continuing run {run_id}: {len(urls)} page(s) left to"
+              f" capture, {len(suspects)} suspect(s) to double-check", flush=True)
+
+    # Drop unverified 'pending' snapshots from an interrupted run - EXCEPT the
+    # ones being resumed. A pending snapshot is a suspected change whose verify
+    # never ran; a fresh run re-detects it, a resume keeps and finishes it.
+    stale = con.execute("SELECT id, dir FROM snapshots"
+                        " WHERE status='pending'").fetchall()
+    dropped = 0
+    for s in stale:
+        if s["id"] in keep_pending:
+            continue
+        if s["dir"]:
+            shutil.rmtree(s["dir"], ignore_errors=True)
+        con.execute("DELETE FROM snapshots WHERE id=?", (s["id"],))
+        dropped += 1
+    if dropped:
+        con.commit()
+        print(f"[recovery] dropped {dropped} unverified snapshot(s) from"
+              " an interrupted run", flush=True)
+
+    if not is_resume:
+        # Fresh run: build the full queue, create the run row, and record every
+        # page as 'queued' so an interruption can resume from exactly here.
+        if url_ids:
+            marks = ",".join("?" * len(url_ids))
+            urls = con.execute(
+                f"SELECT * FROM urls WHERE active=1 AND id IN ({marks})"
+                f" ORDER BY {priority}, id", url_ids).fetchall()
+        else:
+            urls = con.execute(
+                f"SELECT * FROM urls WHERE active=1"
+                f" ORDER BY {priority}, id").fetchall()
+        run_cur = con.execute(
+            "INSERT INTO runs(started, kind, total) VALUES(?, ?, ?)",
+            (db.now_iso(), kind, len(urls)))
+        run_id = run_cur.lastrowid
+        try:
+            con.executemany(
+                "INSERT OR IGNORE INTO run_items(run_id, url_id, state)"
+                " VALUES(?, ?, 'queued')", [(run_id, r["id"]) for r in urls])
+        except Exception:
+            pass
+        con.commit()
+
+    RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
+                     total=len(urls), done=0, saved=0, changed=0, errors=0,
+                     suspects=len(suspects), started=db.now_iso(),
+                     started_ts=time.time(), message="")
+    if not urls and not suspects:
+        RUN_STATE["message"] = "Nothing left to check."
+        try:
+            con.execute("UPDATE runs SET finished=? WHERE id=?",
+                        (db.now_iso(), run_id))
+            con.commit()
+        except Exception:
+            pass
+        con.close()
+        return {"total": 0, "ok": 0, "changed": 0, "errors": 0}
 
     # Save one page at a time: each capture is recorded, compared and COMMITTED
     # the instant it finishes, inside the progress callback. That callback runs
@@ -524,7 +625,8 @@ def _run_check_inner(kind, url_ids):
     # never touched concurrently, and an interruption loses only pages still
     # in flight - everything already captured is on disk and in the table.
     counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
-    suspects = []
+    # suspects is set up above (holds any rebuilt from a resumed run); the
+    # capture loop appends newly-found ones to it.
     url_by_addr = {row["url"]: row for row in urls}
     # A capture is matched back to its row by URL text. If that lookup ever
     # misses, the page is captured, written to disk, and then dropped on the
@@ -558,8 +660,18 @@ def _run_check_inner(kind, url_ids):
                   flush=True)
         if row is not None:
             before = dict(counters)
+            n_susp = len(suspects)
             try:
                 _handle_result(con, res, row, ts_label, counters, suspects)
+                # Record this page's outcome for resume: held for the double-
+                # check (with its baseline + capture, so the verify can be
+                # rebuilt), or settled and done. Committed with the page.
+                if len(suspects) > n_susp:
+                    sp = suspects[-1]
+                    _mark_item(con, run_id, row["id"], "suspect",
+                               sp["prev"]["id"], sp["new1_id"])
+                else:
+                    _mark_item(con, run_id, row["id"], "done")
                 con.commit()
             except Exception as exc:            # one bad row must not sink the run
                 try:
@@ -575,6 +687,11 @@ def _run_check_inner(kind, url_ids):
                 counters.clear()
                 counters.update(before)
                 counters["errors"] += 1
+                _mark_item(con, run_id, row["id"], "done")   # errored; not retried
+                try:
+                    con.commit()
+                except Exception:
+                    pass
                 print("row error:", res.get("url"), repr(exc), flush=True)
                 traceback.print_exc()
         RUN_STATE["changed"] = counters["changed"]
@@ -815,7 +932,11 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
     for s in suspects:
         row, prev = s["row"], s["prev"]
         url_id = row["id"]
-        vres = vby.get(row["url"]) or s["res"]
+        # A suspect rebuilt from an interrupted run has no stored capture result
+        # (res is None); if its re-capture is also missing, treat it as a failed
+        # verification and keep the already-detected snapshot rather than crash.
+        vres = vby.get(row["url"]) or s.get("res") \
+            or {"status": "error", "http_status": None}
         vdir = str(_snapshot_dir(url_id, ts2))
         now = db.now_iso()
 
@@ -891,6 +1012,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
         RUN_STATE["changed"] = counters["changed"]
         con.execute("UPDATE runs SET changed=? WHERE id=?",
                     (counters["changed"], run_id))
+        _mark_item(con, run_id, url_id, "done")   # this suspect is now resolved
         con.commit()
 
 

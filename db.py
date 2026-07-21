@@ -107,6 +107,22 @@ def init_db():
         changed INTEGER DEFAULT 0,
         errors INTEGER DEFAULT 0
     );
+    -- per-page state within a run, so an interrupted run resumes instead of
+    -- redoing captured work. Each row moves queued -> done (settled: saved,
+    -- unchanged, error) or queued -> suspect (held for the double-check) ->
+    -- done. If the process dies mid-run, the next start reads these: pages
+    -- already 'done' are skipped, 'suspect' pages resume their verify, and only
+    -- 'queued' pages are captured. prev_snap_id / snap_id let a held page's
+    -- verify be rebuilt without the in-memory suspect list.
+    CREATE TABLE IF NOT EXISTS run_items(
+        run_id INTEGER NOT NULL,
+        url_id INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'queued',   -- queued | suspect | done
+        prev_snap_id INTEGER,                   -- baseline, for a held suspect
+        snap_id INTEGER,                        -- the (pending) capture
+        PRIMARY KEY (run_id, url_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_items_state ON run_items(run_id, state);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
     -- every AUTOMATIC level change, so hierarchy assignments are auditable:
     -- the user can see exactly what moved, when, and why - and that nothing
