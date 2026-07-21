@@ -5,12 +5,14 @@
   <h2 style="margin-top:0">What the world says</h2>
   <p class="muted" style="max-width:78ch">
     Mentions of the watched product families across StackExchange
-    (electronics + StackOverflow), Hacker News, Reddit, Infineon's own
-    developer community (from the captured pages), and YouTube when a key is
-    set. {{ total }} mention(s) stored{% if unscored %}, {{ unscored }} not
-    yet scored{% endif %}.
+    (electronics + StackOverflow), Hacker News, Infineon's own developer
+    community (from the captured pages), plus Reddit and YouTube when their
+    keys are set. {{ total }} mention(s) stored{% if unscored %},
+    {{ unscored }} not yet scored{% endif %}.
     {% if not has_llm_key %}<br>Scoring needs <code>ANTHROPIC_API_KEY</code>
-    in the environment — everything is collected and browsable without it.{% endif %}
+    in the environment — everything is collected and browsable without it.
+    Reddit needs <code>REDDIT_CLIENT_ID</code>+<code>REDDIT_SECRET</code>,
+    YouTube <code>YT_API_KEY</code>.{% endif %}
   </p>
 
   {% if sstate.running %}

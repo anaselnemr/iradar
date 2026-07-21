@@ -85,3 +85,21 @@ def test_parsers_survive_garbage():
     assert sn.parse_stackexchange(None, "x") == []
     assert sn.parse_hn({"hits": [{}]}) == []
     assert sn.parse_reddit({"data": {"children": [{"data": {}}]}}) == []
+
+
+# --- the relevance gate -----------------------------------------------------
+
+def test_relevance_gate_keeps_on_topic_and_drops_noise():
+    # distinctive-token query: the token must appear in the stored text
+    assert sn._relevant({"title": "PSOC 6 deep sleep current", "body": ""}, "PSOC")
+    assert not sn._relevant({"title": "The J1 Forth CPU (2010)", "body": ""}, "PSOC")
+    # 'infineon X' query: 'infineon' OR the family phrase must appear -
+    # full-text APIs match discussion bodies we do not store, so a generic
+    # title with neither is noise for a sentiment average
+    q = "infineon Smart card"
+    assert sn._relevant({"title": "Infineon RSA key generation issue", "body": ""}, q)
+    assert sn._relevant({"title": "Reading a smart card with a PN532", "body": ""}, q)
+    assert not sn._relevant({"title": "Experiences building an OS in Rust", "body": ""}, q)
+    # the body counts too (HN comments carry the substance)
+    assert sn._relevant({"title": "Ask HN: MCU picks?",
+                         "body": "the AURIX toolchain is painful"}, "AURIX")

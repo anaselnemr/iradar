@@ -11,8 +11,9 @@ stays browsable unscored until then.
 Sources (all keyless unless noted):
   stackexchange  api.stackexchange.com - electronics.SE + stackoverflow
   hn             hn.algolia.com - stories and comments
-  reddit         reddit's public search JSON (gentle pacing, proper UA;
-                 an official OAuth app can replace this later)
+  reddit         official OAuth API - needs REDDIT_CLIENT_ID/REDDIT_SECRET in
+                 the environment (the public JSON endpoint answers 403 from
+                 here; verified 2026-07-21); skipped without them
   community      Infineon's own developer-community threads, read from the
                  flags.developer_community.threads list each capture stores
   youtube        needs YT_API_KEY in the environment - skipped without it
@@ -160,6 +161,21 @@ def parse_reddit(payload):
     return [m for m in out if m["url"] and m["title"]]
 
 
+def _relevant(m, query):
+    """Does the STORED text actually involve the searched product?
+    Full-text APIs match words anywhere in a discussion, so a search for
+    'infineon Smart card' returns threads whose stored title/body never says
+    either - and unrelated chatter poisons a sentiment average far worse than
+    a dropped borderline mention. Precision first: the distinctive token (or
+    'infineon', or the family phrase) must appear in what we keep."""
+    text = (m.get("title", "") + " " + m.get("body", "")).lower()
+    toks = query.lower().split()
+    if "infineon" in toks:
+        rest = " ".join(t for t in toks if t != "infineon")
+        return "infineon" in text or (rest and rest in text)
+    return any(t in text for t in toks)
+
+
 # --- collectors -------------------------------------------------------------
 
 def collect_stackexchange(query):
@@ -173,27 +189,62 @@ def collect_stackexchange(query):
         except Exception:
             pass
         time.sleep(0.4)
-    return out
+    return [m for m in out if _relevant(m, query)]
 
 
 def collect_hn(query):
     u = ("https://hn.algolia.com/api/v1/search?hitsPerPage=30&query="
          + urllib.parse.quote(query))
     try:
-        return parse_hn(_get_json(u))
+        return [m for m in parse_hn(_get_json(u)) if _relevant(m, query)]
     except Exception:
         return []
 
 
-def collect_reddit(query):
-    u = ("https://www.reddit.com/search.json?limit=25&sort=new&t=year&q="
-         + urllib.parse.quote(query))
+_REDDIT_TOKEN = {"value": "", "until": 0.0}
+
+
+def _reddit_token():
+    cid = os.environ.get("REDDIT_CLIENT_ID", "")
+    sec = os.environ.get("REDDIT_SECRET", "")
+    if not cid or not sec:
+        return ""
+    if _REDDIT_TOKEN["value"] and time.time() < _REDDIT_TOKEN["until"]:
+        return _REDDIT_TOKEN["value"]
+    import base64
+    req = urllib.request.Request(
+        "https://www.reddit.com/api/v1/access_token", method="POST",
+        data=b"grant_type=client_credentials",
+        headers={"User-Agent": UA,
+                 "Authorization": "Basic " + base64.b64encode(
+                     f"{cid}:{sec}".encode()).decode()})
     try:
-        res = parse_reddit(_get_json(u))
+        with urllib.request.urlopen(req, timeout=15) as r:
+            tok = json.loads(r.read())
+        _REDDIT_TOKEN.update(value=tok.get("access_token", ""),
+                             until=time.time() + int(tok.get("expires_in", 0)) - 60)
+        return _REDDIT_TOKEN["value"]
+    except Exception:
+        return ""
+
+
+def collect_reddit(query):
+    """Official OAuth API only: the public search.json answers 403 from this
+    network. Without REDDIT_CLIENT_ID/REDDIT_SECRET this source is skipped."""
+    tok = _reddit_token()
+    if not tok:
+        return []
+    u = ("https://oauth.reddit.com/search?limit=25&sort=new&t=year&q="
+         + urllib.parse.quote(query))
+    req = urllib.request.Request(u, headers={"User-Agent": UA,
+                                             "Authorization": "Bearer " + tok})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            res = parse_reddit(json.loads(r.read()))
     except Exception:
         res = []
-    time.sleep(2.0)          # the public endpoint wants a gentle pace
-    return res
+    time.sleep(1.0)
+    return [m for m in res if _relevant(m, query)]
 
 
 def collect_community():
@@ -259,7 +310,7 @@ def collect_youtube(query):
             "posted": (sn.get("publishedAt") or "")[:19],
             "extra": "youtube",
         })
-    return [m for m in out if m["url"] and m["title"]]
+    return [m for m in out if m["url"] and m["title"] and _relevant(m, query)]
 
 
 # --- storage ----------------------------------------------------------------
