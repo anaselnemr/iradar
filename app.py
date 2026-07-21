@@ -1148,7 +1148,15 @@ def index():
         facets = _dash_facets(con2, q, statuses, sel_types, attrs)
     finally:
         con2.close()
+    con3 = db.connect()
+    try:
+        asset_open = con3.execute(
+            "SELECT COUNT(*) FROM asset_changes WHERE reviewed=0"
+        ).fetchone()[0]
+    finally:
+        con3.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
+                           asset_open=asset_open,
                            facets=facets,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
@@ -2411,6 +2419,67 @@ def change_resolve(change_id):
     con.close()
     nxt = request.form.get("next") or url_for("index")
     return redirect(nxt)
+
+
+# ---- File updates (asset fingerprints) -------------------------------------
+# A datasheet or image republished at the SAME address is invisible to the
+# page compare (no URL changed, no text moved). asset_watch stores each file's
+# server validators after every full run; when one moves, it lands here.
+
+@app.route("/assets")
+def assets_page():
+    import asset_watch
+    con = db.connect()
+    rows = con.execute(
+        "SELECT * FROM asset_changes WHERE reviewed=0"
+        " ORDER BY ts DESC, id DESC LIMIT 500").fetchall()
+    pages = {}
+    for r in rows:
+        ps = con.execute(
+            "SELECT DISTINCT u.id,"
+            " COALESCE(NULLIF(u.title_override,''), NULLIF(u.page_title,''),"
+            " u.url) t FROM items i JOIN urls u ON u.id=i.url_id"
+            " WHERE i.item_url=? LIMIT 6", (r["url"],)).fetchall()
+        pages[r["id"]] = ps
+    seeded = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+    reviewed_n = con.execute(
+        "SELECT COUNT(*) FROM asset_changes WHERE reviewed=1").fetchone()[0]
+    con.close()
+    return render_template("assets.html", rows=rows, pages=pages,
+                           seeded=seeded, reviewed_n=reviewed_n,
+                           astate=asset_watch.ASSET_STATE)
+
+
+@app.route("/assets/review", methods=["POST"])
+def assets_review():
+    ids = request.form.getlist("id")
+    con = db.connect()
+    if request.form.get("all"):
+        con.execute("UPDATE asset_changes SET reviewed=1 WHERE reviewed=0")
+        flash("All file updates marked as reviewed.")
+    elif ids:
+        marks = ",".join("?" * len(ids))
+        con.execute(
+            f"UPDATE asset_changes SET reviewed=1 WHERE id IN ({marks})", ids)
+        flash(f"{len(ids)} file update(s) marked as reviewed.")
+    con.commit()
+    con.close()
+    return redirect(url_for("assets_page"))
+
+
+@app.route("/assets/run", methods=["POST"])
+def assets_run():
+    import asset_watch
+    if runner.RUN_STATE.get("running"):
+        flash("A page check is running — the file check starts by itself when "
+              "it finishes.")
+    elif asset_watch.run_in_background():
+        flash("Checking all referenced files (headers only, no downloads) — "
+              "first pass records each file's fingerprint, later passes "
+              "report the ones that changed.")
+    else:
+        flash("The file check is already running.")
+    return redirect(url_for("assets_page"))
 
 
 @app.route("/snapshot/<int:snap_id>/text")

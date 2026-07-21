@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}File updates — InfineonWatch{% endblock %}
+{% block content %}
+<div class="card" style="max-width:1060px; margin-left:auto; margin-right:auto">
+  <h2 style="margin-top:0">File updates</h2>
+  <p class="muted" style="max-width:74ch">
+    Files (datasheets, images, videos) whose bytes changed <b>behind an
+    unchanged address</b>. The page watch cannot see these — no page text or
+    address moved — so after every full run each referenced file's server
+    fingerprint (ETag / Last-Modified / size) is checked with a header-only
+    request. {{ seeded }} file(s) are fingerprinted so far{% if reviewed_n %},
+    {{ reviewed_n }} update(s) already reviewed{% endif %}.
+  </p>
+
+  {% if astate.running %}
+  <p><b>Checking now…</b> {{ astate.done }}/{{ astate.total }} files,
+     {{ astate.changed }} changed so far. Reload to update.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('assets_run') }}" style="margin:10px 0">
+    <button class="btn" type="submit">Check files now</button>
+    <span class="muted" style="margin-left:8px">headers only — nothing is downloaded</span>
+  </form>
+  {% endif %}
+
+  {% if rows %}
+  <form method="post" action="{{ url_for('assets_review') }}">
+  <table class="tbl" style="width:100%">
+    <tr>
+      <th style="width:26px"></th>
+      <th>When</th><th>Kind</th><th>File</th><th>What moved</th><th>Used on</th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td><input type="checkbox" name="id" value="{{ r.id }}"></td>
+      <td style="white-space:nowrap">{{ r.ts[:16].replace('T',' ') }}</td>
+      <td>{{ r.kind or 'file' }}</td>
+      <td style="max-width:380px; overflow-wrap:anywhere">
+        <a href="{{ r.url }}" target="_blank">{{ r.url.rsplit('/',1)[-1] or r.url }}</a>
+      </td>
+      <td class="muted" style="font-size:12px">
+        {% if r.old_length and r.new_length and r.old_length != r.new_length %}
+          size {{ r.old_length }} → {{ r.new_length }}<br>
+        {% endif %}
+        {% if r.old_etag and r.new_etag %}fingerprint {{ r.old_etag[:10] }}… → {{ r.new_etag[:10] }}…<br>{% endif %}
+        {% if r.old_modified and r.new_modified %}{{ r.old_modified[:22] }} → {{ r.new_modified[:22] }}{% endif %}
+      </td>
+      <td style="font-size:13px">
+        {% for p in pages.get(r.id, []) %}
+          <a href="{{ url_for('url_detail', url_id=p.id) }}">{{ p.t | clean_title if p.t else p.id }}</a>{% if not loop.last %}, {% endif %}
+        {% else %}<span class="muted">—</span>{% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="margin-top:12px; display:flex; gap:10px">
+    <button class="btn" type="submit">Mark selected as reviewed</button>
+    <button class="btn btn-ghost" type="submit" name="all" value="1">Mark all as reviewed</button>
+  </div>
+  </form>
+  {% else %}
+  <p class="muted">No unreviewed file updates. New ones appear after a run
+     (or "Check files now") finds a fingerprint that moved.</p>
+  {% endif %}
+</div>
+{% endblock %}

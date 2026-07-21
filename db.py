@@ -123,6 +123,31 @@ def init_db():
         PRIMARY KEY (run_id, url_id)
     );
     CREATE INDEX IF NOT EXISTS idx_run_items_state ON run_items(run_id, state);
+    -- Asset fingerprints: a document or image republished at the SAME URL is
+    -- invisible to the page watch (the URL set did not change). A HEAD pass
+    -- after each run stores each file's server validators; when they move,
+    -- that asset's bytes changed even though no page looked different.
+    CREATE TABLE IF NOT EXISTS assets(
+        url TEXT PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT '',          -- image | document
+        etag TEXT NOT NULL DEFAULT '',
+        last_modified TEXT NOT NULL DEFAULT '',
+        content_length INTEGER,
+        http_status INTEGER,
+        first_seen TEXT NOT NULL DEFAULT '',
+        last_checked TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS asset_changes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT '',
+        ts TEXT NOT NULL,
+        old_etag TEXT NOT NULL DEFAULT '',  new_etag TEXT NOT NULL DEFAULT '',
+        old_modified TEXT NOT NULL DEFAULT '', new_modified TEXT NOT NULL DEFAULT '',
+        old_length INTEGER, new_length INTEGER,
+        reviewed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_asset_changes_rev ON asset_changes(reviewed, ts);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
     -- every AUTOMATIC level change, so hierarchy assignments are auditable:
     -- the user can see exactly what moved, when, and why - and that nothing
