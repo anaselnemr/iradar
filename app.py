@@ -2485,6 +2485,65 @@ def snapshot_thumb(snap_id):
     return send_file(thumb, mimetype="image/jpeg")
 
 
+# Item-image thumbnails: a video poster, a related-product picture or a content
+# image is otherwise loaded full-size from Infineon's CDN on every page view.
+# This fetches it ONCE, shrinks it to a small JPEG and caches it under a hash of
+# the URL, so previews come off local disk. The full-size CDN image still backs
+# the click-through - this is only the preview. Restricted to Infineon hosts (no
+# fetching arbitrary URLs), and anything we cannot raster (SVG, a fetch error)
+# 404s so the <img>'s onerror falls back to the CDN URL.
+_THUMB_HOSTS = ("https://assets.infineon.com/", "https://www.infineon.com/")
+_THUMB_RASTER_RE = re.compile(r"\.(png|jpe?g|webp|gif|bmp)(\?|$)|/is/image/", re.I)
+
+
+def imgthumb(url):
+    """Template helper: the local-thumbnail URL for an Infineon RASTER image,
+    else the URL unchanged (doc previews, SVGs and anything off-host pass
+    through so they are not sent on a pointless round-trip)."""
+    if (url and url.startswith(_THUMB_HOSTS)
+            and _THUMB_RASTER_RE.search(url)
+            and ".svg" not in url.lower()):
+        return url_for("img_thumb", u=url)
+    return url or ""
+
+
+app.jinja_env.globals["imgthumb"] = imgthumb
+
+
+@app.route("/imgthumb")
+def img_thumb():
+    url = request.args.get("u", "")
+    if not url.startswith(_THUMB_HOSTS):
+        abort(404)
+    cache = db.DATA_DIR / "imgthumbs"
+    cache.mkdir(exist_ok=True)
+    key = hashlib.sha1(url.encode("utf-8")).hexdigest()[:24]
+    out = cache / (key + ".jpg")
+    fail = cache / (key + ".x")          # negative-cache: could not thumbnail
+    if out.exists():
+        return send_file(out, mimetype="image/jpeg")
+    if fail.exists():
+        abort(404)
+    try:
+        data = _fetch_bytes(url, cap=15_000_000)
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        # 480px covers the largest preview (the item page ~460px) while still
+        # being a small file; search cards use it far smaller
+        im.thumbnail((480, 480), Image.Resampling.LANCZOS)
+        # flatten any transparency onto white so the JPEG reads right
+        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+            bg = Image.new("RGB", im.size, "#ffffff")
+            rgba = im.convert("RGBA")
+            bg.paste(rgba, mask=rgba.split()[-1])
+            im = bg
+        im.convert("RGB").save(out, "JPEG", quality=62, optimize=True)
+    except Exception:
+        fail.touch()
+        abort(404)
+    return send_file(out, mimetype="image/jpeg")
+
+
 @app.route("/change/<int:change_id>/visualdiff")
 def change_visualdiff(change_id):
     con = db.connect()

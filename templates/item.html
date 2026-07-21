@@ -40,9 +40,10 @@
             button centred on the anchor - visibly right of the video. -#}
         <a href="{{ item.url }}" target="_blank" title="Open the video"
            style="position:relative; display:block; line-height:0; width:min(460px,100%)">
-          <img src="{{ item.url|replace('/is/content/', '/is/image/') }}"
+          {% set vpost = item.url|replace('/is/content/', '/is/image/') %}
+          <img src="{{ imgthumb(vpost) if imgthumb is defined else vpost }}" data-full="{{ vpost }}"
                alt="{{ item.title }}" loading="lazy"
-               onerror="this.closest('.vidprev').style.display='none'"
+               onerror="if(this.dataset.full && this.src!==this.dataset.full){this.src=this.dataset.full}else{this.closest('.vidprev').style.display='none'}"
                style="width:100%; height:auto; border:1px solid var(--line); border-radius:10px; background:#000; display:block">
           <span style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:56px; height:56px; box-sizing:border-box; border-radius:50%; background:rgba(0,0,0,.55); color:#fff; display:flex; align-items:center; justify-content:center; font-size:20px; padding-left:4px; pointer-events:none">&#9654;</span>
         </a>
@@ -50,7 +51,8 @@
     {% endif %}
     {% if item.category == 'partners' and item.img %}
       <div style="margin:14px 0 4px">
-        <img src="{{ item.img }}" alt="{{ item.title }}" loading="lazy"
+        <img src="{{ imgthumb(item.img) if imgthumb is defined else item.img }}" data-full="{{ item.img }}" alt="{{ item.title }}" loading="lazy"
+             onerror="if(this.dataset.full && this.src!==this.dataset.full){this.src=this.dataset.full}else{this.style.display='none'}"
              style="max-width:min(320px,100%); max-height:160px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:10px">
       </div>
     {% endif %}
@@ -104,7 +106,8 @@
     {% if item.category == 'images' and item.url %}
       <div style="margin:14px 0 4px">
         <a href="{{ item.url }}" target="_blank" title="Open the full-size image">
-          <img src="{{ item.url }}" alt="{{ item.title }}" loading="lazy"
+          <img src="{{ imgthumb(item.url) if imgthumb is defined else item.url }}" data-full="{{ item.url }}" alt="{{ item.title }}" loading="lazy"
+               onerror="if(this.dataset.full && this.src!==this.dataset.full){this.src=this.dataset.full}else{this.style.display='none'}"
                style="max-width:min(460px,100%); max-height:300px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:6px"></a>
       </div>
       {% if 'missing-product-images' in item.url %}
