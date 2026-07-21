@@ -1153,8 +1153,10 @@ def index():
         asset_open = con3.execute(
             "SELECT COUNT(*) FROM asset_changes WHERE reviewed=0"
         ).fetchone()[0]
+        # the Mentions card only exists while the sentiment layer is ON
         mention_total = con3.execute(
-            "SELECT COUNT(*) FROM mentions").fetchone()[0]
+            "SELECT COUNT(*) FROM mentions").fetchone()[0] \
+            if _sentiment_on() else 0
     finally:
         con3.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
@@ -2485,6 +2487,14 @@ def assets_run():
 
 
 # ---- Sentiment (what the world says about the products) --------------------
+# PARKED for now on Anas's call (2026-07-21): the code stays, but collection
+# and scoring are hard-gated behind SENTIMENT=on in the environment so nothing
+# sentiment-related can run - even by accident - until it is wanted. The page
+# stays viewable (read-only) and says so.
+
+def _sentiment_on():
+    return os.environ.get("SENTIMENT", "").lower() in ("1", "on", "true", "yes")
+
 
 @app.route("/sentiment")
 def sentiment_page():
@@ -2516,18 +2526,21 @@ def sentiment_page():
     unscored = con.execute(
         "SELECT COUNT(*) FROM mentions WHERE score IS NULL").fetchone()[0]
     con.close()
-    import os as _os
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
                            total=total, unscored=unscored, sel_entity=ent,
                            sel_source=src, sstate=sn.SENT_STATE,
-                           has_llm_key=bool(_os.environ.get("ANTHROPIC_API_KEY")),
-                           has_yt_key=bool(_os.environ.get("YT_API_KEY")))
+                           enabled=_sentiment_on(),
+                           has_llm_key=bool(os.environ.get("ANTHROPIC_API_KEY")),
+                           has_yt_key=bool(os.environ.get("YT_API_KEY")))
 
 
 @app.route("/sentiment/collect", methods=["POST"])
 def sentiment_collect():
     import sentiment as sn
-    if runner.RUN_STATE.get("running"):
+    if not _sentiment_on():
+        flash("Sentiment is switched off for now — start the app with "
+              "SENTIMENT=on to enable collecting.")
+    elif runner.RUN_STATE.get("running"):
         flash("A page check is running — collect mentions after it finishes "
               "(they share the network).")
     elif sn.run_collect_background():
@@ -2541,6 +2554,10 @@ def sentiment_collect():
 @app.route("/sentiment/score", methods=["POST"])
 def sentiment_score():
     import sentiment as sn
+    if not _sentiment_on():
+        flash("Sentiment is switched off for now — start the app with "
+              "SENTIMENT=on to enable scoring.")
+        return redirect(url_for("sentiment_page"))
     n = sn.score_pending()
     if n < 0:
         flash("No ANTHROPIC_API_KEY configured — set it in the environment "

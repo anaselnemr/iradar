@@ -15,7 +15,13 @@
     YouTube <code>YT_API_KEY</code>.{% endif %}
   </p>
 
-  {% if sstate.running %}
+  {% if not enabled %}
+  <p style="border:1px dashed var(--line); border-radius:10px; padding:10px 14px; max-width:64ch">
+    <b>Switched off for now.</b> Nothing is collected or scored until the app
+    is started with <code>SENTIMENT=on</code> in the environment — the page
+    watch runs exactly as before, unaffected.
+  </p>
+  {% elif sstate.running %}
   <p><b>Collecting…</b> {{ sstate.message }} ({{ sstate.done }}/{{ sstate.total }},
      {{ sstate.found }} seen, {{ sstate.new }} new). Reload to update.</p>
   {% else %}
