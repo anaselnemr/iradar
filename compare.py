@@ -199,8 +199,14 @@ def visual_diff(old_dir, new_dir, change_dir=None):
     b_path = Path(new_dir) / "shot.png"
     if not a_path.exists() or not b_path.exists():
         return 0.0, 0, 0
-    a = Image.open(a_path).convert("RGB")
-    b = Image.open(b_path).convert("RGB")
+    # A truncated screenshot (capture killed mid-write, disk full) must not
+    # crash the whole comparison - it took the text/image/library signals down
+    # with it. Degrade to "no visual signal"; the other three still run.
+    try:
+        a = Image.open(a_path).convert("RGB")
+        b = Image.open(b_path).convert("RGB")
+    except Exception:
+        return 0.0, 0, 0
     w = min(a.width, b.width)
     h = min(a.height, b.height)
     height_delta = abs(a.height - b.height)

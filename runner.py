@@ -14,6 +14,7 @@ import shutil
 import threading
 import time
 import traceback
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -733,11 +734,47 @@ def _run_check_inner(kind, url_ids):
     con.commit()
     con.close()
 
+    # After a FULL run, fingerprint every referenced asset file in the
+    # background (HEAD only, no downloads): a datasheet or image republished
+    # at the SAME URL is invisible to the page compare - the validators are
+    # the only signal it changed. Partial runs skip it (a 3-page manual check
+    # should not fire 14k HEAD requests), as does an early stop.
+    if not url_ids and not stopped:
+        try:
+            import asset_watch
+            asset_watch.run_in_background()
+        except Exception as exc:      # never let the watcher break a run
+            print(f"[assets] skipped: {exc}", flush=True)
+
     RUN_STATE.update(changed=changed, errors=errors, last_finished=db.now_iso(),
                      message=f"stopped early - {ok + errors} of {len(urls)} captured"
                              if stopped else "finished")
     return {"total": len(urls), "ok": ok, "changed": changed, "errors": errors,
             "stopped": stopped}
+
+
+# A section that fails to render prints an apology pane instead of its items
+# ("Content could not be loaded" / "Unfortunately, we were unable to load the
+# content for this section") - and run 124 recorded five such renders as the
+# page's state, each reading as a huge "items removed" update, with the
+# mirror-image "items returned" update on the next run. The apology's mere
+# PRESENCE means nothing: the pricing box on most part pages shows it
+# permanently (~75% of snapshots carry it). The failure signature is the
+# sentence being ADDED relative to the baseline - a section that rendered last
+# time answered with an apology this time. That capture is a broken render,
+# not the page's state, and must never become a baseline or a suspect.
+_LOAD_FAIL_RE = re.compile(
+    r"content could not be loaded|unable to load the content", re.I)
+
+
+def _load_failure_added(prev_dir, new_dir, settings=None):
+    """True when the new capture ADDED a section load-failure apology that the
+    baseline does not have (count-aware: pricing-box apology on both sides
+    stays invisible; a second apology appearing still trips)."""
+    ig = ((settings or {}).get("ignore_patterns") or "").splitlines()
+    old = Counter(cmp._load_text_lines(prev_dir, ig))
+    new = Counter(cmp._load_text_lines(new_dir, ig))
+    return any(_LOAD_FAIL_RE.search(l) for l in (new - old))
 
 
 def _handle_result(con, res, row, ts_label, counters, suspects):
@@ -877,6 +914,22 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
                   flush=True)
             return
 
+    # A capture where a section's items got replaced by the "could not be
+    # loaded" apology is a FAILED render, not a suspected update: keep the
+    # good baseline, report an error so it is loud, retry next run.
+    if result["any_changed"] and not dead \
+            and _load_failure_added(prev["dir"], snap_dir, db.get_settings()):
+        con.execute("UPDATE urls SET last_checked=?, last_status='error'"
+                    " WHERE id=?", (now, url_id))
+        shutil.rmtree(snap_dir, ignore_errors=True)
+        con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
+        counters["errors"] += 1
+        counters["saved"] += 1
+        print(f"[guard] {row['url']}: a section answered 'could not be"
+              " loaded' (was fine in the baseline); broken render dropped,"
+              " baseline kept", flush=True)
+        return
+
     if result["any_changed"]:
         # Don't flag yet: late-loading widgets can make a page LOOK different
         # once. Re-capture at the end and flag only if the change persists
@@ -940,10 +993,14 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
         vdir = str(_snapshot_dir(url_id, ts2))
         now = db.now_iso()
 
-        if not recapture or vres["status"] != "ok":
-            # Verification capture failed - keep the original detection rather
-            # than risk missing a real change. The kept snapshot leaves limbo:
-            # it is now this page's baseline-to-be.
+        if not recapture or vres["status"] != "ok" \
+                or _load_failure_added(prev["dir"], vdir, settings_now):
+            # Verification capture failed - or rendered a section as the
+            # "could not be loaded" apology, which is the same failure wearing
+            # a 200. Keep the original detection rather than risk missing a
+            # real change (the first capture cannot carry the apology: the
+            # first-pass guard never lets one become a suspect). The kept
+            # snapshot leaves limbo: it is now this page's baseline-to-be.
             shutil.rmtree(vdir, ignore_errors=True)
             con.execute("UPDATE snapshots SET status='ok' WHERE id=?",
                         (s["new1_id"],))

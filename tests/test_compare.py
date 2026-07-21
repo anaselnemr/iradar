@@ -179,6 +179,24 @@ def test_non_text_signal_still_fires_across_rev():
     assert r["any_changed"] is True, "real change hidden during re-baseline"
 
 
+# --- robustness ------------------------------------------------------------
+
+def test_truncated_screenshot_does_not_crash_the_comparison():
+    # a capture killed mid-write leaves a truncated shot.png; the visual
+    # signal must degrade to nothing instead of throwing and taking the
+    # text/image/library signals down with it (found by the mutation battery)
+    from PIL import Image
+    old = _snap(["a", "b"], [])
+    new = _snap(["a", "CHANGED"], [])
+    Image.new("RGB", (300, 400), "#fff").save(Path(old) / "shot.png")
+    Image.new("RGB", (300, 400), "#fff").save(Path(new) / "shot.png")
+    good = (Path(new) / "shot.png").read_bytes()
+    (Path(new) / "shot.png").write_bytes(good[: len(good) // 3])
+    r = cmp.compare_snapshots(old, new, change_dir=None, settings={})
+    assert r["visual_changed"] is False and r["pixel_ratio"] == 0
+    assert r["text_changed"] is True, "other signals must survive a bad shot"
+
+
 # --- whole verdict ---------------------------------------------------------
 
 def test_summary_reads_no_change_when_nothing_moved():
