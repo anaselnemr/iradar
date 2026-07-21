@@ -1153,10 +1153,12 @@ def index():
         asset_open = con3.execute(
             "SELECT COUNT(*) FROM asset_changes WHERE reviewed=0"
         ).fetchone()[0]
+        mention_total = con3.execute(
+            "SELECT COUNT(*) FROM mentions").fetchone()[0]
     finally:
         con3.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
-                           asset_open=asset_open,
+                           asset_open=asset_open, mention_total=mention_total,
                            facets=facets,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
@@ -2480,6 +2482,73 @@ def assets_run():
     else:
         flash("The file check is already running.")
     return redirect(url_for("assets_page"))
+
+
+# ---- Sentiment (what the world says about the products) --------------------
+
+@app.route("/sentiment")
+def sentiment_page():
+    import sentiment as sn
+    ent = request.args.get("entity", "")
+    src = request.args.get("source", "")
+    con = db.connect()
+    per_entity = con.execute(
+        "SELECT entity, COUNT(*) n, AVG(score) avg_score,"
+        " SUM(CASE WHEN source='stackexchange' THEN 1 ELSE 0 END) se,"
+        " SUM(CASE WHEN source='reddit' THEN 1 ELSE 0 END) rd,"
+        " SUM(CASE WHEN source='hn' THEN 1 ELSE 0 END) hn,"
+        " SUM(CASE WHEN source='community' THEN 1 ELSE 0 END) cm,"
+        " SUM(CASE WHEN source='youtube' THEN 1 ELSE 0 END) yt"
+        " FROM mentions GROUP BY entity ORDER BY n DESC").fetchall()
+    where, args = [], []
+    if ent:
+        where.append("entity=?")
+        args.append(ent)
+    if src:
+        where.append("source=?")
+        args.append(src)
+    sql = "SELECT * FROM mentions"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY COALESCE(posted, fetched) DESC, id DESC LIMIT 200"
+    rows = con.execute(sql, args).fetchall()
+    total = con.execute("SELECT COUNT(*) FROM mentions").fetchone()[0]
+    unscored = con.execute(
+        "SELECT COUNT(*) FROM mentions WHERE score IS NULL").fetchone()[0]
+    con.close()
+    import os as _os
+    return render_template("sentiment.html", per_entity=per_entity, rows=rows,
+                           total=total, unscored=unscored, sel_entity=ent,
+                           sel_source=src, sstate=sn.SENT_STATE,
+                           has_llm_key=bool(_os.environ.get("ANTHROPIC_API_KEY")),
+                           has_yt_key=bool(_os.environ.get("YT_API_KEY")))
+
+
+@app.route("/sentiment/collect", methods=["POST"])
+def sentiment_collect():
+    import sentiment as sn
+    if runner.RUN_STATE.get("running"):
+        flash("A page check is running — collect mentions after it finishes "
+              "(they share the network).")
+    elif sn.run_collect_background():
+        flash("Collecting mentions from StackExchange, Hacker News, Reddit "
+              "and the captured community threads — a few minutes.")
+    else:
+        flash("Collection is already running.")
+    return redirect(url_for("sentiment_page"))
+
+
+@app.route("/sentiment/score", methods=["POST"])
+def sentiment_score():
+    import sentiment as sn
+    n = sn.score_pending()
+    if n < 0:
+        flash("No ANTHROPIC_API_KEY configured — set it in the environment "
+              "before starting the app, then scoring works. Mentions are "
+              "still collected and browsable unscored.")
+    else:
+        flash(f"Scored {n} mention(s).")
+    return redirect(url_for("sentiment_page"))
 
 
 @app.route("/snapshot/<int:snap_id>/text")

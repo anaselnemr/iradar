@@ -1282,12 +1282,40 @@ SECTIONS_JS = r"""
   // is site-wide furniture and appears on pages with no community section.
   const comm = document.querySelector('react-component#community, #community');
   const commTxt = comm ? (comm.innerText || '') : '';
+  // The recent-thread list itself is stored ONLY here, under flags - flags is
+  // outside every diff (compare's _NOT_CONTENT), so the churn can never touch
+  // the change feed - because the sentiment layer needs WHAT engineers are
+  // asking about this page's products, not just that a widget exists. Title +
+  // link per thread, age and solved-flag when the card carries them.
+  const commThreads = [];
+  if (comm) {
+    const seenT = new Set();
+    for (const a of comm.querySelectorAll('a[href]')) {
+      if (!/community\.infineon\.com/i.test(a.href)) continue;
+      if (/\/user\/|viewprofile/i.test(a.href)) continue;   // author links, not threads
+      const title = (a.innerText || '').replace(/\s+/g, ' ').trim();
+      if (title.length < 4 || /ask the community|view all|go to community/i.test(title)) continue;
+      if (seenT.has(a.href)) continue;
+      seenT.add(a.href);
+      const box = a.closest('.text-section, .text-sub-section') || a.parentElement;
+      const when = box && box.querySelector ? box.querySelector('.posted-on') : null;
+      const flag = box && box.querySelector ? box.querySelector('.flag-content') : null;
+      commThreads.push({
+        title: title.slice(0, 160),
+        url: a.href.split('#')[0],
+        when: when ? when.innerText.replace(/\s+/g, ' ').trim().slice(0, 40) : '',
+        flag: flag ? flag.innerText.replace(/\s+/g, ' ').trim().slice(0, 20) : ''
+      });
+      if (commThreads.length >= 24) break;
+    }
+  }
   out.flags = {
     product_table: {exists: tableEls.length > 0, has_content: tableHasRows},
     developer_community: {
       exists: !!comm,
       // the component renders its own empty state rather than disappearing
-      has_content: !!comm && !/there are no questions/i.test(commTxt)
+      has_content: !!comm && !/there are no questions/i.test(commTxt),
+      threads: commThreads
     }
   };
 

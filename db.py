@@ -148,6 +148,27 @@ def init_db():
         reviewed INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_asset_changes_rev ON asset_changes(reviewed, ts);
+    -- What the world says about the products on the watched pages: one row
+    -- per (source, url, entity) - a StackExchange question, a Reddit thread,
+    -- an HN comment, a thread from Infineon's own developer community, or an
+    -- LLM's web-grounded summary. score/topics stay NULL/'' until an LLM key
+    -- is configured; mentions are still collected and browsable unscored.
+    CREATE TABLE IF NOT EXISTS mentions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity TEXT NOT NULL,
+        source TEXT NOT NULL,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        body TEXT NOT NULL DEFAULT '',
+        author TEXT NOT NULL DEFAULT '',
+        posted TEXT NOT NULL DEFAULT '',
+        fetched TEXT NOT NULL DEFAULT '',
+        score REAL,
+        topics TEXT NOT NULL DEFAULT '',
+        reason TEXT NOT NULL DEFAULT '',
+        UNIQUE(source, url, entity)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mentions_entity ON mentions(entity, source);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
     -- every AUTOMATIC level change, so hierarchy assignments are auditable:
     -- the user can see exactly what moved, when, and why - and that nothing
