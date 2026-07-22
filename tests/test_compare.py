@@ -280,6 +280,67 @@ def test_truncated_screenshot_does_not_crash_the_comparison():
     assert r["text_changed"] is True, "other signals must survive a bad shot"
 
 
+# --- library_diff_detail: the view derives from the detector's rules --------
+# Change #5584 was counted 'Documents (~1)' by library_diff while the page
+# showed nothing: the view had a PARALLEL diff (added/removed only, raw title
+# keys). detail() now shares _item_id/_item_body, so count>0 <=> detail shown.
+
+def _sects(sections):
+    d = Path(tempfile.mkdtemp(prefix="ifxtest_"))
+    (d / "sections.json").write_text(json.dumps(sections), encoding="utf-8")
+    (d / "text.txt").write_text("", encoding="utf-8")
+    (d / "images.json").write_text("[]", encoding="utf-8")
+    return str(d)
+
+
+def test_detail_shows_modified_in_place_item():
+    # the 5584 case: same title+url, meta/dtype casing changed
+    old = _sects({"documents": [{"title": "PQR-XMC4100", "url": "u1",
+                                 "meta": "Product qualification report | 02_00",
+                                 "dtype": "Product qualification report"}]})
+    new = _sects({"documents": [{"title": "PQR-XMC4100", "url": "u1",
+                                 "meta": "Product Qualification Report | 02_00",
+                                 "dtype": "Product Qualification Report"}]})
+    det = cmp.library_diff_detail(old, new)
+    assert "documents" in det, "modified item invisible to the view again"
+    ch = det["documents"]["changed"]
+    assert len(ch) == 1 and ch[0]["title"] == "PQR-XMC4100"
+    fields = {f for f, _, _ in ch[0]["fields"]}
+    assert "meta" in fields and "dtype" in fields
+
+
+def test_detail_and_count_agree_on_every_shape():
+    # the invariant: whatever the detector counts, the detail shows - and
+    # whatever the detail shows, the detector counted. Exercised over every
+    # tricky shape: casing-only retitle (detector-silent), lazy poster
+    # (silent), img both-present (real), price string, stock tick (exempt),
+    # an unlabeled category (about), and a plain add/remove.
+    cases = [
+        # (old sections, new sections)
+        ({"documents": [{"title": "Datasheet", "url": "u", "meta": "m"}]},
+         {"documents": [{"title": "DATASHEET", "url": "u", "meta": "m"}]}),
+        ({"videos": [{"title": "Tour", "url": "v", "img": "poster.png"}]},
+         {"videos": [{"title": "Tour", "url": "v", "img": ""}]}),
+        ({"videos": [{"title": "Tour", "url": "v", "img": "a.png"}]},
+         {"videos": [{"title": "Tour", "url": "v", "img": "b.png"}]}),
+        ({"price": "EUR 12 | 260 in stock"}, {"price": "EUR 12 | 259 in stock"}),
+        ({"price": ""}, {"price": "EUR 249.00"}),
+        ({"about": [{"title": "Intro", "url": "", "meta": "old words"}]},
+         {"about": [{"title": "Intro", "url": "", "meta": "new words"}]}),
+        ({"documents": [{"title": "A", "url": "1"}]},
+         {"documents": [{"title": "A", "url": "1"}, {"title": "B", "url": "2"}]}),
+        ({"images": [{"title": "x", "url": "i1"}]},        # _NOT_CONTENT: both silent
+         {"images": [{"title": "y", "url": "i2"}]}),
+    ]
+    for old_s, new_s in cases:
+        old, new = _sects(old_s), _sects(new_s)
+        counted = cmp.library_diff(old, new)["changed"]
+        shown = bool(cmp.library_diff_detail(old, new))
+        assert counted == shown, (
+            f"view and detector disagree on {old_s} -> {new_s}: "
+            f"counted={counted} shown={shown}")
+
+
 # --- whole verdict ---------------------------------------------------------
 
 def test_summary_reads_no_change_when_nothing_moved():

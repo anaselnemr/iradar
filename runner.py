@@ -626,6 +626,16 @@ def _run_check_inner(kind, url_ids):
     # never touched concurrently, and an interruption loses only pages still
     # in flight - everything already captured is on disk and in the table.
     counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    if is_resume:
+        # CARRY the finished run's tallies forward: a resume that started from
+        # zero overwrote run 127's real ok=4,038 with the ok=1 of its own short
+        # tail at the final UPDATE, and the run read as if it captured nothing.
+        prev_row = con.execute("SELECT ok, changed, errors FROM runs"
+                               " WHERE id=?", (run_id,)).fetchone()
+        if prev_row:
+            counters["ok"] = prev_row["ok"] or 0
+            counters["changed"] = prev_row["changed"] or 0
+            counters["errors"] = prev_row["errors"] or 0
     # suspects is set up above (holds any rebuilt from a resumed run); the
     # capture loop appends newly-found ones to it.
     url_by_addr = {row["url"]: row for row in urls}

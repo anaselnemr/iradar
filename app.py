@@ -2124,19 +2124,20 @@ def _category_tree(items):
 
 
 def _sections_diff(old_dir, new_dir):
-    """Added/removed items per category between two snapshots' libraries."""
-    o = _load_sections(old_dir) or {}
-    n = _load_sections(new_dir) or {}
-    key = lambda i: (i.get("title", ""), i.get("url", ""))
-    diff = {}
-    for cat, label in SECTION_LABELS:
-        ok = {key(i) for i in o.get(cat, [])}
-        nk = {key(i) for i in n.get(cat, [])}
-        added = [i for i in n.get(cat, []) if key(i) not in ok]
-        removed = [i for i in o.get(cat, []) if key(i) not in nk]
-        if added or removed:
-            diff[label] = {"added": added, "removed": removed}
-    return diff
+    """What the library diff shows the human - a thin label-mapping over
+    compare.library_diff_detail, which uses the DETECTOR'S own item rules.
+
+    This used to be a parallel implementation (added/removed only, raw title
+    keys, its own category list) and it disagreed with the detector in both
+    directions: a modified-in-place document ('Documents (~1)', change #5584)
+    rendered as nothing, while a casing-only retitle the detector deliberately
+    ignores would have rendered as churn. Deriving from the same primitives
+    makes disagreement structurally impossible: whatever is counted is shown,
+    whatever is shown was counted."""
+    labels = dict(SECTION_LABELS)
+    detail = cmp.library_diff_detail(old_dir, new_dir)
+    return {labels.get(cat, cat.replace("_", " ").capitalize()): d
+            for cat, d in detail.items()}
 
 
 @app.route("/url/<int:url_id>")

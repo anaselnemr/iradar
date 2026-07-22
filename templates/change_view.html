@@ -90,6 +90,21 @@
       {% for it in d.removed %}<li style="color:#991b1b">－ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
     </ul>
     {% endif %}
+    {% if d.changed %}
+    <ul class="liblist">
+      {% for it in d.changed %}
+      <li style="color:#9a5b00">～ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}
+        <span class="muted">— changed in place:</span>
+        <ul style="margin:2px 0 6px; padding-left:18px; font-size:12.5px">
+          {% for f, oldv, newv in it.fields %}
+          <li><b>{{ f }}</b>: <span style="color:#991b1b; text-decoration:line-through">{{ oldv or '(empty)' }}</span>
+              → <span style="color:#166534">{{ newv or '(empty)' }}</span></li>
+          {% endfor %}
+        </ul>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   {% endfor %}
 </div>
 {% endif %}

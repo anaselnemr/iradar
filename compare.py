@@ -286,6 +286,56 @@ def _item_body(d):
             if k not in ("title", "url", "img", "exact")}
 
 
+def library_diff_detail(old_dir, new_dir):
+    """The reviewable version of library_diff: WHICH items, not just counts.
+
+    Built on the exact same primitives (_item_id / _item_body / _NOT_CONTENT /
+    the stock exemption), so the diff VIEW can never disagree with the
+    detector again - change #5584 was flagged 'Documents (~1)' by the detector
+    while the view's own parallel implementation (added/removed only, raw
+    title keys) rendered nothing. One source of truth; anything this returns
+    is exactly what library_diff counted, item by item.
+
+    Returns {cat: {"added": [item...], "removed": [item...],
+                   "changed": [{"title","url","fields":[(name,old,new)...]}]}}
+    String categories (price) come back as a single changed entry whose
+    fields carry the old/new strings (stock count stripped, like the count)."""
+    old, new = _load_sections(old_dir), _load_sections(new_dir)
+    out = {}
+    for cat in sorted(set(old) | set(new)):
+        if cat in _NOT_CONTENT:
+            continue
+        a_raw, b_raw = old.get(cat), new.get(cat)
+        if isinstance(a_raw, str) or isinstance(b_raw, str):   # price
+            a_s = _STOCK_RE.sub("", str(a_raw or "")).split()
+            b_s = _STOCK_RE.sub("", str(b_raw or "")).split()
+            if a_s != b_s:
+                out[cat] = {"added": [], "removed": [], "changed": [{
+                    "title": cat, "url": "",
+                    "fields": [(cat, " ".join(a_s), " ".join(b_s))]}]}
+            continue
+        a = {_item_id(d): d for d in (a_raw or []) if isinstance(d, dict)}
+        b = {_item_id(d): d for d in (b_raw or []) if isinstance(d, dict)}
+        added = [b[k] for k in b if k not in a]
+        removed = [a[k] for k in a if k not in b]
+        changed = []
+        for k in set(a) & set(b):
+            fields = []
+            ba, bb = _item_body(a[k]), _item_body(b[k])
+            for f in sorted(set(ba) | set(bb)):
+                if ba.get(f, "") != bb.get(f, ""):
+                    fields.append((f, ba.get(f, ""), bb.get(f, "")))
+            ia, ib = str(a[k].get("img", "")), str(b[k].get("img", ""))
+            if ia and ib and ia != ib:      # both present = real, like the count
+                fields.append(("img", ia, ib))
+            if fields:
+                changed.append({"title": b[k].get("title", ""),
+                                "url": b[k].get("url", ""), "fields": fields})
+        if added or removed or changed:
+            out[cat] = {"added": added, "removed": removed, "changed": changed}
+    return out
+
+
 def library_diff(old_dir, new_dir):
     """Every item of every component: added, removed, or changed in place.
 
