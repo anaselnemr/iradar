@@ -341,6 +341,97 @@ def test_detail_and_count_agree_on_every_shape():
             f"counted={counted} shown={shown}")
 
 
+# --- the developer-community tri-state --------------------------------------
+# absent / empty / has discussions is tracked EVERY run; a transition flags.
+# What sits INSIDE the widget (threads, authors, dates, pixels) never does -
+# it is excluded from the text, image and screenshot signals.
+
+def _snap_comm(state):
+    d = Path(_snap(["Page body"], []))
+    flags = {}
+    if state != "absent":
+        flags = {"developer_community": {"exists": True,
+                                         "has_content": state == "has discussions"}}
+    else:
+        flags = {"developer_community": {"exists": False, "has_content": False}}
+    (d / "sections.json").write_text(json.dumps({"flags": flags}),
+                                     encoding="utf-8")
+    return str(d)
+
+
+def test_community_state_transitions_flag():
+    for frm, to in (("absent", "has discussions"),
+                    ("has discussions", "empty"),
+                    ("empty", "absent")):
+        r = cmp.compare_snapshots(_snap_comm(frm), _snap_comm(to),
+                                  change_dir=None, settings={})
+        assert r["community_changed"] is True, f"{frm} -> {to} did not flag"
+        assert r["any_changed"] is True
+        assert r["community_from"] == frm and r["community_to"] == to
+        assert "developer community" in r["summary"]
+
+
+def test_community_same_state_is_silent():
+    r = cmp.compare_snapshots(_snap_comm("has discussions"),
+                              _snap_comm("has discussions"),
+                              change_dir=None, settings={})
+    assert r["community_changed"] is False and r["any_changed"] is False
+
+
+# --- screenshot: feeds stay IN the picture, the judgement masks them ---------
+
+def _snap_masked(fill_main, fill_feed, feed_rect=(40, 380, 320, 100),
+                 height=520, extra=None):
+    """A snapshot whose shot.png has a 'feed' box painted at feed_rect and a
+    meta.json declaring that region in shot_ignore."""
+    from PIL import Image, ImageDraw
+    d = Path(_snap(["Page body"], []))
+    im = Image.new("RGB", (400, height), fill_main)
+    x, y, w_, h_ = feed_rect
+    ImageDraw.Draw(im).rectangle([x, y, x + w_, y + h_], fill=fill_feed)
+    if extra:
+        ImageDraw.Draw(im).rectangle(extra, fill=(200, 30, 30))
+    im.save(d / "shot.png")
+    (d / "meta.json").write_text(json.dumps({
+        "text_rev": 3, "shot_rev": 3, "img_rev": 2,
+        "shot_ignore": [{"x": x, "y": y, "w": w_, "h": h_}]}),
+        encoding="utf-8")
+    return str(d)
+
+
+def test_feed_churn_inside_the_picture_never_flags():
+    # the community box is IN both screenshots and its content changed
+    # completely - masked at compare, so nothing flags
+    r = cmp.compare_snapshots(
+        _snap_masked("#ffffff", "#3355aa"),
+        _snap_masked("#ffffff", "#aa5533"),
+        change_dir=None, settings={})
+    assert r["visual_changed"] is False, "masked feed churn flagged pixels"
+    assert r["any_changed"] is False
+
+
+def test_real_change_outside_the_feed_still_flags():
+    r = cmp.compare_snapshots(
+        _snap_masked("#ffffff", "#3355aa"),
+        _snap_masked("#ffffff", "#3355aa", extra=[50, 60, 250, 200]),
+        change_dir=None, settings={})
+    assert r["visual_changed"] is True, "real page change hidden by the mask"
+
+
+def test_feed_growth_does_not_count_as_page_growth():
+    # the feed box grew 120px and the page with it: judged height is the page
+    # MINUS each side's feed, so nothing flags
+    r = cmp.compare_snapshots(
+        _snap_masked("#ffffff", "#3355aa", feed_rect=(40, 380, 320, 100),
+                     height=520),
+        _snap_masked("#ffffff", "#aa5533", feed_rect=(40, 380, 320, 220),
+                     height=640),
+        change_dir=None, settings={})
+    assert r["visual_changed"] is False, (
+        "feed growth read as the page growing: %s%% hd=%s"
+        % (r["pixel_ratio"], r["height_delta"]))
+
+
 # --- whole verdict ---------------------------------------------------------
 
 def test_summary_reads_no_change_when_nothing_moved():

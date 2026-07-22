@@ -263,19 +263,30 @@ TEXT_REV = 3
 # the same way by compare: across a shot_rev change the pixel/height signal is
 # not comparable (the picture's definition moved), so it re-baselines silently.
 #   1 - original (implicit): the full page, feeds included
-#   2 - the live feeds hidden for the screenshot only (#community + the
-#       .news-container "Latest news" box): they were excluded from the TEXT
-#       diff but still sat in the picture, so a page whose ONLY change was the
-#       community threads rotating flagged on pixels - 55% of the rev-3
-#       re-baseline run's "updates" were exactly this. Hidden AFTER extraction
-#       runs, so thread storage and has_content are untouched.
-SHOT_REV = 2
+#   2 - the live feeds hidden (display:none) for the screenshot
+#   3 - the feeds are IN the picture again (Anas: the screenshot should show
+#       the whole page, community included - it just must not JUDGE it), and
+#       their bounding boxes are recorded in meta.json (shot_ignore) so the
+#       compare masks those regions instead of the capture hiding them
+SHOT_REV = 3
 
-# Applied right before the screenshot (never during extraction): display:none
-# removes the feeds from layout entirely, so nothing below them shifts and the
-# two pictures line up. Same containers the TEXT walk already drops.
-SHOT_HIDE_CSS = ("react-component#community, #community, .news-container"
-                 " { display: none !important; }")
+# Where the live feeds sit on the page - recorded right before the screenshot
+# (layout is final by then) so the compare can disregard exactly those areas.
+FEED_RECTS_JS = r"""
+() => {
+  const out = [];
+  for (const el of document.querySelectorAll(
+      'react-component#community, #community, .news-container')) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 10 || r.height < 10) continue;
+    out.push({x: Math.max(0, Math.round(r.left)),
+              y: Math.max(0, Math.round(r.top + window.scrollY)),
+              w: Math.round(r.width), h: Math.round(r.height)});
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+"""
 
 # Revision of what the IMAGE INVENTORY collects, gated by compare like the
 # text and screenshot revs: across a change the URL sets are not comparable.
@@ -2187,14 +2198,13 @@ async def capture_one(browser, url, out_dir):
         except Exception as exc:
             print(f"  [unstick] FAILED: {exc}")   # never swallow this again
 
-        # Hide the live feeds from the PICTURE (extraction already ran, so this
-        # touches nothing it captured). They are dropped from the text diff;
-        # left in the screenshot they flagged a page on pixels every time the
-        # community threads rotated. display:none so the space collapses and
-        # everything below stays aligned. Bumps SHOT_REV -> silent re-baseline.
+        # Record WHERE the live feeds sit (layout is final after the unstick):
+        # the screenshot keeps them - the whole page, community included, is
+        # the evidence a reviewer sees - and the compare masks exactly these
+        # regions so their churn can never flag pixels.
+        shot_ignore = []
         try:
-            await page.add_style_tag(content=SHOT_HIDE_CSS)
-            await page.wait_for_timeout(150)
+            shot_ignore = await page.evaluate(FEED_RECTS_JS)
         except Exception:
             pass
 
@@ -2452,6 +2462,7 @@ async def capture_one(browser, url, out_dir):
             "text_rev": TEXT_REV,
             "shot_rev": SHOT_REV,
             "img_rev": IMG_REV,
+            "shot_ignore": shot_ignore,
         }, indent=1), encoding="utf-8")
 
         result.update(status="ok", title=title,

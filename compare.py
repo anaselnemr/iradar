@@ -201,6 +201,21 @@ def _region_strip(old_img, new_img, box, out_path, pad=40):
     canvas.save(out_path, optimize=True)
 
 
+def _shot_ignore(snap_dir):
+    """The live-feed regions recorded at capture (meta.json shot_ignore):
+    the screenshot KEEPS the community/news boxes so a reviewer sees the whole
+    page, and the compare disregards exactly these areas instead."""
+    p = Path(snap_dir) / "meta.json"
+    if not p.exists():
+        return []
+    try:
+        regs = json.loads(p.read_text(encoding="utf-8")).get("shot_ignore")
+        return [r for r in (regs or [])
+                if isinstance(r, dict) and r.get("w", 0) > 0 and r.get("h", 0) > 0]
+    except Exception:
+        return []
+
+
 def visual_diff(old_dir, new_dir, change_dir=None):
     """Pixel-compares the two full-page screenshots.
 
@@ -220,13 +235,38 @@ def visual_diff(old_dir, new_dir, change_dir=None):
         b = Image.open(b_path).convert("RGB")
     except Exception:
         return 0.0, 0, 0
+    regs_a, regs_b = _shot_ignore(old_dir), _shot_ignore(new_dir)
+    # Height honesty with feeds in the picture: the community box growing by
+    # three threads is not the PAGE getting taller. Judge height with each
+    # side's feed heights taken out.
+    fh_a = sum(r["h"] for r in regs_a)
+    fh_b = sum(r["h"] for r in regs_b)
+    height_delta = abs((a.height - fh_a) - (b.height - fh_b))
     w = min(a.width, b.width)
     h = min(a.height, b.height)
-    height_delta = abs(a.height - b.height)
     if w == 0 or h == 0:
         return 0.0, height_delta, 0
+    # When the feeds CHANGED SIZE, everything below them shifted - those
+    # pixels would all read as different while nothing real moved. Compare
+    # only above the topmost feed box that run; the area below is judged
+    # again next run, when the feed heights match (their usual state).
+    if regs_a or regs_b:
+        if abs(fh_a - fh_b) > 8:
+            tops = [r["y"] for r in regs_a + regs_b]
+            h = max(1, min(min(tops), h))
     a_c = a.crop((0, 0, w, h))
     b_c = b.crop((0, 0, w, h))
+    # Mask the feed areas on BOTH sides: their churn (threads rotating, news
+    # re-dating) must never count as the page changing. The stored pictures
+    # stay complete - only the judgement blindfolds itself here.
+    if regs_a or regs_b:
+        da, db_ = ImageDraw.Draw(a_c), ImageDraw.Draw(b_c)
+        for r in regs_a + regs_b:
+            box = (max(0, r["x"]), max(0, r["y"]),
+                   min(w, r["x"] + r["w"]), min(h, r["y"] + r["h"]))
+            if box[2] > box[0] and box[3] > box[1]:
+                da.rectangle(box, fill=(0, 0, 0))
+                db_.rectangle(box, fill=(0, 0, 0))
     diff = ImageChops.difference(a_c, b_c).convert("L")
     mask = diff.point(lambda p: 255 if p > PIXEL_NOISE_THRESHOLD else 0)
     changed_px = mask.histogram()[255]
@@ -284,6 +324,19 @@ def _item_body(d):
     """
     return {k: str(v) for k, v in sorted(d.items())
             if k not in ("title", "url", "img", "exact")}
+
+
+def _community_state(snap_dir):
+    """The developer-community widget's tri-state on this capture:
+    'absent' (not on the page) / 'empty' (widget there, no questions) /
+    'has discussions'. THE STATE is what is tracked - which threads sit in
+    the widget, their dates and their pixels are live-feed churn and are
+    excluded from every other signal on purpose."""
+    dc = (_load_sections(snap_dir).get("flags") or {}).get(
+        "developer_community") or {}
+    if not dc.get("exists"):
+        return "absent"
+    return "has discussions" if dc.get("has_content") else "empty"
 
 
 def library_diff_detail(old_dir, new_dir):
@@ -423,6 +476,16 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
                                                     ignore_image_patterns)
     lib = library_diff(old_dir, new_dir)
 
+    # The developer-community widget is tracked as a TRI-STATE, every run:
+    # absent / empty / has discussions. A transition between those states is
+    # an update worth reviewing (the community arrived, emptied, or vanished);
+    # everything INSIDE the widget - thread titles, authors, dates, avatars,
+    # pixels - is live-feed churn and is excluded from the text, image and
+    # screenshot signals on purpose.
+    comm_from = _community_state(old_dir)
+    comm_to = _community_state(new_dir)
+    comm_changed = comm_from != comm_to
+
     # ACROSS A SCREENSHOT REVISION the picture is not comparable either: the
     # feed-hidden shot (rev 2) differs from the old full one everywhere the
     # community/news boxes used to be, so a pixel diff would flag every page
@@ -446,11 +509,18 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
                      f"/~{lib['modified']}")
     if v_changed:
         parts.append(f"visual: {n_regions} area(s), {ratio_pct:.2f}% of pixels")
+    if comm_changed:
+        parts.append(f"developer community: {comm_from} → {comm_to}")
 
     return {
         # the library counts too: an item can be repointed, redated or removed
-        # without moving one visible word or one pixel over the threshold
-        "any_changed": t_changed or i_changed or v_changed or lib["changed"],
+        # without moving one visible word or one pixel over the threshold -
+        # and so does a community tri-state transition
+        "any_changed": (t_changed or i_changed or v_changed or lib["changed"]
+                        or comm_changed),
+        "community_changed": comm_changed,
+        "community_from": comm_from,
+        "community_to": comm_to,
         "library_changed": lib["changed"],
         "library": lib,
         "text_changed": t_changed,
