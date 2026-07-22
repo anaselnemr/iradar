@@ -2335,14 +2335,24 @@ def change_view(change_id):
                            (c["new_snapshot_id"],)).fetchone()
     con.close()
 
+    # Show ONLY the signals this update was actually flagged on. The raw
+    # text/image diff still "sees" things the detector deliberately disregarded
+    # - text across a rev boundary (the excluded feeds / mega-menu), a pure
+    # reorder - so on a VISUAL-only update it would otherwise open with a "Text
+    # updates" card listing the date and menu lines that were the whole reason
+    # we did NOT flag on text. Gate each card on the stored verdict so the real
+    # difference is the first thing shown.
     hunks, img_added, img_removed = [], [], []
     if old_snap and new_snap and old_snap["dir"] and new_snap["dir"]:
         s = db.get_settings()
         ignore = (s.get("ignore_patterns") or "").splitlines()
         ignore_img = (s.get("ignore_image_patterns") or "").splitlines()
-        _, _, _, hunks = cmp.text_diff(old_snap["dir"], new_snap["dir"], ignore)
-        _, img_added, img_removed = cmp.images_diff(old_snap["dir"],
-                                                    new_snap["dir"], ignore_img)
+        if c["text_changed"]:
+            _, _, _, hunks = cmp.text_diff(old_snap["dir"], new_snap["dir"],
+                                           ignore)
+        if c["images_changed"]:
+            _, img_added, img_removed = cmp.images_diff(
+                old_snap["dir"], new_snap["dir"], ignore_img)
 
     art = {"boxed": False, "regions": [], "legacy": False}
     if c["dir"] and Path(c["dir"]).exists():

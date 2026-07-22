@@ -259,6 +259,24 @@ CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
 #       labels and the breadcrumb live outside these panels and are kept.
 TEXT_REV = 3
 
+# Revision of what the SCREENSHOT shows, stamped alongside text_rev and gated
+# the same way by compare: across a shot_rev change the pixel/height signal is
+# not comparable (the picture's definition moved), so it re-baselines silently.
+#   1 - original (implicit): the full page, feeds included
+#   2 - the live feeds hidden for the screenshot only (#community + the
+#       .news-container "Latest news" box): they were excluded from the TEXT
+#       diff but still sat in the picture, so a page whose ONLY change was the
+#       community threads rotating flagged on pixels - 55% of the rev-3
+#       re-baseline run's "updates" were exactly this. Hidden AFTER extraction
+#       runs, so thread storage and has_content are untouched.
+SHOT_REV = 2
+
+# Applied right before the screenshot (never during extraction): display:none
+# removes the feeds from layout entirely, so nothing below them shifts and the
+# two pictures line up. Same containers the TEXT walk already drops.
+SHOT_HIDE_CSS = ("react-component#community, #community, .news-container"
+                 " { display: none !important; }")
+
 TEXT_JS = r"""
 () => {
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME',
@@ -2152,6 +2170,17 @@ async def capture_one(browser, url, out_dir):
         except Exception as exc:
             print(f"  [unstick] FAILED: {exc}")   # never swallow this again
 
+        # Hide the live feeds from the PICTURE (extraction already ran, so this
+        # touches nothing it captured). They are dropped from the text diff;
+        # left in the screenshot they flagged a page on pixels every time the
+        # community threads rotated. display:none so the space collapses and
+        # everything below stays aligned. Bumps SHOT_REV -> silent re-baseline.
+        try:
+            await page.add_style_tag(content=SHOT_HIDE_CSS)
+            await page.wait_for_timeout(150)
+        except Exception:
+            pass
+
         # Clip to the viewport width: a wide element (products table ~2500px)
         # otherwise makes the full-page image as wide as itself, leaving the
         # page marooned in white. Height = the real document height.
@@ -2404,6 +2433,7 @@ async def capture_one(browser, url, out_dir):
             "http_status": result["http_status"],
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "text_rev": TEXT_REV,
+            "shot_rev": SHOT_REV,
         }, indent=1), encoding="utf-8")
 
         result.update(status="ok", title=title,

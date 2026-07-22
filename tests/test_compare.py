@@ -179,6 +179,53 @@ def test_non_text_signal_still_fires_across_rev():
     assert r["any_changed"] is True, "real change hidden during re-baseline"
 
 
+# --- screenshot-revision boundary (the feed-hidden re-baseline) -------------
+
+def _snap_shot(lines, fill, text_rev=3, shot_rev=None, size=(300, 500)):
+    """A snapshot with a solid-colour shot.png and rev stamps."""
+    from PIL import Image
+    d = Path(_snap(lines, []))
+    Image.new("RGB", size, fill).save(d / "shot.png")
+    meta = {"text_rev": text_rev}
+    if shot_rev is not None:
+        meta["shot_rev"] = shot_rev
+    (d / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    return str(d)
+
+
+def test_visual_suppressed_across_shot_rev_change():
+    # old shot = full page (rev 1), new shot = feed-hidden (rev 2): the pixels
+    # differ everywhere the feeds used to be, but that must NOT flag - it is the
+    # same re-normalisation as the text rev, one row over
+    r = cmp.compare_snapshots(
+        _snap_shot(["Home"], "#ffffff", shot_rev=1),
+        _snap_shot(["Home"], "#202020", shot_rev=2),   # wildly different pixels
+        change_dir=None, settings={})
+    assert r["visual_changed"] is False, "visual not suppressed across shot_rev"
+    assert r["pixel_ratio"] == 0 and r["height_delta"] == 0
+    assert r["any_changed"] is False
+
+
+def test_visual_active_within_same_shot_rev():
+    # both on the new shot_rev -> normal pixel diffing resumes and a real
+    # visual change flags
+    r = cmp.compare_snapshots(
+        _snap_shot(["Home"], "#ffffff", shot_rev=2),
+        _snap_shot(["Home"], "#000000", shot_rev=2),
+        change_dir=None, settings={})
+    assert r["visual_changed"] is True, "same-rev visual change must still flag"
+
+
+def test_text_still_fires_across_shot_rev_boundary():
+    # shot_rev gate suppresses the PICTURE only - a real text edit within the
+    # same text_rev must survive a screenshot-rev change
+    r = cmp.compare_snapshots(
+        _snap_shot(["Home", "Old copy"], "#ffffff", text_rev=3, shot_rev=1),
+        _snap_shot(["Home", "New copy"], "#ffffff", text_rev=3, shot_rev=2),
+        change_dir=None, settings={})
+    assert r["text_changed"] is True, "text edit lost across shot_rev boundary"
+
+
 # --- robustness ------------------------------------------------------------
 
 def test_truncated_screenshot_does_not_crash_the_comparison():

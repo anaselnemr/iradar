@@ -44,20 +44,27 @@ def _load_images(snap_dir):
         return []
 
 
-def _text_rev(snap_dir):
-    """Which revision of TEXT_JS produced this snapshot's text.txt.
-
-    Stamped into meta.json by capture (capture.TEXT_REV). Snapshots taken
-    before the stamp existed have none and are revision 1 - the original
-    walk. Used only to tell whether two snapshots' text is comparable.
-    """
+def _meta_rev(snap_dir, key):
+    """A revision stamp from meta.json (text_rev / shot_rev); 1 if absent.
+    Used only to tell whether two snapshots' text/pictures are comparable."""
     p = Path(snap_dir) / "meta.json"
     if not p.exists():
         return 1
     try:
-        return int(json.loads(p.read_text(encoding="utf-8")).get("text_rev", 1))
+        return int(json.loads(p.read_text(encoding="utf-8")).get(key, 1))
     except Exception:
         return 1
+
+
+def _text_rev(snap_dir):
+    """Which revision of TEXT_JS produced this snapshot's text.txt."""
+    return _meta_rev(snap_dir, "text_rev")
+
+
+def _shot_rev(snap_dir):
+    """Which revision of the screenshot produced this snapshot's shot.png -
+    the feed-hidden picture (rev 2) is not comparable to the old full one."""
+    return _meta_rev(snap_dir, "shot_rev")
 
 
 def text_diff(old_dir, new_dir, ignore_patterns=None):
@@ -353,7 +360,17 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
                                                 ignore_image_patterns)
     lib = library_diff(old_dir, new_dir)
 
-    ratio_pct, height_delta, n_regions = visual_diff(old_dir, new_dir, change_dir)
+    # ACROSS A SCREENSHOT REVISION the picture is not comparable either: the
+    # feed-hidden shot (rev 2) differs from the old full one everywhere the
+    # community/news boxes used to be, so a pixel diff would flag every page
+    # that was re-normalised. Suppress the visual signal for that one
+    # comparison - text/images/library still apply - and the next run, both on
+    # the new shot_rev, resumes normal pixel diffing (now free of the feeds).
+    if _shot_rev(old_dir) != _shot_rev(new_dir):
+        ratio_pct, height_delta, n_regions = 0.0, 0, 0
+    else:
+        ratio_pct, height_delta, n_regions = visual_diff(old_dir, new_dir,
+                                                          change_dir)
     v_changed = ratio_pct >= visual_threshold or height_delta >= height_threshold
 
     parts = []
