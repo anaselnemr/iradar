@@ -226,6 +226,42 @@ def test_text_still_fires_across_shot_rev_boundary():
     assert r["text_changed"] is True, "text edit lost across shot_rev boundary"
 
 
+# --- image-collector revision boundary (the feed-free inventory) ------------
+
+def _snap_img_rev(lines, images, img_rev):
+    d = Path(_snap(lines, images))
+    (d / "meta.json").write_text(json.dumps({"text_rev": 3, "img_rev": img_rev}),
+                                 encoding="utf-8")
+    return str(d)
+
+
+def test_images_suppressed_across_img_rev_change():
+    # rev-1 inventory had the news thumbnail; rev-2 dropped it - the removal
+    # must NOT flag (one retired press image flagged 585 pages in run 127)
+    r = cmp.compare_snapshots(
+        _snap_img_rev(["Home"], ["https://a/hero.png", "https://a/news-thumb.png"], 1),
+        _snap_img_rev(["Home"], ["https://a/hero.png"], 2),
+        change_dir=None, settings={})
+    assert r["images_changed"] is False, "images not suppressed across img_rev"
+    assert r["any_changed"] is False
+
+
+def test_images_active_within_same_img_rev():
+    r = cmp.compare_snapshots(
+        _snap_img_rev(["Home"], ["https://a/hero.png"], 2),
+        _snap_img_rev(["Home"], ["https://a/hero2.png"], 2),
+        change_dir=None, settings={})
+    assert r["images_changed"] is True, "same-rev image change must still flag"
+
+
+def test_text_still_fires_across_img_rev_boundary():
+    r = cmp.compare_snapshots(
+        _snap_img_rev(["Home", "Old"], ["https://a/1.png"], 1),
+        _snap_img_rev(["Home", "New"], ["https://a/1.png"], 2),
+        change_dir=None, settings={})
+    assert r["text_changed"] is True, "text edit lost across img_rev boundary"
+
+
 # --- robustness ------------------------------------------------------------
 
 def test_truncated_screenshot_does_not_crash_the_comparison():

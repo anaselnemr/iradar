@@ -67,6 +67,12 @@ def _shot_rev(snap_dir):
     return _meta_rev(snap_dir, "shot_rev")
 
 
+def _img_rev(snap_dir):
+    """Which revision of the image collector produced images.json - the
+    feed-free inventory (rev 2) is not comparable to the old full one."""
+    return _meta_rev(snap_dir, "img_rev")
+
+
 def text_diff(old_dir, new_dir, ignore_patterns=None):
     """Returns (changed, added_count, removed_count, hunks).
 
@@ -356,8 +362,15 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
             if Counter(_load_text_lines(old_dir, ignore_patterns)) == \
                Counter(_load_text_lines(new_dir, ignore_patterns)):
                 t_reordered, t_changed = True, False
-    i_changed, i_added, i_removed = images_diff(old_dir, new_dir,
-                                                ignore_image_patterns)
+    # ACROSS AN IMAGE-COLLECTOR REVISION the URL sets are not comparable (the
+    # rev-2 inventory dropped the news-box thumbnails and legacy community
+    # avatars), so the removals would flag every re-normalised page once.
+    # Same silent re-baseline as the text and screenshot revisions.
+    if _img_rev(old_dir) != _img_rev(new_dir):
+        i_changed, i_added, i_removed = False, [], []
+    else:
+        i_changed, i_added, i_removed = images_diff(old_dir, new_dir,
+                                                    ignore_image_patterns)
     lib = library_diff(old_dir, new_dir)
 
     # ACROSS A SCREENSHOT REVISION the picture is not comparable either: the

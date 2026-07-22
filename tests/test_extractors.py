@@ -78,8 +78,19 @@ def _extract_all():
             t2 = pg.evaluate(C.TEXT_JS)
             imgs = pg.evaluate(C.IMAGES_JS)
             fly = pg.evaluate(_FLYOUT_ONLY_JS)
+            # img srcs that exist ONLY inside the news box in this DOM
+            newsimgs = pg.evaluate("""
+              () => {
+                const inside = new Set(), outside = new Set();
+                document.querySelectorAll('img').forEach(i => {
+                  const s = i.currentSrc || i.src;
+                  if (!s) return;
+                  (i.closest('.news-container') ? inside : outside).add(s);
+                });
+                return Array.from(inside).filter(s => !outside.has(s));
+              }""")
             out[f.stem] = {"text1": t1, "text2": t2, "images": imgs,
-                           "flyout_only": fly}
+                           "flyout_only": fly, "news_only_imgs": newsimgs}
         b.close()
     _CACHE = out
     return out
@@ -149,11 +160,24 @@ def test_no_menu_flyout_leaks_into_text():
 # --- image filters ---------------------------------------------------------
 
 def test_no_tracking_or_community_images():
+    # community.cypress.com: the LEGACY community host - its rotating thread
+    # avatars flagged 400 migrated part pages in one run before it joined
+    # the exclusion alongside community.infineon.com
     bad = re.compile(r"qualtrics|siteintercept|community\.infineon\.com"
-                     r"|missing-product-images", re.I)
+                     r"|community\.cypress\.com|missing-product-images", re.I)
     for name, r in _extract_all().items():
         leaked = [u for u in r["images"] if bad.search(u or "")]
         assert not leaked, f"{name}: non-content image leaked: {leaked[:2]}"
+
+
+def test_no_news_box_thumbnails_in_images():
+    # the "Latest news" press thumbnails rotate site-wide - one retired press
+    # image removed itself from 585 pages' inventories in run 127. Markers are
+    # self-calibrating: srcs that exist ONLY inside .news-container in the DOM.
+    for name, r in _extract_all().items():
+        leaked = [u for u in r["news_only_imgs"] if u in set(r["images"])]
+        assert not leaked, (f"{name}: news-box thumbnail leaked into the image"
+                            f" inventory: {leaked[:2]}")
 
 
 def test_images_look_like_images():

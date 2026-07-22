@@ -277,6 +277,14 @@ SHOT_REV = 2
 SHOT_HIDE_CSS = ("react-component#community, #community, .news-container"
                  " { display: none !important; }")
 
+# Revision of what the IMAGE INVENTORY collects, gated by compare like the
+# text and screenshot revs: across a change the URL sets are not comparable.
+#   1 - original (implicit)
+#   2 - drop the "Latest news" box thumbnails (.news-container) and the
+#       legacy community.cypress.com avatars: run 127 flagged 585 pages on ONE
+#       retired press image and 400 on one avatar rotation.
+IMG_REV = 2
+
 TEXT_JS = r"""
 () => {
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME',
@@ -376,8 +384,11 @@ TEXT_JS = r"""
 # reported as an "images changed" every time the author mix shifted (e.g. 5->0
 # on url 1078). Avatars are not page content; the thread churn is tracked
 # separately under developer_community, not as pictures of the page.
+# community.cypress.com joined 2026-07-22: the legacy Cypress community host
+# serves the SAME rotating thread avatars on part pages migrated from Cypress -
+# one avatar rotation flagged 400 pages in run 127. Same reasoning, other host.
 NON_CONTENT_IMG_JS = \
-    r"/qualtrics|siteintercept|wrqualtrics|graphic\.php|missing-product-images|community\.infineon\.com/i"
+    r"/qualtrics|siteintercept|wrqualtrics|graphic\.php|missing-product-images|community\.infineon\.com|community\.cypress\.com/i"
 
 IMAGES_JS = r"""
 () => {
@@ -393,15 +404,21 @@ IMAGES_JS = r"""
     /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)(\?|#|:|$)/i.test(u);
   const ok = u => u && !u.startsWith('data:') && !NON_CONTENT_IMG.test(u)
                     && LOOKS_LIKE_IMG(u);
+  // The global "Latest news" box rotates its press thumbnails on EVERY page
+  // at once - one retired press item removed its image from 585 pages'
+  // inventories in a single run. Same rule the text walk and the screenshot
+  // already apply: the feed is not this page's content.
+  const IN_FEED = el => { try { return !!(el.closest && el.closest('.news-container')); } catch (e) { return false; } };
   const urls = new Set();
   document.querySelectorAll('img').forEach(img => {
     const src = img.currentSrc || img.src;
-    if (ok(src)) urls.add(src);
+    if (ok(src) && !IN_FEED(img)) urls.add(src);
   });
   // srcset: split ONLY on commas that start a new candidate URL. Scene7 URLs
   // carry commas inside their query ("?qlt=55,0&op_usm=1.75,0.3,2,0"), and a
   // naive split shredded one real URL into four dead ones.
   document.querySelectorAll('source[srcset], img[srcset]').forEach(s => {
+    if (IN_FEED(s)) return;
     (s.getAttribute('srcset') || '')
       .split(/,(?=\s*(?:https?:)?\/\/|\s*\/[^\/]|\s*[\w.-]+\.[a-z]{2,6}\/)/i)
       .forEach(part => {
@@ -2434,6 +2451,7 @@ async def capture_one(browser, url, out_dir):
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "text_rev": TEXT_REV,
             "shot_rev": SHOT_REV,
+            "img_rev": IMG_REV,
         }, indent=1), encoding="utf-8")
 
         result.update(status="ok", title=title,
