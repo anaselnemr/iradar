@@ -2344,6 +2344,7 @@ def change_view(change_id):
     # we did NOT flag on text. Gate each card on the stored verdict so the real
     # difference is the first thing shown.
     hunks, img_added, img_removed = [], [], []
+    renorm = []
     if old_snap and new_snap and old_snap["dir"] and new_snap["dir"]:
         s = db.get_settings()
         ignore = (s.get("ignore_patterns") or "").splitlines()
@@ -2354,6 +2355,16 @@ def change_view(change_id):
         if c["images_changed"]:
             _, img_added, img_removed = cmp.images_diff(
                 old_snap["dir"], new_snap["dir"], ignore_img)
+        # When a signal was NOT judged because the two snapshots were made by
+        # different extractor revisions, SAY so - otherwise a page flagged on
+        # its library alone reads as "where did the text diff go?" (#5597).
+        od, nd = old_snap["dir"], new_snap["dir"]
+        if not c["text_changed"] and cmp._text_rev(od) != cmp._text_rev(nd):
+            renorm.append("text")
+        if not c["images_changed"] and cmp._img_rev(od) != cmp._img_rev(nd):
+            renorm.append("images")
+        if not c["visual_changed"] and cmp._shot_rev(od) != cmp._shot_rev(nd):
+            renorm.append("screenshot")
 
     art = {"boxed": False, "regions": [], "legacy": False}
     if c["dir"] and Path(c["dir"]).exists():
@@ -2370,7 +2381,7 @@ def change_view(change_id):
     return render_template("change_view.html", c=c, u=u,
                            old_snap=old_snap, new_snap=new_snap, hunks=hunks,
                            img_added=img_added, img_removed=img_removed,
-                           art=art, lib_diff=lib_diff)
+                           art=art, lib_diff=lib_diff, renorm=renorm)
 
 
 ART_NAME_RE = re.compile(r"^[a-z0-9_]+\.png$")

@@ -61,6 +61,20 @@
   </div>
 </div>
 
+{% if renorm %}
+<div class="card" style="border-left:3px solid #2563eb">
+  <p class="muted" style="margin:0; max-width:80ch">
+    <b style="color:var(--fg)">Why no {{ renorm|join(' / ') }} diff?</b>
+    The two captures were made by different extractor revisions — what counts
+    as page {{ renorm|join(' / ') }} changed in between (live feeds and the
+    mega-menu were removed from tracking) — so the raw difference is mostly
+    re-normalisation, not the page. It was deliberately not judged this once.
+    What IS shown below (library items, sections) is real, and from the next
+    capture on, every signal compares normally again.
+  </p>
+</div>
+{% endif %}
+
 {% if hunks %}
 <div class="card">
   <h2>Text updates <span class="muted">(red = removed, green = added)</span></h2>
