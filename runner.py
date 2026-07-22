@@ -852,6 +852,18 @@ def _run_check_inner(kind, url_ids, baseline=False):
                              counters, run_id, recapture=not stopping(),
                              phase="retry")
     if transient:
+        # THE FINAL VERDICT: these pages failed every try this run (or the run
+        # was stopped before their retries). Only now does 'error' land on the
+        # page row - a page that recovered in a retry round never wore it.
+        now_fin = db.now_iso()
+        for row in transient:
+            try:
+                con.execute(
+                    "UPDATE urls SET last_checked=?, last_status='error'"
+                    " WHERE id=?", (now_fin, row["id"]))
+            except Exception:
+                pass
+        con.commit()
         print(f"[retry] {len(transient)} page(s) still failing after the"
               " extra rounds - kept as errors, next run tries again", flush=True)
 
@@ -945,10 +957,17 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         # facts and only one is the site owner's to fix. A blank render answers
         # with a 2xx and an empty <body>, so the HTTP code is real.
         blank = capture.BLANK_RENDER in (res.get("error") or "")
-        con.execute(
-            "UPDATE urls SET last_checked=?, last_status=?, last_http=?"
-            " WHERE id=?",
-            (now, "blank" if blank else "error", res.get("http_status"), url_id))
+        # A TRANSIENT failure mid-run is not a verdict - the retry rounds at
+        # the end of the run get the last word. Until then the page KEEPS its
+        # previous status ("unchanged" stays "unchanged"); only a failure that
+        # survives every retry is written as an error (the run's tail does
+        # that). Blank is a final classification and is written immediately.
+        if blank or not _transient_failure(res):
+            con.execute(
+                "UPDATE urls SET last_checked=?, last_status=?, last_http=?"
+                " WHERE id=?",
+                (now, "blank" if blank else "error",
+                 res.get("http_status"), url_id))
         # keep the previous good snapshot; drop the failed one's files
         shutil.rmtree(snap_dir, ignore_errors=True)
         con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
