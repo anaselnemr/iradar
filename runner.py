@@ -658,10 +658,17 @@ def _run_check_inner(kind, url_ids):
     url_by_key = {_key(row["url"]): row for row in urls}
     jobs = [(row["url"], str(_snapshot_dir(row["id"], ts_label))) for row in urls]
 
+    # Pages whose capture failed for a liftable reason (CDN block, loading
+    # hiccup) - not a verdict, a recapture queue. Two more tries at the end of
+    # the run; only what still fails then is reported as this run's errors.
+    transient = []
+
     def progress(res):
         RUN_STATE["done"] += 1
         RUN_STATE["message"] = res["url"]
         row = url_by_addr.get(res["url"]) or url_by_key.get(_key(res.get("url")))
+        if row is not None and _transient_failure(res):
+            transient.append(row)
         if row is None:
             # Never silent again. A page we cannot file is a page we did not
             # save, and it must read as an error rather than as progress.
@@ -737,6 +744,83 @@ def _run_check_inner(kind, url_ids):
         _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                          recapture=not stopping())
 
+    # RETRY ROUNDS for the transient failures: run the whole recapture queue
+    # once, then once more for whatever still fails, then accept the state.
+    # A page that answers on retry flows through the exact same paths as the
+    # first pass - unchanged into the table, changed into its own double-check,
+    # blank/404 to their final classifications - and its earlier error tally is
+    # taken back. A page that fails all three tries stays an honest error and
+    # is retried by the next run as before.
+    for rnd in (1, 2):
+        if not transient or stopping():
+            break
+        retry_label = f"{ts_label}-retry{rnd}"
+        retry_urls, transient = transient, []
+        RUN_STATE["total"] += len(retry_urls)
+        RUN_STATE["message"] = (f"retrying {len(retry_urls)} blocked page(s), "
+                                f"round {rnd} of 2…")
+        print(f"[retry] round {rnd}: {len(retry_urls)} transient failure(s)",
+              flush=True)
+        if rnd == 2:
+            time.sleep(60)          # let the CDN's block lift before the last try
+        retry_by_addr = {row["url"]: row for row in retry_urls}
+        retry_by_key = {_key(row["url"]): row for row in retry_urls}
+        retry_suspects = []
+
+        def rprogress(res):
+            RUN_STATE["done"] += 1
+            RUN_STATE["message"] = res["url"]
+            row = (retry_by_addr.get(res["url"])
+                   or retry_by_key.get(_key(res.get("url"))))
+            if row is None:
+                return
+            if _transient_failure(res):
+                transient.append(row)      # next round, or the final state
+                return
+            before = dict(counters)
+            n_susp = len(retry_suspects)
+            try:
+                # the earlier failed attempt was tallied as an error - the page
+                # answered now, so take that back before recording the capture
+                counters["errors"] = max(0, counters["errors"] - 1)
+                _handle_result(con, res, row, retry_label, counters,
+                               retry_suspects)
+                if len(retry_suspects) > n_susp:
+                    sp = retry_suspects[-1]
+                    _mark_item(con, run_id, row["id"], "suspect",
+                               sp["prev"]["id"], sp["new1_id"])
+                else:
+                    _mark_item(con, run_id, row["id"], "done")
+                con.commit()
+            except Exception as exc:
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
+                counters.clear()
+                counters.update(before)
+                counters["errors"] += 1
+                try:
+                    con.commit()
+                except Exception:
+                    pass
+                print("retry row error:", res.get("url"), repr(exc), flush=True)
+            RUN_STATE["changed"] = counters["changed"]
+            RUN_STATE["errors"] = counters["errors"]
+            RUN_STATE["saved"] = counters["saved"]
+
+        rjobs = [(row["url"], str(_snapshot_dir(row["id"], retry_label)))
+                 for row in retry_urls]
+        asyncio.run(capture.capture_all(rjobs, concurrency=concurrency,
+                                        progress=rprogress, pause_check=paused,
+                                        stop_check=stopping))
+        if retry_suspects:
+            _verify_suspects(con, retry_suspects, retry_label, concurrency,
+                             counters, run_id, recapture=not stopping())
+    if transient:
+        print(f"[retry] {len(transient)} page(s) still failing after the"
+              " extra rounds - kept as errors, next run tries again", flush=True)
+
     ok, changed, errors = counters["ok"], counters["changed"], counters["errors"]
     stopped = stopping()
     con.execute("UPDATE runs SET finished=?, ok=?, changed=?, errors=? WHERE id=?",
@@ -775,6 +859,18 @@ def _run_check_inner(kind, url_ids):
 # not the page's state, and must never become a baseline or a suspect.
 _LOAD_FAIL_RE = re.compile(
     r"content could not be loaded|unable to load the content", re.I)
+
+
+def _transient_failure(res):
+    """A failure worth retrying inside the SAME run: the capture errored for a
+    reason that usually lifts within minutes (CDN block, timeout, loading
+    hiccup). NOT retried, because they are final classifications, not flakes:
+    a successful capture (404s included - 'gone' is a state, recorded as not
+    live) and a blank render (the server answered with an empty page; blank
+    is its own verdict and the next scheduled run re-checks it anyway)."""
+    if (res or {}).get("status") == "ok":
+        return False
+    return capture.BLANK_RENDER not in ((res or {}).get("error") or "")
 
 
 def _load_failure_added(prev_dir, new_dir, settings=None):

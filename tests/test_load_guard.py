@@ -58,3 +58,26 @@ def test_recovery_does_not_trip():
 def test_missing_dirs_do_not_crash_or_trip():
     old = _snap(["a"])
     assert runner._load_failure_added(old, str(Path(old) / "nope")) is False
+
+
+# --- what gets a same-run retry (the recapture queue) -----------------------
+
+import capture  # noqa: E402
+
+
+def test_transient_failure_classification():
+    # ok captures are never retried - 404s included ('gone' is a recorded state)
+    assert runner._transient_failure({"status": "ok", "error": ""}) is False
+    assert runner._transient_failure({"status": "ok", "http_status": 404}) is False
+    # blank render is a final classification, not a flake to retry
+    assert runner._transient_failure(
+        {"status": "error", "error": capture.BLANK_RENDER + ": empty body"}) is False
+    # CDN blocks, timeouts, loading hiccups - the liftable failures - retry
+    assert runner._transient_failure(
+        {"status": "error", "error": capture.BLOCKED_TRANSIENT + ": HTTP 403"}) is True
+    assert runner._transient_failure(
+        {"status": "error", "error": "TimeoutError: Page.goto: 45000ms"}) is True
+    assert runner._transient_failure({"status": "error", "error": ""}) is True
+    # degenerate input never crashes
+    assert runner._transient_failure({}) is True
+    assert runner._transient_failure(None) is True
