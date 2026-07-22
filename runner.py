@@ -605,10 +605,26 @@ def _run_check_inner(kind, url_ids):
             pass
         con.commit()
 
+    # pages_total = every page IN this run, a constant denominator for the
+    # dashboard's outcome bar (each page sits in exactly one bucket: waiting /
+    # no update / updated / held for the double-check / error). The event
+    # totals (total/done) keep growing with the double-check and retry debts;
+    # pages_total never moves.
+    try:
+        pages_total = con.execute(
+            "SELECT COUNT(*) FROM run_items WHERE run_id=?",
+            (run_id,)).fetchone()[0] or len(urls)
+    except Exception:
+        pages_total = len(urls)
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
                      total=len(urls), done=0, saved=0, changed=0, errors=0,
                      suspects=len(suspects), started=db.now_iso(),
-                     started_ts=time.time(), message="")
+                     started_ts=time.time(), message="",
+                     # the runner is the authority on WHERE the run is - the
+                     # page renders these instead of guessing from messages
+                     phase="capture", round=0, phase_total=len(urls),
+                     phase_done=0, held=len(suspects),
+                     pages_total=max(pages_total, len(urls) + len(suspects)))
     if not urls and not suspects:
         RUN_STATE["message"] = "Nothing left to check."
         try:
@@ -665,6 +681,7 @@ def _run_check_inner(kind, url_ids):
 
     def progress(res):
         RUN_STATE["done"] += 1
+        RUN_STATE["phase_done"] = RUN_STATE.get("phase_done", 0) + 1
         RUN_STATE["message"] = res["url"]
         row = url_by_addr.get(res["url"]) or url_by_key.get(_key(res.get("url")))
         if row is not None and _transient_failure(res):
@@ -757,6 +774,8 @@ def _run_check_inner(kind, url_ids):
         retry_label = f"{ts_label}-retry{rnd}"
         retry_urls, transient = transient, []
         RUN_STATE["total"] += len(retry_urls)
+        RUN_STATE.update(phase="retry", round=rnd,
+                         phase_total=len(retry_urls), phase_done=0)
         RUN_STATE["message"] = (f"retrying {len(retry_urls)} blocked page(s), "
                                 f"round {rnd} of 2…")
         print(f"[retry] round {rnd}: {len(retry_urls)} transient failure(s)",
@@ -769,6 +788,7 @@ def _run_check_inner(kind, url_ids):
 
         def rprogress(res):
             RUN_STATE["done"] += 1
+            RUN_STATE["phase_done"] = RUN_STATE.get("phase_done", 0) + 1
             RUN_STATE["message"] = res["url"]
             row = (retry_by_addr.get(res["url"])
                    or retry_by_key.get(_key(res.get("url"))))
@@ -816,7 +836,8 @@ def _run_check_inner(kind, url_ids):
                                         stop_check=stopping))
         if retry_suspects:
             _verify_suspects(con, retry_suspects, retry_label, concurrency,
-                             counters, run_id, recapture=not stopping())
+                             counters, run_id, recapture=not stopping(),
+                             phase="retry")
     if transient:
         print(f"[retry] {len(transient)} page(s) still failing after the"
               " extra rounds - kept as errors, next run tries again", flush=True)
@@ -1051,6 +1072,10 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         # each suspect owes ONE more capture at the end - publish the debt so
         # the ETA can tell the truth instead of ignoring the verify tail
         RUN_STATE["suspects"] = len(suspects)
+        # 'held' is the page-bucket view of the same fact: how many pages are
+        # currently in limbo awaiting their double-check (down-ticked as each
+        # one is resolved in the verify pass)
+        RUN_STATE["held"] = RUN_STATE.get("held", 0) + 1
     else:
         _set_checked(con, url_id, now, "notlive" if dead else "unchanged")
         index_items(con, url_id, snap_dir, dead)
@@ -1059,21 +1084,25 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
 
 
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
-                     recapture=True):
+                     recapture=True, phase="verify"):
     """Re-capture every suspected change once and flag only those that persist.
-    Each verified page is committed on its own."""
+    Each verified page is committed on its own. phase names the pipeline stage
+    for the dashboard ('verify' for the main double-check; the retry rounds
+    pass 'retry' so the stepper stays on their step)."""
     RUN_STATE["message"] = (
         f"double-checking {len(suspects)} suspected change(s)…" if recapture
         else f"saving {len(suspects)} suspected change(s) before stopping…")
     if recapture:
         RUN_STATE["total"] += len(suspects)
     RUN_STATE["suspects"] = 0     # the debt is folded into total now
+    RUN_STATE.update(phase=phase, phase_total=len(suspects), phase_done=0)
     ts2 = ts_label + "-verify"
     vjobs = [(s["row"]["url"], str(_snapshot_dir(s["row"]["id"], ts2)))
              for s in suspects]
 
     def vprogress(res):
         RUN_STATE["done"] += 1
+        RUN_STATE["phase_done"] = RUN_STATE.get("phase_done", 0) + 1
         RUN_STATE["message"] = res["url"]
 
     def paused():
@@ -1173,6 +1202,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
         counters["saved"] += 1
         RUN_STATE["saved"] = counters["saved"]
         RUN_STATE["changed"] = counters["changed"]
+        RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)  # out of limbo
         con.execute("UPDATE runs SET changed=? WHERE id=?",
                     (counters["changed"], run_id))
         _mark_item(con, run_id, url_id, "done")   # this suspect is now resolved

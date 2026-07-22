@@ -76,13 +76,48 @@
   </div>
 
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
-    <div class="muted" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-      <span>
-        {#- the total INCLUDES the pages held for the end-of-run double-check
-            (each owes one more capture), so the percentage is honest about the
-            work still ahead rather than jumping when the double-check starts -#}
-        <span id="run-verb">Capturing</span> <b><span id="run-done">{{ state.done }}</span></b>/<span id="run-total" title="Includes one re-capture for every page held for the double-check">{{ state.total + (state.suspects or 0) }}</span><span id="run-pct" class="runpct">{{ (100 * state.done // (state.total + (state.suspects or 0))) if state.total else 0 }}%</span>
-      </span>
+    <style>
+      /* ---- run pipeline: stepper + one page-bucket bar --------------------
+         Every page of the run sits in exactly ONE segment at any moment:
+         no update / updated / held for double-check / error / waiting.
+         Retries visibly heal the red segment; the double-check drains the
+         violet one. The stepper above names where the run is. */
+      .rp-steps { display:flex; align-items:center; gap:6px; margin:10px 0 8px;
+                  font-size:12px; flex-wrap:wrap }
+      .rp-step { display:inline-flex; align-items:center; gap:6px; padding:3px 10px;
+                 border:1px solid var(--line); border-radius:999px; color:var(--muted);
+                 background:var(--bg); white-space:nowrap }
+      .rp-step .dot { width:7px; height:7px; border-radius:50%; background:var(--line) }
+      .rp-step.on { color:var(--fg); border-color:#2563eb; font-weight:600 }
+      .rp-step.on .dot { background:#2563eb; animation: rp-pulse 1.4s ease-in-out infinite }
+      .rp-step.done { color:var(--fg) }
+      .rp-step.done .dot { background:#16a34a }
+      .rp-step.skip { opacity:.45 }
+      .rp-arrow { color:var(--muted); opacity:.6 }
+      @keyframes rp-pulse { 0%,100% {opacity:1} 50% {opacity:.35} }
+      .rp-bar { display:flex; height:14px; border-radius:8px; overflow:hidden;
+                background:var(--hover); border:1px solid var(--line) }
+      .rp-bar > div { height:100%; width:0; transition: width .7s ease }
+      .rp-bar.paused { filter:saturate(.35) brightness(.95) }
+      #seg-ok   { background:#16a34a }
+      #seg-upd  { background:#ea580c }
+      #seg-held { background:#7c3aed; background-image:linear-gradient(45deg,
+                   rgba(255,255,255,.22) 25%, transparent 25%, transparent 50%,
+                   rgba(255,255,255,.22) 50%, rgba(255,255,255,.22) 75%, transparent 75%);
+                   background-size:14px 14px; animation: rp-slide 1s linear infinite }
+      #seg-err  { background:#dc2626 }
+      @keyframes rp-slide { from {background-position:0 0} to {background-position:14px 0} }
+      .rp-chips { display:flex; gap:14px; flex-wrap:wrap; margin-top:7px;
+                  font-size:12.5px; align-items:center; color:var(--muted) }
+      .rp-chips .c { display:inline-flex; align-items:center; gap:5px }
+      .rp-chips .sw { width:9px; height:9px; border-radius:3px; display:inline-block }
+    </style>
+    <div class="rp-steps">
+      <span class="rp-step" id="step-capture"><span class="dot"></span>Capture</span>
+      <span class="rp-arrow">→</span>
+      <span class="rp-step" id="step-verify" title="Pages that looked updated are captured a second time; only an update that shows again is confirmed"><span class="dot"></span>Double-check</span>
+      <span class="rp-arrow">→</span>
+      <span class="rp-step" id="step-retry" title="Pages the CDN blocked or that failed to load get two more tries before counting as errors"><span class="dot"></span>Retry blocked</span>
       <span id="run-paused" style="display:none; color:#ea580c; font-weight:600">⏸ paused</span>
       <span id="run-stopping" style="display:none; color:#dc2626; font-weight:600">⏹ ending…</span>
       <span style="margin-left:auto; display:inline-flex; gap:8px">
@@ -90,17 +125,25 @@
         <button id="run-stop" class="linkbtn" type="button" onclick="stopRun()" style="color:#dc2626">⏹ End check</button>
       </span>
     </div>
-    <div class="progress"><div id="run-bar" style="width:0%"></div></div>
-    {#- The breakdown of what the run has done so far, so you always know where
-        it is: settled (saved), held for the end-of-run double-check, and
-        errored. In the double-check pass the middle number flips to how many
-        of those held pages have been confirmed as real updates. -#}
-    <div class="muted" style="margin-top:7px; display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; align-items:center">
-      <span><b id="run-saved" style="color:#16a34a">0</b> <span id="run-saved-lbl">saved</span></span>
-      <span id="run-recheck-wrap"><b id="run-suspects" style="color:#ea580c">0</b> <span id="run-recheck-lbl">to re-check</span></span>
-      <span id="run-err-wrap"><b id="run-errors" style="color:#dc2626">0</b> errors</span>
+    <div class="muted" style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px">
+      <span style="font-size:13.5px; color:var(--fg)"><b id="run-verb">Capturing pages</b></span>
+      <span id="run-phase-count" style="font-variant-numeric:tabular-nums"></span>
+      <span id="run-pct" class="runpct" title="Of all the work this run owes, double-check and retries included"></span>
       <span id="run-rate" style="margin-left:auto; opacity:.85"></span>
       <b id="run-eta" style="color:var(--accent)"></b>
+    </div>
+    <div class="rp-bar" id="rp-bar" title="Each page of this run sits in exactly one colour">
+      <div id="seg-ok"   title="No update — captured, compared, done"></div>
+      <div id="seg-upd"  title="Confirmed updates (shown twice in a row)"></div>
+      <div id="seg-held" title="Held — waiting for the second capture (double-check)"></div>
+      <div id="seg-err"  title="Failed so far — retried twice before it counts"></div>
+    </div>
+    <div class="rp-chips">
+      <span class="c"><span class="sw" style="background:#16a34a"></span><b id="chip-ok">0</b> no update</span>
+      <span class="c"><span class="sw" style="background:#ea580c"></span><b id="chip-upd">0</b> updated</span>
+      <span class="c"><span class="sw" style="background:#7c3aed"></span><b id="chip-held">0</b> double-checking</span>
+      <span class="c"><span class="sw" style="background:#dc2626"></span><b id="chip-err">0</b> errors</span>
+      <span class="c" style="opacity:.75"><span class="sw" style="background:var(--line)"></span><b id="chip-wait">0</b> waiting</span>
     </div>
     <div class="muted" style="margin-top:5px"><span id="run-msg" style="font-size:12px"></span></div>
   </div>
@@ -661,7 +704,21 @@ function reflectPause() {
   if (isStopping) { btn.disabled = true; if (sbtn) sbtn.disabled = true; }
 }
 let rateHist = [];
-let inVerify = false, prevSuspects = 0, captureTotal = 0;
+// The RUNNER declares where the run is (phase / round / phase_done /
+// phase_total / held / pages_total) - this code only renders it. The old
+// version guessed the stage from message strings and latched the guess in
+// sessionStorage; retry rounds broke that for good.
+function phaseOf(s) {
+  if (s.phase) return s.phase;                 // the runner's word (current)
+  // one-poll fallback for a run started under the previous server build
+  if (/retry|round/i.test(s.message || '')) return 'retry';
+  if ((s.changed || 0) > 0 || /double-check/i.test(s.message || '')) return 'verify';
+  return 'capture';
+}
+function setStep(id, cls) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'rp-step' + (cls ? ' ' + cls : '');
+}
 async function poll() {
   try {
     const r = await fetch('/status'); const s = await r.json();
@@ -671,102 +728,69 @@ async function poll() {
       isPaused = !!s.paused;
       isStopping = !!s.stopping;
       box.style.display = 'block';
-      // A run has two stages. STAGE 1 captures every page and holds any that
-      // look changed. STAGE 2 re-captures only those held pages to confirm the
-      // change is real (not a one-off flake). The runner resets suspects to 0
-      // and its message says "double-check" when stage 2 starts - latch on
-      // either so a per-page message ticking by afterwards can't flip us back.
-      // Restore the latched stage from a prior load of THIS run (keyed by its
-      // start time) so a page reload in the middle of the double-check no
-      // longer drops the bar back to "Capturing".
-      const runKey = 'ifw_run_' + (s.started_ts || '0');
-      if (!inVerify && sessionStorage.getItem(runKey + '_v') === '1') inVerify = true;
-      if (!captureTotal) {
-        const ct = parseInt(sessionStorage.getItem(runKey + '_ct') || '', 10);
-        if (!isNaN(ct)) captureTotal = ct;
-      }
-      // Stage 2 detection - any one is enough, and it only ever latches ON:
-      //  - the runner names it in the message at the hand-off
-      //  - suspects were held, then reset to 0 when the double-check begins
-      //  - "changed" only ever climbs during the double-check, never capture,
-      //    so it is a reload-proof signal even after the message has moved on
-      if (/double-check/i.test(s.message || '')) inVerify = true;
-      if (prevSuspects > 0 && (s.suspects || 0) === 0) inVerify = true;
-      if ((s.changed || 0) > 0) inVerify = true;
-      prevSuspects = s.suspects || 0;
-      if (!inVerify) {
-        captureTotal = s.total;                       // before stage 2 grows it
-        try { sessionStorage.setItem(runKey + '_ct', captureTotal); } catch (e) {}
-      } else {
-        try { sessionStorage.setItem(runKey + '_v', '1'); } catch (e) {}
-      }
+      const phase = phaseOf(s);
 
-      const savedEl = document.getElementById('run-saved');
-      const savedLbl = document.getElementById('run-saved-lbl');
-      const midEl = document.getElementById('run-suspects');
-      const midLbl = document.getElementById('run-recheck-lbl');
-      document.getElementById('run-errors').textContent = s.errors != null ? s.errors : 0;
-      let dispDone, dispTotal;
-      if (inVerify) {
-        // The double-check RE-CAPTURES every held page first (this progress),
-        // and only compares them all at the very end. So a page is not
-        // "cleared" just because it has been re-captured - nothing is judged
-        // until the compare step. Show only what is honest during the
-        // re-capture: how many updates are confirmed SO FAR, and how many are
-        // still to re-check. (The old code showed re-captured-minus-confirmed
-        // as "false alarms", which read as "everything is being thrown out"
-        // while in fact nothing had been judged yet.)
-        dispTotal = Math.max(1, s.total - captureTotal);
-        dispDone = Math.max(0, Math.min(dispTotal, s.done - captureTotal));
-        const confirmed = s.changed != null ? s.changed : 0;
-        const remaining = Math.max(0, dispTotal - dispDone);
-        savedEl.textContent = confirmed; savedEl.style.color = '#ea580c';
-        savedLbl.textContent = 'confirmed as real updates so far';
-        savedLbl.title = 'Captured a second time and compared: the update showed again, so it is real.';
-        midEl.textContent = remaining; midEl.style.color = '#6b7280';
-        midLbl.textContent = 'still to re-check';
-        midLbl.title = 'Held pages waiting for their second capture and compare.';
+      // ---- stepper: where the run is, where it has been -------------------
+      setStep('step-capture', phase === 'capture' ? 'on' : 'done');
+      setStep('step-verify',  phase === 'verify' ? 'on'
+              : (phase === 'retry' ? 'done'
+                 : ((s.held || s.suspects) ? '' : 'skip')));
+      setStep('step-retry',   phase === 'retry' ? 'on' : 'skip');
+      const retryLbl = document.getElementById('step-retry');
+      if (retryLbl && phase === 'retry' && s.round)
+        retryLbl.lastChild.textContent = 'Retry blocked · round ' + s.round + ' of 2';
+
+      // ---- the page buckets: every page in exactly one colour -------------
+      const errs = s.errors || 0, upd = s.changed || 0;
+      const held = s.held != null ? s.held : (s.suspects || 0);
+      const noUpd = Math.max(0, (s.saved || 0) - upd - errs);
+      const pagesTotal = s.pages_total || 0;
+      if (pagesTotal) {
+        const wait = Math.max(0, pagesTotal - noUpd - upd - held - errs);
+        const w = n => (100 * n / pagesTotal) + '%';
+        document.getElementById('seg-ok').style.width = w(noUpd);
+        document.getElementById('seg-upd').style.width = w(upd);
+        document.getElementById('seg-held').style.width = w(held);
+        document.getElementById('seg-err').style.width = w(errs);
+        document.getElementById('chip-wait').textContent = wait;
       } else {
-        // Stage 1: checking every page; some get held for stage 2. The total
-        // INCLUDES one coming re-capture per held page, so the percentage is
-        // honest about the double-check work still owed - the denominator
-        // grows as pages are held instead of the bar jumping later.
-        dispDone = s.done;
-        dispTotal = s.total + (s.suspects != null ? s.suspects : 0);
-        // "saved" in the runner = settled and filed. Errors are broken out on
-        // their own, so what remains is pages that were captured AND compared:
-        // no update found, finished, never re-checked. Say exactly that.
-        const errs1 = s.errors != null ? s.errors : 0;
-        const noUpd = Math.max(0, (s.saved != null ? s.saved : 0) - errs1);
-        savedEl.textContent = noUpd; savedEl.style.color = '#16a34a';
-        savedLbl.textContent = 'no update (finished)';
-        savedLbl.title = 'Captured and already compared against the last capture — no update found. These pages are done and are not looked at again this run.';
-        midEl.textContent = s.suspects != null ? s.suspects : 0; midEl.style.color = '#ea580c';
-        midLbl.textContent = 'held to double-check';
-        midLbl.title = 'Looked updated on the first capture. Each is captured a second time at the end of the run, and only an update that shows again is confirmed.';
+        // previous server build: plain fill, green
+        document.getElementById('seg-ok').style.width =
+          (s.total ? Math.round(100 * s.done / s.total) : 0) + '%';
+        document.getElementById('chip-wait').textContent =
+          Math.max(0, (s.total || 0) - (s.done || 0));
       }
-      document.getElementById('run-done').textContent = dispDone;
-      document.getElementById('run-total').textContent = dispTotal;
+      document.getElementById('chip-ok').textContent = noUpd;
+      document.getElementById('chip-upd').textContent = upd;
+      document.getElementById('chip-held').textContent = held;
+      document.getElementById('chip-err').textContent = errs;
+      document.getElementById('rp-bar').className =
+        'rp-bar' + ((isPaused || isStopping) ? ' paused' : '');
+
+      // ---- verb + per-phase progress + overall percent --------------------
       const verb = document.getElementById('run-verb');
-      const bar = document.getElementById('run-bar');
-      // When pausing/ending, a page already mid-capture can't be interrupted,
-      // so a few in-progress pages finish first. Say so plainly instead of
-      // showing live URLs tick by - that's what read as "it won't stop".
+      const phc = document.getElementById('run-phase-count');
+      const pctEl = document.getElementById('run-pct');
+      const overall = s.total ? Math.round(100 * s.done / s.total) : 0;
+      if (pctEl) pctEl.textContent = 'overall ' + overall + '%';
+      if (phc) phc.textContent = (s.phase_total != null && s.phase_total > 0)
+          ? (Math.min(s.phase_done || 0, s.phase_total) + ' of ' + s.phase_total
+             + (phase === 'capture' ? ' pages' : ''))
+          : (s.done + ' of ' + s.total);
       if (isStopping) {
-        if (verb) verb.textContent = 'Ending —';
+        verb.textContent = 'Ending —';
         document.getElementById('run-eta').textContent = '';
         document.getElementById('run-msg').textContent =
           'Finishing the pages already in progress, then it stops (up to ~1–2 min). Everything captured is kept.';
-        if (bar) bar.style.background = '#dc2626';
       } else if (isPaused) {
-        if (verb) verb.textContent = 'Paused —';
+        verb.textContent = 'Paused —';
         document.getElementById('run-eta').textContent = '';
         document.getElementById('run-msg').textContent =
           'Finishing the pages already in progress, then it holds. Press Resume to continue.';
-        if (bar) bar.style.background = '#ea580c';
       } else {
-        if (verb) verb.textContent = inVerify ? 'Double-checking the updates' : 'Capturing all pages';
-        // live throughput from the last ~3 min of polls
+        verb.textContent = phase === 'verify' ? 'Double-checking the updates'
+          : phase === 'retry' ? ('Retrying blocked pages — round ' + (s.round || 1) + ' of 2')
+          : 'Capturing pages';
         rateHist.push({t: Date.now(), done: s.done});
         rateHist = rateHist.filter(x => Date.now() - x.t < 180000);
         let rate = '';
@@ -777,18 +801,9 @@ async function poll() {
         }
         document.getElementById('run-rate').textContent = rate;
         document.getElementById('run-eta').textContent = fmtEta(s.eta_s);
-        document.getElementById('run-msg').textContent =
-          inVerify && !/double-check/i.test(s.message || '')
-            ? 're-checking ' + (s.message || '') : (s.message || '');
-        if (bar) bar.style.background = '';
+        document.getElementById('run-msg').textContent = s.message || '';
       }
       reflectPause();
-      // bar + percent follow the CURRENT stage (stage 2 shows re-check progress,
-      // not the full-set total) so 100% means "this stage is done"
-      const pct = dispTotal ? Math.round(100 * dispDone / dispTotal) : 0;
-      bar.style.width = pct + '%';
-      const pctEl = document.getElementById('run-pct');
-      if (pctEl) pctEl.textContent = pct + '%';
       setTimeout(poll, 2000);
     } else if (sawRunning) {
       location.reload();
