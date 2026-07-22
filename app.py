@@ -2782,6 +2782,16 @@ def run_now():
         if not ids:
             flash("Every priced part already carries its volume range.")
             return redirect(url_for("index"))
+    # baseline=1: fresh-start run after a detection-method change - every ok
+    # capture becomes the page's baseline, nothing is compared or flagged
+    if request.form.get("baseline") == "1" or request.args.get("baseline") == "1":
+        if runner.run_check_background(kind="baseline", url_ids=ids,
+                                       baseline=True):
+            flash("Baseline run started — every capture becomes the new "
+                  "baseline, nothing is compared. The NEXT run detects edits.")
+        else:
+            flash("A check is already running.")
+        return redirect(url_for("index"))
     if runner.run_check_background(kind="manual", url_ids=ids):
         flash(f"Checking {len(ids)} pending page(s)…" if ids
               else "Check started - progress is shown below.")

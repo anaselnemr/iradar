@@ -497,12 +497,20 @@ def _rebuild_suspects(con, run_id):
     return suspects, requeue
 
 
-def run_check(kind="manual", url_ids=None):
-    """Run a full check. Returns run summary dict, or None if already running."""
+def run_check(kind="manual", url_ids=None, baseline=False):
+    """Run a full check. Returns run summary dict, or None if already running.
+
+    baseline=True is the fresh-start mode for after a detection-method change:
+    every ok capture BECOMES the page's baseline with no comparison, no
+    suspects and no double-check - comparing against captures made under the
+    old method would only measure the method, not the site. Errors, blanks,
+    404s, redirects and the transient-retry rounds all behave exactly as in a
+    normal run; the next normal run then detects real edits against the fresh
+    baselines."""
     if not RUN_LOCK.acquire(blocking=False):
         return None
     try:
-        return _run_check_inner(kind, url_ids)
+        return _run_check_inner(kind, url_ids, baseline=baseline)
     finally:
         RUN_STATE["running"] = False
         RUN_STATE["paused"] = False
@@ -510,7 +518,7 @@ def run_check(kind="manual", url_ids=None):
         RUN_LOCK.release()
 
 
-def _run_check_inner(kind, url_ids):
+def _run_check_inner(kind, url_ids, baseline=False):
     db.init_db()
     settings = db.get_settings()
     # 8, and do not raise it without re-running the three-pass check.
@@ -548,6 +556,10 @@ def _run_check_inner(kind, url_ids):
     resumable = _resumable_run(con) if not url_ids else None
     if resumable is not None:
         run_id = resumable["id"]
+        # a crashed BASELINE run must resume as a baseline run - resuming it
+        # in normal mode would compare against old-method captures
+        if (resumable["kind"] or "") == "baseline":
+            baseline = True
         suspects, requeue = _rebuild_suspects(con, run_id)
         keep_pending = {s["new1_id"] for s in suspects}
         want = set(requeue) | {r["url_id"] for r in con.execute(
@@ -697,7 +709,8 @@ def _run_check_inner(kind, url_ids):
             before = dict(counters)
             n_susp = len(suspects)
             try:
-                _handle_result(con, res, row, ts_label, counters, suspects)
+                _handle_result(con, res, row, ts_label, counters, suspects,
+                               baseline=baseline)
                 # Record this page's outcome for resume: held for the double-
                 # check (with its baseline + capture, so the verify can be
                 # rebuilt), or settled and done. Committed with the page.
@@ -804,7 +817,7 @@ def _run_check_inner(kind, url_ids):
                 # answered now, so take that back before recording the capture
                 counters["errors"] = max(0, counters["errors"] - 1)
                 _handle_result(con, res, row, retry_label, counters,
-                               retry_suspects)
+                               retry_suspects, baseline=baseline)
                 if len(retry_suspects) > n_susp:
                     sp = retry_suspects[-1]
                     _mark_item(con, run_id, row["id"], "suspect",
@@ -904,10 +917,15 @@ def _load_failure_added(prev_dir, new_dir, settings=None):
     return any(_LOAD_FAIL_RE.search(l) for l in (new - old))
 
 
-def _handle_result(con, res, row, ts_label, counters, suspects):
+def _handle_result(con, res, row, ts_label, counters, suspects,
+                   baseline=False):
     """Record ONE finished capture and decide its fate: error/blank, redirect,
     baseline, unchanged, or queue as a suspected change. Mutates counters and
-    suspects; the caller owns the commit (one commit per page)."""
+    suspects; the caller owns the commit (one commit per page).
+
+    baseline=True: the capture IS the page's new baseline - no comparison, no
+    suspects, no guards that need a comparison. Everything else (error/blank
+    handling, dead pages, redirects, indexing, self-heal) is identical."""
     url_id = row["id"]
     snap_dir = str(_snapshot_dir(url_id, ts_label))
     now = db.now_iso()
@@ -990,6 +1008,19 @@ def _handle_result(con, res, row, ts_label, counters, suspects):
         "SELECT * FROM snapshots WHERE url_id=? AND status='ok' AND id<>?"
         " AND dir<>'' AND rejected=0 ORDER BY id DESC LIMIT 1",
         (url_id, new_snap_id)).fetchone()
+
+    # BASELINE MODE: this capture IS the truth from here on. No comparison -
+    # against old-method captures a diff would measure the method, not the
+    # site - no suspects, no compare-dependent guards. The previous snapshot
+    # is pruned like any settled page's.
+    if baseline:
+        con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
+                    (now, "notlive" if dead else "unchanged", url_id))
+        index_items(con, url_id, snap_dir, dead)
+        if prev is not None:
+            _prune_snapshot(con, prev)
+        counters["saved"] += 1
+        return
 
     if prev is None:
         con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
@@ -1209,14 +1240,16 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
         con.commit()
 
 
-def run_check_background(kind="manual", url_ids=None):
+def run_check_background(kind="manual", url_ids=None, baseline=False):
     """Fire-and-forget check in a daemon thread. Returns False if already running."""
     if RUN_STATE["running"]:
         return False
     # start clean: never inherit a pause/stop flag from a prior run
     RUN_STATE["paused"] = False
     RUN_STATE["stopping"] = False
-    t = threading.Thread(target=run_check, kwargs={"kind": kind, "url_ids": url_ids},
+    t = threading.Thread(target=run_check,
+                         kwargs={"kind": kind, "url_ids": url_ids,
+                                 "baseline": baseline},
                          daemon=True)
     t.start()
     # tiny wait so the UI immediately shows "running"
