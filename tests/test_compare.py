@@ -293,6 +293,51 @@ def _sects(sections):
     return str(d)
 
 
+def test_item_identity_survives_url_wobble():
+    # a board flapped add+remove when a capture appended a #fragment / ?query /
+    # trailing slash / casing to its link - same title+page = same item now
+    for wobble in ("https://a/board/X#tab", "https://a/board/X?src=1",
+                   "https://a/board/X/", "https://A/Board/X"):
+        assert cmp._item_id({"title": "SmartSense2X", "url": wobble}) == \
+               cmp._item_id({"title": "SmartSense2X", "url": "https://a/board/X"}), wobble
+
+
+def test_lazy_image_placeholder_is_not_a_change():
+    # a partner logo's base64 placeholder resolving to the CDN url is a lazy
+    # load, not an edit - _real_img treats a data: URI like a missing image
+    assert cmp._real_img("https://a/logo.png") is True
+    assert cmp._real_img("data:image/png;base64,iVBORw0KGgo") is False
+    assert cmp._real_img("") is False
+    old = _sects({"partners": [{"title": "Arnold NextG", "url": "u",
+                                "img": "data:image/png;base64,iVB"}]})
+    new = _sects({"partners": [{"title": "Arnold NextG", "url": "u",
+                                "img": "https://assets.infineon.com/logo.png"}]})
+    assert cmp.library_diff(old, new)["changed"] is False, "lazy logo flagged"
+    # but two REAL logos differing is still a real change
+    new2 = _sects({"partners": [{"title": "Arnold NextG", "url": "u",
+                                 "img": "https://a/logo-v2.png"}]})
+    old2 = _sects({"partners": [{"title": "Arnold NextG", "url": "u",
+                                 "img": "https://a/logo-v1.png"}]})
+    assert cmp.library_diff(old2, new2)["changed"] is True
+
+
+def test_community_state_reads_thread_list_not_placeholder():
+    import tempfile, json as _json
+    def _snap_comm(exists, has_content, nthreads):
+        d = Path(tempfile.mkdtemp(prefix="ifxcomm_"))
+        threads = [{"title": f"t{i}", "url": f"u{i}"} for i in range(nthreads)]
+        (d / "sections.json").write_text(_json.dumps({"flags": {
+            "developer_community": {"exists": exists, "has_content": has_content,
+                                    "threads": threads}}}), encoding="utf-8")
+        return str(d)
+    # the run-134 flap: mid-load (has_content False, 1 thread) vs settled
+    # (True, 5). Threads>0 both -> 'has discussions' both -> no transition
+    assert cmp._community_state(_snap_comm(True, False, 1)) == "has discussions"
+    assert cmp._community_state(_snap_comm(True, True, 5)) == "has discussions"
+    assert cmp._community_state(_snap_comm(True, False, 0)) == "empty"
+    assert cmp._community_state(_snap_comm(False, False, 0)) == "absent"
+
+
 def test_detail_shows_modified_in_place_item():
     # the 5584 case: same title+url, meta/dtype casing changed
     old = _sects({"documents": [{"title": "PQR-XMC4100", "url": "u1",

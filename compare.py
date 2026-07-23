@@ -306,10 +306,28 @@ def _load_sections(snap_dir):
         return {}
 
 
+def _norm_item_url(u):
+    """An item's link, normalised so the SAME item is not counted as removed
+    AND re-added when a capture appends a #fragment, a ?tracking query, a
+    trailing slash or different casing (a board 'SmartSense2X' flapped
+    add+remove between two captures of one page on exactly this wobble)."""
+    u = str(u or "").split("#")[0].split("?")[0].rstrip("/").lower()
+    return u
+
+
 def _item_id(d):
     """What makes an item itself: its name and where it points."""
     return (str(d.get("title", "")).strip().lower(),
-            str(d.get("url", "")).strip())
+            _norm_item_url(d.get("url", "")))
+
+
+def _real_img(u):
+    """A real image, not a lazy-load placeholder. A data: URI is what an
+    <img> holds BEFORE its real src resolves - a partner logo flapped
+    'changed' as its base64 placeholder became the CDN URL on a fuller load.
+    Treat a data: URI like a missing image: not evidence of a real change."""
+    u = str(u or "")
+    return bool(u) and not u.startswith("data:")
 
 
 def _item_body(d):
@@ -336,7 +354,15 @@ def _community_state(snap_dir):
         "developer_community") or {}
     if not dc.get("exists"):
         return "absent"
-    return "has discussions" if dc.get("has_content") else "empty"
+    # 'has_content' is read from the widget's placeholder TEXT, which is
+    # unreliable mid-load: one capture caught the box still resolving
+    # (has_content=False) while it already held a thread, the next caught it
+    # settled with five - the SAME widget flagged 'empty -> has discussions'
+    # on 232 pages. The extracted thread LIST is the structured, reliable
+    # signal: any thread => discussions, whatever the placeholder said.
+    if (dc.get("threads") or []) or dc.get("has_content"):
+        return "has discussions"
+    return "empty"
 
 
 def library_diff_detail(old_dir, new_dir):
@@ -379,7 +405,7 @@ def library_diff_detail(old_dir, new_dir):
                 if ba.get(f, "") != bb.get(f, ""):
                     fields.append((f, ba.get(f, ""), bb.get(f, "")))
             ia, ib = str(a[k].get("img", "")), str(b[k].get("img", ""))
-            if ia and ib and ia != ib:      # both present = real, like the count
+            if _real_img(ia) and _real_img(ib) and ia != ib:
                 fields.append(("img", ia, ib))
             if fields:
                 changed.append({"title": b[k].get("title", ""),
@@ -420,7 +446,7 @@ def library_diff(old_dir, new_dir):
                 n_chg += 1
                 continue
             ia, ib = str(a[k].get("img", "")), str(b[k].get("img", ""))
-            if ia and ib and ia != ib:
+            if _real_img(ia) and _real_img(ib) and ia != ib:
                 n_chg += 1
         if n_add or n_rem or n_chg:
             per[cat] = {"added": n_add, "removed": n_rem, "changed": n_chg}

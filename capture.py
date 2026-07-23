@@ -257,7 +257,27 @@ CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
 #       (XELOC->AIROC) and hydration-flappy - one menu shuffle on Infineon's
 #       side read as an "update" on thousands of pages at once. The top-bar
 #       labels and the breadcrumb live outside these panels and are kept.
-TEXT_REV = 3
+#   4 - drop the volatile STRUCTURED sections from the raw walk: the
+#       design-resource tabs (.designresource-component / #design-resources),
+#       the documents table (#documents / .documents_ifx), partner solutions
+#       (.partner-ul-box) and the buy-box. These are TABBED / PAGINATED /
+#       lazy-loaded: two captures of one page land on different tabs, so the
+#       raw text grabs "Development Tools" one time and "Boards & Designs" the
+#       next - 800+ pages flapped on this in the fresh-vs-fresh run 134. Every
+#       one is tracked ITEM-BY-ITEM in the structured library (documents,
+#       design_resources, partners, price), which is stable, so the raw text
+#       only double-counted them and flapped. Prose (overview, features,
+#       benefits, applications) sits OUTSIDE these containers and is kept.
+TEXT_REV = 4
+
+# The volatile-but-structured sections, excluded from every RAW signal (text,
+# image inventory, screenshot judgement) and left to the structured library,
+# which tracks them item by item and does not flap. Same containers SECTIONS_JS
+# already uses to EXTRACT them, so what leaves the raw walk is exactly what the
+# library still watches.
+VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
+                ".documents_ifx, .ifx_documents_products, .partner-ul-box, "
+                '[class*="buyingoption" i], [class*="buying-option" i]')
 
 # Revision of what the SCREENSHOT shows, stamped alongside text_rev and gated
 # the same way by compare: across a shot_rev change the pixel/height signal is
@@ -268,7 +288,11 @@ TEXT_REV = 3
 #       the whole page, community included - it just must not JUDGE it), and
 #       their bounding boxes are recorded in meta.json (shot_ignore) so the
 #       compare masks those regions instead of the capture hiding them
-SHOT_REV = 3
+#   4 - the volatile-but-structured sections (VOLATILE_SEL) are masked too:
+#       the design-resource tabs / documents table / partners flap the pixels
+#       exactly as they flap the text (different tab each capture). Still shown
+#       whole in the picture, just not judged - the library tracks their items.
+SHOT_REV = 4
 
 # Where the live feeds sit on the page - recorded right before the screenshot
 # (layout is final by then) so the compare can disregard exactly those areas.
@@ -276,13 +300,14 @@ FEED_RECTS_JS = r"""
 () => {
   const out = [];
   for (const el of document.querySelectorAll(
-      'react-component#community, #community, .news-container')) {
+      'react-component#community, #community, .news-container, ' +
+      '""" + VOLATILE_SEL + r"""')) {
     const r = el.getBoundingClientRect();
     if (r.width < 10 || r.height < 10) continue;
     out.push({x: Math.max(0, Math.round(r.left)),
               y: Math.max(0, Math.round(r.top + window.scrollY)),
               w: Math.round(r.width), h: Math.round(r.height)});
-    if (out.length >= 8) break;
+    if (out.length >= 24) break;
   }
   return out;
 }
@@ -294,7 +319,10 @@ FEED_RECTS_JS = r"""
 #   2 - drop the "Latest news" box thumbnails (.news-container) and the
 #       legacy community.cypress.com avatars: run 127 flagged 585 pages on ONE
 #       retired press image and 400 on one avatar rotation.
-IMG_REV = 2
+#   3 - drop images inside the volatile-but-structured sections (VOLATILE_SEL):
+#       board thumbnails and partner logos lazy-load inconsistently between
+#       captures. Their per-item imgs are watched by the library instead.
+IMG_REV = 3
 
 TEXT_JS = r"""
 () => {
@@ -343,7 +371,8 @@ TEXT_JS = r"""
   // real is lost - only the churn that read as 58 false "updates" in one run.
   // Removing one bumps TEXT_REV so existing baselines re-normalise silently.
   const FEED = 'react-component#community, #community, .news-container, ' +
-               '.secondary-navigation-submenu';
+               '.secondary-navigation-submenu, ' +
+               '""" + VOLATILE_SEL + r"""';
   const walk = (node, sink) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent.replace(/\s+/g, ' ').trim();
@@ -419,7 +448,12 @@ IMAGES_JS = r"""
   // at once - one retired press item removed its image from 585 pages'
   // inventories in a single run. Same rule the text walk and the screenshot
   // already apply: the feed is not this page's content.
-  const IN_FEED = el => { try { return !!(el.closest && el.closest('.news-container')); } catch (e) { return false; } };
+  // ...and the same volatile-but-structured sections excluded from the text
+  // walk: their board thumbnails and partner logos lazy-load to different
+  // states between captures (a base64 placeholder one time, the CDN URL the
+  // next), flapping the inventory. Their images are tracked per item in the
+  // library instead.
+  const IN_FEED = el => { try { return !!(el.closest && el.closest('.news-container, """ + VOLATILE_SEL + r"""')); } catch (e) { return false; } };
   const urls = new Set();
   document.querySelectorAll('img').forEach(img => {
     const src = img.currentSrc || img.src;

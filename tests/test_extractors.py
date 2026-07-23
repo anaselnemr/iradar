@@ -89,8 +89,25 @@ def _extract_all():
                 });
                 return Array.from(inside).filter(s => !outside.has(s));
               }""")
+            # lines that exist ONLY inside the volatile-but-structured
+            # sections in this DOM (design-res / documents / partners / buy)
+            vol = pg.evaluate("""
+              (sel) => {
+                const inside = new Set(), outside = new Set();
+                const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let n;
+                while (n = tw.nextNode()) {
+                  const t = n.textContent.replace(/\\s+/g, ' ').trim();
+                  if (t.length <= 12) continue;
+                  let inSel = false;
+                  try { inSel = !!(n.parentElement && n.parentElement.closest(sel)); } catch(e) {}
+                  (inSel ? inside : outside).add(t);
+                }
+                return Array.from(inside).filter(t => !outside.has(t)).slice(0, 40);
+              }""", C.VOLATILE_SEL)
             out[f.stem] = {"text1": t1, "text2": t2, "images": imgs,
-                           "flyout_only": fly, "news_only_imgs": newsimgs}
+                           "flyout_only": fly, "news_only_imgs": newsimgs,
+                           "volatile_only": vol}
         b.close()
     _CACHE = out
     return out
@@ -135,6 +152,21 @@ def test_no_live_feed_leaks_into_text():
 
 
 # --- mega-menu flyout is chrome, not page text ------------------------------
+
+def test_no_volatile_section_leaks_into_text():
+    # The design-resource tabs / documents table / partners / buy-box are
+    # tabbed/paginated/lazy - two captures of one page land on different tabs,
+    # so the raw walk grabbed different content and 800+ pages flapped on a
+    # fresh-vs-fresh run. They are tracked item-by-item in the structured
+    # library instead. Self-calibrating: lines that exist ONLY inside those
+    # containers in this DOM must not appear in the extracted text.
+    for name, r in _extract_all().items():
+        lines = set(r["text1"].split("\n"))
+        leaked = [m for m in r.get("volatile_only", []) if m in lines]
+        assert not leaked, (f"{name}: {len(leaked)} volatile-section line(s) "
+                            f"leaked into page text, e.g. {leaked[:3]} - the "
+                            f"design-res/documents/partner exclusion regressed")
+
 
 def test_no_menu_flyout_leaks_into_text():
     # The mega-menu flyout panels (.secondary-navigation-submenu) carry the
