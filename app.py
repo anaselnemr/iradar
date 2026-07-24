@@ -2461,10 +2461,15 @@ def assets_page():
         " ORDER BY ts DESC, id DESC LIMIT 500").fetchall()
     pages = {}
     for r in rows:
+        # page titles live on the SNAPSHOT, not the url row (u.page_title does
+        # not exist - it 500'd the whole page); take the latest good capture's.
         ps = con.execute(
             "SELECT DISTINCT u.id,"
-            " COALESCE(NULLIF(u.title_override,''), NULLIF(u.page_title,''),"
-            " u.url) t FROM items i JOIN urls u ON u.id=i.url_id"
+            " COALESCE(NULLIF(u.title_override,''), NULLIF((SELECT page_title"
+            "   FROM snapshots WHERE url_id=u.id AND status='ok'"
+            "   AND page_title<>'' ORDER BY id DESC LIMIT 1),''),"
+            " NULLIF(u.label,''), u.url) t"
+            " FROM items i JOIN urls u ON u.id=i.url_id"
             " WHERE i.item_url=? LIMIT 6", (r["url"],)).fetchall()
         pages[r["id"]] = ps
     seeded = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
