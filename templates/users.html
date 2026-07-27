@@ -5,30 +5,63 @@
     admin-only by default, so an editor cannot reach this page or its actions. -#}
 <style>
   .u-wrap { max-width: 880px; margin: 0 auto; }
-  .u-add { display: grid; grid-template-columns: 2fr 1.4fr .9fr auto; gap: 10px;
-           align-items: end; }
-  @media (max-width: 720px) { .u-add { grid-template-columns: 1fr; } }
-  .u-add label { display: block; font-size: 12.5px; font-weight: 600;
-                 color: var(--muted); margin-bottom: 5px; }
-  table.u-list { width: 100%; border-collapse: collapse; margin-top: 4px; }
-  table.u-list th { text-align: left; font-size: 12px; color: var(--muted);
-                    font-weight: 600; padding: 8px 10px;
+
+  /* One row of fields with the button on the end. The label sits in the grid
+     cell with its input rather than floating above the row, so the three
+     labels share a baseline and the three controls share theirs - which is
+     what stops the row looking assembled out of mismatched parts. */
+  .u-add { display: grid; grid-template-columns: 1.7fr 1.3fr auto auto;
+           gap: 12px; align-items: end; }
+  @media (max-width: 760px) { .u-add { grid-template-columns: 1fr 1fr; }
+                              .u-add .u-go { grid-column: 1 / -1; } }
+  @media (max-width: 460px) { .u-add { grid-template-columns: 1fr; } }
+  .u-add label { display: block; font-size: 12px; font-weight: 600;
+                 color: var(--muted); margin-bottom: 6px;
+                 letter-spacing: .01em; }
+  .u-add label span { font-weight: 400; opacity: .75; }
+  /* A select renders 2px taller than a text input and a button 1px shorter,
+     which is enough to knock their labels off the shared baseline. Pinning one
+     height across all three is the only thing that actually lines the row up. */
+  .u-add input, .u-add select, .u-add button { height: 39px; }
+  .u-add select { min-width: 118px; }
+  .u-add .u-go button { padding: 0 20px; white-space: nowrap; }
+
+  table.u-list { width: 100%; border-collapse: collapse; }
+  table.u-list th { text-align: left; font-size: 11.5px; color: var(--muted);
+                    font-weight: 600; letter-spacing: .04em;
+                    text-transform: uppercase; padding: 0 10px 10px;
                     border-bottom: 1px solid var(--line); }
-  table.u-list td { padding: 11px 10px; border-bottom: 1px solid var(--line);
+  table.u-list td { padding: 12px 10px; border-bottom: 1px solid var(--line);
                     vertical-align: middle; }
   table.u-list tr:last-child td { border-bottom: 0; }
-  .u-av { width: 30px; height: 30px; border-radius: 50%; display: grid;
-          place-items: center; font-size: 12.5px; font-weight: 700; color: #fff;
-          background: linear-gradient(135deg, #6d78e0, #8b5cf6); flex-shrink: 0; }
-  .u-who { display: flex; align-items: center; gap: 10px; }
-  .u-name { font-weight: 600; font-size: 13.5px; }
-  .u-mail { color: var(--muted); font-size: 12px; }
+  table.u-list tbody tr:hover { background: var(--hover); }
+  /* Full strength, not dimmed-until-hover. Fading them read as tasteful on a
+     content page and simply as low contrast here - this page exists to press
+     these buttons, and against the dark card they were hard to read at rest. */
+  .u-acts { display: flex; gap: 6px; justify-content: flex-end;
+            flex-wrap: wrap; }
+  .u-acts form { display: inline; margin: 0; }
+  .u-acts button { white-space: nowrap; }
+
+  .u-av { width: 32px; height: 32px; border-radius: 50%; display: grid;
+          place-items: center; font-size: 13px; font-weight: 700; color: #fff;
+          background: linear-gradient(135deg, #6d78e0, #8b5cf6);
+          flex-shrink: 0; }
+  .u-who { display: flex; align-items: center; gap: 11px; }
+  .u-name { font-weight: 600; font-size: 13.5px; display: flex;
+            align-items: center; gap: 6px; flex-wrap: wrap; }
+  .u-mail { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .u-off .u-av { filter: grayscale(1); opacity: .5; }
   .u-off .u-name, .u-off .u-mail { opacity: .5; }
-  .u-acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
-  .u-acts form { display: inline; }
-  .u-me { font-size: 11px; color: var(--accent); background: rgba(94,106,210,.14);
-          padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
-  .roleform select { padding: 5px 8px; font-size: 12.5px; }
+  .u-me { font-size: 10.5px; font-weight: 600; color: var(--accent);
+          background: rgba(94,106,210,.14); padding: 2px 7px;
+          border-radius: 999px; text-transform: uppercase;
+          letter-spacing: .04em; }
+  .roleform { margin: 0; }
+  .roleform select { padding: 5px 26px 5px 9px; font-size: 12.5px;
+                     width: auto; min-width: 92px; }
+  .u-when { font-size: 12.5px; color: var(--muted);
+            font-variant-numeric: tabular-nums; }
 </style>
 
 <div class="u-wrap">
@@ -45,7 +78,7 @@
                placeholder="name@infineon.com">
       </div>
       <div>
-        <label for="un">Name <span style="font-weight:400">(optional)</span></label>
+        <label for="un">Name <span>(optional)</span></label>
         <input id="un" type="text" name="name" placeholder="Full name">
       </div>
       <div>
@@ -55,7 +88,7 @@
           <option value="admin">Admin</option>
         </select>
       </div>
-      <button type="submit">Add</button>
+      <div class="u-go"><button type="submit">Add</button></div>
     </form>
     <p class="muted" style="margin:14px 0 0; font-size:12.5px; line-height:1.5">
       <b>Editors</b> review updates, accept or reject them, and edit page details.
@@ -77,12 +110,13 @@
             <div class="u-who">
               <span class="u-av">{{ (u['name'] or u['email'])[:1]|upper }}</span>
               <div>
-                <div class="u-name">{{ u['name'] or u['email'].split('@')[0] }}
-                  {%- if u['id'] == me['id'] %}<span class="u-me">you</span>{% endif %}
-                  {%- if not u['active'] %}<span class="badge b-error"
-                      style="margin-left:6px">switched off</span>{% endif %}
-                  {%- if u['must_change_pw'] %}<span class="badge b-new"
-                      style="margin-left:6px">password not set</span>{% endif %}
+                {#- .u-name is a flex row with a gap, so the badges space
+                    themselves and wrap on a narrow screen -#}
+                <div class="u-name">
+                  <span>{{ u['name'] or u['email'].split('@')[0] }}</span>
+                  {% if u['id'] == me['id'] %}<span class="u-me">you</span>{% endif %}
+                  {% if not u['active'] %}<span class="badge b-error">switched off</span>{% endif %}
+                  {% if u['must_change_pw'] %}<span class="badge b-new">password not set</span>{% endif %}
                 </div>
                 <div class="u-mail">{{ u['email'] }}</div>
               </div>
@@ -97,7 +131,7 @@
               </select>
             </form>
           </td>
-          <td class="muted" style="font-size:12.5px">
+          <td class="u-when">
             {{ u['last_login'][:16] if u['last_login'] else '—' }}
           </td>
           <td>
