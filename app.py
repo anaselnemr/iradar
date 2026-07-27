@@ -126,6 +126,16 @@ def _require_login():
         sent = (request.form.get("_csrf")
                 or request.headers.get("X-CSRF-Token") or "")
         have = session.get("_csrf") or ""
+        # Signing in is the one place we cannot INSIST on a prior token: it
+        # needs a cookie the browser accepted BEFORE anyone has signed in, and
+        # a browser that would not keep one (a stale cookie from an older
+        # signing key, cookies blocked for the site) is then locked out with no
+        # way back - which is exactly what happened here, six times over. When
+        # the session does carry a token it is still checked; when there is
+        # nothing to check, SameSite=Lax is what stops a cross-site sign-in,
+        # and a forged login is a far smaller problem than a locked-out team.
+        if ep == "login" and not have:
+            return None
         if not have or not secrets.compare_digest(str(sent), str(have)):
             # A login form left open across a restart carries a token that no
             # longer matches. Bouncing it back to /login looked like the
@@ -6122,6 +6132,12 @@ def login():
         if user["must_change_pw"]:
             return redirect(url_for("account_password"))
         return redirect(_safe_next(nxt))
+    # Reaching the sign-in form means whatever session this browser was
+    # carrying is of no further use - an expired one, or one signed with a key
+    # this app no longer has. Throw it away and hand back a clean, freshly
+    # signed cookie, so a stale cookie cannot shadow the new one forever.
+    session.clear()
+    csrf_token()
     return render_template("login.html", error=None, email="", next=nxt)
 
 

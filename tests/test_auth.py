@@ -396,6 +396,55 @@ def test_common_passwords_are_refused():
     assert auth.password_problem("purple-canyon-47-jetty") is None
 
 
+def test_a_browser_that_kept_no_cookie_can_still_sign_in():
+    # The real lockout: signing in needs a cookie the browser accepted BEFORE
+    # anyone signed in. A browser holding a cookie this app can no longer
+    # verify - one signed with an older key - kept failing with no way back.
+    # Six attempts in a row in the field.
+    _reset()
+    c = _client()
+    r = c.post("/login", data={"email": ADMIN, "password": NEWPW})  # no token
+    assert r.status_code == 302, \
+        "a browser with no usable session cookie cannot sign in at all"
+    assert c.get("/").status_code == 200
+
+
+def test_a_bad_token_is_still_refused_when_one_exists():
+    # relaxing the no-cookie case must not relax the real check
+    _reset()
+    c = _client()
+    c.get("/login")                       # now the session HAS a token
+    r = c.post("/login", data={"email": ADMIN, "password": NEWPW,
+                               "_csrf": "wrong"})
+    assert r.status_code == 200 and "sign in again" in r.data.decode(
+        "utf-8", "replace").lower(), "a wrong token was accepted"
+
+
+def test_a_valid_session_is_not_thrown_away_by_visiting_login():
+    # clearing on arrival must not sign out someone who followed a bookmark
+    _reset()
+    c = _client()
+    _signin(c, ADMIN)
+    r = c.get("/login")
+    assert r.status_code == 302, "signed-in user was shown the sign-in form"
+    assert c.get("/").status_code == 200, "visiting /login signed them out"
+
+
+def test_an_unusable_session_is_cleared_at_the_login_page():
+    # a cookie this app can no longer verify must not shadow the fresh one
+    _reset()
+    c = _client()
+    with c.session_transaction() as s:
+        s["uid"] = 999999                 # points at nobody
+        s["_csrf"] = "left-over-token"
+    c.get("/login")                       # arriving replaces it
+    with c.session_transaction() as s:
+        assert s.get("uid") is None, "a dead session survived the login page"
+        assert s.get("_csrf") != "left-over-token", "stale token was kept"
+    r = _signin(c, ADMIN)                 # and signing in works straight after
+    assert r.status_code == 302
+
+
 def test_a_stale_login_form_says_so_instead_of_failing_silently():
     # A login page left open across a restart carries a token the session no
     # longer knows. Bouncing it back to /login was indistinguishable from a
