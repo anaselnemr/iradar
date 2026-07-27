@@ -183,6 +183,31 @@ def init_db():
     -- urls, settings, capture runs and these accounts. must_change_pw is set on
     -- every seeded or admin-reset account, so the shared starting password
     -- cannot survive first login.
+    -- Notes people leave on a page or an asset, so a decision has somewhere to
+    -- live. Deliberately NOT keyed by a foreign key: an item is identified by
+    -- the ASSET it is (title + link), which is how the item page itself is
+    -- keyed - the same datasheet filed under two headings has two item_keys
+    -- and must still show one conversation.
+    --
+    -- author is frozen text, not just a user_id: a note has to keep saying who
+    -- wrote it after that person's account is removed, and re-reading a name
+    -- through a join cannot do that. user_id stays for "is this mine".
+    CREATE TABLE IF NOT EXISTS comments(
+        id INTEGER PRIMARY KEY,
+        target_kind  TEXT NOT NULL,        -- 'page' | 'item'
+        target_id    TEXT NOT NULL,        -- page id, or the asset's identity
+        target_label TEXT NOT NULL DEFAULT '',
+        user_id      INTEGER,
+        author       TEXT NOT NULL DEFAULT '',
+        body         TEXT NOT NULL,
+        created      TEXT NOT NULL DEFAULT '',
+        edited       TEXT NOT NULL DEFAULT '',
+        resolved     INTEGER NOT NULL DEFAULT 0,
+        resolved_by  TEXT NOT NULL DEFAULT '',
+        resolved_at  TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_comments_target
+        ON comments(target_kind, target_id, id);
     CREATE TABLE IF NOT EXISTS users(
         id INTEGER PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,          -- always stored lowercased

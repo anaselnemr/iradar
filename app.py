@@ -2,6 +2,7 @@
 
 Run:  python app.py     then open http://127.0.0.1:5000
 """
+import hashlib
 import io
 import json
 import os
@@ -22,6 +23,7 @@ from flask import (Flask, Response, abort, flash, jsonify, redirect,
 from rapidfuzz import fuzz, process
 
 import auth
+import comments
 import compare as cmp
 import db
 import runner
@@ -66,6 +68,11 @@ EDITOR_MAY_POST = {
     "prewarm",               # warms document previews; no data changes
     "account_password",      # everyone may change their OWN password
     "logout",
+    # Notes are the review conversation itself - an editor who cannot write one
+    # cannot do the job. Who may edit or delete WHICH note is decided per note
+    # inside the comments module, not by role alone: your own words are yours,
+    # and an admin can remove anyone's.
+    "comment_add", "comment_edit", "comment_delete", "comment_resolve",
 }
 # Pages an editor cannot even look at (they configure the system).
 ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page"}
@@ -320,6 +327,19 @@ def _fromjson_filter(s):
         return v if isinstance(v, list) else []
     except Exception:
         return []
+
+
+@app.template_filter("notemd")
+def _notemd_filter(body):
+    """A note's text as safe HTML: escaped, then line breaks and links.
+
+    Marked safe only AFTER comments.render has escaped it - the escaping is
+    what makes it safe, and doing this in the template instead would be one
+    |safe away from letting anyone on the team run script in everyone's
+    browser.
+    """
+    from markupsafe import Markup
+    return Markup(comments.render(body))
 
 
 @app.template_filter("pretty_slug")
@@ -2491,6 +2511,7 @@ def url_detail(url_id):
     for f in ("bl", "pl", "cm", "owner"):
         if (u[f] or "") and f not in _mfields:
             _mfields.append(f)
+    notes, _n, n_open = _notes_for("page", url_id)
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
@@ -2498,7 +2519,9 @@ def url_detail(url_id):
                            settings=_settings_now, level_names=LEVEL_NAMES,
                            meta_fields=_mfields, meta_labels=META_LABELS,
                            crumbs=crumbs, siblings=nav["siblings"],
-                           children=nav["children"])
+                           children=nav["children"],
+                           notes=notes, notes_open=n_open, notes_kind="page",
+                           notes_target=url_id, notes_label=u["url"])
 
 
 @app.route("/change/<int:change_id>")
@@ -2557,10 +2580,14 @@ def change_view(change_id):
             lib_diff = _sections_diff(old_snap["dir"], new_snap["dir"])
         except Exception:
             lib_diff = {}
+    notes, _n, n_open = _notes_for("change", change_id)
     return render_template("change_view.html", c=c, u=u,
                            old_snap=old_snap, new_snap=new_snap, hunks=hunks,
                            img_added=img_added, img_removed=img_removed,
-                           art=art, lib_diff=lib_diff, renorm=renorm)
+                           art=art, lib_diff=lib_diff, renorm=renorm,
+                           notes=notes, notes_open=n_open, notes_kind="change",
+                           notes_target=change_id,
+                           notes_label=(u["url"] if u else ""))
 
 
 ART_NAME_RE = re.compile(r"^[a-z0-9_]+\.png$")
@@ -4911,8 +4938,12 @@ def item_detail(key):
     for p in pages:
         by_type.setdefault(p["ptype"] or "Other", []).append(p)
     con.close()
+    tid, tlabel = item_target(key)
+    notes, _n, n_open = _notes_for("item", tid)
     return render_template("item.html", item=item, pages=pages, item_key=key,
-                           by_type=sorted(by_type.items()))
+                           by_type=sorted(by_type.items()),
+                           notes=notes, notes_open=n_open, notes_kind="item",
+                           notes_target=tid, notes_label=tlabel)
 
 
 @app.route("/hierarchy")
@@ -6119,6 +6150,130 @@ def _sweep_furniture():
     con.close()
     if n:
         print(f"  swept {n} furniture image row(s) from the library index")
+
+
+# ----------------------------------------------------------------- notes ----
+# A change monitor answers "what moved". It could not answer "and what did we
+# decide about it" - that lived in someone's memory, and by the next run it was
+# gone. Every object page carries the same notes section.
+
+def item_target(key, con=None):
+    """The identity a note on an ASSET hangs off, and a label for it.
+
+    Must match how the item page itself is keyed: on what the asset IS (title
+    plus link), not on one item_key. The same datasheet filed under two
+    headings has two keys, and both must open the same conversation - keying a
+    note on the key you happened to arrive by would split it in half.
+    """
+    own = con is None
+    con = con or db.connect()
+    try:
+        r = con.execute("SELECT title, item_url, category FROM items"
+                        " WHERE item_key=? LIMIT 1", (key,)).fetchone()
+        if not r:
+            return None, ""
+        if r["category"] in NON_ASSET_CATS:
+            return "key:" + key, (r["title"] or key)[:200]
+        ident = (r["title"] or "").strip().lower() + "\x00" + (r["item_url"] or "")
+        digest = hashlib.sha1(ident.encode("utf-8")).hexdigest()[:20]
+        return "asset:" + digest, (r["title"] or r["item_url"] or key)[:200]
+    finally:
+        if own:
+            con.close()
+
+
+def _notes_for(kind, target_id, con=None):
+    """(list, total, open) - what every object page needs to render."""
+    rows = comments.for_target(kind, target_id, con=con)
+    return rows, len(rows), sum(1 for r in rows if not r["resolved"])
+
+
+def _back(default="index"):
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return nxt
+    return url_for(default)
+
+
+@app.route("/comment/add", methods=["POST"])
+def comment_add():
+    kind = request.form.get("kind", "")
+    target = request.form.get("target", "")
+    label = request.form.get("label", "")
+    _, err = comments.add(kind, target, request.form.get("body", ""),
+                          current_user(), label=label)
+    if err:
+        flash(err)
+    return redirect(_back() + "#notes")
+
+
+@app.route("/comment/<int:comment_id>/edit", methods=["POST"])
+def comment_edit(comment_id):
+    err = comments.edit(comment_id, request.form.get("body", ""), current_user())
+    if err:
+        flash(err)
+    return redirect(_back() + "#notes")
+
+
+@app.route("/comment/<int:comment_id>/delete", methods=["POST"])
+def comment_delete(comment_id):
+    err = comments.remove(comment_id, current_user(), is_admin=is_admin())
+    if err:
+        flash(err)
+    return redirect(_back() + "#notes")
+
+
+@app.route("/comment/<int:comment_id>/resolve", methods=["POST"])
+def comment_resolve(comment_id):
+    err = comments.set_resolved(comment_id, request.form.get("on") == "1",
+                                current_user())
+    if err:
+        flash(err)
+    return redirect(_back() + "#notes")
+
+
+@app.route("/notes")
+def notes_page():
+    """Every note anyone has written, newest first. A note nobody can find is a
+    note nobody reads, so the conversation has a front door of its own."""
+    only_open = request.args.get("open") == "1"
+    rows = comments.recent(300, only_open=only_open)
+    con = db.connect()
+    try:
+        # resolve each note back to something clickable
+        out = []
+        for c in rows:
+            link, what = None, c["target_label"] or c["target_id"]
+            if c["target_kind"] == "page":
+                r = con.execute("SELECT id, url FROM urls WHERE id=?",
+                                (c["target_id"],)).fetchone()
+                if r:
+                    link, what = url_for("url_detail", url_id=r["id"]), \
+                        (c["target_label"] or r["url"])
+            elif c["target_kind"] == "change":
+                r = con.execute("SELECT id FROM changes WHERE id=?",
+                                (c["target_id"],)).fetchone()
+                if r:
+                    link = url_for("change_view", change_id=r["id"])
+            elif c["target_kind"] == "item":
+                # any key that still resolves to this asset will do
+                k = None
+                if c["target_id"].startswith("key:"):
+                    k = c["target_id"][4:]
+                else:
+                    for cand in con.execute(
+                            "SELECT item_key FROM items ORDER BY id DESC LIMIT 4000"):
+                        tid, _ = item_target(cand["item_key"], con=con)
+                        if tid == c["target_id"]:
+                            k = cand["item_key"]
+                            break
+                if k:
+                    link = url_for("item_detail", key=k)
+            out.append({"c": c, "link": link, "what": what})
+    finally:
+        con.close()
+    return render_template("notes.html", rows=out, only_open=only_open,
+                           open_total=comments.open_total())
 
 
 # ---------------------------------------------------------------- accounts --

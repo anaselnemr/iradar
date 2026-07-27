@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Notes — iRadar{% endblock %}
+{% block content %}
+{#- A note left on one page in a list of 4,188 is a note nobody finds again.
+    This is the way back in: everything anyone has written, newest first. -#}
+<style>
+  .nl-wrap { max-width: 900px; margin: 0 auto; }
+  .nl-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .nl { list-style: none; margin: 0; padding: 0; }
+  .nl li { display: flex; gap: 12px; padding: 14px 10px;
+           border-bottom: 1px solid var(--line); }
+  .nl li:last-child { border-bottom: 0; }
+  .nl li:hover { background: var(--hover); }
+  .nl-av { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+           display: grid; place-items: center; font-size: 12px;
+           font-weight: 700; color: #fff;
+           background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  .nl-main { flex: 1; min-width: 0; }
+  .nl-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+             font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }
+  .nl-meta b { color: var(--ink); font-size: 13.5px; }
+  .nl-body { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+  .nl-on { font-size: 12.5px; margin-top: 6px; display: block;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nl-done .nl-body { color: var(--muted); }
+  .nl-done .nl-av { filter: grayscale(1); opacity: .6; }
+  .nl-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+             font-weight: 600; color: var(--muted); background: var(--hover);
+             padding: 1px 7px; border-radius: 999px; }
+</style>
+
+<div class="nl-wrap">
+  <div class="card">
+    <div class="nl-tabs">
+      <a class="chip {{ '' if only_open else 'chip-on' }}"
+         href="{{ url_for('notes_page') }}">Everything</a>
+      <a class="chip {{ 'chip-on' if only_open else '' }} {{ 'chip-warn' if open_total }}"
+         href="{{ url_for('notes_page', open=1) }}">Open <b>{{ open_total }}</b></a>
+    </div>
+
+    {% if rows %}
+    <ol class="nl">
+      {% for r in rows %}
+      <li class="{{ 'nl-done' if r.c['resolved'] }}">
+        <span class="nl-av" aria-hidden="true">{{ (r.c['author'] or '?')[:1]|upper }}</span>
+        <div class="nl-main">
+          <div class="nl-meta">
+            <b>{{ r.c['author'] or 'someone' }}</b>
+            <time title="{{ r.c['created'] }}">{{ r.c['created'][:16] }}</time>
+            <span class="nl-kind">{{ {'page':'page','item':'asset','change':'update'}[r.c['target_kind']] }}</span>
+            {%- if r.c['resolved'] %}<span class="badge b-unchanged">done</span>{% endif %}
+          </div>
+          <div class="nl-body">{{ r.c['body']|notemd }}</div>
+          {% if r.link %}
+            <a class="nl-on" href="{{ r.link }}#note-{{ r.c['id'] }}">on {{ r.what }} →</a>
+          {% else %}
+            <span class="nl-on muted">on {{ r.what }} (no longer tracked)</span>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="muted" style="margin:0">
+      {% if only_open %}Nothing open — every note has been marked done.
+      {% else %}No notes yet. Open any page, asset or update and leave one at the bottom.
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

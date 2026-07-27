@@ -595,6 +595,60 @@
   [data-theme="dark"] .themelabel-dark { display: inline; }
   [data-theme="dark"] .themelabel-light { display: none; }
 
+  /* ---- notes, on every object page -----------------------------------
+     A thread, not a table: an avatar rail down the left, the words doing the
+     work, and the controls quiet until you want them. */
+  .notes { margin-top: 16px; }
+  .notes-head { display: flex; align-items: baseline; gap: 12px;
+                flex-wrap: wrap; margin-bottom: 14px; }
+  .notes-head h3 { margin: 0; display: flex; align-items: center; gap: 8px; }
+  .notes-n { font-size: 12px; font-weight: 600; color: var(--muted);
+             background: var(--hover); padding: 1px 8px; border-radius: 999px; }
+  .notes-open { font-size: 12px; font-weight: 600; color: var(--warn);
+                background: rgba(234,88,12,.12); padding: 1px 8px;
+                border-radius: 999px; }
+  .notes-hint { font-size: 12.5px; }
+  .notes-empty { margin: 0 0 16px; font-size: 13.5px; }
+
+  .notelist { list-style: none; margin: 0 0 18px; padding: 0;
+              display: flex; flex-direction: column; gap: 2px; }
+  .note { display: flex; gap: 12px; padding: 12px 10px; border-radius: 10px; }
+  .note + .note { border-top: 1px solid var(--line); border-radius: 0; }
+  .note:hover { background: var(--hover); }
+  .note:target { background: rgba(94,106,210,.10); }
+  .note-av { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+             display: grid; place-items: center; font-size: 12px;
+             font-weight: 700; color: #fff;
+             background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  .note-main { flex: 1; min-width: 0; }
+  .note-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+               font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .note-meta b { color: var(--ink); font-size: 13.5px; }
+  .note-edited { font-style: italic; }
+  .note-body { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+  .note-body a { color: var(--link); }
+  /* a finished note stays readable - it is still the record of a decision,
+     just no longer something anyone has to act on */
+  .note-done .note-body { color: var(--muted); }
+  .note-done .note-av { filter: grayscale(1); opacity: .6; }
+  .note-done-by { font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+  .note-actions { display: flex; align-items: center; gap: 10px;
+                  flex-wrap: wrap; margin-top: 7px; }
+  .note-actions form { display: inline; margin: 0; }
+  .note-tools { opacity: 0; transition: opacity .12s; }
+  .note:hover .note-tools, .note-tools:focus-within { opacity: 1; }
+  @media (hover: none) { .note-tools { opacity: 1; } }
+  .linkbtn { background: none; border: 0; padding: 0; cursor: pointer;
+             font: inherit; font-size: 12.5px; color: var(--muted);
+             text-decoration: underline; text-underline-offset: 2px; }
+  .linkbtn:hover { color: var(--ink); filter: none; }
+  .linkbtn-danger:hover { color: var(--err); }
+
+  .note-new textarea, .note-edit textarea { width: 100%; resize: vertical;
+             font-size: 14px; line-height: 1.5; }
+  .note-new { border-top: 1px solid var(--line); padding-top: 16px; }
+
   /* ---- account menu (top right) --------------------------------------
      Sits on the dark header, so the trigger is styled like .hbtn while the
      panel drops into page colours - it belongs to the page, not the bar. */
@@ -844,7 +898,8 @@
       repeat their own name in a heading -#}
   <nav>
     {% for ep, label in (('index', 'Dashboard'), ('search_items', 'Content'),
-                         ('hierarchy', 'Hierarchy'), ('export_builder', 'Export'),
+                         ('hierarchy', 'Hierarchy'), ('notes_page', 'Notes'),
+                         ('export_builder', 'Export'),
                          ('history', 'Run history'), ('settings_view', 'Settings')) %}
     <a href="{{ url_for(ep) }}"
        class="{{ 'on' if request.endpoint == ep }}"
@@ -940,6 +995,21 @@
       return real(input, init);
     };
   })();
+
+  // Editing a note swaps the text for its editor in place, so a long thread
+  // does not scroll away underneath you.
+  function noteEdit(id, on) {
+    var body = document.getElementById('body-' + id);
+    var form = document.getElementById('edit-' + id);
+    if (!body || !form) return;
+    body.hidden = on;
+    form.hidden = !on;
+    if (on) {
+      var t = form.querySelector('textarea');
+      t.focus();
+      t.setSelectionRange(t.value.length, t.value.length);   // caret at the end
+    }
+  }
 
   // (the level editor's own outside-click handler used to live here; it is the
   // unified popover handler at the end of this file now, which covers every

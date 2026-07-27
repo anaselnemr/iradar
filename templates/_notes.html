@@ -1,0 +1,94 @@
+{#- The notes section, identical on every object page.
+
+    Takes: notes_kind, notes_target, notes_label, notes (rows), notes_open.
+    One partial rather than three copies: a page, an asset and an update are
+    different things, but "what did we decide about this" reads the same on
+    all of them, and a fix to one should not have to be made three times. -#}
+<div class="card notes" id="notes">
+  <div class="notes-head">
+    <h3>
+      Notes
+      {%- if notes %} <span class="notes-n">{{ notes|length }}</span>{% endif %}
+      {%- if notes_open %} <span class="notes-open">{{ notes_open }} open</span>{% endif %}
+    </h3>
+    <span class="muted notes-hint">Anything you write here stays on this
+      {{ {'page':'page','item':'item','change':'update'}[notes_kind] }} for
+      whoever opens it next.</span>
+  </div>
+
+  {% if notes %}
+  <ol class="notelist">
+    {% for n in notes %}
+    <li class="note {{ 'note-done' if n['resolved'] }}" id="note-{{ n['id'] }}">
+      <span class="note-av" aria-hidden="true">{{ (n['author'] or '?')[:1]|upper }}</span>
+      <div class="note-main">
+        <div class="note-meta">
+          <b>{{ n['author'] or 'someone' }}</b>
+          <time title="{{ n['created'] }}">{{ n['created'][:16] }}</time>
+          {%- if n['edited'] %}<span class="note-edited" title="Edited {{ n['edited'] }}">edited</span>{% endif %}
+          {%- if n['resolved'] %}<span class="badge b-unchanged">done</span>{% endif %}
+        </div>
+
+        <div class="note-body" id="body-{{ n['id'] }}">{{ n['body']|notemd }}</div>
+
+        {#- the editor is the same block, revealed in place - no second page,
+            no losing your spot in a long thread -#}
+        {% if me and n['user_id'] == me['id'] %}
+        <form class="note-edit" id="edit-{{ n['id'] }}" method="post" hidden
+              action="{{ url_for('comment_edit', comment_id=n['id']) }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <textarea name="body" rows="3" required>{{ n['body'] }}</textarea>
+          <div class="note-actions">
+            <button type="submit" class="btn-sm">Save</button>
+            <button type="button" class="btn-ghost btn-sm"
+                    onclick="noteEdit({{ n['id'] }}, false)">Cancel</button>
+          </div>
+        </form>
+        {% endif %}
+
+        <div class="note-actions note-tools">
+          <form method="post" action="{{ url_for('comment_resolve', comment_id=n['id']) }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <input type="hidden" name="on" value="{{ 0 if n['resolved'] else 1 }}">
+            <button type="submit" class="linkbtn">
+              {{ 'Reopen' if n['resolved'] else 'Mark done' }}</button>
+          </form>
+          {% if me and n['user_id'] == me['id'] %}
+          <button type="button" class="linkbtn"
+                  onclick="noteEdit({{ n['id'] }}, true)">Edit</button>
+          {% endif %}
+          {% if me and (n['user_id'] == me['id'] or is_admin) %}
+          <form method="post" action="{{ url_for('comment_delete', comment_id=n['id']) }}"
+                onsubmit="return confirm('Delete this note? It cannot be undone.')">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button type="submit" class="linkbtn linkbtn-danger">Delete</button>
+          </form>
+          {% endif %}
+        </div>
+
+        {% if n['resolved'] and n['resolved_by'] %}
+        <div class="note-done-by">Marked done by {{ n['resolved_by'] }}
+          {%- if n['resolved_at'] %} · {{ n['resolved_at'][:16] }}{% endif %}</div>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="muted notes-empty">No notes yet — leave the first one.</p>
+  {% endif %}
+
+  <form class="note-new" method="post" action="{{ url_for('comment_add') }}">
+    <input type="hidden" name="kind"   value="{{ notes_kind }}">
+    <input type="hidden" name="target" value="{{ notes_target }}">
+    <input type="hidden" name="label"  value="{{ notes_label }}">
+    <input type="hidden" name="next"   value="{{ request.full_path }}">
+    <textarea name="body" rows="3" required
+              placeholder="Leave a note for whoever opens this next…"
+              onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')this.form.requestSubmit()"></textarea>
+    <div class="note-actions">
+      <button type="submit">Post note</button>
+      <span class="muted" style="font-size:12px">Ctrl + Enter</span>
+    </div>
+  </form>
+</div>
