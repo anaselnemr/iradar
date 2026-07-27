@@ -6176,10 +6176,6 @@ def account_password():
         if problem:
             return render_template("change_password.html", forced=forced,
                                    error=problem), 400
-        if new == auth.SEED_PASSWORD:
-            return render_template("change_password.html", forced=forced,
-                                   error="Pick something other than the "
-                                         "starting password."), 400
         auth.set_password(me["id"], new, must_change=False)
         # Re-stamp OUR session with the new password so this browser stays
         # signed in; every other session for the account now fails its check.

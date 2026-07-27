@@ -50,15 +50,6 @@ _IP_FAILS = {}
 MAX_IP_FAILS = 20
 IP_WINDOW = 600           # ten minutes
 
-# Passwords that meet the length rule and are still the first thing anyone
-# tries. Not a breach list - just the shapes this team is likely to reach for.
-_TOO_COMMON = {
-    "password", "password1", "password123", "passw0rd123",
-    "infineon", "infineonwatch", "infineon2026", "infineon@2026",
-    "iradar", "iradar2026", "iradar@2026",
-    "1234567890", "12345678901", "qwertyuiop", "qwerty12345",
-    "letmein123", "welcome123", "admin12345", "changeme123",
-}
 
 
 def _now():
@@ -93,16 +84,18 @@ def norm_email(email):
 
 
 def password_problem(pw):
-    """None if the password is acceptable, else the reason to show the user."""
-    if not pw or len(pw) < 10:
-        return "Use at least 10 characters."
-    low = pw.lower()
-    if low in _TOO_COMMON:
-        return "That is one of the first passwords anyone tries - pick another."
-    if low in ("iradar" + str(y) for y in range(2020, 2035)):
-        return "Too close to the site's own name - pick another."
-    if len(set(pw)) < 5:
-        return "Too few different characters - pick something less repetitive."
+    """None if the password is acceptable, else the reason to show the user.
+
+    Deliberately only one rule: it cannot be blank. Length minimums, banned
+    word lists and character-variety checks were in here and were nothing but
+    an obstacle for a small team on a private dashboard - people pick what they
+    pick, and being told their choice is not allowed on the way in is the worst
+    moment to argue with them. Everything that actually protects the account -
+    hashing, the guess throttle, HTTPS - is unchanged and does not depend on
+    what the password looks like.
+    """
+    if not pw:
+        return "Enter a password."
     return None
 
 

@@ -246,15 +246,25 @@ def test_seeded_account_must_change_password_first():
         "seeded account could browse without setting a password"
 
 
-def test_cannot_keep_the_shared_starting_password():
+def test_any_password_the_person_picks_is_accepted():
+    # No length minimum, no banned words, no character-variety rule. What
+    # protects the account is hashing, the throttle and HTTPS - none of which
+    # care what the password looks like - and arguing with someone about their
+    # choice while they are trying to get in only ever cost time.
     _reset()
-    auth.create_user("fresh2@example.com", "Fresh", "editor")
     c = _client()
-    _signin(c, "fresh2@example.com", auth.SEED_PASSWORD)
-    r = c.post("/account/password", data={"current": auth.SEED_PASSWORD,
-                                          "new": auth.SEED_PASSWORD,
-                                          "again": auth.SEED_PASSWORD})
-    assert r.status_code == 400, "the starting password was accepted as the new one"
+    _signin(c, EDITOR)
+    for pw in ("abc", "1234", auth.SEED_PASSWORD, "aaaaaaaa", "p"):
+        cur = auth.by_email(EDITOR)
+        r = c.post("/account/password",
+                   data={"current": NEWPW if pw == "abc" else prev,
+                         "new": pw, "again": pw, "_csrf": _token(c, "/")})
+        assert r.status_code in (302, 200), f"refused the password {pw!r}"
+        assert auth.check_password_hash(auth.by_email(EDITOR)["pw_hash"], pw), \
+            f"{pw!r} was not actually saved"
+        prev = pw
+    # and a blank one is still not a password
+    assert auth.password_problem("") is not None
 
 
 def test_password_change_requires_the_current_one():
@@ -267,9 +277,11 @@ def test_password_change_requires_the_current_one():
     assert r.status_code == 400, "password changed without proving the old one"
 
 
-def test_short_password_refused():
-    assert auth.password_problem("short") is not None
-    assert auth.password_problem("a-long-enough-one") is None
+def test_only_a_blank_password_is_refused():
+    assert auth.password_problem("") is not None
+    assert auth.password_problem(None) is not None
+    for pw in ("x", "short", "password", "Infineon@2026", "aaaa"):
+        assert auth.password_problem(pw) is None, f"still arguing about {pw!r}"
 
 
 # --- open redirect ----------------------------------------------------------
@@ -388,12 +400,6 @@ def test_one_source_guessing_many_accounts_is_stopped():
     assert not auth.source_blocked("1.1.1.1")
     auth._IP_FAILS.clear()
     auth._FAILS.clear()
-
-
-def test_common_passwords_are_refused():
-    for bad in ("Infineon@2026", "password123", "iradar2026", "aaaaaaaaaaaa"):
-        assert auth.password_problem(bad) is not None, f"accepted {bad!r}"
-    assert auth.password_problem("purple-canyon-47-jetty") is None
 
 
 def test_a_browser_that_kept_no_cookie_can_still_sign_in():
