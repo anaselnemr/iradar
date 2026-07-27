@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — InfineonWatch{% endblock %}
+{% block title %}Settings — iRadar{% endblock %}
 {% block content %}
 {#- Centred on the page and no heading: the nav already says which page this
     is, and a 680px form pinned to the left edge of a 1200px page reads as
@@ -116,15 +116,18 @@
       <p class="muted" style="margin-top:0; max-width:60ch">Who can reach this
         dashboard, and from where.</p>
       <div class="flagrow"><span>Sign-in</span>
-        <span class="badge b-live">HTTP Basic Auth — on for every page</span></div>
-      <div class="flagrow"><span>Public link</span>
-        <span class="badge b-off">closed — local network only</span></div>
+        <span class="badge b-live">personal accounts — every page</span></div>
+      <div class="flagrow"><span>People</span>
+        <span class="muted" style="font-size:13px">
+          <a href="{{ url_for('users_page') }}">Manage people →</a></span></div>
       <div class="flagrow"><span>This laptop</span>
         <span class="muted" style="font-size:13px">http://127.0.0.1:5000</span></div>
       <p class="muted" style="font-size:12.5px; margin-top:12px">
-        Credentials live only in the server's environment (DASH_USER / DASH_PASS),
-        never in the pages or in git. Changing them needs an app restart; clearing
-        both turns the login off for local use.</p>
+        Everyone signs in with their own email and password; passwords are
+        stored only as a salted hash, never in the pages or in git. New accounts
+        start on a shared password and must replace it at first sign-in.
+        <b>Admins</b> manage people, settings, the page list and checks;
+        <b>editors</b> review updates and edit page details.</p>
     </div>
 
     <div style="margin-top:18px" id="savebar"><button>Save settings</button></div>

@@ -33,7 +33,7 @@ from pathlib import Path
 
 import db
 
-UA = ("InfineonWatch/1.0 (private change monitor; sentiment layer; "
+UA = ("iRadar/1.0 (private change monitor; sentiment layer; "
       "contact: local)")
 
 SENT_STATE = {"running": False, "message": "", "done": 0, "total": 0,

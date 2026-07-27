@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Export — InfineonWatch{% endblock %}
+{% block title %}Export — iRadar{% endblock %}
 {% import "_pager.html" as pg with context %}
 {#- keeps the whole selection in the link, so paging never drops a column -#}
 {% macro purl(n) %}?{{ request.query_string.decode()|replace('&page=' ~ page, '')|replace('page=' ~ page ~ '&', '') }}&page={{ n }}{% endmacro %}

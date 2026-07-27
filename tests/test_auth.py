@@ -9,6 +9,7 @@ first sign-in.
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 os.environ.pop("DASH_USER", None)
@@ -124,6 +125,26 @@ def test_guessing_is_throttled():
         auth.check_login(ADMIN, "wrong")
     u, err = auth.check_login(ADMIN, NEWPW)   # right password, still locked
     assert u is None and "try again" in (err or ""), "no throttle on guessing"
+    auth._FAILS.clear()
+
+
+def test_a_served_lock_gives_a_fresh_set_of_tries():
+    # Once the wait has been served the count must reset. Leaving it at the
+    # limit meant the minute bought exactly ONE attempt - a second typo put the
+    # account back into another full minute, forever.
+    _reset()
+    for _ in range(auth.MAX_FAILS):
+        auth.check_login(ADMIN, "wrong")
+    assert auth.locked_for(ADMIN) > 0
+    # pretend the lock expired
+    fails, _ = auth._FAILS[ADMIN]
+    auth._FAILS[ADMIN] = (fails, time.time() - 1)
+    assert auth.locked_for(ADMIN) == 0, "lock did not expire"
+    auth.check_login(ADMIN, "wrong-again")          # one more typo
+    assert auth.locked_for(ADMIN) == 0, \
+        "a single typo after the wait re-locked the account for another minute"
+    u, err = auth.check_login(ADMIN, NEWPW)
+    assert u is not None, f"correct password refused after a served lock: {err}"
     auth._FAILS.clear()
 
 

@@ -1,4 +1,4 @@
-"""Team accounts, roles and sign-in for InfineonWatch.
+"""Team accounts, roles and sign-in for iRadar.
 
 Replaces the single shared HTTP Basic password (DASH_USER/DASH_PASS) with real
 per-person accounts, because the dashboard is going on a public domain for a
@@ -209,13 +209,23 @@ def delete_user(user_id, con=None):
 # --- sign-in ----------------------------------------------------------------
 
 def locked_for(email):
-    """Seconds remaining on the guess-throttle for this account, 0 if free."""
-    rec = _FAILS.get(norm_email(email))
+    """Seconds remaining on the guess-throttle for this account, 0 if free.
+
+    Serving the wait also RESETS the count once it expires. Leaving the count
+    at the limit meant the minute bought a single attempt: one more typo put
+    the account straight back into another full minute, and a colleague who
+    could not quite remember their password was locked out indefinitely a
+    minute at a time. A served lock is served.
+    """
+    email = norm_email(email)
+    rec = _FAILS.get(email)
     if not rec:
         return 0
     fails, until = rec
-    if fails >= MAX_FAILS and until > time.time():
-        return int(until - time.time()) + 1
+    if fails >= MAX_FAILS:
+        if until > time.time():
+            return int(until - time.time()) + 1
+        _FAILS.pop(email, None)          # lock served - fresh set of tries
     return 0
 
 

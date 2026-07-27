@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  InfineonWatch - launch + temporary public link.
+REM  iRadar - launch + temporary public link.
 REM  Starts the app AND creates a temporary internet URL so you
 REM  can open the dashboard from another laptop/phone browser.
 REM
@@ -21,7 +21,7 @@ if not exist .venv\Scripts\activate.bat (
   exit /b 1
 )
 call .venv\Scripts\activate.bat
-start "InfineonWatch server" cmd /k python app.py
+start "iRadar server" cmd /k python app.py
 timeout /t 4 /nobreak >nul
 start "" https://loca.lt/mytunnelpassword
 echo Your stable link: https://infineonwatch-anas.loca.lt

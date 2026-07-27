@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  InfineonWatch - launch. Keep this window open while using.
+REM  iRadar - launch. Keep this window open while using.
 REM ============================================================
 cd /d "%~dp0"
 if not exist .venv\Scripts\activate.bat (

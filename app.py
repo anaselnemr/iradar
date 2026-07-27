@@ -1,4 +1,4 @@
-"""InfineonWatch - website change monitor.
+"""iRadar - website change monitor.
 
 Run:  python app.py     then open http://127.0.0.1:5000
 """
@@ -6146,7 +6146,7 @@ if __name__ == "__main__":
     # auto-infer product/application levels after every run
     threading.Thread(target=_post_run_watcher, daemon=True).start()
     print()
-    print("  InfineonWatch is running:  http://127.0.0.1:5000")
+    print("  iRadar is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")
     print("  e.g. http://192.168.x.x:5000 (see README).")
     print("  Next scheduled check:      " + next_run_text())

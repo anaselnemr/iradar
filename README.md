@@ -1,4 +1,4 @@
-# InfineonWatch — website change monitor
+# iRadar — website change monitor
 
 Watches a list of web pages and **flags any change**: text (including content
 hidden behind tabs), images, and visual appearance (full-page screenshot,

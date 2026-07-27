@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in — InfineonWatch</title>
+<title>Sign in — iRadar</title>
 {#- standalone on purpose: base.html carries the nav and the account menu,
     neither of which means anything to someone who is not signed in yet -#}
 <script>
@@ -61,7 +61,7 @@
 </head>
 <body>
   <div class="box">
-    <div class="brand">Infineon<span>Watch</span></div>
+    <div class="brand">i<span>Radar</span></div>
     <div class="sub">Sign in to review site updates</div>
     <form method="post" action="{{ url_for('login') }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
