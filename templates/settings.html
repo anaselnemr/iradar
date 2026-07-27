@@ -47,12 +47,14 @@
 
       <label style="display:block; margin-top:16px">Captures kept per page
         <span class="muted" style="font-weight:400">— every check stores a full
-          copy of each page, and the screenshot is 94% of it. This is the number
-          that stops the archive growing forever: at 3 it settles around
-          <b>14 GB</b> instead of climbing (it hit 25 GB in two weeks). Older
-          copies are deleted automatically after each check. A page's newest
-          capture, anything an open update still needs, and anything mid-check
-          are always kept.</span>
+          copy of each page, and the screenshot is most of it. This is the
+          number that stops the archive growing forever (it hit 25 GB in two
+          weeks before there was one). A capture is about <b>267 KB</b>, so
+          across 4,188 pages <b>2 settles near 2.7 GB</b> and 3 near 3.8 GB.
+          Nothing is lost at 2: a diff needs this capture and the one before
+          it. Older copies are deleted after each check, and a page's newest
+          capture, anything an open update needs, and anything mid-check are
+          always kept.</span>
         <input type="number" name="keep_snapshots" min="1" max="20"
                value="{{ s.keep_snapshots }}">
       </label>

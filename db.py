@@ -15,13 +15,19 @@ DEFAULT_SETTINGS = {
     "weekday": "mon",             # for weekly
     "hour": "6",                  # 24h clock, local time
     "concurrency": "4",           # parallel browser tabs
-    # How many past captures to keep per page. Each one is ~1.1 MB and the
-    # screenshot is 94% of that, so this is the single number that decides
-    # whether the archive grows without limit: 3 x 4,200 pages caps it around
-    # 14 GB instead of climbing forever (it reached 25 GB in two weeks).
-    # A page's newest capture, anything an open update needs, and anything
-    # mid-check are always kept regardless of this.
-    "keep_snapshots": "3",
+    # How many past captures to keep per page - the single number that decides
+    # whether the archive grows without limit (it reached 25 GB in two weeks
+    # before there was one).
+    #
+    # 2, measured rather than guessed: a capture is 267 KB on the real archive,
+    # so across 4,188 pages 2 settles near 2.7 GB and 3 near 3.8 GB. On a 5 GB
+    # volume that is the difference between 58% and 82% full. Nothing is lost
+    # at 2 - a diff needs the current capture and the one before it, which is
+    # exactly what 2 keeps; the third was a spare nothing routinely reads.
+    #
+    # A page's newest capture, anything an open update still needs, and
+    # anything mid-check are always kept regardless of this.
+    "keep_snapshots": "2",
     "visual_threshold": "0.5",    # % of pixels that must differ to flag a visual change
     "height_threshold": "80",     # px difference in page height to flag
     # one regex per line; matching text lines are ignored.
