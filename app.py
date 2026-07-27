@@ -4847,8 +4847,16 @@ def doc_preview_png(key):
             _pdf_first_png(pdfdata, out)
         else:
             fail.touch()
-    except Exception:
-        pass
+    except ImportError as exc:
+        # The renderer is MISSING, which is not this document's fault - do not
+        # negative-cache it, or every document gets permanently marked
+        # unpreviewable and installing the library later fixes nothing. Say so
+        # instead: this exact failure was invisible in production for a day
+        # because it landed in a bare `except: pass`.
+        print(f"[preview] cannot render - {exc}. Is pypdfium2 installed?",
+              flush=True)
+    except Exception as exc:
+        print(f"[preview] {key}: {type(exc).__name__}: {exc}"[:200], flush=True)
     if out.exists():
         return send_file(out, mimetype="image/png")
     abort(404)

@@ -5,5 +5,10 @@ waitress>=3.0
 playwright>=1.45
 apscheduler>=3.10
 pillow>=10.0
+# renders page 1 of a PDF for the document/design-resource thumbnails. It was
+# missing here and only ever installed by hand on the dev machine, so previews
+# worked locally and silently produced nothing in the container - the import
+# error lands inside a broad except and no thumbnail is written.
+pypdfium2>=4.0
 openpyxl>=3.1
 rapidfuzz>=3.0
