@@ -1,0 +1,24 @@
+# data/ is 4.32 GB of snapshots, screenshots and the database. It belongs on a
+# MOUNTED VOLUME, never inside the image: copied in, it would make every build
+# minutes long and every deploy would ship a stale database that then shadows
+# the real one at the mount point.
+data/
+
+# the local virtualenv is Windows-built and useless in a linux container
+.venv/
+__pycache__/
+*.pyc
+
+# runtime output, not source
+*.log
+qa/*.jsonl
+
+# not needed to run the app
+.git/
+.github/
+tests/
+qa/
+cloudflared.exe
+*.bat
+*.ps1
+tests/fixtures/
