@@ -209,6 +209,35 @@ def test_the_notes_page_renders_and_lists_them():
     assert "findable later" in body, "a note is not findable from the notes page"
 
 
+def test_renaming_yourself_renames_your_past_notes():
+    # The author is frozen text so a DELETED account still says who wrote it.
+    # But renaming yourself is not that case - you are the same person, and a
+    # note signed with a name you no longer use reads as someone else.
+    alice, _ = _people()
+    comments.add("page", 1, "written before the rename", alice)
+    auth.set_name(alice["id"], "Alice Hartmann")
+    row = comments.for_target("page", 1)[0]
+    assert row["author"] == "Alice Hartmann", \
+        "an old note still carries the previous name"
+    assert auth.by_email(ALICE)["name"] == "Alice Hartmann"
+
+
+def test_you_can_rename_yourself_through_the_app():
+    _people()
+    c = _client(ALICE)
+    r = c.post("/account/name", data={"name": "Ali", "_csrf": _csrf(c)})
+    assert r.status_code in (302, 200), f"rename refused ({r.status_code})"
+    assert auth.by_email(ALICE)["name"] == "Ali"
+    # and it shows in the corner
+    assert b"Ali" in c.get("/").data
+
+
+def test_renaming_needs_no_password():
+    # it is not a credential; asking for one just stops people fixing a typo
+    alice, _ = _people()
+    assert auth.set_name(alice["id"], "Whatever They Like") is None
+
+
 def test_the_add_route_will_not_redirect_off_site():
     _people()
     c = _client(ALICE)

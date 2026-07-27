@@ -184,6 +184,28 @@ def set_password(user_id, password, must_change=False, con=None):
             con.close()
 
 
+def set_name(user_id, name, con=None):
+    """Your own display name - what the avatar, the account menu and every note
+    you have written show. Yours to set: an admin types something when they
+    create the account, and only you know how you want to be called."""
+    name = (name or "").strip()[:80]
+    own = con is None
+    con = con or db.connect()
+    try:
+        con.execute("UPDATE users SET name=? WHERE id=?", (name, user_id))
+        # Notes carry the author's name frozen at write time so a deleted
+        # account still says who wrote it. Renaming yourself should still
+        # rename YOUR past notes - they are the same person, not a record of
+        # what you were once called.
+        con.execute("UPDATE comments SET author=? WHERE user_id=?",
+                    (name or "someone", user_id))
+        con.commit()
+        return None
+    finally:
+        if own:
+            con.close()
+
+
 def set_role(user_id, role, con=None):
     """Change a role. Refuses to remove the last admin - an account list nobody
     can administer is only recoverable from a shell."""

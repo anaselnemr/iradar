@@ -73,6 +73,7 @@ EDITOR_MAY_POST = {
     # inside the comments module, not by role alone: your own words are yours,
     # and an admin can remove anyone's.
     "comment_add", "comment_edit", "comment_delete", "comment_resolve",
+    "account_name",          # your own display name is yours
 }
 # Pages an editor cannot even look at (they configure the system).
 ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page"}
@@ -3987,7 +3988,14 @@ def item_thumb(cat, item_url, img, item_key="", meta=""):
         return item_url if _IMG_URL_RE.search(item_url or "") else ""
     if img:                       # partners, and design-resource cards
         return img
-    if cat == "documents" and item_key and not is_gated(meta):
+    # A design resource is either a THING with a picture (a board, a tool) or a
+    # FILE with none - an application note, a schematic, a hex dump. The ones
+    # with a picture were served it above; the rest fell through to a grey box
+    # even when they were PDFs we could render, and doc_preview_png has always
+    # accepted this category. Same treatment as a document, because that is
+    # what they are.
+    if cat in ("documents", "design_resources") and item_key \
+            and not is_gated(meta):
         return url_for("doc_preview_png", key=item_key)
     return ""
 
@@ -6362,6 +6370,17 @@ def account_password():
               "signed out.")
         return redirect(url_for("index"))
     return render_template("change_password.html", forced=forced, error=None)
+
+
+@app.route("/account/name", methods=["POST"])
+def account_name():
+    """Set your own display name. No password needed - it is not a credential,
+    and asking for one to change how your name is spelled is the kind of thing
+    that stops people fixing it."""
+    me = current_user()
+    auth.set_name(me["id"], request.form.get("name", ""))
+    flash("Name updated.")
+    return redirect(url_for("account_password"))
 
 
 @app.route("/users")
