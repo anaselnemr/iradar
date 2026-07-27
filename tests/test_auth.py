@@ -57,8 +57,19 @@ def _client():
     return appmod.app.test_client()
 
 
+def _token(c, path="/login"):
+    """The CSRF token the server injected into the page's forms."""
+    import re
+    html = c.get(path).data.decode("utf-8", "replace")
+    m = re.search(r'name="_csrf" value="([^"]+)"', html)
+    return m.group(1) if m else ""
+
+
 def _signin(c, email, password=NEWPW):
-    return c.post("/login", data={"email": email, "password": password})
+    # loading the form first is what a browser does, and it is where the
+    # token comes from
+    return c.post("/login", data={"email": email, "password": password,
+                                  "_csrf": _token(c)})
 
 
 # --- signed out -------------------------------------------------------------
@@ -159,11 +170,17 @@ def test_editor_cannot_reach_admin_pages():
 
 
 def test_editor_cannot_run_admin_actions():
+    # with a VALID token, so this proves the ROLE refuses them - not merely
+    # that the CSRF check fired first
     _reset()
     c = _client()
     _signin(c, EDITOR)
+    tok = _token(c, "/")
+    assert tok, "no token on the dashboard"
     for path in ("/urls/add", "/run-now", "/users/add", "/stop"):
-        assert c.post(path, data={}).status_code == 403, f"editor could POST {path}"
+        r = c.post(path, data={"_csrf": tok})
+        assert r.status_code == 403, \
+            f"editor could POST {path} (got {r.status_code})"
 
 
 def test_editor_can_do_review_work():
@@ -264,6 +281,133 @@ def test_login_will_not_bounce_to_another_site():
                                "next": "https://evil.example/steal"})
     dest = r.headers.get("Location", "")
     assert "evil.example" not in dest, f"login redirected off-site to {dest}"
+
+
+# --- CSRF -------------------------------------------------------------------
+
+def _csrf_of(c):
+    """Read the token the server just issued to this client."""
+    import re
+    html = c.get("/login").data.decode("utf-8", "replace")
+    m = re.search(r'name="csrf-token" content="([^"]+)"', html)
+    if not m:
+        m = re.search(r'name="_csrf" value="([^"]+)"', html)
+    return m.group(1) if m else None
+
+
+def test_forms_carry_a_csrf_token():
+    _reset()
+    c = _client()
+    _signin(c, ADMIN)
+    html = c.get("/users").data.decode("utf-8", "replace")
+    assert 'name="_csrf"' in html, "no CSRF field was injected into the forms"
+    assert 'name="csrf-token"' in html, "no CSRF meta tag for fetch() calls"
+
+
+def test_post_without_a_token_is_refused():
+    _reset()
+    c = _client()
+    _signin(c, ADMIN)
+    # a signed-in admin, right endpoint, but no token -> must not go through
+    r = c.post("/users/add", data={"email": "sneak@example.com",
+                                   "role": "admin"})
+    assert r.status_code == 400, f"POST without a CSRF token returned {r.status_code}"
+    assert auth.by_email("sneak@example.com") is None, \
+        "the account was created anyway"
+
+
+def test_post_with_a_wrong_token_is_refused():
+    _reset()
+    c = _client()
+    _signin(c, ADMIN)
+    r = c.post("/users/add", data={"email": "sneak2@example.com",
+                                   "role": "admin", "_csrf": "not-the-token"})
+    assert r.status_code == 400
+    assert auth.by_email("sneak2@example.com") is None
+
+
+def test_post_with_the_right_token_goes_through():
+    _reset()
+    c = _client()
+    _signin(c, ADMIN)
+    import re
+    html = c.get("/users").data.decode("utf-8", "replace")
+    tok = re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
+    r = c.post("/users/add", data={"email": "proper@example.com",
+                                   "role": "editor", "_csrf": tok})
+    assert r.status_code in (302, 200), f"legit POST refused ({r.status_code})"
+    assert auth.by_email("proper@example.com") is not None, \
+        "a correctly-tokened POST did not take effect"
+
+
+def test_the_header_form_of_the_token_works_too():
+    # the JS fetch() wrapper sends it as a header, not a form field
+    _reset()
+    c = _client()
+    _signin(c, ADMIN)
+    import re
+    html = c.get("/").data.decode("utf-8", "replace")
+    tok = re.search(r'name="csrf-token" content="([^"]+)"', html).group(1)
+    r = c.post("/pause", headers={"X-CSRF-Token": tok})
+    assert r.status_code != 400, "the header form of the token was refused"
+
+
+# --- session hardening ------------------------------------------------------
+
+def test_changing_a_password_ends_other_sessions():
+    _reset()
+    other = _client()          # a second browser, signed in as the same person
+    _signin(other, EDITOR)
+    assert other.get("/").status_code == 200
+
+    auth.set_password(auth.by_email(EDITOR)["id"], "a-brand-new-secret-2026")
+    assert other.get("/").status_code == 302, \
+        "an old session survived the password change - a stolen cookie would too"
+
+
+def test_security_headers_are_set():
+    _reset()
+    c = _client()
+    r = c.get("/login")
+    assert r.headers.get("X-Frame-Options") == "DENY", "page can be framed"
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("Referrer-Policy")
+
+
+def test_one_source_guessing_many_accounts_is_stopped():
+    # per-account limits never trip when the attacker sprays one password
+    # across many addresses - no single account reaches five
+    _reset()
+    auth._IP_FAILS.clear()
+    for i in range(auth.MAX_IP_FAILS + 1):
+        auth.check_login(f"nobody{i}@example.com", "Summer2026!", ip="9.9.9.9")
+    assert auth.source_blocked("9.9.9.9"), "password spraying was not throttled"
+    u, err = auth.check_login(ADMIN, NEWPW, ip="9.9.9.9")
+    assert u is None and "from here" in (err or "")
+    # a different source is unaffected
+    assert not auth.source_blocked("1.1.1.1")
+    auth._IP_FAILS.clear()
+    auth._FAILS.clear()
+
+
+def test_common_passwords_are_refused():
+    for bad in ("Infineon@2026", "password123", "iradar2026", "aaaaaaaaaaaa"):
+        assert auth.password_problem(bad) is not None, f"accepted {bad!r}"
+    assert auth.password_problem("purple-canyon-47-jetty") is None
+
+
+def test_seeding_does_not_resurrect_a_deleted_account():
+    # seeding used to re-create a fixed address on every start, so removing
+    # that person quietly undid itself at the next restart
+    _reset()
+    con = db.connect()
+    con.execute("DELETE FROM users WHERE email=?", (EDITOR,))
+    con.commit()
+    con.close()
+    before = {u["email"] for u in auth.list_users()}
+    appmod._seed_accounts()
+    after = {u["email"] for u in auth.list_users()}
+    assert after == before, f"seeding added accounts back: {after - before}"
 
 
 def test_session_key_is_not_the_old_constant():

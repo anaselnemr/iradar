@@ -14,6 +14,7 @@ Passwords are never stored. werkzeug hashes them with a per-password salt
 (scrypt where available, pbkdf2 otherwise), so the database never reveals a
 password even if it leaks.
 """
+import hashlib
 import os
 import re
 import secrets
@@ -41,9 +42,44 @@ _FAILS = {}
 MAX_FAILS = 5
 LOCK_SECONDS = 60
 
+# Per-account limits alone only slow an attacker who picks one account. Spraying
+# one likely password across many addresses never trips them, because no single
+# account ever reaches five. This counts wrong answers per SOURCE as well, with
+# a longer memory, so the spray runs out of road instead.
+_IP_FAILS = {}
+MAX_IP_FAILS = 20
+IP_WINDOW = 600           # ten minutes
+
+# Passwords that meet the length rule and are still the first thing anyone
+# tries. Not a breach list - just the shapes this team is likely to reach for.
+_TOO_COMMON = {
+    "password", "password1", "password123", "passw0rd123",
+    "infineon", "infineonwatch", "infineon2026", "infineon@2026",
+    "iradar", "iradar2026", "iradar@2026",
+    "1234567890", "12345678901", "qwertyuiop", "qwerty12345",
+    "letmein123", "welcome123", "admin12345", "changeme123",
+}
+
 
 def _now():
     return db.now_iso()
+
+
+def pw_fingerprint(user_row):
+    """A short, non-reversible stamp of the account's CURRENT password.
+
+    Carried in the session cookie and re-checked on every request, so changing
+    a password immediately ends every OTHER session for that account - the
+    laptop left signed in at a desk, or a cookie someone lifted. Without this,
+    changing your password does nothing about whoever is already in.
+
+    It is a hash OF the stored hash, so the cookie carries nothing that helps
+    anyone who reads it.
+    """
+    if not user_row:
+        return ""
+    return hashlib.sha256(
+        (user_row["pw_hash"] or "").encode("utf-8")).hexdigest()[:16]
 
 
 # --- password / email rules -------------------------------------------------
@@ -60,8 +96,13 @@ def password_problem(pw):
     """None if the password is acceptable, else the reason to show the user."""
     if not pw or len(pw) < 10:
         return "Use at least 10 characters."
-    if pw.lower() in ("password", "infineon", "infineonwatch"):
-        return "Too easy to guess - pick something else."
+    low = pw.lower()
+    if low in _TOO_COMMON:
+        return "That is one of the first passwords anyone tries - pick another."
+    if low in ("iradar" + str(y) for y in range(2020, 2035)):
+        return "Too close to the site's own name - pick another."
+    if len(set(pw)) < 5:
+        return "Too few different characters - pick something less repetitive."
     return None
 
 
@@ -229,29 +270,42 @@ def locked_for(email):
     return 0
 
 
-def _note_fail(email):
+def source_blocked(ip):
+    """True once one source has produced too many wrong answers recently."""
+    if not ip:
+        return False
+    hits = [t for t in _IP_FAILS.get(ip, []) if t > time.time() - IP_WINDOW]
+    _IP_FAILS[ip] = hits
+    return len(hits) >= MAX_IP_FAILS
+
+
+def _note_fail(email, ip=None):
     email = norm_email(email)
     fails = _FAILS.get(email, (0, 0))[0] + 1
     _FAILS[email] = (fails, time.time() + LOCK_SECONDS)
+    if ip:
+        _IP_FAILS.setdefault(ip, []).append(time.time())
 
 
 def _clear_fails(email):
     _FAILS.pop(norm_email(email), None)
 
 
-def check_login(email, password):
+def check_login(email, password, ip=None):
     """(user_row, None) on success, (None, 'why not') otherwise.
 
     The same wording is returned for an unknown email and a wrong password: a
     login form that distinguishes them tells an outsider which addresses are
     real accounts.
     """
+    if source_blocked(ip):
+        return None, "Too many attempts from here - try again later."
     wait = locked_for(email)
     if wait:
         return None, f"Too many attempts - try again in {wait} seconds."
     u = by_email(email)
     if not u or not check_password_hash(u["pw_hash"], password or ""):
-        _note_fail(email)
+        _note_fail(email, ip)
         return None, "Wrong email or password."
     if not u["active"]:
         return None, "That account has been switched off."

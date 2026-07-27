@@ -46,7 +46,12 @@ try:
     _uid, _ = auth.create_user("routes@example.com", "Routes", "admin")
     auth.set_password(_uid, _PW, must_change=False)
     _client = app.app.test_client()
-    _client.post("/login", data={"email": "routes@example.com", "password": _PW})
+    # forms carry a CSRF token; load the login page to get one, as a browser does
+    import re as _re
+    _tok = _re.search(r'name="_csrf" value="([^"]+)"',
+                      _client.get("/login").data.decode("utf-8", "replace"))
+    _client.post("/login", data={"email": "routes@example.com", "password": _PW,
+                                 "_csrf": _tok.group(1) if _tok else ""})
     _READY = True
 except Exception:                                  # missing dep etc. -> skip
     from run_tests import Skip

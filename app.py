@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -65,6 +66,22 @@ ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page"}
 PUBLIC_ENDPOINTS = {"login", "static"}
 
 
+def csrf_token():
+    """This session's form token, minted on first use.
+
+    SameSite=Lax already stops another site's form from POSTing here with the
+    cookie attached, which is the classic attack. This is the second lock: it
+    also covers a same-site injection, an old browser, and any future change
+    that loosens the cookie policy - none of which should be one mistake away
+    from letting a page somewhere else accept updates as you.
+    """
+    t = session.get("_csrf")
+    if not t:
+        t = secrets.token_urlsafe(32)
+        session["_csrf"] = t
+    return t
+
+
 def current_user():
     """The signed-in user row, or None. Cached per request."""
     if not hasattr(request, "_user"):
@@ -74,8 +91,25 @@ def current_user():
         # rather than at cookie expiry.
         if u is not None and not u["active"]:
             u = None
+        # The session names the password it was opened with. Change the
+        # password and every other session for that account stops working -
+        # the machine left signed in somewhere, or a lifted cookie.
+        if u is not None and session.get("pwfp") != auth.pw_fingerprint(u):
+            u = None
         request._user = u
     return request._user
+
+
+def _client_ip():
+    """Caller's address, trusting Cloudflare's header only when we are behind
+    it - anyone can send X-Forwarded-For, so believing it on a direct
+    connection would let one attacker look like thousands."""
+    if os.environ.get("BEHIND_PROXY") == "1":
+        fwd = request.headers.get("CF-Connecting-IP") or \
+              request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        if fwd:
+            return fwd
+    return request.remote_addr or ""
 
 
 def is_admin():
@@ -86,6 +120,18 @@ def is_admin():
 @app.before_request
 def _require_login():
     ep = request.endpoint
+    # CSRF first, and it covers sign-in too: the token is issued when the login
+    # page renders, so a POST that never loaded the page is refused.
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        sent = (request.form.get("_csrf")
+                or request.headers.get("X-CSRF-Token") or "")
+        have = session.get("_csrf") or ""
+        if not have or not secrets.compare_digest(str(sent), str(have)):
+            # A session that quietly expired looks exactly like a bad token.
+            # Sending those to sign in beats a bare 400 nobody can act on.
+            if current_user() is None:
+                return redirect(url_for("login"))
+            abort(400)
     if ep in PUBLIC_ENDPOINTS:
         return
     u = current_user()
@@ -110,7 +156,47 @@ def _require_login():
 @app.context_processor
 def _inject_user():
     """Every template can ask who is signed in and whether they are an admin."""
-    return {"me": current_user(), "is_admin": is_admin()}
+    return {"me": current_user(), "is_admin": is_admin(),
+            "csrf_token": csrf_token}
+
+
+# <form ... method="post" ...> - the tag only, so nothing inside a string or a
+# comment further down the page can be mistaken for one
+_FORM_TAG = re.compile(rb"<form\b[^>]*\bmethod\s*=\s*[\"']?post[\"']?[^>]*>",
+                       re.I)
+
+
+@app.after_request
+def _harden(resp):
+    """Stamp the CSRF token into every form, and set the headers a public site
+    needs.
+
+    The token is injected here rather than written into each of the 28 forms by
+    hand for one reason: a form added next month would otherwise silently ship
+    without one and be refused at submit. Injection cannot forget. It only ever
+    touches HTML this app generated itself.
+    """
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")          # no clickjacking
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    if os.environ.get("SECURE_COOKIES") == "1":
+        # a year, and only meaningful once the site really is HTTPS-only
+        resp.headers.setdefault("Strict-Transport-Security",
+                                "max-age=31536000; includeSubDomains")
+    if resp.mimetype == "text/html" and resp.direct_passthrough is False:
+        try:
+            token = csrf_token().encode()
+            field = (b'<input type="hidden" name="_csrf" value="' + token + b'">')
+            body, n = _FORM_TAG.subn(lambda m: m.group(0) + field, resp.get_data())
+            if n:
+                # the meta tag lets the page's fetch() calls send the header
+                body = body.replace(
+                    b"</head>",
+                    b'<meta name="csrf-token" content="' + token + b'"></head>', 1)
+                resp.set_data(body)
+        except Exception:
+            pass          # a failed injection must never blank a page
+    return resp
 
 
 @app.after_request
@@ -6012,12 +6098,13 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "")
         pw = request.form.get("password", "")
-        user, err = auth.check_login(email, pw)
+        user, err = auth.check_login(email, pw, ip=_client_ip())
         if err:
             return render_template("login.html", error=err, email=email,
                                    next=nxt), 401
-        session.clear()
+        session.clear()          # new session id on sign-in: no fixation
         session["uid"] = user["id"]
+        session["pwfp"] = auth.pw_fingerprint(user)
         session.permanent = True
         if user["must_change_pw"]:
             return redirect(url_for("account_password"))
@@ -6056,7 +6143,11 @@ def account_password():
                                    error="Pick something other than the "
                                          "starting password."), 400
         auth.set_password(me["id"], new, must_change=False)
-        flash("Password changed.")
+        # Re-stamp OUR session with the new password so this browser stays
+        # signed in; every other session for the account now fails its check.
+        session["pwfp"] = auth.pw_fingerprint(auth.get_user(me["id"]))
+        flash("Password changed. Any other browser signed in as you has been "
+              "signed out.")
         return redirect(url_for("index"))
     return render_template("change_password.html", forced=forced, error=None)
 
@@ -6115,14 +6206,21 @@ def users_delete(user_id):
 
 
 def _seed_accounts():
-    """Make sure at least one admin exists, so a fresh database is reachable.
+    """Give a FRESH database one admin, so a new install is reachable at all.
 
-    Only ever CREATES missing accounts - it never touches a password someone
-    has already changed, so it is safe on every start. Extra team members are
-    added from the Users page (or by listing them in SEED_TEAM).
+    Does nothing once any admin exists. The earlier version re-created a fixed
+    address on every start, which quietly undid deleting it: the account came
+    back at the next restart. Seeding is a first-run step, not an invariant to
+    re-assert - after that, accounts belong to whoever manages them.
     """
-    owner = os.environ.get("OWNER_EMAIL", "talltigerstore@gmail.com")
-    spec = [(owner, "Anas ElNemr", "admin")]
+    if auth.count_admins():
+        return
+    owner = os.environ.get("OWNER_EMAIL", "")
+    if not owner:
+        print("  No accounts yet. Set OWNER_EMAIL to seed the first admin,")
+        print("  e.g.  set OWNER_EMAIL=you@company.com  then restart.")
+        return
+    spec = [(owner, "", "admin")]
     for entry in os.environ.get("SEED_TEAM", "").split(","):
         entry = entry.strip()
         if entry:
