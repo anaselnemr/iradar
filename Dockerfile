@@ -34,11 +34,15 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 COPY . .
 
-# data/ holds the database, every snapshot and every screenshot. It MUST be a
-# mounted volume: the container filesystem is thrown away on each deploy, and
-# with it every page's baseline - the next run would re-baseline all 4,188
-# pages and report nothing for a cycle.
-VOLUME ["/app/data"]
+# NO `VOLUME` instruction here. Railway rejects it outright:
+#   "dockerfile invalid: docker VOLUME is not supported, use Railway Volumes"
+# The mount is declared in the platform (Railway: service -> Volumes, mount
+# path /app/data), not in the image. Same requirement either way, just stated
+# somewhere else: data/ holds the database, every snapshot and every
+# screenshot, and the container filesystem is discarded on each deploy. Without
+# a volume mounted there, every deploy throws away every page's baseline and
+# the next run re-baselines all 4,188 pages and reports nothing for a cycle.
+# On a plain Docker host, mount it yourself: -v iradar-data:/app/data
 
 EXPOSE 5000
 
