@@ -173,6 +173,65 @@ def test_setting_drives_the_default():
     db.set_setting("keep_snapshots", "3")
 
 
+def _mkchange(con, url_id, old, new, reviewed):
+    """A flagged update with its own diff artwork on disk."""
+    d = db.CHANGE_DIR / str(url_id) / f"c{old}_{new}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "old_boxed.png").write_bytes(b"x" * 5000)
+    (d / "new_boxed.png").write_bytes(b"x" * 5000)
+    cur = con.execute(
+        "INSERT INTO changes(url_id, ts, old_snapshot_id, new_snapshot_id,"
+        " reviewed, dir) VALUES(?,?,?,?,?,?)",
+        (url_id, "t", old, new, reviewed, str(d)))
+    return cur.lastrowid, d
+
+
+def test_finished_updates_stop_hoarding_their_diff_pictures():
+    # Every flagged update writes before/after images, ~790 KB a time, and
+    # nothing ever deleted them - about 2 GB a year of pictures nobody can
+    # look at, because a reviewed update whose captures are gone cannot render
+    # its diff anyway.
+    con, ids = _fresh(n_pages=1, n_each=8)
+    old, new = ids[1][0], ids[1][1]        # far outside the keep window
+    cid, art = _mkchange(con, 1, old, new, reviewed=1)
+    con.commit()
+    con.close()
+    assert art.exists()
+
+    db.prune_history(keep=2)
+
+    assert not art.exists(), "diff artwork of a finished update was kept forever"
+    con = db.connect()
+    assert con.execute("SELECT 1 FROM changes WHERE id=?", (cid,)).fetchone(), \
+        "the update RECORD was deleted - what happened and who decided it is" \
+        " the history, only the pictures are disposable"
+    assert con.execute("SELECT dir FROM changes WHERE id=?",
+                       (cid,)).fetchone()[0] == "", "dir still points at nothing"
+    con.close()
+
+
+def test_an_open_update_keeps_its_pictures():
+    con, ids = _fresh(n_pages=1, n_each=8)
+    old, new = ids[1][0], ids[1][1]
+    cid, art = _mkchange(con, 1, old, new, reviewed=0)     # still to review
+    con.commit()
+    con.close()
+    db.prune_history(keep=2)
+    assert art.exists(), "an update still waiting for review lost its diff"
+
+
+def test_artwork_survives_while_its_captures_do():
+    # tied to the captures, not to a timer: if you can still SEE the diff, the
+    # pictures stay
+    con, ids = _fresh(n_pages=1, n_each=3)
+    newest, second = ids[1][2], ids[1][1]                  # both within keep=3
+    cid, art = _mkchange(con, 1, second, newest, reviewed=1)
+    con.commit()
+    con.close()
+    db.prune_history(keep=3)
+    assert art.exists(), "artwork went while the captures it illustrates remain"
+
+
 def test_running_twice_changes_nothing_the_second_time():
     _fresh(n_pages=2, n_each=6)[0].close()
     db.prune_history(keep=3)

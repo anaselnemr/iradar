@@ -420,7 +420,43 @@ def prune_history(keep=None, con=None, dry_run=False):
                 con.execute("DELETE FROM snapshots WHERE id=?", (s["id"],))
         if doomed and not dry_run:
             con.commit()
-        return len(doomed), freed
+
+        # The DIFF ARTWORK of finished updates. Every flagged update writes its
+        # own before/after images - about 790 KB each - and nothing ever removed
+        # them: only deleting a whole page did. At roughly 50 updates a week
+        # that is 2 GB a year of pictures nobody can look at, because a reviewed
+        # update whose captures have been pruned cannot render its diff anyway.
+        # Tied to the captures rather than to a timer, so the artwork lives
+        # exactly as long as the thing it illustrates.
+        #
+        # The change ROW stays. What happened and who decided it is the record;
+        # the pictures are just how it was shown at the time.
+        gone_art = 0
+        for c in con.execute(
+                "SELECT id, dir FROM changes WHERE IFNULL(reviewed,0)<>0"
+                " AND IFNULL(dir,'')<>''").fetchall():
+            still = con.execute(
+                "SELECT 1 FROM snapshots s JOIN changes ch"
+                " ON s.id IN (ch.old_snapshot_id, ch.new_snapshot_id)"
+                " WHERE ch.id=? LIMIT 1", (c["id"],)).fetchone()
+            if still:
+                continue                 # its captures survive - so does the art
+            d = Path(c["dir"])
+            if not d.exists():
+                continue
+            for f in d.rglob("*"):
+                if f.is_file():
+                    try:
+                        freed += f.stat().st_size
+                    except OSError:
+                        pass
+            if not dry_run:
+                shutil.rmtree(d, ignore_errors=True)
+                con.execute("UPDATE changes SET dir='' WHERE id=?", (c["id"],))
+            gone_art += 1
+        if gone_art and not dry_run:
+            con.commit()
+        return len(doomed) + gone_art, freed
     finally:
         if own:
             con.close()
