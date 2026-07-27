@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — InfineonWatch</title>
+{#- standalone on purpose: base.html carries the nav and the account menu,
+    neither of which means anything to someone who is not signed in yet -#}
+<script>
+  (function () {
+    var t = localStorage.getItem("theme");
+    if (t === "dark") document.documentElement.dataset.theme = "dark";
+  })();
+</script>
+<style>
+  :root {
+    --bg: #fafafc; --card: #ffffff; --ink: #1c1b22; --muted: #6e6d7a;
+    --accent: #5e6ad2; --err: #dc2626; --line: #e4e4eb;
+    --btn: var(--accent); --btn-ink: #ffffff;
+    color-scheme: light;
+  }
+  [data-theme="dark"] {
+    --bg: #000000; --card: #0d0d11; --ink: #ededf2; --muted: #9a99a5;
+    --accent: #818cf8; --err: #f87171; --line: #232329;
+    --btn: #5e6ad2; --btn-ink: #ffffff;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         padding: 24px;
+         font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+         background: var(--bg); color: var(--ink); font-size: 15px; }
+  .box { width: 100%; max-width: 372px; }
+  .brand { text-align: center; font-size: 21px; font-weight: 700;
+           letter-spacing: -.3px; margin-bottom: 4px; }
+  .brand span { color: var(--accent); }
+  .sub { text-align: center; color: var(--muted); font-size: 13.5px;
+         margin-bottom: 22px; }
+  form { background: var(--card); border: 1px solid var(--line);
+         border-radius: 14px; padding: 22px;
+         box-shadow: 0 10px 30px rgba(0,0,0,.05); }
+  label { display: block; font-size: 12.5px; font-weight: 600;
+          color: var(--muted); margin: 0 0 6px; }
+  input { width: 100%; padding: 10px 12px; font-size: 14.5px;
+          font-family: inherit; color: var(--ink);
+          background: var(--bg); border: 1px solid var(--line);
+          border-radius: 9px; margin-bottom: 15px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px;
+                border-color: transparent; }
+  button { width: 100%; padding: 11px; font-size: 14.5px; font-weight: 600;
+           font-family: inherit; color: var(--btn-ink); background: var(--btn);
+           border: 0; border-radius: 9px; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  .err { display: flex; gap: 8px; align-items: flex-start;
+         background: rgba(220,38,38,.09); color: var(--err);
+         border: 1px solid rgba(220,38,38,.25); border-radius: 9px;
+         padding: 9px 11px; font-size: 13px; margin-bottom: 16px; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px;
+          margin-top: 16px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="brand">Infineon<span>Watch</span></div>
+    <div class="sub">Sign in to review site updates</div>
+    <form method="post" action="{{ url_for('login') }}">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      {% if error %}<div class="err"><span>&#9888;</span><span>{{ error }}</span></div>{% endif %}
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username"
+             value="{{ email }}" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <div class="foot">Need an account? Ask an admin to add you.</div>
+  </div>
+</body>
+</html>

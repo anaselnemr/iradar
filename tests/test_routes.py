@@ -40,7 +40,13 @@ try:
     _con.commit()
     _con.close()
     import app                                     # noqa: E402
+    import auth                                    # noqa: E402
+    # every page needs a signed-in person now, so these render as an admin
+    _PW = "route-test-password-2026"
+    _uid, _ = auth.create_user("routes@example.com", "Routes", "admin")
+    auth.set_password(_uid, _PW, must_change=False)
     _client = app.app.test_client()
+    _client.post("/login", data={"email": "routes@example.com", "password": _PW})
     _READY = True
 except Exception:                                  # missing dep etc. -> skip
     from run_tests import Skip
@@ -51,6 +57,12 @@ def _ok(path):
     r = _client.get(path)
     assert r.status_code == 200, f"{path} -> HTTP {r.status_code}"
     return r
+
+
+def test_signed_in_session_actually_took():
+    # if the sign-in above silently failed, every other test here would be
+    # asserting on a redirect to /login instead of the real page
+    assert _client.get("/").status_code == 200
 
 
 def test_assets_page_renders():

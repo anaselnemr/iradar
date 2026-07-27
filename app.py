@@ -9,7 +9,7 @@ import re
 import sqlite3
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote as urlquote, urlsplit
@@ -17,38 +17,100 @@ from urllib.parse import quote as urlquote, urlsplit
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask import (Flask, Response, abort, flash, jsonify, redirect,
-                   render_template, request, send_file, url_for)
+                   render_template, request, send_file, session, url_for)
 from rapidfuzz import fuzz, process
 
+import auth
 import compare as cmp
 import db
 import runner
 
 app = Flask(__name__)
-app.secret_key = "infineonwatch-local-only"
+# Signs the session cookie. Random, generated once, stored next to the database
+# and never committed - a constant in the source would let anyone holding the
+# repo forge a signed cookie for any account. See auth.secret_key.
+app.secret_key = auth.secret_key(str(db.DATA_DIR / "secret_key"))
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,      # javascript can never read the cookie
+    SESSION_COOKIE_SAMESITE="Lax",     # not sent on cross-site POSTs
+    # Only send the cookie over HTTPS. Off by default so plain-http localhost
+    # still works; set SECURE_COOKIES=1 for the public deployment.
+    SESSION_COOKIE_SECURE=os.environ.get("SECURE_COOKIES") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=14),
+)
 # Re-read templates from disk on every render, so tweaks to the HTML/CSS in
 # templates/ take effect on a browser refresh WITHOUT restarting the server
 # (a restart would interrupt an in-process capture run). Negligible overhead.
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 
-# Optional HTTP Basic Auth for when the dashboard is exposed through a public
-# tunnel. Credentials come from the environment (DASH_USER / DASH_PASS) so they
-# never live in the source or git history; when unset, auth is OFF and local
-# use stays friction-free.
-DASH_USER = os.environ.get("DASH_USER")
-DASH_PASS = os.environ.get("DASH_PASS")
+# --- who may do what -------------------------------------------------------
+# Reading is open to any signed-in person; WRITING is admin-only unless the
+# endpoint is named below. Default-deny on writes is deliberate: a POST route
+# added later is admin-only until someone consciously opens it to editors,
+# instead of silently inheriting edit rights the day it is written.
+EDITOR_MAY_POST = {
+    "change_resolve",        # accept / reject a detected update - the core job
+    "assets_review",         # same, for file updates
+    "url_set_level",         # page metadata an editor is expected to curate
+    "url_set_meta",
+    "url_set_title",
+    "prewarm",               # warms document previews; no data changes
+    "account_password",      # everyone may change their OWN password
+    "logout",
+}
+# Pages an editor cannot even look at (they configure the system).
+ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page"}
+# Reachable without signing in.
+PUBLIC_ENDPOINTS = {"login", "static"}
+
+
+def current_user():
+    """The signed-in user row, or None. Cached per request."""
+    if not hasattr(request, "_user"):
+        uid = session.get("uid")
+        u = auth.get_user(uid) if uid else None
+        # A user deactivated or deleted mid-session loses access immediately
+        # rather than at cookie expiry.
+        if u is not None and not u["active"]:
+            u = None
+        request._user = u
+    return request._user
+
+
+def is_admin():
+    u = current_user()
+    return bool(u and u["role"] == "admin")
 
 
 @app.before_request
 def _require_login():
-    if not DASH_USER:
-        return  # no credentials configured -> open (local-only default)
-    auth = request.authorization
-    if not auth or auth.username != DASH_USER or auth.password != DASH_PASS:
-        return Response(
-            "InfineonWatch — sign in required.", 401,
-            {"WWW-Authenticate": 'Basic realm="InfineonWatch", charset="UTF-8"'})
+    ep = request.endpoint
+    if ep in PUBLIC_ENDPOINTS:
+        return
+    u = current_user()
+    if u is None:
+        session.clear()
+        if request.accept_mimetypes.best == "application/json" or \
+                request.path.startswith(("/status", "/api/")):
+            return jsonify({"error": "sign-in required"}), 401
+        return redirect(url_for("login", next=request.full_path
+                                if request.query_string else request.path))
+    # A seeded or admin-reset account carries the shared starting password.
+    # Nothing but changing it (or signing out) works until it is changed.
+    if u["must_change_pw"] and ep not in ("account_password", "logout"):
+        return redirect(url_for("account_password"))
+    if ep in ADMIN_ONLY_VIEWS and not is_admin():
+        abort(403)
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") \
+            and ep not in EDITOR_MAY_POST and not is_admin():
+        abort(403)
+
+
+@app.context_processor
+def _inject_user():
+    """Every template can ask who is signed in and whether they are an admin."""
+    return {"me": current_user(), "is_admin": is_admin()}
 
 
 @app.after_request
@@ -5914,8 +5976,150 @@ def _sweep_furniture():
         print(f"  swept {n} furniture image row(s) from the library index")
 
 
+# ---------------------------------------------------------------- accounts --
+
+def _safe_next(target):
+    """Only ever redirect to a path on this site - an open redirect turns our
+    login page into a convincing springboard to someone else's."""
+    if not target or not target.startswith("/") or target.startswith("//"):
+        return url_for("index")
+    return target
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user() is not None:
+        return redirect(url_for("index"))
+    nxt = request.values.get("next", "")
+    if request.method == "POST":
+        email = request.form.get("email", "")
+        pw = request.form.get("password", "")
+        user, err = auth.check_login(email, pw)
+        if err:
+            return render_template("login.html", error=err, email=email,
+                                   next=nxt), 401
+        session.clear()
+        session["uid"] = user["id"]
+        session.permanent = True
+        if user["must_change_pw"]:
+            return redirect(url_for("account_password"))
+        return redirect(_safe_next(nxt))
+    return render_template("login.html", error=None, email="", next=nxt)
+
+
+@app.route("/logout", methods=["POST", "GET"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/account/password", methods=["GET", "POST"])
+def account_password():
+    me = current_user()
+    forced = bool(me["must_change_pw"])
+    if request.method == "POST":
+        cur = request.form.get("current", "")
+        new = request.form.get("new", "")
+        again = request.form.get("again", "")
+        # Even when forced, prove they know the current password: a shared
+        # machine left signed in should not let a passer-by seize the account.
+        if not auth.check_password_hash(me["pw_hash"], cur):
+            return render_template("change_password.html", forced=forced,
+                                   error="Current password is not right."), 400
+        if new != again:
+            return render_template("change_password.html", forced=forced,
+                                   error="The two new passwords do not match."), 400
+        problem = auth.password_problem(new)
+        if problem:
+            return render_template("change_password.html", forced=forced,
+                                   error=problem), 400
+        if new == auth.SEED_PASSWORD:
+            return render_template("change_password.html", forced=forced,
+                                   error="Pick something other than the "
+                                         "starting password."), 400
+        auth.set_password(me["id"], new, must_change=False)
+        flash("Password changed.")
+        return redirect(url_for("index"))
+    return render_template("change_password.html", forced=forced, error=None)
+
+
+@app.route("/users")
+def users_page():
+    return render_template("users.html", users=auth.list_users(),
+                           seed_password=auth.SEED_PASSWORD)
+
+
+@app.route("/users/add", methods=["POST"])
+def users_add():
+    uid, err = auth.create_user(request.form.get("email", ""),
+                                request.form.get("name", ""),
+                                request.form.get("role", "editor"))
+    flash(err if err else "Account created - starting password is %s."
+          % auth.SEED_PASSWORD)
+    return redirect(url_for("users_page"))
+
+
+@app.route("/users/<int:user_id>/role", methods=["POST"])
+def users_role(user_id):
+    err = auth.set_role(user_id, request.form.get("role", "editor"))
+    flash(err if err else "Role updated.")
+    return redirect(url_for("users_page"))
+
+
+@app.route("/users/<int:user_id>/active", methods=["POST"])
+def users_active(user_id):
+    on = request.form.get("active") == "1"
+    if user_id == current_user()["id"] and not on:
+        flash("You cannot switch off your own account.")
+        return redirect(url_for("users_page"))
+    err = auth.set_active(user_id, on)
+    flash(err if err else ("Account switched on." if on
+                           else "Account switched off."))
+    return redirect(url_for("users_page"))
+
+
+@app.route("/users/<int:user_id>/reset", methods=["POST"])
+def users_reset(user_id):
+    auth.set_password(user_id, auth.SEED_PASSWORD, must_change=True)
+    flash("Password reset to %s - they must change it at next sign-in."
+          % auth.SEED_PASSWORD)
+    return redirect(url_for("users_page"))
+
+
+@app.route("/users/<int:user_id>/delete", methods=["POST"])
+def users_delete(user_id):
+    if user_id == current_user()["id"]:
+        flash("You cannot delete your own account.")
+        return redirect(url_for("users_page"))
+    err = auth.delete_user(user_id)
+    flash(err if err else "Account removed.")
+    return redirect(url_for("users_page"))
+
+
+def _seed_accounts():
+    """Make sure at least one admin exists, so a fresh database is reachable.
+
+    Only ever CREATES missing accounts - it never touches a password someone
+    has already changed, so it is safe on every start. Extra team members are
+    added from the Users page (or by listing them in SEED_TEAM).
+    """
+    owner = os.environ.get("OWNER_EMAIL", "talltigerstore@gmail.com")
+    spec = [(owner, "Anas ElNemr", "admin")]
+    for entry in os.environ.get("SEED_TEAM", "").split(","):
+        entry = entry.strip()
+        if entry:
+            email, _, role = entry.partition(":")
+            spec.append((email, "", role or "editor"))
+    made = auth.seed_users(spec)
+    if made:
+        print("  Created account(s): " + ", ".join(made))
+        print("  Starting password:  " + auth.SEED_PASSWORD
+              + "   (must be changed at first sign-in)")
+
+
 if __name__ == "__main__":
     db.init_db()
+    _seed_accounts()
     _housekeeping("startup")
     scheduler.start()
     reschedule()

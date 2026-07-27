@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}People — InfineonWatch{% endblock %}
+{% block content %}
+{#- Admin-only: the route is in ADMIN_ONLY_VIEWS and every POST here is
+    admin-only by default, so an editor cannot reach this page or its actions. -#}
+<style>
+  .u-wrap { max-width: 880px; margin: 0 auto; }
+  .u-add { display: grid; grid-template-columns: 2fr 1.4fr .9fr auto; gap: 10px;
+           align-items: end; }
+  @media (max-width: 720px) { .u-add { grid-template-columns: 1fr; } }
+  .u-add label { display: block; font-size: 12.5px; font-weight: 600;
+                 color: var(--muted); margin-bottom: 5px; }
+  table.u-list { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  table.u-list th { text-align: left; font-size: 12px; color: var(--muted);
+                    font-weight: 600; padding: 8px 10px;
+                    border-bottom: 1px solid var(--line); }
+  table.u-list td { padding: 11px 10px; border-bottom: 1px solid var(--line);
+                    vertical-align: middle; }
+  table.u-list tr:last-child td { border-bottom: 0; }
+  .u-av { width: 30px; height: 30px; border-radius: 50%; display: grid;
+          place-items: center; font-size: 12.5px; font-weight: 700; color: #fff;
+          background: linear-gradient(135deg, #6d78e0, #8b5cf6); flex-shrink: 0; }
+  .u-who { display: flex; align-items: center; gap: 10px; }
+  .u-name { font-weight: 600; font-size: 13.5px; }
+  .u-mail { color: var(--muted); font-size: 12px; }
+  .u-off .u-name, .u-off .u-mail { opacity: .5; }
+  .u-acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .u-acts form { display: inline; }
+  .u-me { font-size: 11px; color: var(--accent); background: rgba(94,106,210,.14);
+          padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
+  .roleform select { padding: 5px 8px; font-size: 12.5px; }
+</style>
+
+<div class="u-wrap">
+  <div class="card">
+    <h3 style="margin:0 0 4px">Add someone</h3>
+    <p class="muted" style="margin:0 0 16px; font-size:13px">
+      They start on <b>{{ seed_password }}</b> and must choose their own password
+      the first time they sign in.
+    </p>
+    <form method="post" action="{{ url_for('users_add') }}" class="u-add">
+      <div>
+        <label for="ue">Email</label>
+        <input id="ue" type="email" name="email" required
+               placeholder="name@infineon.com">
+      </div>
+      <div>
+        <label for="un">Name <span style="font-weight:400">(optional)</span></label>
+        <input id="un" type="text" name="name" placeholder="Full name">
+      </div>
+      <div>
+        <label for="ur">Role</label>
+        <select id="ur" name="role">
+          <option value="editor">Editor</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button type="submit">Add</button>
+    </form>
+    <p class="muted" style="margin:14px 0 0; font-size:12.5px; line-height:1.5">
+      <b>Editors</b> review updates, accept or reject them, and edit page details.
+      <b>Admins</b> can also manage people, settings, the page list and capture runs.
+    </p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin:0 0 12px">People <span class="muted"
+        style="font-weight:400; font-size:13px">({{ users|length }})</span></h3>
+    <table class="u-list">
+      <thead>
+        <tr><th>Person</th><th>Role</th><th>Last sign-in</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for u in users %}
+        <tr class="{{ 'u-off' if not u['active'] }}">
+          <td>
+            <div class="u-who">
+              <span class="u-av">{{ (u['name'] or u['email'])[:1]|upper }}</span>
+              <div>
+                <div class="u-name">{{ u['name'] or u['email'].split('@')[0] }}
+                  {%- if u['id'] == me['id'] %}<span class="u-me">you</span>{% endif %}
+                  {%- if not u['active'] %}<span class="badge b-error"
+                      style="margin-left:6px">switched off</span>{% endif %}
+                  {%- if u['must_change_pw'] %}<span class="badge b-new"
+                      style="margin-left:6px">password not set</span>{% endif %}
+                </div>
+                <div class="u-mail">{{ u['email'] }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('users_role', user_id=u['id']) }}"
+                  class="roleform">
+              <select name="role" onchange="this.form.submit()">
+                <option value="editor" {% if u['role']=='editor' %}selected{% endif %}>Editor</option>
+                <option value="admin"  {% if u['role']=='admin'  %}selected{% endif %}>Admin</option>
+              </select>
+            </form>
+          </td>
+          <td class="muted" style="font-size:12.5px">
+            {{ u['last_login'][:16] if u['last_login'] else '—' }}
+          </td>
+          <td>
+            <div class="u-acts">
+              <form method="post" action="{{ url_for('users_reset', user_id=u['id']) }}"
+                    onsubmit="return confirm('Reset this password back to {{ seed_password }}? They will have to choose a new one at next sign-in.')">
+                <button type="submit" class="btn-ghost btn-sm">Reset password</button>
+              </form>
+              {% if u['id'] != me['id'] %}
+              <form method="post" action="{{ url_for('users_active', user_id=u['id']) }}">
+                <input type="hidden" name="active" value="{{ 0 if u['active'] else 1 }}">
+                <button type="submit" class="btn-ghost btn-sm">
+                  {{ 'Switch off' if u['active'] else 'Switch on' }}</button>
+              </form>
+              <form method="post" action="{{ url_for('users_delete', user_id=u['id']) }}"
+                    onsubmit="return confirm('Remove {{ u['email'] }} for good? Switching the account off keeps their history and can be undone; removing cannot.')">
+                <button type="submit" class="btn-reject btn-sm">Remove</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

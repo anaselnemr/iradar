@@ -170,6 +170,23 @@ def init_db():
     );
     CREATE INDEX IF NOT EXISTS idx_mentions_entity ON mentions(entity, source);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+    -- team accounts. Password is never stored - pw_hash holds a salted scrypt
+    -- (or pbkdf2) digest from werkzeug. role is 'admin' or 'editor': an editor
+    -- reviews updates and edits page metadata, an admin additionally manages
+    -- urls, settings, capture runs and these accounts. must_change_pw is set on
+    -- every seeded or admin-reset account, so the shared starting password
+    -- cannot survive first login.
+    CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,          -- always stored lowercased
+        name TEXT NOT NULL DEFAULT '',
+        pw_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'editor',
+        active INTEGER NOT NULL DEFAULT 1,
+        must_change_pw INTEGER NOT NULL DEFAULT 1,
+        created TEXT DEFAULT '',
+        last_login TEXT DEFAULT ''
+    );
     -- every AUTOMATIC level change, so hierarchy assignments are auditable:
     -- the user can see exactly what moved, when, and why - and that nothing
     -- moved at all on a run where the site's structure did not change

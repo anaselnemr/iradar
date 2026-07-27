@@ -578,6 +578,61 @@
   .themeicon-dark { display: none; }
   [data-theme="dark"] .themeicon-dark { display: block; }
   [data-theme="dark"] .themeicon-light { display: none; }
+  /* the toggle names the theme it SWITCHES TO, so the label flips with it */
+  .themelabel-dark { display: none; }
+  [data-theme="dark"] .themelabel-dark { display: inline; }
+  [data-theme="dark"] .themelabel-light { display: none; }
+
+  /* ---- account menu (top right) --------------------------------------
+     Sits on the dark header, so the trigger is styled like .hbtn while the
+     panel drops into page colours - it belongs to the page, not the bar. */
+  .acct { position: relative; }
+  .acct > summary { list-style: none; cursor: pointer; display: inline-flex;
+                    align-items: center; gap: 8px; padding: 5px 10px 5px 5px;
+                    border-radius: 999px; color: #cfced9; font-size: 13px;
+                    background: rgba(255,255,255,.06);
+                    border: 1px solid rgba(255,255,255,.11);
+                    transition: background .14s, border-color .14s; }
+  .acct > summary::-webkit-details-marker { display: none; }
+  .acct > summary::after { content: "▾"; font-size: 10px; color: #9b9aa8;
+                           margin-left: 1px; }
+  .acct > summary:hover { background: rgba(255,255,255,.13); color: #fff;
+                          border-color: rgba(255,255,255,.2); }
+  .acct[open] > summary { background: rgba(255,255,255,.15); color: #fff; }
+  .acct-av { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+             display: grid; place-items: center; font-size: 11.5px;
+             font-weight: 700; color: #fff; letter-spacing: .2px;
+             background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  .acct-who { max-width: 130px; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
+  @media (max-width: 720px) { .acct-who { display: none; } }
+
+  .acct .panel { position: absolute; z-index: 40; top: calc(100% + 8px);
+                 right: 0; left: auto; min-width: 232px; padding: 6px;
+                 background: var(--panel); border: 1px solid var(--line);
+                 border-radius: 12px; color: var(--ink);
+                 box-shadow: 0 14px 38px rgba(0,0,0,.20); }
+  .acct-head { padding: 9px 10px 10px; border-bottom: 1px solid var(--line);
+               margin-bottom: 6px; }
+  .acct-name { font-weight: 650; font-size: 13.5px; }
+  .acct-mail { color: var(--muted); font-size: 12px; margin-top: 1px;
+               overflow: hidden; text-overflow: ellipsis; }
+  .acct-role { display: inline-block; margin-top: 7px; font-size: 11px;
+               text-transform: capitalize; padding: 2px 8px; border-radius: 999px;
+               background: rgba(110,109,122,.14); color: var(--muted); }
+  .acct-role.is-admin { background: rgba(94,106,210,.16); color: var(--accent); }
+  /* every row is the same control whether it is a link, a button or in a form */
+  .acct-item { display: flex; align-items: center; gap: 10px; width: 100%;
+               padding: 8px 10px; border-radius: 8px; font-size: 13px;
+               background: none; border: 0; color: var(--ink); cursor: pointer;
+               text-align: left; text-decoration: none; font-family: inherit; }
+  .acct-item:hover { background: var(--hover); filter: none; }
+  .acct-item svg { width: 15px; height: 15px; flex-shrink: 0;
+                   color: var(--muted); }
+  .acct-item.danger { color: var(--err); }
+  .acct-item.danger svg { color: var(--err); }
+  .acct-out { margin-top: 4px; padding-top: 4px;
+              border-top: 1px solid var(--line); }
 
   /* ---- ONE search bar, used in all four places ------------------------
      The dashboard's page search, the content library and the hierarchy
@@ -785,13 +840,53 @@
     {% endfor %}
   </nav>
   <div class="hactions">
-    <button type="button" class="hbtn icon-only" id="themebtn" onclick="toggleTheme()"
-            title="Light / dark mode" aria-label="Toggle light or dark mode">
-      <svg class="themeicon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
-      <svg class="themeicon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.3 8.3 0 1 0 20 14.5z"/></svg>
-    </button>
+    {% if me %}
+    <details class="acct">
+      <summary title="{{ me['email'] }}" aria-label="Account menu">
+        <span class="acct-av">{{ (me['name'] or me['email'])[:1]|upper }}</span>
+        <span class="acct-who">{{ me['name'] or me['email'].split('@')[0] }}</span>
+      </summary>
+      <div class="panel">
+        <div class="acct-head">
+          <div class="acct-name">{{ me['name'] or me['email'].split('@')[0] }}</div>
+          <div class="acct-mail">{{ me['email'] }}</div>
+          <span class="acct-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
+        </div>
+
+        {#- the theme toggle lives here now; it is a preference, not an action -#}
+        <button type="button" class="acct-item" onclick="toggleTheme()">
+          <svg class="themeicon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+          <svg class="themeicon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.3 8.3 0 1 0 20 14.5z"/></svg>
+          <span class="themelabel-light">Dark mode</span>
+          <span class="themelabel-dark">Light mode</span>
+        </button>
+
+        <a class="acct-item" href="{{ url_for('account_password') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Change password
+        </a>
+
+        {% if is_admin %}
+        <a class="acct-item" href="{{ url_for('users_page') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Manage people
+        </a>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('logout') }}" class="acct-out">
+          <button type="submit" class="acct-item danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+            Sign out
+          </button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
   </div>
 </header>
 <main>
@@ -910,7 +1005,8 @@ document.addEventListener('keydown', function (e) {
 // The disclosures that ARE the page (a search-result family, a hierarchy node,
 // a page's library sections) must survive clicking around inside the page, so
 // they are deliberately not listed.
-var POPOVERS = 'details.dd, details.runmore, details.bc-sibs, details.lvledit';
+var POPOVERS = 'details.dd, details.runmore, details.bc-sibs, details.lvledit,'
+             + ' details.acct';
 
 function closePopovers(except) {
   document.querySelectorAll(POPOVERS).forEach(function (d) {
