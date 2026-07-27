@@ -284,6 +284,14 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_changes_url ON changes(url_id, ts);
     """)
     # lightweight migrations for databases created by older versions
+    # How to LINK BACK to the thing a note is about. An asset's note is keyed
+    # on what the asset is (title + link), which cannot be turned back into a
+    # url without searching every item - and doing that per note made the Notes
+    # page 1.85s for 40 notes and would have been ~14s at 300. The key that was
+    # open when the note was written is remembered here instead, so the link is
+    # one lookup. It is a HINT, not the identity: if that key is gone the note
+    # still belongs to the same asset.
+    _ensure_column(con, "comments", "target_hint", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "last_http", "INTEGER")
     _ensure_column(con, "snapshots", "http_status", "INTEGER")
     # rejected=1: reviewer said the OLD version was correct - this snapshot is

@@ -4943,7 +4943,8 @@ def item_detail(key):
     return render_template("item.html", item=item, pages=pages, item_key=key,
                            by_type=sorted(by_type.items()),
                            notes=notes, notes_open=n_open, notes_kind="item",
-                           notes_target=tid, notes_label=tlabel)
+                           notes_target=tid, notes_label=tlabel,
+                           notes_hint=key)
 
 
 @app.route("/hierarchy")
@@ -6200,8 +6201,10 @@ def comment_add():
     kind = request.form.get("kind", "")
     target = request.form.get("target", "")
     label = request.form.get("label", "")
+    # for an asset, the key the writer had open - the way back to it later
+    hint = request.form.get("hint", "")
     _, err = comments.add(kind, target, request.form.get("body", ""),
-                          current_user(), label=label)
+                          current_user(), label=label, hint=hint)
     if err:
         flash(err)
     return redirect(_back() + "#notes")
@@ -6256,17 +6259,20 @@ def notes_page():
                 if r:
                     link = url_for("change_view", change_id=r["id"])
             elif c["target_kind"] == "item":
-                # any key that still resolves to this asset will do
+                # The key that was open when the note was written, remembered
+                # at write time. This used to search every item per note, which
+                # is quadratic in the size of the feed: 1.85s for 40 notes and
+                # heading for ~14s at 300. Now it is one lookup, and if that
+                # key has since gone the note simply loses its link rather than
+                # costing a scan to maybe find another one.
                 k = None
                 if c["target_id"].startswith("key:"):
                     k = c["target_id"][4:]
-                else:
-                    for cand in con.execute(
-                            "SELECT item_key FROM items ORDER BY id DESC LIMIT 4000"):
-                        tid, _ = item_target(cand["item_key"], con=con)
-                        if tid == c["target_id"]:
-                            k = cand["item_key"]
-                            break
+                elif c["target_hint"]:
+                    k = c["target_hint"]
+                if k and not con.execute("SELECT 1 FROM items WHERE item_key=?"
+                                         " LIMIT 1", (k,)).fetchone():
+                    k = None
                 if k:
                     link = url_for("item_detail", key=k)
             out.append({"c": c, "link": link, "what": what})
@@ -6447,6 +6453,26 @@ if __name__ == "__main__":
     print("  e.g. http://192.168.x.x:5000 (see README).")
     print("  Next scheduled check:      " + next_run_text())
     print("  Keep this window open. Press Ctrl+C to stop.")
-    print()
-    # 0.0.0.0 = reachable from other devices on your local network too
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+
+    # Werkzeug's server is a DEVELOPMENT server - its own docs say not to run it
+    # in production, and this one is about to sit behind a public domain serving
+    # a whole team. waitress is a real WSGI server, pure python, and unlike
+    # gunicorn it runs on Windows. Falls back to the dev server only if waitress
+    # is missing, so a fresh clone still starts.
+    #
+    # threads: the capture run lives in THIS process and holds a worker for
+    # hours; 8 leaves plenty for the dashboard while a run is going.
+    # 0.0.0.0 = reachable from other devices on the local network too.
+    try:
+        from waitress import serve
+        print("  Server:                    waitress (production)")
+        print()
+        serve(app, host="0.0.0.0", port=5000, threads=8,
+              ident="iRadar",           # do not advertise the stack in headers
+              channel_timeout=120)
+    except ImportError:
+        print("  Server:                    werkzeug DEV server"
+              " - run 'pip install waitress' before going public")
+        print()
+        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False,
+                threaded=True)

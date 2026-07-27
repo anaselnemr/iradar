@@ -29,8 +29,14 @@ def _now():
 
 # --- writing ----------------------------------------------------------------
 
-def add(kind, target_id, body, user, label="", con=None):
-    """Post a note. Returns (comment_id, None) or (None, 'why not')."""
+def add(kind, target_id, body, user, label="", hint="", con=None):
+    """Post a note. Returns (comment_id, None) or (None, 'why not').
+
+    `hint` is how to get BACK to the thing later - for an asset, the item key
+    that was open when the note was written. The identity (title + link) cannot
+    be turned back into a url without searching every item, and doing that per
+    note is what makes an activity feed quadratic.
+    """
     body = (body or "").strip()
     if not body:
         return None, "Write something first."
@@ -43,8 +49,9 @@ def add(kind, target_id, body, user, label="", con=None):
     try:
         cur = con.execute(
             "INSERT INTO comments(target_kind, target_id, target_label,"
-            " user_id, author, body, created) VALUES(?,?,?,?,?,?,?)",
-            (kind, str(target_id), (label or "")[:300],
+            " target_hint, user_id, author, body, created)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (kind, str(target_id), (label or "")[:300], (hint or "")[:120],
              user["id"] if user else None, _display_name(user), body, _now()))
         con.commit()
         return cur.lastrowid, None

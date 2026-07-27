@@ -82,6 +82,8 @@
     <input type="hidden" name="kind"   value="{{ notes_kind }}">
     <input type="hidden" name="target" value="{{ notes_target }}">
     <input type="hidden" name="label"  value="{{ notes_label }}">
+    {#- how to link back here from the Notes feed; only assets need one -#}
+    <input type="hidden" name="hint"   value="{{ notes_hint|default('', true) }}">
     <input type="hidden" name="next"   value="{{ request.full_path }}">
     <textarea name="body" rows="3" required
               placeholder="Leave a note for whoever opens this next…"
