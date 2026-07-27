@@ -216,6 +216,23 @@ def _shot_ignore(snap_dir):
         return []
 
 
+def _shot_scale(snap_dir):
+    """How big the stored screenshot is relative to the real page.
+
+    Absent on anything captured before the picture started being stored at half
+    size, and those are full size - so the default is 1.0 and old snapshots
+    keep comparing exactly as they did.
+    """
+    p = Path(snap_dir) / "meta.json"
+    if not p.exists():
+        return 1.0
+    try:
+        v = float(json.loads(p.read_text(encoding="utf-8")).get("shot_scale", 1.0))
+        return v if 0 < v <= 1.0 else 1.0
+    except Exception:
+        return 1.0
+
+
 def visual_diff(old_dir, new_dir, change_dir=None):
     """Pixel-compares the two full-page screenshots.
 
@@ -241,7 +258,12 @@ def visual_diff(old_dir, new_dir, change_dir=None):
     # side's feed heights taken out.
     fh_a = sum(r["h"] for r in regs_a)
     fh_b = sum(r["h"] for r in regs_b)
-    height_delta = abs((a.height - fh_a) - (b.height - fh_b))
+    # The picture may be stored smaller than the page (shot_scale). Heights
+    # measured on it are in STORED pixels; the threshold is set in real page
+    # pixels on the settings screen. Convert, or a half-size image quietly
+    # doubles the threshold and a page that grew 80px reads as 40.
+    scale = min(_shot_scale(old_dir), _shot_scale(new_dir))
+    height_delta = abs((a.height - fh_a) - (b.height - fh_b)) / (scale or 1.0)
     w = min(a.width, b.width)
     h = min(a.height, b.height)
     if w == 0 or h == 0:

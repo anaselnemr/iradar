@@ -35,8 +35,15 @@ filesystem, which is thrown away on every deploy - so every deploy loses every
 page's baseline, and the next run re-baselines all 4,188 pages and reports
 nothing for a full cycle. It looks like the app "just stopped finding updates".
 
-Size it at **20 GB**. Retention holds the archive near 14 GB (3 captures per
-page), and you want headroom.
+Size it at **5 GB** (the cap on the current plan).
+
+That fits because the screenshot is stored at half size with a 256-colour
+palette: 686 KB down to about 151 KB, so three captures of all 4,188 pages plus
+the database land near **2.8 GB** rather than the 9.2 GB the full-size PNG
+needed. Measured, not estimated - see SHOT_SCALE in capture.py.
+
+If the archive ever approaches the cap, the dial is **Settings -> Captures kept
+per page**. Dropping 3 to 2 takes roughly a third off.
 
 ## 3. Environment variables
 
