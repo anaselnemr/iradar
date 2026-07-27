@@ -409,15 +409,32 @@ def test_a_browser_that_kept_no_cookie_can_still_sign_in():
     assert c.get("/").status_code == 200
 
 
-def test_a_bad_token_is_still_refused_when_one_exists():
-    # relaxing the no-cookie case must not relax the real check
+def test_sign_in_is_never_blocked_by_a_cookie_problem():
+    # Sign-in is CSRF-exempt on purpose: it is the one request that must work
+    # before a usable session exists, so a cookie problem there is a locked
+    # door with nothing behind it. It locked this account out four times.
+    _reset()
+    for data in ({},                                   # no token at all
+                 {"_csrf": "a-token-from-an-older-tab"},
+                 {"_csrf": ""}):
+        c = _client()
+        c.get("/login")
+        payload = {"email": ADMIN, "password": NEWPW}
+        payload.update(data)
+        r = c.post("/login", data=payload)
+        assert r.status_code == 302, \
+            f"sign-in refused over a token problem: {data}"
+        assert c.get("/").status_code == 200
+
+
+def test_everything_that_touches_data_still_needs_a_token():
+    # the exemption is sign-in ONLY
     _reset()
     c = _client()
-    c.get("/login")                       # now the session HAS a token
-    r = c.post("/login", data={"email": ADMIN, "password": NEWPW,
-                               "_csrf": "wrong"})
-    assert r.status_code == 200 and "sign in again" in r.data.decode(
-        "utf-8", "replace").lower(), "a wrong token was accepted"
+    _signin(c, ADMIN)
+    for path in ("/users/add", "/settings", "/urls/add", "/run-now"):
+        assert c.post(path, data={}).status_code == 400, \
+            f"{path} accepted a POST with no CSRF token"
 
 
 def test_a_valid_session_is_not_thrown_away_by_visiting_login():
@@ -445,32 +462,22 @@ def test_an_unusable_session_is_cleared_at_the_login_page():
     assert r.status_code == 302
 
 
-def test_a_stale_login_form_says_so_instead_of_failing_silently():
-    # A login page left open across a restart carries a token the session no
-    # longer knows. Bouncing it back to /login was indistinguishable from a
-    # wrong password: the form just reappeared, blank, with nothing to act on.
+def test_the_session_cookie_has_our_own_name():
+    # The default name "session" collides with the cookie this app set under
+    # its old signing key. Both match the path, the browser sends both, and
+    # whichever the parser reads first wins - when the stale one won, the
+    # browser was locked out and nothing the app did could dislodge it.
     _reset()
+    name = appmod.app.config["SESSION_COOKIE_NAME"]
+    assert name != "session", \
+        "still using the default cookie name an old cookie can shadow"
+    assert "iradar" in name
+    # and it is really what goes on the wire
     c = _client()
-    c.get("/login")                      # open the form, get a session
-    r = c.post("/login", data={"email": ADMIN, "password": NEWPW,
-                               "_csrf": "a-token-from-an-older-tab"})
-    body = r.data.decode("utf-8", "replace")
-    assert r.status_code == 200
-    assert "sign in again" in body.lower(), \
-        "a stale login form gave the user nothing to act on"
-    assert 'name="_csrf"' in body, "the retry form has no fresh token"
-    # and the credentials must NOT have been accepted on that request
-    assert c.get("/").status_code in (302,), "stale-token login signed them in"
-
-
-def test_the_retry_after_a_stale_form_works():
-    _reset()
-    c = _client()
-    c.get("/login")
-    c.post("/login", data={"email": ADMIN, "password": NEWPW, "_csrf": "old"})
-    r = _signin(c, ADMIN)                # retry, as a person would
-    assert r.status_code == 302, "could not sign in after a stale form"
-    assert c.get("/").status_code == 200
+    r = c.get("/login")
+    setc = "".join(v for k, v in r.headers if k.lower() == "set-cookie")
+    assert setc.startswith(name + "="), \
+        f"Set-Cookie does not use {name}: {setc[:60]}"
 
 
 def test_seeding_does_not_resurrect_a_deleted_account():

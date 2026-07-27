@@ -32,6 +32,13 @@ app = Flask(__name__)
 # repo forge a signed cookie for any account. See auth.secret_key.
 app.secret_key = auth.secret_key(str(db.DATA_DIR / "secret_key"))
 app.config.update(
+    # NOT the default "session". A browser that still holds a cookie called
+    # "session" from an older signing key keeps sending it alongside the new
+    # one; both match the path, and whichever the parser reads first wins. When
+    # the stale one wins, every request looks like it has no valid session and
+    # nothing the app does can dislodge it - the browser is simply locked out.
+    # A name this app has never used before cannot be shadowed by that history.
+    SESSION_COOKIE_NAME="iradar_session",
     SESSION_COOKIE_HTTPONLY=True,      # javascript can never read the cookie
     SESSION_COOKIE_SAMESITE="Lax",     # not sent on cross-site POSTs
     # Only send the cookie over HTTPS. Off by default so plain-http localhost
@@ -126,15 +133,22 @@ def _require_login():
         sent = (request.form.get("_csrf")
                 or request.headers.get("X-CSRF-Token") or "")
         have = session.get("_csrf") or ""
-        # Signing in is the one place we cannot INSIST on a prior token: it
-        # needs a cookie the browser accepted BEFORE anyone has signed in, and
-        # a browser that would not keep one (a stale cookie from an older
-        # signing key, cookies blocked for the site) is then locked out with no
-        # way back - which is exactly what happened here, six times over. When
-        # the session does carry a token it is still checked; when there is
-        # nothing to check, SameSite=Lax is what stops a cross-site sign-in,
-        # and a forged login is a far smaller problem than a locked-out team.
-        if ep == "login" and not have:
+        if ep == "login":
+            # Sign-in is EXEMPT, deliberately. It is the one request that has
+            # to work before a usable session exists, so it is the one place a
+            # cookie problem becomes a locked door with nothing behind it - it
+            # locked this account out four times running. Cross-site sign-in is
+            # already stopped by SameSite=Lax, the threat it protects against
+            # (being signed into someone else's account) is mild, and every
+            # endpoint that touches data is still covered below, where a
+            # session exists by definition. A log line records what the browser
+            # actually sent, so a repeat is diagnosed instead of guessed at.
+            if not have or not secrets.compare_digest(str(sent), str(have)):
+                print("[signin] token mismatch: cookie=%s session_token=%s"
+                      " form_token=%s ua=%.40s"
+                      % (bool(request.cookies), (have or "-")[:8],
+                         (sent or "-")[:8],
+                         request.headers.get("User-Agent", "?")), flush=True)
             return None
         if not have or not secrets.compare_digest(str(sent), str(have)):
             # A login form left open across a restart carries a token that no
@@ -6114,11 +6128,6 @@ def login():
         return redirect(url_for("index"))
     nxt = request.values.get("next", "")
     if request.method == "POST":
-        if getattr(request, "_csrf_stale", False):
-            # the form was older than the session; hand back a fresh one
-            return render_template(
-                "login.html", email=request.form.get("email", ""), next=nxt,
-                error="This page had been open a while - please sign in again."), 200
         email = request.form.get("email", "")
         pw = request.form.get("password", "")
         user, err = auth.check_login(email, pw, ip=_client_ip())
