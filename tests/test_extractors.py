@@ -220,6 +220,83 @@ def test_images_look_like_images():
         assert not junk, f"{name}: non-image URL collected: {junk[:2]}"
 
 
+# --- the price / stock block -----------------------------------------------
+
+def test_the_price_block_is_excluded_and_still_extracted():
+    # It has to be BOTH: out of the raw walk (an orderable part reprints its
+    # stock as a bare number that ticks daily - two parts flagged +3/-3 on
+    # nothing but 4387 -> 4382) and still read into `price`, where a real price
+    # move is news and "N in stock" is stripped before comparing. One selector
+    # feeds both, so they cannot drift apart and quietly stop watching price.
+    assert C.PRICE_SEL in C.VOLATILE_SEL, \
+        "the price block is no longer excluded from the raw signals"
+    assert "price-container" in C.SECTIONS_JS, \
+        "the price is no longer extracted structurally"
+    for sel in ("price-container", "buyingoption", "product-price"):
+        assert sel in C.PRICE_SEL, f"{sel} dropped out of PRICE_SEL"
+
+
+# --- lazy images ------------------------------------------------------------
+
+def test_settle_promotes_lazy_images_and_waits():
+    # Scrolling only STARTS a lazy image. Nothing waited for one to arrive, so
+    # the inventory could be read mid-flight and a page came back with fewer
+    # images than it has - four XMC parts flagged "+5 images" for partner logos
+    # that were on the page the whole time.
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        raise Skip("playwright not installed")
+    html = """
+      <img id="a" loading="lazy" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="
+           data-src="https://example.invalid/real-a.png">
+      <img id="b" data-original="https://example.invalid/real-b.png">
+      <img id="c" src="https://example.invalid/real-c.png">
+    """
+    with sync_playwright() as pw:
+        b = pw.chromium.launch()
+        pg = b.new_page()
+        # the host does not resolve, so every image ERRORS - which is the point:
+        # settle waits for images to finish, not to succeed, and one dead URL
+        # must not burn the whole budget
+        pg.set_content(html, wait_until="load")
+        import time
+        t0 = time.time()
+        res = pg.evaluate(C.IMAGES_SETTLE_JS, 4000)
+        took = time.time() - t0
+        srcs = pg.evaluate(
+            "() => Array.from(document.images).map(i => i.getAttribute('src'))")
+        b.close()
+
+    assert res["total"] == 3
+    assert any("real-a" in (s or "") for s in srcs), \
+        "a data: placeholder was not replaced from data-src"
+    assert any("real-b" in (s or "") for s in srcs), \
+        "an empty src was not filled from data-original"
+    assert pg.is_closed() or True
+    assert took < 8, f"settle took {took:.1f}s - the cap is not holding"
+
+
+def test_settle_never_blocks_forever_on_a_wedged_image():
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        raise Skip("playwright not installed")
+    import time
+    with sync_playwright() as pw:
+        b = pw.chromium.launch()
+        pg = b.new_page()
+        # a request that never answers: settle must give up on the cap
+        pg.route("**/hang.png", lambda route: None)
+        pg.set_content('<img src="https://example.invalid/hang.png">',
+                       wait_until="domcontentloaded")
+        t0 = time.time()
+        pg.evaluate(C.IMAGES_SETTLE_JS, 1500)
+        took = time.time() - t0
+        b.close()
+    assert took < 6, f"a wedged image held the capture for {took:.1f}s"
+
+
 # --- duplication (filter dropdowns / mega-menu) ----------------------------
 
 def test_no_line_is_duplicated_absurdly():

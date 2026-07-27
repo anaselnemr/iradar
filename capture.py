@@ -268,16 +268,35 @@ CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
 #       design_resources, partners, price), which is stable, so the raw text
 #       only double-counted them and flapped. Prose (overview, features,
 #       benefits, applications) sits OUTSIDE these containers and is kept.
-TEXT_REV = 4
+#   5 - the price/stock block (PRICE_SEL) leaves the raw walk too. An orderable
+#       part reprints its stock as a bare number and it ticks daily, so pages
+#       flagged +3/-3 on 4387 -> 4382 with nothing else touched. The price is
+#       still watched structurally, where "N in stock" is stripped before
+#       comparing and a real price move still counts.
+TEXT_REV = 5
 
 # The volatile-but-structured sections, excluded from every RAW signal (text,
 # image inventory, screenshot judgement) and left to the structured library,
 # which tracks them item by item and does not flap. Same containers SECTIONS_JS
 # already uses to EXTRACT them, so what leaves the raw walk is exactly what the
 # library still watches.
+
+# The price / stock block. Named once because SECTIONS_JS reads it into
+# `price` AND the raw text walk has to skip it - the same element, and they
+# must not drift apart. An orderable part reprints its stock level here as a
+# bare number ("4387"), and it ticks every day: two parts flagged +3/-3 on
+# nothing but 4387 -> 4382 and 420 -> 383. The price comparison already strips
+# "N in stock" before comparing, so the stock was only ever a problem in the
+# RAW walk, where the number stands alone with no "in stock" beside it to
+# recognise it by. Excluded from the raw signals, the price itself is still
+# watched - structurally, where a real price move is still news.
+PRICE_SEL = ('[class*="price-container" i], [class*="buyingoption" i], '
+             '[class*="buying-option" i], [class*="product-price" i], '
+             '[class*="unitprice" i]')
+
 VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
                 ".documents_ifx, .ifx_documents_products, .partner-ul-box, "
-                '[class*="buyingoption" i], [class*="buying-option" i]')
+                + PRICE_SEL)
 
 # Revision of what the SCREENSHOT shows, stamped alongside text_rev and gated
 # the same way by compare: across a shot_rev change the pixel/height signal is
@@ -322,7 +341,9 @@ FEED_RECTS_JS = r"""
 #   3 - drop images inside the volatile-but-structured sections (VOLATILE_SEL):
 #       board thumbnails and partner logos lazy-load inconsistently between
 #       captures. Their per-item imgs are watched by the library instead.
-IMG_REV = 3
+#   4 - VOLATILE_SEL grew to cover the price/stock block, so anything pictured
+#       inside it (a distributor mark) leaves the inventory with it.
+IMG_REV = 4
 
 TEXT_JS = r"""
 () => {
@@ -1496,8 +1517,7 @@ SECTIONS_JS = r"""
   // unit price. Button labels are not price text and get stripped.
   let priceTxt = '';
   const pe = document.querySelector('[class*="price-container" i]')
-    || document.querySelector('[class*="buyingoption" i], [class*="buying-option" i], '
-       + '[class*="pricing" i], [class*="product-price" i], [class*="unitprice" i]');
+    || document.querySelector('""" + PRICE_SEL + r"""');
   if (pe) priceTxt = (pe.innerText || '').replace(/\s+/g, ' ')
     .replace(/Add to Cart|View distributor'?s? inventory|Buy online|Log ?in to myInfineon|Contact sales/gi, '')
     .replace(/\s+/g, ' ').trim().slice(0, 500);
@@ -1649,6 +1669,49 @@ async () => {
   window.scrollTo(0, 0);
 }
 """
+
+# Scrolling only STARTS a lazy image; nothing waited for it to arrive, so the
+# inventory could be read while pictures were still in flight and a page came
+# back with five fewer images than it has. That is not an edit, but it reads as
+# one: four XMC parts flagged "+5 images" for partner logos that were on the
+# page all along and simply had not landed on the earlier capture.
+#
+# So: stop asking politely. Turn lazy images eager, promote the data-src the
+# page's own loader has not gotten to yet, and then WAIT for them - capped, so
+# one wedged image cannot hold a 4,000-page run hostage. Runs before both the
+# screenshot and the inventory, so the picture and the list agree.
+IMAGES_SETTLE_JS = r"""
+async (capMs) => {
+  const imgs = () => Array.from(document.images || []);
+  imgs().forEach(i => {
+    if (i.loading === 'lazy') i.loading = 'eager';
+    const s = i.getAttribute('src') || '';
+    if (!s || s.startsWith('data:')) {
+      const real = i.getAttribute('data-src') || i.getAttribute('data-original')
+                || i.getAttribute('data-lazy-src') || i.getAttribute('data-srcset');
+      if (real) i.setAttribute('src', real.split(' ')[0].split(',')[0]);
+    }
+  });
+  const pending = imgs().filter(i => !i.complete);
+  if (pending.length) {
+    await Promise.race([
+      Promise.all(pending.map(i => new Promise(done => {
+        // a broken image resolves too: we are waiting for it to SETTLE, not
+        // to succeed, and one 404 must not cost the whole budget
+        if (i.complete) return done();
+        i.addEventListener('load', done, {once: true});
+        i.addEventListener('error', done, {once: true});
+      }))),
+      new Promise(r => setTimeout(r, capMs))
+    ]);
+  }
+  return {total: imgs().length, waited: pending.length,
+          unfinished: imgs().filter(i => !i.complete).length};
+}
+"""
+# Ceiling per page. Generous enough for a slow CDN, small enough that the worst
+# case across the whole list is minutes, not hours.
+IMAGES_SETTLE_MS = 4000
 
 # The canonical section-nav selector, mirrored from NAV_ANCHORS inside
 # SECTIONS_JS. Kept in sync deliberately - the component read and this
@@ -2231,6 +2294,20 @@ async def capture_one(browser, url, out_dir):
                 print(f"  [unstick] neutralised {n_unstuck} sticky/fixed")
         except Exception as exc:
             print(f"  [unstick] FAILED: {exc}")   # never swallow this again
+
+        # Make every lazy image actually arrive before anything reads the page.
+        # Last thing before the screenshot, so the picture and the inventory
+        # below describe the same page. Best effort by design: a page whose
+        # images will not settle is still worth capturing, it just keeps the
+        # behaviour it had before this step existed.
+        try:
+            settled = await page.evaluate(IMAGES_SETTLE_JS, IMAGES_SETTLE_MS)
+            if INJECT_JS and settled and settled.get("unfinished"):
+                print(f"  [images] {settled['unfinished']} of {settled['total']}"
+                      f" never finished loading")
+        except Exception as exc:
+            if INJECT_JS:
+                print(f"  [images] settle skipped: {exc}")
 
         # Record WHERE the live feeds sit (layout is final after the unstick):
         # the screenshot keeps them - the whole page, community included, is
