@@ -127,7 +127,15 @@ def _require_login():
                 or request.headers.get("X-CSRF-Token") or "")
         have = session.get("_csrf") or ""
         if not have or not secrets.compare_digest(str(sent), str(have)):
-            # A session that quietly expired looks exactly like a bad token.
+            # A login form left open across a restart carries a token that no
+            # longer matches. Bouncing it back to /login looked like the
+            # password was wrong: the page simply reappeared, blank, with
+            # nothing to act on. Let the sign-in view render it as a plain
+            # "that form went stale, here is a fresh one" instead.
+            if ep == "login":
+                request._csrf_stale = True
+                return None
+            # A session that quietly expired looks the same as a bad token.
             # Sending those to sign in beats a bare 400 nobody can act on.
             if current_user() is None:
                 return redirect(url_for("login"))
@@ -6096,6 +6104,11 @@ def login():
         return redirect(url_for("index"))
     nxt = request.values.get("next", "")
     if request.method == "POST":
+        if getattr(request, "_csrf_stale", False):
+            # the form was older than the session; hand back a fresh one
+            return render_template(
+                "login.html", email=request.form.get("email", ""), next=nxt,
+                error="This page had been open a while - please sign in again."), 200
         email = request.form.get("email", "")
         pw = request.form.get("password", "")
         user, err = auth.check_login(email, pw, ip=_client_ip())

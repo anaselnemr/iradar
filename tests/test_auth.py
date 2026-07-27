@@ -396,6 +396,34 @@ def test_common_passwords_are_refused():
     assert auth.password_problem("purple-canyon-47-jetty") is None
 
 
+def test_a_stale_login_form_says_so_instead_of_failing_silently():
+    # A login page left open across a restart carries a token the session no
+    # longer knows. Bouncing it back to /login was indistinguishable from a
+    # wrong password: the form just reappeared, blank, with nothing to act on.
+    _reset()
+    c = _client()
+    c.get("/login")                      # open the form, get a session
+    r = c.post("/login", data={"email": ADMIN, "password": NEWPW,
+                               "_csrf": "a-token-from-an-older-tab"})
+    body = r.data.decode("utf-8", "replace")
+    assert r.status_code == 200
+    assert "sign in again" in body.lower(), \
+        "a stale login form gave the user nothing to act on"
+    assert 'name="_csrf"' in body, "the retry form has no fresh token"
+    # and the credentials must NOT have been accepted on that request
+    assert c.get("/").status_code in (302,), "stale-token login signed them in"
+
+
+def test_the_retry_after_a_stale_form_works():
+    _reset()
+    c = _client()
+    c.get("/login")
+    c.post("/login", data={"email": ADMIN, "password": NEWPW, "_csrf": "old"})
+    r = _signin(c, ADMIN)                # retry, as a person would
+    assert r.status_code == 302, "could not sign in after a stale form"
+    assert c.get("/").status_code == 200
+
+
 def test_seeding_does_not_resurrect_a_deleted_account():
     # seeding used to re-create a fixed address on every start, so removing
     # that person quietly undid itself at the next restart
