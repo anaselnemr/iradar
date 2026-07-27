@@ -15,6 +15,13 @@ DEFAULT_SETTINGS = {
     "weekday": "mon",             # for weekly
     "hour": "6",                  # 24h clock, local time
     "concurrency": "4",           # parallel browser tabs
+    # How many past captures to keep per page. Each one is ~1.1 MB and the
+    # screenshot is 94% of that, so this is the single number that decides
+    # whether the archive grows without limit: 3 x 4,200 pages caps it around
+    # 14 GB instead of climbing forever (it reached 25 GB in two weeks).
+    # A page's newest capture, anything an open update needs, and anything
+    # mid-check are always kept regardless of this.
+    "keep_snapshots": "3",
     "visual_threshold": "0.5",    # % of pixels that must differ to flag a visual change
     "height_threshold": "80",     # px difference in page height to flag
     # one regex per line; matching text lines are ignored.
@@ -318,6 +325,72 @@ def init_db():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (k, v))
     con.commit()
     con.close()
+
+
+def prune_history(keep=None, con=None, dry_run=False):
+    """Keep only the newest `keep` captures of each page; delete the rest.
+
+    Without this the archive grows by one full capture per page per run - about
+    1.1 MB each, 94% of it the screenshot - which reached 25 GB across 145k
+    files in two weeks. Runs automatically after every check.
+
+    Four things are never deleted, whatever `keep` says:
+      - a page's newest good capture, which the next run compares against
+      - any capture an OPEN update points at, or its diff cannot be drawn
+      - anything still being checked (status 'pending')
+      - the row of a capture whose folder is already gone (nothing to reclaim)
+
+    Returns (deleted, freed_bytes).
+    """
+    import shutil
+
+    if keep is None:
+        try:
+            keep = int(get_settings().get("keep_snapshots", 3))
+        except (TypeError, ValueError):
+            keep = 3
+    keep = max(1, keep)          # keeping zero would erase the next comparison
+
+    own = con is None
+    con = con or connect()
+    try:
+        protected = set()
+        for r in con.execute("SELECT old_snapshot_id, new_snapshot_id FROM"
+                             " changes WHERE IFNULL(reviewed,0)=0"):
+            protected.update(x for x in (r[0], r[1]) if x)
+        for r in con.execute("SELECT id FROM snapshots WHERE status='pending'"):
+            protected.add(r[0])
+
+        # newest first per page, so the first `keep` of each page survive
+        doomed, seen = [], {}
+        for s in con.execute("SELECT id, url_id, dir, status FROM snapshots"
+                             " ORDER BY url_id, id DESC"):
+            n = seen.get(s["url_id"], 0) + 1
+            seen[s["url_id"]] = n
+            if n <= keep or s["id"] in protected:
+                continue
+            doomed.append(s)
+
+        freed = 0
+        for s in doomed:
+            d = Path(s["dir"]) if s["dir"] else None
+            if d and d.exists():
+                for f in d.rglob("*"):
+                    if f.is_file():
+                        try:
+                            freed += f.stat().st_size
+                        except OSError:
+                            pass
+                if not dry_run:
+                    shutil.rmtree(d, ignore_errors=True)
+            if not dry_run:
+                con.execute("DELETE FROM snapshots WHERE id=?", (s["id"],))
+        if doomed and not dry_run:
+            con.commit()
+        return len(doomed), freed
+    finally:
+        if own:
+            con.close()
 
 
 def _ensure_column(con, table, col, decl):

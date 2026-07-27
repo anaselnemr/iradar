@@ -2923,6 +2923,7 @@ def status():
 def settings_view():
     if request.method == "POST":
         for key in ("frequency", "weekday", "hour", "concurrency",
+                    "keep_snapshots",
                     "visual_threshold", "height_threshold", "ignore_patterns",
                     "ignore_image_patterns", "dam_search_url",
                     "windchill_search_url", "aem_author_url"):
@@ -3318,6 +3319,7 @@ def _housekeeping(why):
     _sweep_images()            # collapse ?wid= renditions, drop avatars
     _sweep_hero_flags()        # a placeholder hero is not a real hero
     _refresh_item_index(why)   # substring search index, after the rewrites
+    _prune_history()           # cap the archive: N captures per page, no more
     try:
         _AGG_CACHE.pop("generic_images", None)
         n = len(_generic_images())
@@ -3325,6 +3327,22 @@ def _housekeeping(why):
               f" ({n} site-wide images)", flush=True)
     except Exception as e:
         print(f"[housekeeping] {why}: {e}", flush=True)
+
+
+def _prune_history():
+    """Hold the capture archive at the configured depth (Settings -> history).
+
+    Deliberately last in housekeeping and wrapped: reclaiming disk must never
+    be the thing that sinks a run's tidy-up, and it reads the change table,
+    which the steps above have just finished writing.
+    """
+    try:
+        gone, freed = db.prune_history()
+        if gone:
+            print(f"[housekeeping] pruned {gone} old capture(s),"
+                  f" freed {freed / 1024 ** 3:.2f} GB", flush=True)
+    except Exception as e:
+        print(f"[housekeeping] prune skipped: {e}", flush=True)
 
 
 def _refresh_item_index(why):
