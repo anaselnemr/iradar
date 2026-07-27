@@ -6463,16 +6463,20 @@ if __name__ == "__main__":
     # threads: the capture run lives in THIS process and holds a worker for
     # hours; 8 leaves plenty for the dashboard while a run is going.
     # 0.0.0.0 = reachable from other devices on the local network too.
+    # A hosting platform picks the port and tells you through PORT; bind
+    # anything else and it decides the service never came up and kills it.
+    # Locally there is no PORT, so 5000 stays the default and nothing changes.
+    port = int(os.environ.get("PORT", "5000"))
     try:
         from waitress import serve
-        print("  Server:                    waitress (production)")
+        print(f"  Server:                    waitress (production) on :{port}")
         print()
-        serve(app, host="0.0.0.0", port=5000, threads=8,
+        serve(app, host="0.0.0.0", port=port, threads=8,
               ident="iRadar",           # do not advertise the stack in headers
               channel_timeout=120)
     except ImportError:
         print("  Server:                    werkzeug DEV server"
               " - run 'pip install waitress' before going public")
         print()
-        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False,
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False,
                 threaded=True)

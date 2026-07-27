@@ -33,9 +33,10 @@ VOLUME ["/app/data"]
 EXPOSE 5000
 
 # Fails the container when the app stops answering, so the platform restarts it
-# instead of leaving a dead dashboard up.
-HEALTHCHECK --interval=60s --timeout=10s --start-period=90s --retries=3 \
-  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/login',timeout=8).status==200 else 1)"
+# instead of leaving a dead dashboard up. Reads PORT for the same reason app.py
+# does - the platform chooses it, we do not.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD python -c "import os,sys,urllib.request; p=os.environ.get('PORT','5000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/login',timeout=8).status==200 else 1)"
 
 # app.py serves on waitress and starts the scheduler, the capture runner and
 # the housekeeping threads in this same process - it is the whole application,
