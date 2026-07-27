@@ -20,7 +20,17 @@ WORKDIR /app
 
 # Dependencies first, so a code change does not re-install them every build.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Ubuntu 24.04 (noble) ships Python 3.12 marked "externally managed" (PEP 668),
+# which makes pip REFUSE to install into the system interpreter. This image has
+# no virtualenv, so that refusal is a hard build failure. Allowing it is correct
+# here: a container IS the isolation a venv would provide, and nothing else
+# shares this interpreter.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python -m pip install --no-cache-dir --upgrade pip \
+ && python -m pip install --no-cache-dir -r requirements.txt \
+ && python -c "import flask, waitress, playwright, PIL, openpyxl, rapidfuzz, apscheduler; print('deps import cleanly')"
 
 COPY . .
 
