@@ -506,7 +506,8 @@ STATUS_FILTERS = {
                   "u.id IN (" + ",".join(map(str, TEST_PAGE_IDS)) + ")"),
     "metaflag":  ("⚠ Ownership mismatch", "IFNULL(u.meta_flag,'')<>''"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
-    "rejected":  ("Awaiting fix", "u.last_status='rejected'"),
+    # no 'rejected' state: rejecting a capture means "not this one as the
+    # baseline", after which the page is dealt with and reads as unchanged
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
     "notlive":   ("Not live (404)", "u.last_status='notlive'"),
     "blank":     ("Blank page", "u.last_status='blank'"),
@@ -1287,8 +1288,6 @@ def index():
          "n": status_counts["unchanged"], "always": True},
         {"kind": "status", "vals": ["changed"], "label": "Updated",
          "n": status_counts["changed"], "always": True, "tone": "warn"},
-        {"kind": "status", "vals": ["rejected"], "label": "Awaiting fix",
-         "n": status_counts["rejected"], "tone": "warn"},
         {"kind": "status", "vals": ["blank"], "label": "Blank page",
          "n": status_counts["blank"], "tone": "bad"},
         {"kind": "status", "vals": ["error"], "label": "Capture error",
@@ -2594,13 +2593,11 @@ def change_resolve(change_id):
     con.execute("UPDATE changes SET reviewed=1, resolution=? WHERE id=?",
                 (resolution, change_id))
     if resolution == "reject":
-        # The OLD version was correct: never compare against the rejected
-        # capture - the old snapshot stays the current version, so the page
-        # flagged again on every check until the website is fixed.
+        # Reject means one thing: do not adopt THIS capture as the baseline.
+        # The old snapshot stays the current version and this one is never
+        # compared against again.
         con.execute("UPDATE snapshots SET rejected=1 WHERE id=?",
                     (c["new_snapshot_id"],))
-        con.execute("UPDATE urls SET last_status='rejected' WHERE id=?",
-                    (c["url_id"],))
         # The library/search index was already refreshed from the new capture
         # AT CAPTURE TIME - leaving it would show the very content the reject
         # just declared wrong. Restore items + full-text from the snapshot the
@@ -2609,18 +2606,22 @@ def change_resolve(change_id):
                           (c["old_snapshot_id"],)).fetchone()
         if old and old["dir"] and Path(old["dir"]).exists():
             runner.index_items(con, c["url_id"], old["dir"])
-        flash("Rejected — the old version stays the current version (library "
-              "and search restored to it). The page will be flagged again on "
-              "the next check until the website matches it.")
+        flash("Rejected — this capture will not be used as the baseline. "
+              "The old version stays current.")
     else:
-        remaining = con.execute(
-            "SELECT COUNT(*) FROM changes WHERE url_id=? AND reviewed=0",
-            (c["url_id"],)).fetchone()[0]
-        if remaining == 0:
-            con.execute("UPDATE urls SET last_status='unchanged'"
-                        " WHERE id=? AND last_status IN ('changed','rejected')",
-                        (c["url_id"],))
         flash("Approved — this is now the current version.")
+    # Either way the page is DEALT WITH and goes back to normal. Reject used to
+    # park it in its own 'rejected' state, shown as "Awaiting fix", where it sat
+    # until the website changed back - a queue that only ever grew, for a
+    # decision that had already been made. Rejecting says "not this capture",
+    # not "chase this page forever".
+    remaining = con.execute(
+        "SELECT COUNT(*) FROM changes WHERE url_id=? AND reviewed=0",
+        (c["url_id"],)).fetchone()[0]
+    if remaining == 0:
+        con.execute("UPDATE urls SET last_status='unchanged'"
+                    " WHERE id=? AND last_status IN ('changed','rejected')",
+                    (c["url_id"],))
     con.commit()
     con.close()
     nxt = request.form.get("next") or url_for("index")
@@ -5952,16 +5953,24 @@ def prewarm():
 
 
 def _normalize_statuses():
-    """Boot migration: the 'baseline' state is retired - a first capture now
-    lands as 'unchanged' (next run either keeps it there or moves it to
-    Updated). Rows written by an older runner normalize on every start."""
+    """Boot migration for retired states.
+
+    'baseline' - a first capture now lands as 'unchanged' (the next run either
+    keeps it there or moves it to Updated).
+    'rejected' - rejecting a capture used to park the page in its own state,
+    shown as "Awaiting fix", where it sat until the website changed back. That
+    is a queue that only ever grows, for a decision already made. Rejecting now
+    means only "not this capture as the baseline", so the page reads as
+    unchanged; the SNAPSHOT stays flagged rejected and is still never compared
+    against, which is the part that does the work.
+    """
     con = db.connect()
     n = con.execute("UPDATE urls SET last_status='unchanged'"
-                    " WHERE last_status='baseline'").rowcount
+                    " WHERE last_status IN ('baseline','rejected')").rowcount
     con.commit()
     con.close()
     if n:
-        print(f"  normalized {n} page(s) from the retired 'baseline' state")
+        print(f"  normalized {n} page(s) from a retired status")
 
 
 def _normalize_urls():

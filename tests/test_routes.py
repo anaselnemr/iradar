@@ -90,3 +90,83 @@ def test_status_json_ok():
     import json
     r = _ok("/status")
     json.loads(r.data)     # must be valid JSON the poller can read
+
+
+# --- accept / reject --------------------------------------------------------
+
+def _csrf():
+    import re
+    m = re.search(r'name="_csrf" value="([^"]+)"',
+                  _client.get("/").data.decode("utf-8", "replace"))
+    return m.group(1) if m else ""
+
+
+def _make_change(url_id=1):
+    """A page with an old and a new capture, and an open update between them."""
+    con = db.connect()
+    old = con.execute("INSERT INTO snapshots(url_id, ts, dir, status)"
+                      " VALUES(?, 'old', '', 'ok')", (url_id,)).lastrowid
+    new = con.execute("INSERT INTO snapshots(url_id, ts, dir, status)"
+                      " VALUES(?, 'new', '', 'ok')", (url_id,)).lastrowid
+    cid = con.execute(
+        "INSERT INTO changes(url_id, ts, old_snapshot_id, new_snapshot_id,"
+        " text_changed, reviewed) VALUES(?, 't', ?, ?, 1, 0)",
+        (url_id, old, new)).lastrowid
+    con.execute("UPDATE urls SET last_status='changed' WHERE id=?", (url_id,))
+    con.commit()
+    con.close()
+    return cid, old, new
+
+
+def _row(table, rid, col):
+    con = db.connect()
+    v = con.execute(f"SELECT {col} FROM {table} WHERE id=?", (rid,)).fetchone()[0]
+    con.close()
+    return v
+
+
+def test_rejecting_drops_the_capture_but_not_the_page():
+    # Reject means ONE thing: do not use this capture as the baseline. It used
+    # to also park the page in a 'rejected' state shown as "Awaiting fix",
+    # where it sat until the website changed back - a queue that only grew,
+    # for a decision already made.
+    cid, old, new = _make_change()
+    r = _client.post(f"/change/{cid}/review",
+                     data={"resolution": "reject", "_csrf": _csrf()})
+    assert r.status_code in (302, 200), f"reject failed ({r.status_code})"
+    assert _row("snapshots", new, "rejected") == 1, \
+        "the rejected capture can still become a baseline"
+    assert _row("snapshots", old, "rejected") == 0, "the OLD capture was rejected"
+    assert _row("urls", 1, "last_status") == "unchanged", \
+        "the page is still parked in an 'awaiting fix' state after rejecting"
+    assert _row("changes", cid, "reviewed") == 1
+
+
+def test_approving_makes_the_new_capture_current():
+    cid, old, new = _make_change()
+    r = _client.post(f"/change/{cid}/review",
+                     data={"resolution": "approve", "_csrf": _csrf()})
+    assert r.status_code in (302, 200)
+    assert _row("snapshots", new, "rejected") == 0, \
+        "approving marked the capture rejected"
+    assert _row("urls", 1, "last_status") == "unchanged"
+
+
+def test_a_page_with_another_open_update_stays_flagged():
+    # clearing one update must not declare the whole page dealt with
+    first, _, _ = _make_change()
+    second, _, _ = _make_change()
+    _client.post(f"/change/{first}/review",
+                 data={"resolution": "reject", "_csrf": _csrf()})
+    assert _row("urls", 1, "last_status") == "changed", \
+        "the page went quiet while another update was still open"
+    _client.post(f"/change/{second}/review",
+                 data={"resolution": "approve", "_csrf": _csrf()})
+    assert _row("urls", 1, "last_status") == "unchanged"
+
+
+def test_awaiting_fix_is_gone_from_the_filters():
+    assert "rejected" not in app.STATUS_FILTERS, \
+        "the retired 'Awaiting fix' filter is still selectable"
+    html = _client.get("/").data.decode("utf-8", "replace")
+    assert "Awaiting fix" not in html, "the Awaiting fix chip is still rendered"

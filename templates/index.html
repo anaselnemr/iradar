@@ -388,7 +388,7 @@
       <td>
         {% if not u.active %}<span class="badge b-off">paused</span>
         {% elif u.last_status == 'changed' %}<span class="badge b-changed">updated</span>
-        {% elif u.last_status == 'rejected' %}<span class="badge b-rejected" title="You rejected an update: the old version stays the current version until the site matches it again">awaiting fix</span>
+        {% elif u.last_status == 'rejected' %}<span class="badge b-unchanged" title="An update was rejected: that capture is not the baseline, the old version stays current">unchanged</span>
         {% elif u.last_status in ('unchanged', 'baseline') %}<span class="badge b-unchanged">unchanged</span>
         {% elif u.last_status == 'notlive' %}<span class="badge b-off" title="Infineon serves this URL as an error page. It is still watched, so a revival shows up as an update.">dead page</span>
         {% elif u.last_status == 'blank' %}<span class="badge b-error" title="The page answers with an HTTP success code but an empty body - nothing renders, for us or for a visitor. This is a fault on the page itself.">serves blank page</span>
@@ -614,8 +614,12 @@ function pjax(url) {
       // the filtered count - the old regex hunted for "Showing X of Y" text
       // that no longer exists ("N shown"), so TOTAL_MATCH stayed stuck at the
       // whole-set count and "select all" offered 4,188 while 471 were shown.
+      // innerHTML carries the rows but NOT the panel's own attributes, so
+      // data-total stayed at the unfiltered count for the rest of the session.
+      // TOTAL_MATCH was updated, so "select all N matching" was right, but
+      // anything reading the attribute afterwards saw 4,188 forever.
       const dt = parseInt(fresh.getAttribute('data-total') || '', 10);
-      if (!isNaN(dt)) TOTAL_MATCH = dt;
+      if (!isNaN(dt)) { TOTAL_MATCH = dt; panel.setAttribute('data-total', dt); }
       // a filter change makes the old selection meaningless - clear it so the
       // count and the "select all N matching" offer describe THIS result set
       SEL.clear();
