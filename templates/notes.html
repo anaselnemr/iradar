@@ -14,8 +14,7 @@
 
   /* the composer */
   .nl-new h3 { margin: 0 0 3px; font-size: 15.5px; letter-spacing: -.1px; }
-  .nl-new .why { color: var(--muted); font-size: 13px; margin: 0 0 12px;
-                 max-width: 68ch; line-height: 1.55; }
+  .nl-new .why { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
   .nl-new textarea { width: 100%; font-family: inherit; font-size: 14px;
                      line-height: 1.55; padding: 11px 13px; border-radius: 11px;
                      border: 1px solid var(--line); background: var(--bg);
@@ -94,8 +93,7 @@
 <div class="nl-wrap">
   <div class="card nl-new">
     <h3>Something broken, confusing or missing?</h3>
-    <p class="why">About one page or document? Leave the note on that thing
-      instead — it stays there for whoever opens it next.</p>
+    <p class="why">About one page or document? Leave it there instead.</p>
     <form method="post" action="{{ url_for('comment_add') }}">
       <input type="hidden" name="kind"   value="app">
       <input type="hidden" name="target" value="iradar">

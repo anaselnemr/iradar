@@ -6659,31 +6659,22 @@ def guide_page():
 # here, because it changes what lands in somebody's queue on Monday.
 WHATS_NEW = [
     {"on": "2026-07-28", "what": [
-        "Pages were photographed before their fonts arrived, so the same page "
-        "wrapped its text differently between two checks and came up as "
-        "changed when nothing had. That was most of the double-checking.",
-        "552 pages claimed to redirect. Two of them do — the rest were the "
-        "capture's own tab-clicking putting ?ftab=04 on the address.",
-        "Updates could name things that were not in either capture — one read "
-        "“Products table filled” about a page that had one all along.",
-        "Times were shown in UTC. A sign-in at 10:02 read as 08:02. "
-        "Everything on screen is now in local time.",
-        "Bugs and suggestions moved to Notes, which has a box of its own at "
-        "the top. Admins can download a copy of the database under Settings.",
+        "Pages are photographed only once their fonts have arrived — before, "
+        "the same text wrapping differently read as a change.",
+        "552 pages claimed to redirect; two of them do.",
+        "Times on screen are local, not the server's.",
+        "A restart no longer ends a check — it carries on by itself.",
+        "Bugs and suggestions moved to Notes.",
+        "Admins can download a copy of the database under Settings.",
     ]},
     {"on": "2026-07-27", "what": [
-        "Dark mode reworked: it was pure black, which made every card look "
-        "flat. Cards lift off the page now.",
-        "The estimate before checking a lot of pages was ten times too high "
-        "(86 hours for a nine-hour job). It is measured from real runs.",
-        "iRadar has a logo, so the browser tab is findable again, and everyone "
-        "gets their own avatar colour.",
-        "Help rewritten: how the progress bar reads, what happens when a check "
-        "is interrupted, and every page state written down.",
+        "Dark mode reworked; cards lift off the page instead of sitting flat.",
+        "iRadar has a logo, and everyone has their own avatar colour.",
+        "Help rewritten, with pictures.",
     ]},
     {"on": "2026-07-20", "what": [
-        "Accounts, roles and sign-in, and iRadar moved to iradar.net.",
-        "Notes on every page, item and update, gathered under Notes.",
+        "Accounts, roles and sign-in; iRadar moved to iradar.net.",
+        "Notes on every page, item and update.",
     ]},
 ]
 

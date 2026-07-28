@@ -47,6 +47,19 @@
   /* A HEADING NEEDS AIR ABOVE IT. Every h3 in here used to sit as close to
      the paragraph before it as to its own, so a section read as one grey
      block and the eye had nothing to rest on. */
+  /* a number on the heading and the same number in the rail: the two are one
+     label, so "where am I" is answered without reading either in full */
+  .secn { display: inline-grid; place-items: center; width: 24px; height: 24px;
+          margin-right: 10px; border-radius: 7px; font-size: 12px;
+          font-weight: 700; vertical-align: 2px;
+          background: var(--hover); color: var(--muted);
+          font-variant-numeric: tabular-nums; }
+  .gd h2 { display: flex; align-items: center; }
+  .toc .n { display: inline-block; width: 18px; color: var(--muted);
+            font-variant-numeric: tabular-nums; font-weight: 600; }
+  .toc a.on .n { color: var(--accent); }
+  /* the sections are separate subjects - say so with a real gap and a rule */
+  .gdmain > section[id] + section[id] { position: relative; }
   .gd h2 { margin: 0 0 5px; font-size: 20px; letter-spacing: -.25px; }
   .gd h2 + .lede { margin: 0 0 22px; color: var(--muted); font-size: 14px;
                    max-width: 66ch; line-height: 1.55; }
@@ -192,25 +205,24 @@
   <nav class="toc" aria-label="On this page">
     <h4>On this page</h4>
     <ol>
-      <li><a href="#overview">Where things stand</a></li>
-      <li><a href="#check">What happens on a check</a></li>
-      <li><a href="#signals">What it notices</a></li>
-      <li><a href="#review">Reviewing an update</a></li>
-      <li><a href="#content">Content &amp; file updates</a></li>
-      <li><a href="#writing-notes">Leaving a note</a></li>
-      <li><a href="#where">Where things are</a></li>
-      <li><a href="#account">Your account</a></li>
-      <li><a href="#export">Export</a></li>
-      <li><a href="#components">Component matrix</a></li>
-      <li><a href="#schedule">Changing the schedule</a></li>
-      <li><a href="#know">Worth knowing</a></li>
-      <li><a href="#limits">What it does not do</a></li>
-      <li><a href="#whatsnew">What&rsquo;s new</a></li>
+      <li><a href="#overview"><span class="n">1</span>Where things stand</a></li>
+      <li><a href="#check"><span class="n">2</span>What happens on a check</a></li>
+      <li><a href="#signals"><span class="n">3</span>What it notices</a></li>
+      <li><a href="#review"><span class="n">4</span>Reviewing an update</a></li>
+      <li><a href="#content"><span class="n">5</span>Content &amp; file updates</a></li>
+      <li><a href="#pagepage"><span class="n">6</span>A page&rsquo;s own page</a></li>
+      <li><a href="#writing-notes"><span class="n">7</span>Leaving a note</a></li>
+      <li><a href="#export"><span class="n">8</span>Export</a></li>
+      <li><a href="#settings"><span class="n">9</span>Settings</a></li>
+      <li><a href="#where"><span class="n">10</span>Where things are</a></li>
+      <li><a href="#account"><span class="n">11</span>Your account</a></li>
+      <li><a href="#know"><span class="n">12</span>Worth knowing</a></li>
+      <li><a href="#limits"><span class="n">13</span>What it does not do</a></li>
+      <li><a href="#whatsnew"><span class="n">14</span>What&rsquo;s new</a></li>
     </ol>
   </nav>
 
   <div class="gdmain">
-
   <!-- what it is, and where it stands right now -->
   <section id="overview" class="card gd-hero">
     <div class="figs">
@@ -238,7 +250,7 @@
 
   <!-- the run -->
   <section id="check" class="card">
-    <h2>What happens on a check</h2>
+    <h2><span class="secn">2</span><span class="secn">1</span>What happens on a check</h2>
     {#- NOT |capitalize: it lowercases the rest, so "every Monday" comes out
         "Every monday". Starting the sentence with a word of our own instead. -#}
     <p class="lede">Runs {{ every }} at {{ at_time }}, on its own — nobody starts
@@ -367,7 +379,7 @@
 
   <!-- the distinction people get wrong -->
   <section id="signals" class="card">
-    <h2>What it notices, and what it lets pass</h2>
+    <h2><span class="secn">3</span>What it notices, and what it lets pass</h2>
     <p class="lede">The right-hand column is why something you expected did not
       come up. Each one caused a flood of false alarms before it was handled.</p>
     <div class="pair">
@@ -414,7 +426,7 @@
 
   <!-- reviewing -->
   <section id="review" class="card">
-    <h2>Reviewing an update</h2>
+    <h2><span class="secn">4</span>Reviewing an update</h2>
     <p class="lede">Open one from the Dashboard. You see exactly what moved —
       the wording before and after, which documents came and went, and the two
       screenshots with the changed areas boxed.</p>
@@ -468,7 +480,7 @@
 
   <!-- the content library -->
   <section id="content" class="card">
-    <h2>Content: every document, and where it is used</h2>
+    <h2><span class="secn">5</span>Content: every document, and where it is used</h2>
     <p class="lede">Every check reads the whole library off each page — so
       <a href="{{ url_for('search_items') }}">Content</a> is not a separate list
       somebody maintains, it is what the site actually says today.</p>
@@ -491,6 +503,23 @@
 
     <p>The same is true of videos, images, boards, design resources and partner
       logos. Anything the page lists, iRadar lists — grouped by what it is.</p>
+
+    <h3>What is assigned to what</h3>
+    <p>Two different kinds of assignment, and they are easy to confuse:</p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>An item belongs to pages.</b> Read off the page itself, every
+        check. Nobody maintains it — open any document and the pages carrying
+        it are listed, each with its type and the heading the document sits
+        under on that page. That is the answer to &ldquo;if I change this
+        datasheet, what am I affecting?&rdquo;</li>
+      <li><b>A page belongs to people.</b> BL, PL, CM and the marketing owner,
+        imported rather than read off the page. It is our bookkeeping, so
+        editing it never raises an update — and where a page disagrees with
+        what was imported it is flagged <i>Ownership mismatch</i> rather than
+        quietly corrected.</li>
+    </ul>
+    <p>So an update on one page tells you who to tell (its owners), and the
+      item behind it tells you how far the change reaches (its other pages).</p>
 
     <div class="note"><p><b>This is what makes a removal visible.</b> When a
       datasheet disappears from a page, iRadar knows because it compares the
@@ -523,9 +552,49 @@
     </ul>
   </section>
 
+  <!-- one page's own page -->
+  <section id="pagepage" class="card">
+    <h2><span class="secn">6</span>What a page&rsquo;s own page shows</h2>
+    <p class="lede">Click any row on the Dashboard and you get everything
+      iRadar knows about that one page. It is where you go to answer &ldquo;what
+      is on this, and what has happened to it&rdquo; without opening
+      infineon.com.</p>
+
+    <ul class="lim">
+      <li><b>Where it sits</b> — the breadcrumb, the way Infineon nests it.
+        The counter beside it opens the pages <i>beside</i> this one and the
+        pages <i>under</i> it, so you can walk the family without going back
+        to the Dashboard.</li>
+      <li><b>Its name and address</b> — the page&rsquo;s own title, or one you
+        set yourself if theirs is unhelpful. The address opens the live page.</li>
+      <li><b>Its shape and ownership</b> — the level, and BL / PL / CM /
+        owner. Both editable with the pencil; editing them never raises an
+        update, because they are our bookkeeping rather than the page&rsquo;s
+        content.</li>
+      <li><b>The library</b> — every document, video, board, design resource,
+        image and partner the page carries, grouped by kind, exactly as the
+        last capture read it. Each one links to the item, so you can see
+        where else it is used.</li>
+      <li><b>Detected updates</b> — every change ever raised on this page,
+        newest first, whether you accepted or rejected it. This is the page&rsquo;s
+        history.</li>
+      <li><b>Stored snapshots</b> — the captures still on disk, with their
+        text-line and image counts and a link to each screenshot. Normally two;
+        anything an open update needs is kept however old.</li>
+      <li><b>Redirects</b>, when the address that answered is not the one on
+        the list.</li>
+      <li><b>Notes</b> — at the bottom, staying with the page for whoever
+        opens it next.</li>
+    </ul>
+
+    <div class="note"><p>A page that is <b>paused</b>, <b>not live</b> or
+      <b>blank</b> still has all of this. Nothing is deleted when a page stops
+      answering — that is how you can see what it used to carry.</p></div>
+  </section>
+
   <!-- notes -->
   <section id="writing-notes" class="card">
-    <h2>Leaving a note</h2>
+    <h2><span class="secn">7</span>Leaving a note</h2>
     <p class="lede">Every page, document, board and update has a notes box at the
       bottom.</p>
     <p>It is for the reasoning, not the fact — <i>"checked with marketing, the
@@ -546,54 +615,9 @@
     </figure>
   </section>
 
-  <!-- where things live -->
-  <section id="where" class="card">
-    <h2>Where things are</h2>
-    <ul class="map">
-      <li><a href="{{ url_for('index') }}">Dashboard</a>
-        <span>Every tracked page, its state, and your review queue. Filter by
-          type, status, or by what content a page has.</span></li>
-      <li><a href="{{ url_for('search_items') }}">Content</a>
-        <span>Every document, video, image and board across all pages, and which
-          pages each appears on. Answers "where is this datasheet used?"</span></li>
-      <li><a href="{{ url_for('notes_page') }}">Notes</a>
-        <span>Everything anyone has written, newest first — and the box for
-          telling us something is broken, confusing or missing.</span></li>
-      <li>Reports
-        <span><a href="{{ url_for('hierarchy') }}">Hierarchy</a> — the site as a
-          tree. <a href="{{ url_for('export_builder') }}">Export</a> — any of it
-          as a spreadsheet. <a href="{{ url_for('history') }}">Run history</a> —
-          every check and what it found.</span></li>
-      <li>Your avatar
-        <span>Top right. Your profile, light or dark mode, sign
-          out{% if is_admin %}, and the admin screens{% endif %}.</span></li>
-      <li>Times
-        <span>Everything on screen is your local time, not the server's.</span></li>
-    </ul>
-  </section>
-
-  <!-- account -->
-  <section id="account" class="card">
-    <h2>Your account</h2>
-    <p class="lede">Sign in with your Infineon email address.</p>
-    <p>Your name and password are under the avatar, top right. Changing your name
-      also updates it on notes you have already written.</p>
-    <ul class="map" style="margin-top:8px">
-      <li>Admin<span>Everything — people, settings, the page list, and starting a
-        check by hand.</span></li>
-      <li>Editor<span>Review updates and edit page details. Not settings, the
-        page list, or runs.</span></li>
-    </ul>
-    <p style="margin-top:12px">Everyone can write notes.</p>
-    <div class="note"><p>Please use a <b>passphrase</b> — three or four random
-      words, like <code>harbour-cactus-lantern-42</code>. Long beats
-      complicated, and it is far stronger than something like
-      <code>P@ssw0rd!</code>.</p></div>
-  </section>
-
   <!-- getting it out as a spreadsheet -->
   <section id="export" class="card">
-    <h2>Export: getting it out as a spreadsheet</h2>
+    <h2><span class="secn">8</span>Export: getting it out as a spreadsheet</h2>
     <p class="lede">Anything on screen can leave as a workbook. You pick the
       rows and you pick the columns; the numbers beside every option tell you
       how much you would get before you ask for it.</p>
@@ -632,9 +656,45 @@
       content with its own pages beside it.</p>
   </section>
 
-  <!-- the matrix -->
-  <section id="components" class="card">
-    <h2>Which components a page type should have</h2>
+  <!-- what an admin can change -->
+  <section id="settings" class="card">
+    <h2><span class="secn">9</span>Settings: what you can change</h2>
+    <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings</a>
+      is{% else %}Settings is admin-only, and is{% endif %} four tabs. Everything
+      else about iRadar — the five signals, what it ignores, how the
+      double-check works — is not a setting, on purpose: they are the things
+      that took the longest to get right.</p>
+
+    <h3>Schedule</h3>
+    <p>It runs <b>{{ every }} at {{ at_time }}</b> today.</p>
+
+    <ul class="lim">
+      <li><b>How often</b> — every day, every two days, or weekly. Weekly is
+        the normal choice: Infineon does not republish a page most days, and a
+        daily check mostly re-reads pages that have not moved.</li>
+      <li><b>Which day</b>, for a weekly check.</li>
+      <li><b>What hour</b> — 0 to 23, <b>in your time</b>, not the server's. A
+        check takes several hours, so an evening start finishes overnight and
+        the queue is waiting when people arrive.</li>
+      <li><b>Parallel browser tabs</b> — how many pages are opened at once.
+        Higher is faster and heavier; too high and Infineon starts refusing
+        us, which shows up as capture errors rather than as speed.</li>
+    </ul>
+
+    <div class="note warn"><p>Changing the schedule does not touch a check
+      already running, and never loses one: the next run starts at the new
+      time. To run it now instead, use <b>Check all pages</b>.</p></div>
+  
+    <h3>Sensitivity</h3>
+    <p>Two numbers, both about the screenshot: how much of the picture has to
+      differ (<b>{{ s.visual_threshold }}%</b> of pixels) and how far the page
+      height has to move (<b>{{ s.height_threshold }}px</b>). Text, library and
+      image changes are not thresholded — any one of them raises the page.</p>
+    <p><b>Raise them</b> if pages keep coming up on the picture alone with
+      nothing you can see. <b>Lower them</b> only if you are missing real
+      visual changes, which is rarer than it sounds.</p>
+
+    <h3>Components</h3>
     <p class="lede">A grid of page types against components, under
       {% if is_admin %}<a href="{{ url_for('settings_components') }}">Settings →
       Components</a>{% else %}Settings → Components, admin only{% endif %}. It
@@ -668,36 +728,73 @@
         their siblings, their depth in the hierarchy and which components they
         carry. Every page's level stays editable on its own page.</li>
     </ul>
-  </section>
-
-  <!-- the schedule -->
-  <section id="schedule" class="card">
-    <h2>Changing when it runs</h2>
-    <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings
-      → Schedule</a>{% else %}Settings → Schedule, admin only{% endif %}. It
-      runs <b>{{ every }} at {{ at_time }}</b> today.</p>
-
-    <ul class="lim">
-      <li><b>How often</b> — every day, every two days, or weekly. Weekly is
-        the normal choice: Infineon does not republish a page most days, and a
-        daily check mostly re-reads pages that have not moved.</li>
-      <li><b>Which day</b>, for a weekly check.</li>
-      <li><b>What hour</b> — 0 to 23, <b>in your time</b>, not the server's. A
-        check takes several hours, so an evening start finishes overnight and
-        the queue is waiting when people arrive.</li>
-      <li><b>Parallel browser tabs</b> — how many pages are opened at once.
-        Higher is faster and heavier; too high and Infineon starts refusing
-        us, which shows up as capture errors rather than as speed.</li>
+  
+    <h3>Advanced</h3>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>Where your assets live</b> — the DAM and Windchill search
+        addresses. Set them and the badges on every document become one-click
+        links to the system that owns the file.</li>
+      <li><b>Lines and images to ignore</b> — text that rewrites itself with
+        nobody editing the page, like a relative date or a result count. One
+        pattern per line; anything matching is left out of the comparison.</li>
+      <li><b>Backup</b> — a copy of the database, which is the part that
+        cannot be rebuilt.</li>
     </ul>
 
-    <div class="note warn"><p>Changing the schedule does not touch a check
-      already running, and never loses one: the next run starts at the new
-      time. To run it now instead, use <b>Check all pages</b>.</p></div>
+    <div class="note warn"><p><b>What you cannot change:</b> the five signals
+      themselves, the double-check, the retry rounds, or how many captures are
+      kept per page beyond the number in Schedule. Those are the parts that
+      decide whether iRadar is right, and they are not knobs.</p></div>
+  </section>
+
+  <!-- where things live -->
+  <section id="where" class="card">
+    <h2><span class="secn">10</span>Where things are</h2>
+    <ul class="map">
+      <li><a href="{{ url_for('index') }}">Dashboard</a>
+        <span>Every tracked page, its state, and your review queue. Filter by
+          type, status, or by what content a page has.</span></li>
+      <li><a href="{{ url_for('search_items') }}">Content</a>
+        <span>Every document, video, image and board across all pages, and which
+          pages each appears on. Answers "where is this datasheet used?"</span></li>
+      <li><a href="{{ url_for('notes_page') }}">Notes</a>
+        <span>Everything anyone has written, newest first — and the box for
+          telling us something is broken, confusing or missing.</span></li>
+      <li>Reports
+        <span><a href="{{ url_for('hierarchy') }}">Hierarchy</a> — the site as a
+          tree. <a href="{{ url_for('export_builder') }}">Export</a> — any of it
+          as a spreadsheet. <a href="{{ url_for('history') }}">Run history</a> —
+          every check and what it found.</span></li>
+      <li>Your avatar
+        <span>Top right. Your profile, light or dark mode, sign
+          out{% if is_admin %}, and the admin screens{% endif %}.</span></li>
+      <li>Times
+        <span>Everything on screen is your local time, not the server's.</span></li>
+    </ul>
+  </section>
+
+  <!-- account -->
+  <section id="account" class="card">
+    <h2><span class="secn">11</span>Your account</h2>
+    <p class="lede">Sign in with your Infineon email address.</p>
+    <p>Your name and password are under the avatar, top right. Changing your name
+      also updates it on notes you have already written.</p>
+    <ul class="map" style="margin-top:8px">
+      <li>Admin<span>Everything — people, settings, the page list, and starting a
+        check by hand.</span></li>
+      <li>Editor<span>Review updates and edit page details. Not settings, the
+        page list, or runs.</span></li>
+    </ul>
+    <p style="margin-top:12px">Everyone can write notes.</p>
+    <div class="note"><p>Please use a <b>passphrase</b> — three or four random
+      words, like <code>harbour-cactus-lantern-42</code>. Long beats
+      complicated, and it is far stronger than something like
+      <code>P@ssw0rd!</code>.</p></div>
   </section>
 
   <!-- the rest of it -->
   <section id="know" class="card">
-    <h2>Worth knowing</h2>
+    <h2><span class="secn">12</span>Worth knowing</h2>
     <p class="lede">The things people ask about in the second week.</p>
     <ul class="lim">
       <li><b>Only the last {{ s.keep_snapshots }} captures of a page are kept.</b>
@@ -745,7 +842,7 @@
 
   <!-- honest limits -->
   <section id="limits" class="card">
-    <h2>What it does not do</h2>
+    <h2><span class="secn">13</span>What it does not do</h2>
     <ul class="lim">
       <li><b>It does not find new pages by itself.</b> iRadar watches the
         {{ '{:,}'.format(f.pages) }} pages it has been given. If Infineon
@@ -763,10 +860,9 @@
     </ul>
   </section>
 
-
   <!-- what changed lately -->
   <section id="whatsnew" class="card">
-    <h2>What&rsquo;s new</h2>
+    <h2><span class="secn">14</span>What&rsquo;s new</h2>
     <p class="lede">Changes to iRadar itself &mdash; not to the website it
       watches.</p>
     <ol class="rel">
@@ -780,6 +876,20 @@
       {% endfor %}
     </ol>
   </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   </div><!-- /.gdmain -->
 

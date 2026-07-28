@@ -30,8 +30,10 @@
   .pf .err { background: rgba(220,38,38,.09); color: var(--err);
              border: 1px solid rgba(220,38,38,.25); border-radius: 9px;
              padding: 9px 12px; font-size: 13.5px; margin-bottom: 14px; }
-  .pf .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 560px) { .pf .grid2 { grid-template-columns: 1fr; } }
+  .pw { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+        align-items: end; }
+  .pw .pw-go { grid-column: 1 / -1; margin-top: 4px; }
+  @media (max-width: 620px) { .pw { grid-template-columns: 1fr; } }
 </style>
 
 <div class="pf">
@@ -64,35 +66,36 @@
         <div class="mail">{{ me['email'] }}</div>
       </div>
     </div>
-    <p class="hint" style="margin:14px 0 0">Your name shows in the corner, on
-      your avatar, and on every note you write — including ones you have
-      already written.</p>
+    <p class="hint" style="margin:14px 0 0">Shown in the corner, on your
+      avatar, and on every note you write.</p>
   </div>
 
   <div class="card" style="margin-top:16px">
     <h3 style="margin:0 0 14px">Password</h3>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
-    <form method="post" action="{{ url_for('account_password') }}">
-      <label for="current">Current password</label>
-      <input id="current" name="current" type="password"
-             autocomplete="current-password" required>
-      <div class="grid2" style="margin-top:12px">
-        <div>
-          <label for="new">New password</label>
-          <input id="new" name="new" type="password"
-                 autocomplete="new-password" required>
-        </div>
-        <div>
-          <label for="again">Repeat it</label>
-          <input id="again" name="again" type="password"
-                 autocomplete="new-password" required>
-        </div>
+    {#- three fields of the same kind get the same width. "Current" used to
+        run the whole card while the two below it were half that, which read
+        as one important field and two afterthoughts. -#}
+    <form method="post" action="{{ url_for('account_password') }}" class="pw">
+      <div>
+        <label for="current">Current</label>
+        <input id="current" name="current" type="password"
+               autocomplete="current-password" required>
       </div>
-      <div style="margin-top:16px"><button type="submit">Change password</button></div>
+      <div>
+        <label for="new">New</label>
+        <input id="new" name="new" type="password"
+               autocomplete="new-password" required>
+      </div>
+      <div>
+        <label for="again">New again</label>
+        <input id="again" name="again" type="password"
+               autocomplete="new-password" required>
+      </div>
+      <div class="pw-go"><button type="submit">Change password</button></div>
     </form>
-    <p class="hint">Use three or four random words —
-      <code>harbour-cactus-lantern-42</code>. Long beats complicated.
-      Changing it signs out every other browser you are signed in on.</p>
+    <p class="hint">Three or four random words beats anything clever —
+      <code>harbour-cactus-lantern-42</code>. Signs out your other browsers.</p>
   </div>
 </div>
 {% endblock %}
