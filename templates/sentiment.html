@@ -1,18 +1,19 @@
 {% extends "base.html" %}
+{% import "_srcicons.html" as si %}
 {% block title %}What people say — iRadar{% endblock %}
 {% block content %}
-{#- What the world says about the watched products, laid out the way the rest
-    of the app reads: figures first, then the families as cards you click,
-    then the mentions as a feed. The sources are whatever the registry in
-    sentiment.py says - nothing here names a source by hand. -#}
+{#- What the world says about the watched products: figures, then the
+    families as cards that EXPAND IN PLACE into their own scrollable mention
+    list, then the full feed with the same search bar Content has. Sources
+    wear their logos, drawn once in _srcicons.html. -#}
 <style>
   .sn-wrap { max-width: 1000px; margin: 0 auto; }
 
   /* the figures strip, same bones as Help's */
-  .sn-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
-             background: var(--line); border: 1px solid var(--line);
+  .sn-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+             gap: 1px; background: var(--line); border: 1px solid var(--line);
              border-radius: 12px; overflow: hidden; margin-top: 14px; }
-  @media (max-width: 620px) { .sn-figs { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .sn-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .sn-fig { background: var(--card); padding: 14px 16px; text-align: center; }
   .sn-fig .n { font-size: 22px; font-weight: 700; letter-spacing: -.5px;
                font-variant-numeric: tabular-nums; }
@@ -20,16 +21,32 @@
                text-transform: uppercase; letter-spacing: .05em;
                margin-top: 3px; }
 
-  /* one product family, as a card */
-  .fams { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
-          margin-top: 4px; }
-  @media (max-width: 900px) { .fams { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 560px) { .fams { grid-template-columns: 1fr; } }
-  .fam { display: block; border: 1px solid var(--line); border-radius: 12px;
-         padding: 12px 14px; background: var(--card); text-decoration: none;
-         color: var(--ink); }
+  /* a source's logo, coloured like the brand, sized like the text beside it */
+  .sic { display: inline-flex; width: 15px; height: 15px; flex: 0 0 auto;
+         vertical-align: -2px; }
+  .sic svg { width: 100%; height: 100%; display: block; }
+  .sic-stackexchange { color: #d9730d; }
+  .sic-github        { color: #8b5cf6; }
+  .sic-forum         { color: #0d9488; }
+  .sic-blog          { color: #db2777; }
+  .sic-hn            { color: #f05e1c; }
+  .sic-reddit        { color: #e73c00; }
+  .sic-youtube       { color: #dc2626; }
+  .sic-community     { color: var(--accent); }
+  [data-theme="dark"] .sic-github { color: #a78bfa; }
+
+  /* one product family, as a card that OPENS. minmax(0,1fr), not 1fr: a
+     grid track refuses to shrink below its content's minimum, and the
+     source-count row was pushing the third column out of the card. */
+  .fams { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px; margin-top: 4px; }
+  @media (max-width: 900px) { .fams { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .fams { grid-template-columns: minmax(0, 1fr); } }
+  .fam { min-width: 0; border: 1px solid var(--line); border-radius: 12px;
+         padding: 12px 14px; background: var(--card); cursor: pointer; }
   .fam:hover { border-color: var(--accent); }
-  .fam.on { border-color: var(--accent); outline: 1px solid var(--accent); }
+  .fam.open { grid-column: 1 / -1; border-color: var(--accent);
+              cursor: default; }
   .fam-top { display: flex; align-items: baseline; gap: 8px; }
   .fam-name { font-weight: 700; font-size: 14.5px; min-width: 0;
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -39,21 +56,33 @@
   .tone-pos { color: var(--ok); }
   .tone-neg { color: var(--err); }
   .tone-mix, .tone-none { color: var(--muted); font-weight: 400; }
-  /* which corners of the internet it comes from */
-  .fam-srcs { display: flex; gap: 4px 9px; flex-wrap: wrap; margin-top: 8px;
-              font-size: 10.5px; color: var(--muted); }
+  /* which corners of the internet: the logo and its count */
+  .fam-srcs { display: flex; gap: 3px 11px; flex-wrap: wrap; margin-top: 9px;
+              font-size: 11px; color: var(--muted); align-items: center; }
+  .fam-srcs span { display: inline-flex; align-items: center; gap: 4px; }
   .fam-srcs b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fam-srcs .sic { width: 13px; height: 13px; }
+  /* the drawer an open card reveals: its own scroll, never the page's */
+  .fam-panel { display: none; }
+  .fam.open .fam-panel { display: block; margin-top: 12px; max-height: 440px;
+                         overflow: auto; border-top: 1px solid var(--line);
+                         padding-top: 6px; }
+  .fam-close { display: none; float: right; margin-left: 10px; }
+  .fam.open .fam-close { display: inline-block; }
 
   /* the feed */
   .sn-chips { display: flex; gap: 7px; flex-wrap: wrap; margin: 2px 0 14px; }
+  .sn-chips .chip { display: inline-flex; align-items: center; gap: 6px; }
   .mn { list-style: none; margin: 0; padding: 0; }
   .mn > li { padding: 13px 0; border-top: 1px solid var(--line);
              display: grid; grid-template-columns: minmax(0, 1fr) auto;
              gap: 4px 14px; }
   .mn > li:first-child { border-top: 0; padding-top: 2px; }
   .mn-title { font-size: 14px; font-weight: 600; line-height: 1.45;
-              overflow-wrap: anywhere; }
-  .mn-title a { color: var(--ink); text-decoration: none; }
+              overflow-wrap: anywhere; display: flex; align-items: baseline;
+              gap: 8px; }
+  .mn-title .sic { align-self: center; }
+  .mn-title a { color: var(--ink); text-decoration: none; min-width: 0; }
   .mn-title a:hover { color: var(--accent); text-decoration: underline; }
   .mn-body { font-size: 12.5px; color: var(--muted); line-height: 1.55;
              max-width: 74ch; overflow-wrap: anywhere; }
@@ -65,38 +94,24 @@
               font-weight: 700; font-size: 13px;
               font-variant-numeric: tabular-nums; }
   @media (max-width: 560px) {
-    .mn > li { grid-template-columns: 1fr; }
+    .mn > li { grid-template-columns: minmax(0, 1fr); }
     .mn-score { grid-column: 1; grid-row: auto; }
   }
 
-  /* a source wears one colour everywhere on this page */
-  .srct { display: inline-block; padding: 2px 8px; border-radius: 999px;
-          font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
-          white-space: nowrap; }
-  .srct-stackexchange { background: rgba(244, 128, 36, .14); color: #d9730d; }
-  .srct-github       { background: rgba(124, 58, 237, .13); color: #8b5cf6; }
-  .srct-forum        { background: rgba(13, 148, 136, .13); color: #0d9488; }
-  .srct-blog         { background: rgba(219, 39, 119, .12); color: #db2777; }
-  .srct-hn           { background: rgba(255, 102, 0, .13); color: #f05e1c; }
-  .srct-reddit       { background: rgba(255, 69, 0, .12); color: #e73c00; }
-  .srct-youtube      { background: rgba(220, 38, 38, .12); color: #dc2626; }
-  .srct-community    { background: rgba(94, 106, 210, .14); color: var(--accent); }
-
   .sn-actions { display: flex; gap: 10px; align-items: center;
                 flex-wrap: wrap; margin-top: 12px; }
-  .sn-note { font-size: 12.5px; color: var(--muted); }
   .sn-empty { text-align: center; padding: 30px 16px; color: var(--muted); }
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
+  .sn-search { display: flex; gap: 8px; margin: 0 0 12px; }
 </style>
 
 <div class="sn-wrap">
   <div class="card">
     <h2 style="margin:0 0 5px">What people say</h2>
     <p class="muted" style="margin:0; max-width:74ch">Mentions of the watched
-      product families across the places engineers actually talk —
-      {%- for s in sources %}{% if s.key in ready_keys %} {{ s.label }}{{ "," if not loop.last }}{% endif %}{% endfor %}
-      — refreshed when you ask, never on its own.</p>
+      product families across the places engineers actually talk — refreshed
+      when you ask, never on its own.</p>
 
     {% if sstate.running %}
     <p style="margin:12px 0 0"><b>Collecting…</b> {{ sstate.message }}
@@ -113,11 +128,6 @@
                 {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
           Score the tone</button>
       </form>
-      {% endif %}
-      {% set waiting = sources | rejectattr('key', 'in', ready_keys) | list %}
-      {% if waiting %}
-      <span class="sn-note">{% for s in waiting %}{{ s.label }} needs
-        <code>{{ s.needs }}</code>{{ "; " if not loop.last }}{% endfor %}.</span>
       {% endif %}
     </div>
     {% endif %}
@@ -144,14 +154,17 @@
 
   {% if per_entity %}
   <div class="card">
-    <h3 style="margin:0 0 12px">By product family</h3>
+    <h3 style="margin:0 0 12px">By product family
+      <span class="muted" style="font-weight:400; font-size:12.5px">— click
+        one to read its mentions</span></h3>
     <div class="fams">
       {% for e in per_entity %}
-      <a class="fam {{ 'on' if e.entity == sel_entity }}"
-         href="{{ url_for('sentiment_page') if e.entity == sel_entity else url_for('sentiment_page', entity=e.entity) }}">
+      <div class="fam" data-entity="{{ e.entity }}" tabindex="0" role="button"
+           aria-expanded="false">
         <div class="fam-top">
           <span class="fam-name">{{ e.entity }}</span>
           <span class="fam-n">{{ e.n }}</span>
+          <button type="button" class="linkbtn fam-close">Close</button>
         </div>
         {% if e.avg_score is not none %}
           {% if e.avg_score > 0.15 %}<div class="fam-tone tone-pos">mostly positive</div>
@@ -160,10 +173,11 @@
         {% else %}<div class="fam-tone tone-none">not scored yet</div>{% endif %}
         <div class="fam-srcs">
           {% for s in sources %}{% set c = e['src_' + s.key] %}
-            {% if c %}<span><b>{{ c }}</b> {{ s.label }}</span>{% endif %}
+            {% if c %}<span title="{{ s.label }}"><span class="sic sic-{{ s.key }}">{{ si.icon(s.key) }}</span><b>{{ c }}</b></span>{% endif %}
           {% endfor %}
         </div>
-      </a>
+        <div class="fam-panel" aria-live="polite"></div>
+      </div>
       {% endfor %}
     </div>
   </div>
@@ -172,47 +186,43 @@
   <div class="card">
     <h3 style="margin:0 0 12px">
       Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}</h3>
+
+    {#- the same search Content has: same classes, same magnifier, same
+        clear button, so the hands already know how it works -#}
+    <form method="get" class="sn-search" autocomplete="off">
+      <span class="sbar grow">
+        <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+        <input type="text" name="q" value="{{ q }}" id="snq"
+               placeholder="Search mentions — a part, a tool, an author…">
+        <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"
+                onclick="var i=document.getElementById('snq'); i.value=''; i.form.submit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+      </span>
+      {% if sel_entity %}<input type="hidden" name="entity" value="{{ sel_entity }}">{% endif %}
+      {% if sel_source %}<input type="hidden" name="source" value="{{ sel_source }}">{% endif %}
+      <button type="submit">Search</button>
+    </form>
+
     <div class="sn-chips">
       <a class="chip {{ 'chip-on' if not sel_source }}"
-         href="{{ url_for('sentiment_page', entity=sel_entity or none) }}">Everything</a>
+         href="{{ url_for('sentiment_page', entity=sel_entity or none, q=q or none) }}">Everything</a>
       {% for s in sources %}{% set c = src_totals.get(s.key) %}{% if c %}
-      <a class="chip {{ 'chip-on' if sel_source == s.key }}"
-         href="{{ url_for('sentiment_page', entity=sel_entity or none)
+      <a class="chip {{ 'chip-on' if sel_source == s.key }}" title="{{ s.label }}"
+         href="{{ url_for('sentiment_page', entity=sel_entity or none, q=q or none)
                   if sel_source == s.key
-                  else url_for('sentiment_page', entity=sel_entity or none, source=s.key) }}">
-        {{ s.label }} <b>{{ c }}</b></a>
+                  else url_for('sentiment_page', entity=sel_entity or none, q=q or none, source=s.key) }}">
+        <span class="sic sic-{{ s.key }}">{{ si.icon(s.key) }}</span> <b>{{ c }}</b></a>
       {% endif %}{% endfor %}
     </div>
 
     {% if rows %}
-    <ol class="mn">
-      {% for m in rows %}
-      <li>
-        <div class="mn-title">
-          <span class="srct srct-{{ m.source }}">{{ (sources | selectattr('key', 'equalto', m.source) | map(attribute='label') | first) or m.source }}</span>
-          <a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>
-        </div>
-        {% if m.score is not none %}
-        <div class="mn-score" style="color:{{ '#16a34a' if m.score > 0.15 else ('#dc2626' if m.score < -0.15 else 'var(--muted)') }}">
-          {{ '%+.1f'|format(m.score) }}</div>
-        {% endif %}
-        {% if m.body %}<div class="mn-body">{{ m.body[:220] }}</div>{% endif %}
-        <div class="mn-meta">
-          {% if not sel_entity %}<a href="{{ url_for('sentiment_page', entity=m.entity) }}"
-             style="color:var(--muted); font-weight:600">{{ m.entity }}</a> ·{% endif %}
-          {% if m.author %}<span>{{ m.author }}</span> ·{% endif %}
-          {% if m.posted %}<time>{{ m.posted[:10] }}</time>{% endif %}
-          {% if m.reason and m.score is none %}<span>{{ m.reason }}</span>
-          {% elif m.topics %}<span>{{ m.topics }}</span>{% endif %}
-        </div>
-      </li>
-      {% endfor %}
-    </ol>
+    {% include "_mention_rows.html" %}
     {% else %}
     <div class="sn-empty">
       {% if total %}
         <b>Nothing under this filter</b>
-        Try another source, or clear the family.
+        Try other words, another source, or clear the family.
       {% else %}
         <b>No mentions collected yet</b>
         {% if is_admin %}“Collect mentions” above fills this in a few
@@ -222,4 +232,51 @@
     {% endif %}
   </div>
 </div>
+
+<script>
+(function () {
+  // a family card opens into its own scrollable list, fetched once
+  document.querySelectorAll('.fam').forEach(function (f) {
+    function toggle() {
+      var was = f.classList.contains('open');
+      document.querySelectorAll('.fam.open').forEach(function (o) {
+        o.classList.remove('open');
+        o.setAttribute('aria-expanded', 'false');
+      });
+      if (was) return;
+      f.classList.add('open');
+      f.setAttribute('aria-expanded', 'true');
+      var panel = f.querySelector('.fam-panel');
+      if (!panel.dataset.loaded) {
+        panel.innerHTML = '<p class="muted" style="padding:10px 0">Loading…</p>';
+        fetch('{{ url_for("sentiment_rows") }}?entity=' +
+              encodeURIComponent(f.dataset.entity))
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            panel.innerHTML = html;
+            panel.dataset.loaded = '1';
+          })
+          .catch(function () {
+            panel.innerHTML = '<p class="muted">Could not load — reload the page.</p>';
+          });
+      }
+      f.scrollIntoView({ block: 'nearest' });
+    }
+    f.addEventListener('click', function (e) {
+      if (e.target.closest('a')) return;        // links inside stay links
+      toggle();
+    });
+    f.addEventListener('keydown', function (e) {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target === f) {
+        e.preventDefault(); toggle();
+      }
+    });
+  });
+  // Esc clears the search, same as Content
+  var sq = document.getElementById('snq');
+  if (sq) sq.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { sq.value = ''; sq.form.submit(); }
+  });
+})();
+</script>
 {% endblock %}

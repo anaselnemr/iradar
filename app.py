@@ -2947,6 +2947,7 @@ def sentiment_page():
     import sentiment as sn
     ent = request.args.get("entity", "")
     src = request.args.get("source", "")
+    q = (request.args.get("q") or "").strip()
     con = db.connect()
     # one SUM per registered source, so a new collector shows up here and in
     # the template with no query edit - the registry is the only list
@@ -2965,6 +2966,11 @@ def sentiment_page():
     if src:
         where.append("source=?")
         args.append(src)
+    if q:
+        where.append("(title LIKE ? OR body LIKE ? OR entity LIKE ?"
+                     " OR author LIKE ?)")
+        like = "%" + q + "%"
+        args += [like, like, like, like]
     sql = "SELECT * FROM mentions"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -2981,9 +2987,28 @@ def sentiment_page():
                            avg_all=scored["avg"], src_totals=src_totals,
                            sources=sn.SOURCES,
                            ready_keys={s["key"] for s in sn.sources_ready()},
-                           sel_entity=ent, sel_source=src,
+                           sel_entity=ent, sel_source=src, q=q,
                            sstate=sn.SENT_STATE,
                            has_llm_key=bool(os.environ.get("ANTHROPIC_API_KEY")))
+
+
+@app.route("/sentiment/rows")
+def sentiment_rows():
+    """One family's mentions as a rendered fragment - what a family card
+    pulls in when it expands. Same row markup as the main feed, one source
+    of truth via the shared partial."""
+    import sentiment as sn
+    ent = request.args.get("entity", "")
+    if not ent:
+        abort(404)
+    con = db.connect()
+    rows = con.execute(
+        "SELECT * FROM mentions WHERE entity=? ORDER BY"
+        " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC LIMIT 500",
+        (ent,)).fetchall()
+    con.close()
+    return render_template("_mention_rows.html", rows=rows,
+                           sources=sn.SOURCES, sel_entity=ent)
 
 
 @app.route("/sentiment/collect", methods=["POST"])
