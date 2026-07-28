@@ -250,3 +250,38 @@ def test_a_capture_too_old_to_carry_them_falls_back_to_the_row():
         {"flags": FULL_FLAGS, "components": FULL_NAV},
         {"text_changed": False, "library": {"per_section": {}}})
     assert not parts, f"the row fallback stopped working: {parts}"
+
+
+def test_a_rejected_capture_does_not_leave_its_meta_behind():
+    # _write_page_meta runs BEFORE the guards judge a capture, so a partial
+    # render writes its half-empty flags onto the urls row and the guard then
+    # discards the snapshot without taking the row with it. The row is what
+    # the Dashboard filters on and what the next run compares against.
+    root = _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active) VALUES(17,'https://x/p',1)")
+    good = _cap_dir(root, "good", FULL_FLAGS, FULL_NAV)
+    # the partial capture got there first
+    con.execute("UPDATE urls SET flags='{}', components='[]' WHERE id=17")
+    con.commit()
+
+    runner._restore_page_meta(con, 17, {"dir": good})
+    con.commit()
+    row = con.execute("SELECT flags, components FROM urls WHERE id=17").fetchone()
+    con.close()
+    assert _json_mod.loads(row["flags"]) == FULL_FLAGS, row["flags"]
+    assert _json_mod.loads(row["components"]) == FULL_NAV, row["components"]
+
+
+def test_restoring_survives_a_baseline_with_no_sections_file():
+    root = _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active) VALUES(18,'https://x/q',1)")
+    con.execute("UPDATE urls SET flags='{\"a\":1}' WHERE id=18")
+    con.commit()
+    missing = Path(root) / "nothing-here"
+    missing.mkdir(parents=True, exist_ok=True)
+    runner._restore_page_meta(con, 18, {"dir": str(missing)})   # must not raise
+    row = con.execute("SELECT flags FROM urls WHERE id=18").fetchone()
+    con.close()
+    assert row["flags"] == '{"a":1}', "it overwrote the row with nothing"

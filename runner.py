@@ -390,6 +390,31 @@ def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
     return out
 
 
+def _restore_page_meta(con, url_id, prev):
+    """Put the page's derived columns back to the last GOOD capture.
+
+    _write_page_meta runs before the guards below get to judge the capture, so
+    a partial render writes its half-empty flags and section-nav onto the urls
+    row and the guard then throws the snapshot away without taking the row
+    with it. The row is left describing a capture the system itself rejected -
+    and that row is what the Dashboard filters on, and what the NEXT run
+    compares against. One page came back reporting "Products table filled -
+    section 'design resources' added" when both of its kept captures had both
+    all along; the only thing that had ever lacked them was the discarded one.
+    """
+    try:
+        sec = json.loads((Path(prev["dir"]) / "sections.json")
+                         .read_text(encoding="utf-8"))
+    except Exception:
+        return
+    con.execute(
+        "UPDATE urls SET flags=?, components=?, detail_tabs=? WHERE id=?",
+        (json.dumps(sec.get("flags") or {}, ensure_ascii=False),
+         json.dumps(sec.get("components") or [], ensure_ascii=False),
+         json.dumps(sec.get("detail_tabs") or [], ensure_ascii=False),
+         url_id))
+
+
 def _write_page_meta(con, url_id, page_url, res, dead):
     """Write every page-derived urls column from ONE capture result.
 
@@ -1112,6 +1137,8 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         if prev_n >= 5 and 0 <= new_n < prev_n * 0.5:
             con.execute("UPDATE urls SET last_checked=?, last_status='error'"
                         " WHERE id=?", (now, url_id))
+            # the row still describes the capture we are about to discard
+            _restore_page_meta(con, url_id, prev)
             shutil.rmtree(snap_dir, ignore_errors=True)
             con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
             counters["errors"] += 1
@@ -1128,6 +1155,7 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
             and _load_failure_added(prev["dir"], snap_dir, db.get_settings()):
         con.execute("UPDATE urls SET last_checked=?, last_status='error'"
                     " WHERE id=?", (now, url_id))
+        _restore_page_meta(con, url_id, prev)
         shutil.rmtree(snap_dir, ignore_errors=True)
         con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
         counters["errors"] += 1
