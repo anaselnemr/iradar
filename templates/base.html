@@ -96,29 +96,44 @@
   header .hactions { justify-self: end; display: flex; gap: 8px;
                      align-items: center; }
   @media (max-width: 900px) {
-    header { grid-template-columns: 1fr auto; row-gap: 8px; }
-    /* Logo and avatar SHARE the top row - auto-placement was giving the
-       avatar a whole third row with nothing else on it, so the header cost
-       145px of a 667px screen before any content. Two rows now. */
-    header a.logo { grid-row: 1; grid-column: 1; }
-    header .hactions { grid-row: 1; grid-column: 2; }
-    /* NOT overflow-x:auto. A scroll container clips the Reports dropdown -
-       an absolutely-positioned child cannot escape a scrolling ancestor, so
-       the menu opened INSIDE the 40px strip and was unusable. The pills are
-       sized to fit below; if a language ever overflows them, they wrap. */
-    header nav { grid-row: 2; grid-column: 1 / -1; justify-self: stretch;
-                 flex-wrap: wrap; justify-content: center; }
-    header nav a, .navdd > summary { padding-top: 9px; padding-bottom: 9px; }
+    /* ONE row: logo, nav, avatar. Flex, not the desktop's three-track grid -
+       the logo and the avatar take what they need, the nav centres in the
+       rest. NOT overflow-x:auto: a scroll container clips the Reports
+       dropdown - an absolutely-positioned child cannot escape a scrolling
+       ancestor, so the menu opened INSIDE the 40px strip and was unusable.
+       The pills are sized to fit at every step below; if a language ever
+       overflows them anyway, they wrap rather than vanish. */
+    header { display: flex; align-items: center; gap: 10px; }
+    header nav { flex: 1 1 auto; min-width: 0; justify-content: center;
+                 flex-wrap: wrap; }
+    header nav a, header .navdd > summary { padding-top: 9px;
+                                            padding-bottom: 9px; }
     /* the menu hangs from the right edge of its pill, not centred - centred
        put half of it past the right edge of a 375px screen */
     .navdd .panel { left: auto; right: 0; transform: none; }
   }
-  @media (max-width: 480px) {
-    header { padding: 8px 12px; }
-    header nav { gap: 1px; }
-    /* five pills in 351px: Dashboard - Content - Notes - Reports - Help */
-    header nav a, .navdd > summary { padding-left: 8px; padding-right: 8px;
-                                     font-size: 12.5px; }
+  /* each step trades a little type size for the row staying one row */
+  @media (max-width: 700px) {
+    header nav a, header .navdd > summary { padding-left: 8px;
+                                     padding-right: 8px; font-size: 12.5px; }
+  }
+  @media (max-width: 560px) {
+    header { padding: 8px 10px; gap: 7px; }
+    header nav { gap: 0; padding: 2px; }
+    header nav a, header .navdd > summary { padding-left: 5px;
+                                     padding-right: 5px; font-size: 12px; }
+    header .logo img { width: 22px; height: 22px; }
+    header .acct-av { width: 24px; height: 24px; font-size: 10px; }
+    header .acct > summary { padding: 3px 6px 3px 3px; }
+  }
+  @media (max-width: 400px) {
+    /* the last step: the pill strip gives up its own box - background,
+       border and padding - and the type drops half a point. What buys the
+       room is chrome nobody misses at this size, not the words. */
+    header { gap: 5px; }
+    header nav { background: none; border: 0; padding: 0; }
+    header nav a, header .navdd > summary { padding-left: 4px;
+                                     padding-right: 4px; font-size: 11.5px; }
   }
   main { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
   @media (max-width: 560px) { main { margin-top: 14px; padding: 0 12px 48px; } }
