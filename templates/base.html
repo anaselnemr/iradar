@@ -6,8 +6,7 @@
 <title>{% block title %}iRadar{% endblock %}</title>
 {#- ?v= so a browser that cached the old icon picks the new one up. Bump it if
     the mark is ever redrawn. Regenerate with: python make_logo.py -#}
-<link rel="icon" id="favicon" sizes="any"
-      data-base="{{ url_for('static', filename='') }}"
+<link rel="icon" sizes="any"
       href="{{ url_for('static', filename='favicon.ico') }}?v=3">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=3">
 <meta name="theme-color" content="#17161c">
@@ -17,17 +16,6 @@
     var t = localStorage.getItem("theme");
     if (t === "dark") document.documentElement.dataset.theme = "dark";
   })();
-  // The tab icon cannot follow CSS, so it is set here and again on every
-  // toggle. Deliberately not a <link media="prefers-color-scheme"> - that
-  // follows the OS, and the setting people actually changed is ours.
-  function paintFavicon() {
-    var el = document.getElementById("favicon");
-    if (!el) return;
-    var dark = document.documentElement.dataset.theme === "dark";
-    var want = el.dataset.base + (dark ? "favicon-dark.ico" : "favicon.ico") + "?v=3";
-    if (el.getAttribute("href") !== want) el.setAttribute("href", want);
-  }
-  paintFavicon();
 </script>
 <style>
   :root {
@@ -106,11 +94,6 @@
 
   header .logo img { width: 26px; height: 26px; border-radius: 7px;
                      display: block; }
-  /* Both marks are in the markup and CSS shows the one that suits the theme.
-     Swapping the src in JS instead would flash the wrong one on every load. */
-  header .logo .m-dark { display: none; }
-  [data-theme="dark"] header .logo .m-light { display: none; }
-  [data-theme="dark"] header .logo .m-dark { display: block; }
   /* below this the wordmark is the first thing to go - the mark still says
      which app this is, and the width buys the nav its room back */
   @media (max-width: 560px) { header .logo b { display: none; } }
@@ -1044,9 +1027,7 @@
 <body>
 <header>
   <a class="logo" href="{{ url_for('index') }}">
-    <img class="m-light" src="{{ url_for('static', filename='logo.png') }}?v=3"
-         alt="" width="26" height="26">
-    <img class="m-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v=3"
+    <img src="{{ url_for('static', filename='logo.png') }}?v=3"
          alt="" width="26" height="26">
     <b class="wm"><span class="wm-i">i</span><span class="wm-r">Radar</span></b>
   </a>
@@ -1248,8 +1229,6 @@
     else { root.dataset.theme = "dark"; localStorage.setItem("theme", "dark"); }
     // the button's own icon is swapped in CSS off data-theme - setting
     // textContent here used to replace the whole button, SVG included.
-    // The tab icon is not reachable from CSS, so it is repainted by hand.
-    paintFavicon();
   }
 
 // Every search bar gets the same clear button and the same "/" shortcut,

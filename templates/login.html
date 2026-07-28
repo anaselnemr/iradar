@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — iRadar</title>
-<link rel="icon" id="favicon" sizes="any"
-      data-base="{{ url_for('static', filename='') }}"
+<link rel="icon" sizes="any"
       href="{{ url_for('static', filename='favicon.ico') }}?v=3">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=3">
 {#- standalone on purpose: base.html carries the nav and the account menu,
@@ -14,10 +13,6 @@
   (function () {
     var t = localStorage.getItem("theme");
     if (t === "dark") document.documentElement.dataset.theme = "dark";
-    // the tab icon cannot follow CSS, so it is picked here
-    var el = document.getElementById("favicon");
-    if (el) el.setAttribute("href", el.dataset.base +
-      (t === "dark" ? "favicon-dark.ico" : "favicon.ico") + "?v=3");
   })();
 </script>
 <style>
@@ -43,9 +38,6 @@
            gap: 11px; font-size: 21px; font-weight: 700;
            letter-spacing: -.3px; margin-bottom: 6px; }
   .brand img { width: 40px; height: 40px; border-radius: 11px; display: block; }
-  .brand .m-dark { display: none; }
-  [data-theme="dark"] .brand .m-light { display: none; }
-  [data-theme="dark"] .brand .m-dark { display: block; }
   /* one colour: the mark beside it already carries the brand's blue */
   /* THE WORDMARK, mirroring the mark beside it: the i in the ink colour, its
      dot picking up the gradient, "Radar" in the violet.
@@ -97,9 +89,7 @@
 <body>
   <div class="box">
     <div class="brand">
-      <img class="m-light" src="{{ url_for('static', filename='logo.png') }}?v=3"
-           alt="" width="40" height="40">
-      <img class="m-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v=3"
+      <img src="{{ url_for('static', filename='logo.png') }}?v=3"
            alt="" width="40" height="40">
       {#- one flex item, or the gap opens up between the "i" and "Radar" -#}
       <b class="wm"><span class="wm-i">i</span><span class="wm-r">Radar</span></b>

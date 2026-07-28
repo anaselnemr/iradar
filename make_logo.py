@@ -10,8 +10,8 @@ dial is lovely at 200px and an unreadable smudge at the 16px a browser tab
 actually gives you - and the tab is where a favicon does its job. The sweep
 carries the idea; the letters carry the identity.
 
-Two versions, because the tile has to sit on whatever is behind it: the
-gradient one on light backgrounds, a near-black one for dark mode.
+One version for both themes: the tile carries its own colour, so it reads on
+a light page and a dark one alike.
 
 Everything is optically sized rather than one drawing scaled down. At 16px the
 version that looks right at 256 goes to mush - the R's counter closes and the i
@@ -189,17 +189,14 @@ def main():
     big = dict(text_frac=0.55, radius_frac=0.235)
     small = dict(text_frac=0.62, radius_frac=0.20)
 
+    # ONE mark, in both themes. There was a black-ink version for dark mode
+    # and it was the wrong call: the tile carries its own colour, so it reads
+    # on any ground, and a logo that changes with a setting is two logos.
     mark(256, **big).save(OUT / "logo.png")
-    mark(256, dark=True, **big).save(OUT / "logo-dark.png")
-    # home screens sit on the user's own wallpaper, so the gradient one - the
-    # near-black tile disappears on a dark wallpaper
     mark(180, **big).save(OUT / "apple-touch-icon.png")
-
-    sizes = [(16, 16), (32, 32), (48, 48), (64, 64)]
-    mark(64, **small).save(OUT / "favicon.ico", sizes=sizes)
-    mark(64, dark=True, **small).save(OUT / "favicon-dark.ico", sizes=sizes)
-    print("wrote logo.png, logo-dark.png, apple-touch-icon.png, "
-          "favicon.ico, favicon-dark.ico")
+    mark(64, **small).save(OUT / "favicon.ico",
+                           sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
+    print("wrote logo.png, apple-touch-icon.png, favicon.ico")
 
 
 if __name__ == "__main__":
