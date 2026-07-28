@@ -595,6 +595,34 @@
   [data-theme="dark"] .themelabel-dark { display: inline; }
   [data-theme="dark"] .themelabel-light { display: none; }
 
+  /* ---- the Reports group in the header --------------------------------
+     Hierarchy, Export and Run history are read occasionally, not daily. As
+     three top-level items they cost a third of the bar and pushed the two
+     screens people actually live in off centre. */
+  .navdd { position: relative; }
+  .navdd > summary { list-style: none; cursor: pointer; color: #b9b8c6;
+                     font-size: 13.5px; padding: 7px 12px; border-radius: 8px;
+                     white-space: nowrap; }
+  .navdd > summary::-webkit-details-marker { display: none; }
+  .navdd > summary::after { content: " ▾"; font-size: 10px; opacity: .7; }
+  .navdd > summary:hover { color: #fff; background: rgba(255,255,255,.07); }
+  .navdd[open] > summary,
+  .navdd.on > summary { color: #fff; background: rgba(255,255,255,.14); }
+  .navdd .panel { position: absolute; z-index: 40; top: calc(100% + 6px);
+                  left: 50%; transform: translateX(-50%); min-width: 246px;
+                  padding: 6px; background: var(--panel);
+                  border: 1px solid var(--line); border-radius: 12px;
+                  box-shadow: 0 14px 38px rgba(0,0,0,.2); }
+  .navdd .panel a { display: block; padding: 9px 11px; border-radius: 8px;
+                    color: var(--ink); font-size: 13.5px; font-weight: 600;
+                    text-decoration: none; }
+  .navdd .panel a span { display: block; font-weight: 400; font-size: 12px;
+                         color: var(--muted); margin-top: 1px; }
+  .navdd .panel a:hover { background: var(--hover); }
+  .acct-sep { font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+              font-weight: 700; color: var(--muted); padding: 10px 10px 4px;
+              margin-top: 4px; border-top: 1px solid var(--line); }
+
   /* ---- notes, on every object page -----------------------------------
      A thread, not a table: an avatar rail down the left, the words doing the
      work, and the controls quiet until you want them. */
@@ -616,10 +644,7 @@
   .note + .note { border-top: 1px solid var(--line); border-radius: 0; }
   .note:hover { background: var(--hover); }
   .note:target { background: rgba(94,106,210,.10); }
-  .note-av { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-             display: grid; place-items: center; font-size: 12px;
-             font-weight: 700; color: #fff;
-             background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  .note-av { width: 30px; height: 30px; font-size: 11.5px; }
   .note-main { flex: 1; min-width: 0; }
   .note-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
                font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
@@ -630,7 +655,7 @@
   /* a finished note stays readable - it is still the record of a decision,
      just no longer something anyone has to act on */
   .note-done .note-body { color: var(--muted); }
-  .note-done .note-av { filter: grayscale(1); opacity: .6; }
+  .note-done .note-av { filter: grayscale(1); opacity: .55; }
   .note-done-by { font-size: 12px; color: var(--muted); margin-top: 5px; }
 
   .note-actions { display: flex; align-items: center; gap: 10px;
@@ -665,10 +690,16 @@
   .acct > summary:hover { background: rgba(255,255,255,.13); color: #fff;
                           border-color: rgba(255,255,255,.2); }
   .acct[open] > summary { background: rgba(255,255,255,.15); color: #fff; }
-  .acct-av { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-             display: grid; place-items: center; font-size: 11.5px;
-             font-weight: 700; color: #fff; letter-spacing: .2px;
-             background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  /* One avatar everywhere: the account menu, the people list, notes. The hue
+     comes from the person, so the same face is the same colour on every screen
+     and two people are never almost-the-same colour. */
+  .av { border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+        font-weight: 700; color: #fff; letter-spacing: .3px; line-height: 1;
+        background: linear-gradient(135deg,
+                    hsl(var(--h) 62% 52%), hsl(calc(var(--h) + 24) 58% 42%));
+        text-shadow: 0 1px 1px rgba(0,0,0,.22); }
+  .av-off { filter: grayscale(1); opacity: .45; }
+  .acct-av { width: 26px; height: 26px; font-size: 11px; }
   .acct-who { max-width: 130px; overflow: hidden; text-overflow: ellipsis;
               white-space: nowrap; }
   @media (max-width: 720px) { .acct-who { display: none; } }
@@ -897,21 +928,39 @@
   {#- the nav carries which page you are on, so the pages themselves no longer
       repeat their own name in a heading -#}
   <nav>
+    {#- Five, not eight. The three that went are not gone, they moved to where
+        they belong: the occasional ones behind Reports, and configuration into
+        the account menu with the person it belongs to. Settings and Manage
+        people are admin-only, so an editor was being shown two doors that
+        answer 403. -#}
+    {% set REPORTS = ['hierarchy', 'export_builder', 'history'] %}
     {% for ep, label in (('index', 'Dashboard'), ('search_items', 'Content'),
-                         ('hierarchy', 'Hierarchy'), ('notes_page', 'Notes'),
-                         ('export_builder', 'Export'),
-                         ('history', 'Run history'), ('settings_view', 'Settings'),
-                         ('guide_page', 'How it works')) %}
+                         ('notes_page', 'Notes')) %}
     <a href="{{ url_for(ep) }}"
        class="{{ 'on' if request.endpoint == ep }}"
        {% if request.endpoint == ep %}aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
+
+    <details class="navdd {{ 'on' if request.endpoint in REPORTS }}">
+      <summary>Reports</summary>
+      <div class="panel">
+        <a href="{{ url_for('hierarchy') }}">Hierarchy
+          <span>the whole site as a tree</span></a>
+        <a href="{{ url_for('export_builder') }}">Export
+          <span>any of it as a spreadsheet</span></a>
+        <a href="{{ url_for('history') }}">Run history
+          <span>every check and what it found</span></a>
+      </div>
+    </details>
+
+    <a href="{{ url_for('guide_page') }}"
+       class="{{ 'on' if request.endpoint == 'guide_page' }}">Help</a>
   </nav>
   <div class="hactions">
     {% if me %}
     <details class="acct">
       <summary title="{{ me['email'] }}" aria-label="Account menu">
-        <span class="acct-av">{{ (me['name'] or me['email'])[:1]|upper }}</span>
+        <span class="av acct-av" style="--h: {{ me|avatar_hue }}">{{ me|initials }}</span>
         <span class="acct-who">{{ me['name'] or me['email'].split('@')[0] }}</span>
       </summary>
       <div class="panel">
@@ -933,15 +982,24 @@
 
         <a class="acct-item" href="{{ url_for('account_password') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Change password
+               stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          My profile
         </a>
 
+        {#- Configuration lives with the person, not in the work navigation.
+            Both are admin-only, so this is also the difference between an
+            editor seeing them and getting 403, and never seeing them. -#}
         {% if is_admin %}
+        <div class="acct-sep">Admin</div>
         <a class="acct-item" href="{{ url_for('users_page') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Manage people
+        </a>
+        <a class="acct-item" href="{{ url_for('settings_view') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
         </a>
         {% endif %}
 
@@ -1111,7 +1169,7 @@ document.addEventListener('keydown', function (e) {
 // a page's library sections) must survive clicking around inside the page, so
 // they are deliberately not listed.
 var POPOVERS = 'details.dd, details.runmore, details.bc-sibs, details.lvledit,'
-             + ' details.acct';
+             + ' details.acct, details.navdd';
 
 function closePopovers(except) {
   document.querySelectorAll(POPOVERS).forEach(function (d) {

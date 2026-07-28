@@ -11,10 +11,7 @@
            border-bottom: 1px solid var(--line); }
   .nl li:last-child { border-bottom: 0; }
   .nl li:hover { background: var(--hover); }
-  .nl-av { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-           display: grid; place-items: center; font-size: 12px;
-           font-weight: 700; color: #fff;
-           background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  .nl-av { width: 30px; height: 30px; font-size: 11.5px; }
   .nl-main { flex: 1; min-width: 0; }
   .nl-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
              font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }
@@ -23,7 +20,7 @@
   .nl-on { font-size: 12.5px; margin-top: 6px; display: block;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nl-done .nl-body { color: var(--muted); }
-  .nl-done .nl-av { filter: grayscale(1); opacity: .6; }
+  .nl-done .nl-av { filter: grayscale(1); opacity: .55; }
   .nl-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
              font-weight: 600; color: var(--muted); background: var(--hover);
              padding: 1px 7px; border-radius: 999px; }
@@ -42,7 +39,7 @@
     <ol class="nl">
       {% for r in rows %}
       <li class="{{ 'nl-done' if r.c['resolved'] }}">
-        <span class="nl-av" aria-hidden="true">{{ (r.c['author'] or '?')[:1]|upper }}</span>
+        <span class="av nl-av" aria-hidden="true" style="--h: {{ r.c['author']|avatar_hue }}">{{ r.c['author']|initials }}</span>
         <div class="nl-main">
           <div class="nl-meta">
             <b>{{ r.c['author'] or 'someone' }}</b>

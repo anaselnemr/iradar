@@ -27,7 +27,7 @@
   <ol class="notelist">
     {% for n in notes %}
     <li class="note {{ 'note-done' if n['resolved'] }}" id="note-{{ n['id'] }}">
-      <span class="note-av" aria-hidden="true">{{ (n['author'] or '?')[:1]|upper }}</span>
+      <span class="av note-av" aria-hidden="true" style="--h: {{ n['author']|avatar_hue }}">{{ n['author']|initials }}</span>
       <div class="note-main">
         <div class="note-meta">
           <b>{{ n['author'] or 'someone' }}</b>

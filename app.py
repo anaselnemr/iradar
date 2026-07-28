@@ -330,6 +330,48 @@ def _fromjson_filter(s):
         return []
 
 
+@app.template_filter("initials")
+def _initials_filter(person):
+    """One or two letters for an avatar: first name and last name.
+
+    'Bogdan Constantin Palaghia' -> BP, not BC. The middle name is the least
+    useful of the three for telling people apart at 32 pixels.
+    """
+    s = ""
+    if isinstance(person, str):
+        s = person
+    else:
+        try:
+            s = (person["name"] or "").strip() or (person["email"] or "").split("@")[0]
+        except Exception:
+            s = str(person or "")
+    parts = [p for p in re.split(r"[\s._-]+", s.strip()) if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][:1] + parts[-1][:1]).upper()
+
+
+@app.template_filter("avatar_hue")
+def _avatar_hue_filter(person):
+    """A colour that is always the same for the same person, and different from
+    their neighbours'. Derived from the name, so nothing has to be stored and
+    everyone is recognisable by colour before they read the letters."""
+    s = ""
+    if isinstance(person, str):
+        s = person
+    else:
+        try:
+            s = (person["email"] or person["name"] or "")
+        except Exception:
+            s = str(person or "")
+    h = hashlib.sha1(s.strip().lower().encode("utf-8")).digest()
+    # 12 well-separated hues rather than 360, so two people are never
+    # almost-the-same colour
+    return (h[0] % 12) * 30
+
+
 @app.template_filter("notemd")
 def _notemd_filter(body):
     """A note's text as safe HTML: escaped, then line breaks and links.
@@ -6260,17 +6302,52 @@ def guide_page():
     box at the bottom is the ordinary notes section pointed at iRadar itself,
     so reports land in the same feed everything else does.
     """
+    # Everything quoted on the page is read live. A number typed into help text
+    # is wrong the day someone changes the setting, and nobody notices for
+    # months - so the thresholds, the schedule, the counts and even the stock
+    # example come from the running system.
+    s = db.get_settings()
     con = db.connect()
     try:
-        total = con.execute(
-            "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
+        q = lambda sql: con.execute(sql).fetchone()[0]
+        facts = {
+            "pages": q("SELECT COUNT(*) FROM urls WHERE active=1"),
+            "captured": q("SELECT COUNT(DISTINCT url_id) FROM snapshots"
+                          " WHERE status='ok'"),
+            "docs": q("SELECT COUNT(DISTINCT item_key) FROM items"
+                      " WHERE category='documents'"),
+            # NOT "items": in a template f.items resolves to dict.items, the
+            # built-in method, and formatting it throws
+            "tracked": q("SELECT COUNT(*) FROM items"),
+            "open": q("SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0"),
+            "people": q("SELECT COUNT(*) FROM users WHERE active=1"),
+        }
+        last = con.execute(
+            "SELECT started, finished, total, changed FROM runs"
+            " WHERE finished IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
     finally:
         con.close()
-    notes, _n, n_open = _notes_for("app", "feedback")
+    hours = ""
+    if last and last["started"] and last["finished"]:
+        try:
+            a = datetime.strptime(last["started"], "%Y-%m-%d %H:%M:%S")
+            b = datetime.strptime(last["finished"], "%Y-%m-%d %H:%M:%S")
+            hours = "%.0f hours" % max(1, round((b - a).total_seconds() / 3600))
+        except Exception:
+            pass
+    every = {"daily": "every day", "bidaily": "every two days",
+             "weekly": "every %s" % _WEEKDAY_NAME.get(s.get("weekday", "mon"),
+                                                      "Monday")}.get(
+        s.get("frequency", "weekly"), s.get("frequency", "weekly"))
     return render_template(
-        "guide.html", page_total=f"{total:,}", sched=next_run_text(),
-        notes=notes, notes_open=n_open, notes_kind="app",
-        notes_target="feedback", notes_label="iRadar itself")
+        "guide.html", f=facts, s=s, every=every,
+        at_time="%02d:00" % int(s.get("hour", 23) or 0),
+        next_run=next_run_text(), run_hours=hours, last=last)
+
+
+_WEEKDAY_NAME = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday",
+                 "thu": "Thursday", "fri": "Friday", "sat": "Saturday",
+                 "sun": "Sunday"}
 
 
 @app.route("/notes")
@@ -6366,6 +6443,13 @@ def logout():
     return redirect(url_for("login"))
 
 
+def _pw_tpl(forced):
+    """The forced first-password screen is navless on purpose: it is a lockout,
+    and every nav link there would bounce straight back to it. Once past that,
+    the profile is an ordinary page in the app like any other."""
+    return "first_password.html" if forced else "profile.html"
+
+
 @app.route("/account/password", methods=["GET", "POST"])
 def account_password():
     me = current_user()
@@ -6377,14 +6461,14 @@ def account_password():
         # Even when forced, prove they know the current password: a shared
         # machine left signed in should not let a passer-by seize the account.
         if not auth.check_password_hash(me["pw_hash"], cur):
-            return render_template("change_password.html", forced=forced,
+            return render_template(_pw_tpl(forced), forced=forced,
                                    error="Current password is not right."), 400
         if new != again:
-            return render_template("change_password.html", forced=forced,
+            return render_template(_pw_tpl(forced), forced=forced,
                                    error="The two new passwords do not match."), 400
         problem = auth.password_problem(new)
         if problem:
-            return render_template("change_password.html", forced=forced,
+            return render_template(_pw_tpl(forced), forced=forced,
                                    error=problem), 400
         auth.set_password(me["id"], new, must_change=False)
         # Re-stamp OUR session with the new password so this browser stays
@@ -6393,7 +6477,7 @@ def account_password():
         flash("Password changed. Any other browser signed in as you has been "
               "signed out.")
         return redirect(url_for("index"))
-    return render_template("change_password.html", forced=forced, error=None)
+    return render_template(_pw_tpl(forced), forced=forced, error=None)
 
 
 @app.route("/account/name", methods=["POST"])

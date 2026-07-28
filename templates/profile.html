@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}My profile — iRadar{% endblock %}
+{% block content %}
+{#- The in-app version. The FORCED first-password screen is a separate,
+    navless template on purpose: that one is a lockout, and offering the nav
+    there just bounces you straight back. -#}
+<style>
+  .pf { max-width: 720px; margin: 0 auto; }
+  .pf-head { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+  .pf-av { width: 56px; height: 56px; font-size: 20px; }
+  .pf-who h2 { margin: 0; font-size: 20px; letter-spacing: -.2px; }
+  .pf-who .mail { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .pf-role { display: inline-block; margin-top: 6px; font-size: 11px;
+             text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+             padding: 2px 9px; border-radius: 999px;
+             background: rgba(110,109,122,.16); color: var(--muted); }
+  .pf-role.is-admin { background: rgba(94,106,210,.16); color: var(--accent); }
+  .pf label { display: block; font-size: 12px; font-weight: 600;
+              color: var(--muted); margin: 0 0 6px; letter-spacing: .01em; }
+  .pf .row { display: grid; grid-template-columns: 1fr auto; gap: 12px;
+             align-items: end; }
+  @media (max-width: 560px) { .pf .row { grid-template-columns: 1fr; } }
+  .pf input { height: 40px; }
+  .pf .row button { height: 40px; padding: 0 20px; white-space: nowrap; }
+  .pf .hint { color: var(--muted); font-size: 12.5px; margin-top: 7px;
+              line-height: 1.5; }
+  .pf .err { background: rgba(220,38,38,.09); color: var(--err);
+             border: 1px solid rgba(220,38,38,.25); border-radius: 9px;
+             padding: 9px 12px; font-size: 13.5px; margin-bottom: 14px; }
+  .pf .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .pf .grid2 { grid-template-columns: 1fr; } }
+</style>
+
+<div class="pf">
+  <div class="card">
+    <div class="pf-head">
+      <span class="av pf-av" style="--h: {{ me|avatar_hue }}">{{ me|initials }}</span>
+      <div class="pf-who">
+        <h2>{{ me['name'] or me['email'].split('@')[0] }}</h2>
+        <div class="mail">{{ me['email'] }}</div>
+        <span class="pf-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin:0 0 14px">Display name</h3>
+    <form method="post" action="{{ url_for('account_name') }}" class="row">
+      <div>
+        <label for="dn">What people see</label>
+        <input id="dn" name="name" type="text" maxlength="80"
+               value="{{ me['name'] or '' }}"
+               placeholder="{{ me['email'].split('@')[0] }}">
+      </div>
+      <button type="submit">Save name</button>
+    </form>
+    <p class="hint">Shown in the corner, on your avatar, and on every note you
+      write — including ones you have already written.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin:0 0 14px">Password</h3>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="post" action="{{ url_for('account_password') }}">
+      <label for="current">Current password</label>
+      <input id="current" name="current" type="password"
+             autocomplete="current-password" required>
+      <div class="grid2" style="margin-top:12px">
+        <div>
+          <label for="new">New password</label>
+          <input id="new" name="new" type="password"
+                 autocomplete="new-password" required>
+        </div>
+        <div>
+          <label for="again">Repeat it</label>
+          <input id="again" name="again" type="password"
+                 autocomplete="new-password" required>
+        </div>
+      </div>
+      <div style="margin-top:16px"><button type="submit">Change password</button></div>
+    </form>
+    <p class="hint">Use three or four random words —
+      <code>harbour-cactus-lantern-42</code>. Long beats complicated.
+      Changing it signs out every other browser you are signed in on.</p>
+  </div>
+</div>
+{% endblock %}
