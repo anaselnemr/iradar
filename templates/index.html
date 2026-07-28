@@ -79,34 +79,8 @@
     </div>
   </div>
 
-  {#- A run open in the database with nobody working on it. RUN_STATE is in
-      memory, so a restart loses it while the run itself survives - and the
-      progress bar just vanished, with no way to tell "finished" from "the
-      server went away". -#}
-  {% if stranded %}
-  <div class="strand">
-    <div>
-      <b>A check was interrupted</b>
-      <span>{{ '{:,}'.format(stranded.done) }} of
-        {{ '{:,}'.format(stranded.total) }} pages were done. Nothing is lost —
-        it carries on from where it stopped.</span>
-    </div>
-    <form method="post" action="{{ url_for('run_now') }}">
-      <button type="submit">Resume the check</button>
-    </form>
-  </div>
-  {% endif %}
-
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <style>
-  .strand { display: flex; align-items: center; justify-content: space-between;
-            gap: 18px; flex-wrap: wrap; margin-top: 14px;
-            padding: 13px 16px; border-radius: 11px;
-            border: 1px solid rgba(234,88,12,.35);
-            background: rgba(234,88,12,.07); }
-  .strand b { display: block; font-size: 14px; margin-bottom: 2px; }
-  .strand span { color: var(--muted); font-size: 13px; line-height: 1.5; }
-  .strand button { white-space: nowrap; }
       /* ---- run pipeline: stepper + one page-bucket bar --------------------
          Every page of the run sits in exactly ONE segment at any moment:
          no update / updated / held for double-check / error / waiting.

@@ -1552,7 +1552,6 @@ def index():
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            secs_per_page=seconds_per_page(),
-                           stranded=_stranded_run(),
                            q=q, page=page, pages=pages, sort=sort,
                            new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
                            notlive_total=notlive_total, comp_pending=comp_pending,
@@ -3298,35 +3297,6 @@ def _resume_on_boot():
     print(f"[boot] run {r['id']} was interrupted with {left} page(s) left -"
           f" carrying on", flush=True)
     runner.run_check_background(kind="resumed")
-
-
-def _stranded_run():
-    """A run that is open in the database with nobody working on it.
-
-    RUN_STATE lives in memory, so a restart - a redeploy, a crash, the machine
-    sleeping - loses it while the run row and its per-page state survive. The
-    dashboard then showed nothing at all: the progress bar simply vanished
-    mid-run and there was no way to tell "finished" from "the server went
-    away". Nothing is lost either way; it just has to be started again.
-    """
-    if runner.RUN_STATE.get("running"):
-        return None
-    con = db.connect()
-    try:
-        r = runner._resumable_run(con)
-        if not r:
-            return None
-        left = con.execute(
-            "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
-            (r["id"],)).fetchone()[0]
-        total = con.execute("SELECT COUNT(*) FROM run_items WHERE run_id=?",
-                            (r["id"],)).fetchone()[0]
-        return {"id": r["id"], "started": r["started"],
-                "left": left, "total": total, "done": total - left}
-    except Exception:
-        return None
-    finally:
-        con.close()
 
 
 @app.route("/settings/backup.db")

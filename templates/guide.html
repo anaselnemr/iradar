@@ -336,22 +336,19 @@
         reference behind.</li>
       <li><b>Updates already found are still in your queue.</b> Nothing waiting
         for review is lost.</li>
-      <li><b>Start it again and it continues</b> — you do not have to do
-        anything special{% if is_admin %}, just press <i>Check all pages</i>{% endif %}.</li>
+      <li><b>It starts itself again.</b> When iRadar comes back up it looks
+        for a check that was in the middle of something and carries on. You do
+        not have to notice, and you do not have to press anything.</li>
     </ul>
-    <p style="color:var(--muted); font-size:13.5px">The Dashboard says so
-      directly: a check left open with nobody working on it shows how far it
-      got and a button to carry on. Run history shows the same thing as a run
-      with no end time.</p>
+    <p style="color:var(--muted); font-size:13.5px">The only way a check
+      stops for good is if you stop it — <b>Pause</b> holds it where it is,
+      <b>End check</b> finishes it and keeps every page already captured.</p>
 
     <h3 style="margin:26px 0 4px; font-size:15px">Page states you will see</h3>
     <p style="margin-top:0; color:var(--muted); font-size:13.5px">These are the
       chips along the top of the Dashboard. Each one is a filter.</p>
     <ul class="lim" style="margin-top:6px">
       <li><b>Unchanged</b> — checked, nothing moved. The normal state.</li>
-      <li><b>Interrupted</b> — not a page state, but worth knowing: if the
-        server restarts mid-check the Dashboard says a check was interrupted
-        and offers to carry on. Every page already done stays done.</li>
       <li><b>Updated</b> — something changed and it is waiting for you.</li>
       <li><b>Blank page</b> — the address answered but there was nothing on it.
         Usually Infineon serving an empty shell; it is retried next check.</li>
