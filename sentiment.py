@@ -811,10 +811,15 @@ def run_collect():
                     ms = src["collect"](q)
                     SENT_STATE["found"] += len(ms)
                     new += _store(con, e["entity"], src["key"], ms, now)
+                    # COMMIT NOW, not per entity: the first INSERT opens a
+                    # transaction, and with the network pauses between
+                    # sources a per-entity commit held the write lock for
+                    # minutes - long enough to kill a capture run waiting
+                    # its 30 seconds to start. Milliseconds, not minutes.
+                    con.commit()
                     SENT_STATE["new"] = new
                 SENT_STATE["done"] += 1
                 SENT_STATE["message"] = f"{e['entity'][:30]} — {src['label']}"
-            con.commit()
         # the global pass: today that is the captured community threads,
         # which carry their own entity and cost no network at all
         for src in glob:
@@ -823,6 +828,7 @@ def run_collect():
             SENT_STATE["found"] += len(ms)
             for m in ms:
                 new += _store(con, m["entity"], src["key"], [m], now)
+            con.commit()
             SENT_STATE["done"] += 1
         SENT_STATE["new"] = new
         con.commit()

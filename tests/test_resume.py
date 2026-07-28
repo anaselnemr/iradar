@@ -514,3 +514,55 @@ def test_the_run_row_records_final_pages_not_attempts():
     # page 2 was re-queued (retry debt), captured nothing, and stays error -
     # the row records THAT, one page, regardless of how many attempts failed
     assert r["errors"] == 1, r["errors"]
+
+
+def test_a_locked_database_is_a_wait_not_a_verdict():
+    """Run 4 died twice at its first write: a mention collection held the
+    SQLite write lock across minutes of network pauses, and the resuming
+    run's init_db took the 30s timeout as final. The opening write now
+    retries; the lock-holder releasing lets the run start."""
+    import sqlite3
+    import threading
+    import runner as R
+
+    _fresh_db()
+    # the real connect waits 30s per attempt, which is right for production
+    # and glacial for a test - drop it to a blink for this one
+    real_connect = db.connect
+
+    def quick_connect():
+        con = sqlite3.connect(db.DB_PATH, timeout=0.05)
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA foreign_keys=ON")
+        return con
+    db.connect = quick_connect
+    # check_same_thread off: the release fires from a Timer thread, and a
+    # default connection refuses cross-thread use - silently, in the timer,
+    # which held the lock forever and failed the test for the wrong reason
+    blocker = sqlite3.connect(db.DB_PATH, timeout=30, check_same_thread=False)
+    blocker.execute("BEGIN EXCLUSIVE")
+
+    def release():
+        blocker.commit()
+        blocker.close()
+    t = threading.Timer(0.3, release)
+    t.start()
+    try:
+        R._init_db_patiently(delays=(0.15, 0.15, 0.15, 0.15))
+    finally:
+        t.cancel()
+    # and a lock that never lifts still raises rather than hanging forever
+    blocker2 = db.connect()
+    blocker2.execute("BEGIN EXCLUSIVE")
+    try:
+        try:
+            R._init_db_patiently(delays=(0.05,))
+        except sqlite3.OperationalError:
+            pass
+        else:
+            raise AssertionError("a permanent lock must still raise")
+    finally:
+        blocker2.rollback()
+        blocker2.close()
+        db.connect = real_connect

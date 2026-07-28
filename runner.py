@@ -559,8 +559,26 @@ def run_check(kind="manual", url_ids=None, baseline=False):
         RUN_LOCK.release()
 
 
+def _init_db_patiently(delays=(20, 20, 20)):
+    """init_db, but a locked database is a wait, not a verdict. A capture
+    run resuming at boot died here twice while a mention collection held
+    the write lock - the one serial write at run start now waits it out."""
+    import sqlite3 as _sq
+    for i, delay in enumerate([0] + list(delays)):
+        if delay:
+            time.sleep(delay)
+        try:
+            db.init_db()
+            return
+        except _sq.OperationalError as exc:
+            if "locked" not in str(exc).lower() or i == len(delays):
+                raise
+            print(f"[run] database busy ({exc}) - retrying in"
+                  f" {delays[min(i, len(delays) - 1)]}s", flush=True)
+
+
 def _run_check_inner(kind, url_ids, baseline=False):
-    db.init_db()
+    _init_db_patiently()
     settings = db.get_settings()
     # 8, and do not raise it without re-running the three-pass check.
     #
