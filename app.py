@@ -6657,22 +6657,22 @@ def guide_page():
 # Keep it to things a REVIEWER would notice. "Refactored the compare module"
 # belongs in the git log; "removals of a datasheet now raise the page" belongs
 # here, because it changes what lands in somebody's queue on Monday.
+# Dates come from when the work actually landed, not from when it was
+# written up: the logo, dark mode and the Help rewrite are all the 28th, and
+# accounts and notes are the 27th - the 20th was nothing but a guess.
 WHATS_NEW = [
     {"on": "2026-07-28", "what": [
         "Pages are photographed only once their fonts have arrived — before, "
         "the same text wrapping differently read as a change.",
-        "552 pages claimed to redirect; two of them do.",
         "Times on screen are local, not the server's.",
         "A restart no longer ends a check — it carries on by itself.",
         "Bugs and suggestions moved to Notes.",
         "Admins can download a copy of the database under Settings.",
-    ]},
-    {"on": "2026-07-27", "what": [
         "Dark mode reworked; cards lift off the page instead of sitting flat.",
         "iRadar has a logo, and everyone has their own avatar colour.",
         "Help rewritten, with pictures.",
     ]},
-    {"on": "2026-07-20", "what": [
+    {"on": "2026-07-27", "what": [
         "Accounts, roles and sign-in; iRadar moved to iradar.net.",
         "Notes on every page, item and update.",
     ]},

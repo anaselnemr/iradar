@@ -917,25 +917,35 @@
 <script>
 (function () {
   var links = [].slice.call(document.querySelectorAll('.toc a'));
-  if (!links.length || !('IntersectionObserver' in window)) return;
-  var byId = {};
-  links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
-  var seen = {};
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
-    // the topmost visible section wins, so scrolling up highlights correctly
-    var current = null;
-    Object.keys(byId).forEach(function (id) {
-      if (!current && seen[id]) current = id;
-    });
-    links.forEach(function (a) {
-      a.classList.toggle('on', a.getAttribute('href') === '#' + current);
-    });
-  }, { rootMargin: '-8% 0px -70% 0px' });
-  Object.keys(byId).forEach(function (id) {
-    var el = document.getElementById(id);
-    if (el) io.observe(el);
+  if (!links.length) return;
+  var secs = links.map(function (a) {
+    return document.getElementById(a.getAttribute('href').slice(1));
   });
+  // A quarter of the way down the screen: the line the eye reads from, and
+  // the section that has crossed it is the section you are in.
+  var LINE = 0.25;
+
+  function pick() {
+    var vh = window.innerHeight, i, cur = 0;
+    for (i = 0; i < secs.length; i++) {
+      if (secs[i] && secs[i].getBoundingClientRect().top <= vh * LINE) cur = i;
+      else break;
+    }
+    // THE LAST SECTION CAN NEVER CROSS THE LINE. There is no page left to
+    // scroll, so it stayed below it and the rail kept pointing at 12 while
+    // 13 filled the screen. At the bottom, the last one is where you are.
+    if (window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 4) cur = secs.length - 1;
+    links.forEach(function (a, n) { a.classList.toggle('on', n === cur); });
+  }
+
+  // Straight on the event, no requestAnimationFrame: a background or
+  // unfocused tab throttles rAF to a crawl and the rail simply stops
+  // following. Thirteen rect reads while the browser is already laying the
+  // page out costs nothing worth saving.
+  window.addEventListener('scroll', pick, { passive: true });
+  window.addEventListener('resize', pick);
+  pick();
 })();
 </script>
 {% endblock %}
