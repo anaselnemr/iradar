@@ -102,9 +102,55 @@ If a page has genuinely dynamic content (e.g. "3 new documents this week"),
 add a matching pattern under Settings → *Ignore text lines matching* — one
 regular expression per line. You can also raise the visual threshold.
 
+## Two branches: live, and everything else
+
+`master` is what **https://iradar.net** serves. Railway watches that branch
+and only that branch, so a push to `master` is a deploy — within a couple of
+minutes it is in front of the team.
+
+`dev` is where work happens. Pushing it deploys nothing.
+
+```
+git checkout dev          # work here
+...edit, commit...
+python preview.py         # look at it, on your machine
+git push origin dev       # saved to GitHub, still not live
+
+# when it is ready to be live:
+git checkout master
+git merge dev
+git push origin master    # THIS is the deploy
+```
+
+Merging to `master` restarts the app. That is safe on purpose: a capture run
+that was in flight is picked up automatically where it left off, so shipping
+never costs a run.
+
+## Looking at a change before it is live
+
+```
+python preview.py                     demo data, made up on the spot
+python preview.py data/watch.db       a copy of a real database
+python preview.py iradar-backup.gz    a backup straight from Settings
+```
+
+Opens the whole app on http://127.0.0.1:5055, running whatever branch you
+have checked out. It cannot damage anything:
+
+- it **copies** the database you point it at and serves the copy, so the
+  original is never opened;
+- it **cannot start a capture** — both entry points are replaced before the
+  server starts, so no button on the page can reach infineon.com;
+- it has no scheduler and no resume-on-boot.
+
+The most useful mode is the middle one: your changes, against real data, at
+real scale, with nothing at risk. Download a backup from **Settings →
+Advanced → The database** and point `preview.py` at the `.gz` it gives you.
+
 ## Files
 
 - `data/watch.db` — the database (URLs, results). Back this up if you care.
 - `data/snapshots/` — stored page captures.
 - `data/changes/` — visual-diff images for flagged changes.
+- `preview.py` — run this branch on a throwaway copy: `python preview.py`.
 - `cli.py` — optional command line: `python cli.py add-file urls.txt`, `python cli.py run`.
