@@ -2,42 +2,85 @@
 {% block title %}Notes — iRadar{% endblock %}
 {% block content %}
 {#- A note left on one page in a list of 4,188 is a note nobody finds again.
-    This is the way back in: everything anyone has written, newest first. -#}
+    This is the way back in: everything anyone has written, newest first.
+
+    Laid out as a conversation rather than a table. Every row answers three
+    questions in the order people ask them - who said it, what they said, what
+    it was about - so the eye can run down the left edge for a face, down the
+    middle for the words, and only reach for the link when it has found the
+    one it wants. -#}
 <style>
-  .nl-wrap { max-width: 900px; margin: 0 auto; }
-  .nl-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
-  .nl { list-style: none; margin: 0; padding: 0; }
-  .nl li { display: flex; gap: 12px; padding: 14px 10px;
-           border-bottom: 1px solid var(--line); }
-  .nl li:last-child { border-bottom: 0; }
-  .nl li:hover { background: var(--hover); }
-  .nl-av { width: 30px; height: 30px; font-size: 11.5px; }
-  .nl-main { flex: 1; min-width: 0; }
-  .nl-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-             font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }
-  .nl-meta b { color: var(--ink); font-size: 13.5px; }
-  .nl-body { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
-  .nl-on { font-size: 12.5px; margin-top: 6px; display: block;
-           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .nl-done .nl-body { color: var(--muted); }
-  .nl-done .nl-av { filter: grayscale(1); opacity: .55; }
-  .nl-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
-             font-weight: 600; color: var(--muted); background: var(--hover);
-             padding: 1px 7px; border-radius: 999px; }
-  /* the composer: writing a note about iRadar itself used to mean going to
-     Help and scrolling to the bottom. It belongs where the notes are. */
-  .nl-new { margin-bottom: 16px; }
-  .nl-new h3 { margin: 0 0 3px; font-size: 15px; }
+  .nl-wrap { max-width: 860px; margin: 0 auto; }
+
+  /* the composer */
+  .nl-new h3 { margin: 0 0 3px; font-size: 15.5px; letter-spacing: -.1px; }
   .nl-new .why { color: var(--muted); font-size: 13px; margin: 0 0 12px;
-                 max-width: 68ch; line-height: 1.5; }
+                 max-width: 68ch; line-height: 1.55; }
   .nl-new textarea { width: 100%; font-family: inherit; font-size: 14px;
-                     padding: 10px 12px; border-radius: 10px;
+                     line-height: 1.55; padding: 11px 13px; border-radius: 11px;
                      border: 1px solid var(--line); background: var(--bg);
                      color: var(--ink); resize: vertical; }
   .nl-new textarea:focus { outline: 2px solid var(--accent);
                            outline-offset: 1px; border-color: transparent; }
   .nl-new .row { display: flex; align-items: center; gap: 10px;
                  margin-top: 10px; }
+
+  /* the head of the feed: what you are looking at, and how much of it */
+  .nl-head { display: flex; align-items: center; justify-content: space-between;
+             gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+  .nl-head h3 { margin: 0; font-size: 15.5px; letter-spacing: -.1px; }
+  .nl-head .count { color: var(--muted); font-weight: 400; font-size: 13px; }
+  .nl-tabs { display: flex; gap: 7px; }
+
+  /* one note */
+  .nl { list-style: none; margin: 14px 0 0; padding: 0; }
+  .nl > li { display: grid; grid-template-columns: 34px minmax(0, 1fr);
+             gap: 13px; padding: 15px 0; border-top: 1px solid var(--line); }
+  .nl > li:first-child { border-top: 0; padding-top: 4px; }
+  .nl-av { width: 34px; height: 34px; font-size: 12.5px; margin-top: 1px; }
+
+  .nl-meta { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+             font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+  .nl-meta b { color: var(--ink); font-size: 13.5px; font-weight: 650;
+               letter-spacing: -.1px; }
+  .nl-meta time { font-variant-numeric: tabular-nums; }
+  .nl-body { font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
+  .nl-body p:first-child { margin-top: 0; }
+  .nl-body p:last-child { margin-bottom: 0; }
+
+  /* what it is about: a chip you can click, not a sentence you have to read */
+  .nl-on { display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
+           margin-top: 9px; padding: 4px 11px 4px 4px; border-radius: 999px;
+           border: 1px solid var(--line); background: var(--panel);
+           font-size: 12.5px; text-decoration: none; color: var(--muted); }
+  a.nl-on:hover { border-color: var(--accent); color: var(--ink); }
+  .nl-on .k { flex: 0 0 auto; font-size: 10px; font-weight: 700;
+              text-transform: uppercase; letter-spacing: .05em;
+              padding: 3px 8px; border-radius: 999px;
+              background: var(--hover); color: var(--muted); }
+  .nl-on .w { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
+  .nl-on.gone { border-style: dashed; }
+  /* each kind of thing gets its own colour, the same one it has elsewhere */
+  .k-page   { background: rgba(94,106,210,.16)  !important; color: var(--accent) !important; }
+  .k-item   { background: rgba(22,163,74,.16)   !important; color: var(--ok) !important; }
+  .k-change { background: rgba(234,88,12,.16)   !important; color: var(--warn) !important; }
+  .k-app    { background: rgba(124,58,237,.16)  !important; color: #a78bfa !important; }
+
+  /* a note that is dealt with steps back without disappearing */
+  .nl-done .nl-body { color: var(--muted); }
+  .nl-done .nl-av { filter: grayscale(1); opacity: .5; }
+  .nl-done-tag { font-size: 10px; font-weight: 700; text-transform: uppercase;
+                 letter-spacing: .05em; padding: 2px 8px; border-radius: 999px;
+                 background: rgba(22,163,74,.14); color: var(--ok); }
+
+  .nl-empty { text-align: center; padding: 34px 16px; color: var(--muted); }
+  .nl-empty b { display: block; color: var(--ink); font-size: 15px;
+                margin-bottom: 5px; }
+  @media (max-width: 560px) {
+    .nl > li { grid-template-columns: 28px minmax(0, 1fr); gap: 10px; }
+    .nl-av { width: 28px; height: 28px; font-size: 11px; }
+  }
 </style>
 
 <div class="nl-wrap">
@@ -62,43 +105,61 @@
     </form>
   </div>
 
-  <div class="card">
-    <div class="nl-tabs">
-      <a class="chip {{ '' if only_open else 'chip-on' }}"
-         href="{{ url_for('notes_page') }}">Everything</a>
-      <a class="chip {{ 'chip-on' if only_open else '' }} {{ 'chip-warn' if open_total }}"
-         href="{{ url_for('notes_page', open=1) }}">Open <b>{{ open_total }}</b></a>
+  <div class="card" style="margin-top:16px">
+    <div class="nl-head">
+      <h3>{{ 'Still open' if only_open else 'Everything written' }}
+        <span class="count">({{ rows|length }})</span></h3>
+      <div class="nl-tabs">
+        <a class="chip {{ '' if only_open else 'chip-on' }}"
+           href="{{ url_for('notes_page') }}">Everything</a>
+        <a class="chip {{ 'chip-on' if only_open else '' }}"
+           href="{{ url_for('notes_page', open=1) }}">Open <b>{{ open_total }}</b></a>
+      </div>
     </div>
 
     {% if rows %}
     <ol class="nl">
       {% for r in rows %}
+      {% set kind = r.c['target_kind'] %}
       <li class="{{ 'nl-done' if r.c['resolved'] }}">
         <span class="av nl-av" aria-hidden="true"
               style="--avatar:{{ r.c|avatar }}">{{ r.c['author']|initials }}</span>
-        <div class="nl-main">
+        <div>
           <div class="nl-meta">
             <b>{{ r.c['author'] or 'someone' }}</b>
-            <time title="{{ r.c['created']|localtime }}">{{ r.c['created']|localtime }}</time>
-            <span class="nl-kind">{{ {'page':'page','item':'asset','change':'update','app':'iRadar'}.get(r.c['target_kind'], r.c['target_kind']) }}</span>
-            {%- if r.c['resolved'] %}<span class="badge b-unchanged">done</span>{% endif %}
+            <time>{{ r.c['created']|localtime }}</time>
+            {%- if r.c['resolved'] %}<span class="nl-done-tag">done</span>{% endif %}
           </div>
           <div class="nl-body">{{ r.c['body']|notemd }}</div>
+          {#- the thing it is about, as one clickable chip: the kind is the
+              colour, the name is the text, and a long page name shortens
+              rather than pushing the row around -#}
+          {% set label = {'page': 'page', 'item': 'asset',
+                          'change': 'update', 'app': 'iRadar'}.get(kind, kind) %}
           {% if r.link %}
-            <a class="nl-on" href="{{ r.link }}#note-{{ r.c['id'] }}">on {{ r.what }} →</a>
+            <a class="nl-on" href="{{ r.link }}#note-{{ r.c['id'] }}">
+              <span class="k k-{{ kind }}">{{ label }}</span>
+              <span class="w">{{ r.what }}</span></a>
           {% else %}
-            <span class="nl-on muted">on {{ r.what }} (no longer tracked)</span>
+            <span class="nl-on gone" title="This is no longer tracked">
+              <span class="k k-{{ kind }}">{{ label }}</span>
+              <span class="w">{{ r.what }}</span></span>
           {% endif %}
         </div>
       </li>
       {% endfor %}
     </ol>
     {% else %}
-    <p class="muted" style="margin:0">
-      {% if only_open %}Nothing open — every note has been marked done.
-      {% else %}No notes yet. Open any page, asset or update and leave one at the bottom.
+    <div class="nl-empty">
+      {% if only_open %}
+        <b>Nothing open</b>
+        Every note has been marked done.
+      {% else %}
+        <b>No notes yet</b>
+        Write the first one above, or leave one at the bottom of any page,
+        document or update.
       {% endif %}
-    </p>
+    </div>
     {% endif %}
   </div>
 </div>

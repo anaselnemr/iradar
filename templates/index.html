@@ -356,6 +356,13 @@
   /* the page column absorbs the slack, so its contents must track it rather
      than assume a width of their own */
   #pagetable .c-page, #pagetable .urlcell { max-width: 0; }
+  /* one line each, always: the text is the only thing allowed to give way */
+  #pagetable .uline { display: flex; align-items: center; gap: 6px;
+                      min-width: 0; }
+  #pagetable .uline + .uline { margin-top: 2px; }
+  #pagetable .uline > a { min-width: 0; overflow: hidden;
+                          text-overflow: ellipsis; white-space: nowrap; }
+  #pagetable .uline > .badge, #pagetable .uline > .lvl { flex: 0 0 auto; }
   @media (max-width: 1180px) {
     #pagetable .c-type { width: 108px; }
     #pagetable .c-upd  { width: 168px; }
@@ -377,7 +384,12 @@
                  value="{{ u.id }}" data-pos="{{ (page-1)*per_page + loop.index }}"></td>
       <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
       <td class="urlcell">
-        {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span> {% endif %}
+        {#- each line is a flex row: the text shrinks and ellipsises, the
+            badges never do. Left inline, a long address took the whole cell
+            and pushed its own badges onto a third line, so rows with a short
+            address looked different from rows with a long one. -#}
+        <div class="uline">
+        {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span>{% endif %}
         {% if u.title_override %}
           <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Custom name — its own page title is “{{ u.page_title | clean_title }}”">{{ u.title_override }}</a>
         {% elif u.page_title %}
@@ -388,12 +400,14 @@
         {% if u.created_at and u.created_at >= new_cutoff and u.created_at[:10] not in bulk_days %}
         <span class="badge b-newpg" title="Added {{ u.created_at|localtime }} — new within the last 7 days">NEW</span>
         {% endif %}
-        <br>
+        </div>
+        <div class="uline">
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
         {% if settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %}<span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open">PIM</span>{% elif aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
         {% if u.redirect_from %}
         <span class="badge b-redir" title="A listed address 301-redirected here, so the list now tracks the destination — not the stale link.&#10;Redirected from: {{ u.redirect_from }}"><span style="display:inline-block; transform:scaleX(-1)">↪</span></span>
         {% endif %}
+        </div>
       </td>
       <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
       <td>
