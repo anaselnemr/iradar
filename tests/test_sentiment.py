@@ -186,3 +186,54 @@ def test_registry_is_consistent():
         assert s["label"] and callable(s["ready"])
         if s["scope"] == "entity":
             assert callable(s["collect"])
+
+
+def test_parse_reddit_rss():
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <author><name>/u/embedded_dev</name></author>
+        <content type="html">&lt;p&gt;Anyone using the &lt;b&gt;TC375&lt;/b&gt;
+          lite kit?&lt;/p&gt;</content>
+        <link href="https://www.reddit.com/r/embedded/comments/abc/aurix/"/>
+        <updated>2026-07-27T09:15:33+00:00</updated>
+        <title>AURIX TC375 lite kit experiences?</title>
+      </entry>
+      <entry>
+        <title>no link, must be dropped</title>
+        <updated>2026-07-27T09:15:33+00:00</updated>
+      </entry>
+    </feed>"""
+    out = sn.parse_reddit_rss(xml)
+    assert len(out) == 1
+    m = out[0]
+    assert m["title"] == "AURIX TC375 lite kit experiences?"
+    assert m["url"].endswith("/aurix/")
+    assert m["author"] == "embedded_dev"
+    assert m["posted"] == "2026-07-27T09:15:33"
+    assert m["body"] == "Anyone using the TC375 lite kit?"
+    assert sn.parse_reddit_rss("not xml at all") == []
+
+
+def test_parse_innertube_finds_videos_wherever_they_sit():
+    payload = {"contents": {"deep": [{"itemSectionRenderer": {"contents": [
+        {"videoRenderer": {
+            "videoId": "abc123",
+            "title": {"runs": [{"text": "PSoC 6 "}, {"text": "deep dive"}]},
+            "ownerText": {"runs": [{"text": "Infineon"}]},
+            "publishedTimeText": {"simpleText": "2 weeks ago"},
+            "detailedMetadataSnippets": [
+                {"snippetText": {"runs": [{"text": "CapSense walkthrough"}]}}],
+        }},
+        {"somethingElse": {}},
+    ]}}]}}
+    out = sn.parse_innertube(payload)
+    assert len(out) == 1
+    m = out[0]
+    assert m["url"] == "https://www.youtube.com/watch?v=abc123"
+    assert m["title"] == "PSoC 6 deep dive"
+    assert m["author"] == "Infineon"
+    assert m["extra"] == "youtube | 2 weeks ago"
+    assert m["body"] == "CapSense walkthrough"
+    assert sn.parse_innertube(None) == []
+    assert sn.parse_innertube({"a": [{"videoRenderer": {}}]}) == []

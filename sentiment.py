@@ -256,7 +256,7 @@ def _reddit_token():
         return ""
 
 
-def collect_reddit(query):
+def _collect_reddit_oauth(query):
     """Official OAuth API only: the public search.json answers 403 from this
     network. Without REDDIT_CLIENT_ID/REDDIT_SECRET this source is skipped."""
     tok = _reddit_token()
@@ -273,6 +273,55 @@ def collect_reddit(query):
         res = []
     time.sleep(1.0)
     return [m for m in res if _relevant(m, query)]
+
+
+def parse_reddit_rss(xml_text):
+    """Atom entries -> mentions. The RSS twin of /search.json: same results,
+    different gate - .json answers 403 from a datacenter address while .rss
+    answers 200 to our own UA (verified from the live box, 2026-07-28)."""
+    import xml.etree.ElementTree as ET
+    ns = {"a": "http://www.w3.org/2005/Atom"}
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return []
+    out = []
+    for e in root.findall("a:entry", ns):
+        def _t(tag):
+            el = e.find("a:" + tag, ns)
+            return (el.text or "") if el is not None else ""
+        link = e.find("a:link", ns)
+        who = e.find("a:author/a:name", ns)
+        body = re.sub(r"<[^>]+>", " ", _t("content"))
+        out.append({
+            "url": (link.get("href") or "") if link is not None else "",
+            "title": " ".join(_t("title").split()),
+            "body": " ".join(body.split())[:400],
+            "author": ((who.text or "").replace("/u/", "")
+                       if who is not None else ""),
+            "posted": _t("updated")[:19],
+            "extra": "reddit",
+        })
+    return [m for m in out if m["url"] and m["title"]]
+
+
+def collect_reddit(query):
+    """OAuth when the keys exist (scores, full selftext); the public RSS
+    feed otherwise, so Reddit needs no account at all. One request per
+    family and a pause - two back-to-back calls already earn a 429."""
+    if os.environ.get("REDDIT_CLIENT_ID") and os.environ.get("REDDIT_SECRET"):
+        return _collect_reddit_oauth(query)
+    u = ("https://www.reddit.com/search.rss?sort=new&limit=25&q="
+         + urllib.parse.quote(query))
+    try:
+        req = urllib.request.Request(u, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            xml_text = r.read().decode("utf-8", "replace")
+    except Exception:
+        return []
+    finally:
+        time.sleep(2.5)
+    return [m for m in parse_reddit_rss(xml_text) if _relevant(m, query)]
 
 
 # --- GitHub -----------------------------------------------------------------
@@ -476,7 +525,7 @@ def collect_community():
     return [m for m in out if m["url"] and m["title"]]
 
 
-def collect_youtube(query):
+def _collect_youtube_api(query):
     key = os.environ.get("YT_API_KEY", "")
     if not key:
         return []
@@ -502,6 +551,75 @@ def collect_youtube(query):
 
 
 # --- storage ----------------------------------------------------------------
+
+# The key the youtube.com web page itself ships to every visitor - public by
+# construction, not a credential. The endpoint is what the search box calls.
+_INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+
+
+def parse_innertube(payload):
+    """Walk the web client's response for videoRenderer objects wherever the
+    layout put them - the path shifts, the object shape does not."""
+    vids = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            vr = node.get("videoRenderer")
+            if isinstance(vr, dict):
+                vids.append(vr)
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(payload)
+    out = []
+    for v in vids:
+        vid = v.get("videoId") or ""
+        title = "".join(r.get("text", "")
+                        for r in (v.get("title") or {}).get("runs", []))
+        chan = "".join(r.get("text", "")
+                       for r in (v.get("ownerText") or {}).get("runs", []))
+        when = (v.get("publishedTimeText") or {}).get("simpleText") or ""
+        desc = ""
+        sn = v.get("detailedMetadataSnippets") or []
+        if sn:
+            desc = "".join(r.get("text", "") for r in
+                           (sn[0].get("snippetText") or {}).get("runs", []))
+        out.append({
+            "url": ("https://www.youtube.com/watch?v=" + vid) if vid else "",
+            "title": title.strip(),
+            "body": desc.strip()[:400],
+            "author": chan.strip(),
+            "posted": "",              # the web client only says "2 weeks ago"
+            "extra": ("youtube | " + when) if when else "youtube",
+        })
+    return [m for m in out if m["url"] and m["title"]]
+
+
+def collect_youtube(query):
+    """The official API when a key is set (absolute dates); otherwise the
+    web client's own search endpoint, which needs nothing."""
+    if os.environ.get("YT_API_KEY"):
+        return _collect_youtube_api(query)
+    body = json.dumps({
+        "context": {"client": {"clientName": "WEB",
+                               "clientVersion": "2.20240701"}},
+        "query": query}).encode()
+    try:
+        req = urllib.request.Request(
+            "https://www.youtube.com/youtubei/v1/search?key=" + _INNERTUBE_KEY,
+            data=body, headers={"User-Agent": UA,
+                                "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            payload = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return []
+    finally:
+        time.sleep(1.0)
+    return [m for m in parse_innertube(payload) if _relevant(m, query)]
+
 
 # --- the source registry ----------------------------------------------------
 # ONE list. The collector loop, the page's filter chips, the per-family
@@ -531,13 +649,10 @@ SOURCES = [
      "ready": lambda: True, "needs": ""},
     {"key": "reddit", "label": "Reddit",
      "collect": collect_reddit, "scope": "entity",
-     "ready": lambda: bool(os.environ.get("REDDIT_CLIENT_ID")
-                           and os.environ.get("REDDIT_SECRET")),
-     "needs": "REDDIT_CLIENT_ID + REDDIT_SECRET"},
+     "ready": lambda: True, "needs": ""},
     {"key": "youtube", "label": "YouTube",
      "collect": collect_youtube, "scope": "entity",
-     "ready": lambda: bool(os.environ.get("YT_API_KEY")),
-     "needs": "YT_API_KEY"},
+     "ready": lambda: True, "needs": ""},
     {"key": "community", "label": "Infineon community",
      "collect": None, "scope": "global",
      "ready": lambda: True, "needs": ""},
