@@ -871,7 +871,7 @@
     <h2><span class="secn">12</span>What it does not do</h2>
     <ul class="lim">
       <li><b>It does not find new pages by itself.</b> iRadar watches the
-        4,267 pages it has been given. If Infineon
+        {{ '{:,}'.format(f.pages) }} pages it has been given. If Infineon
         publishes a new one, somebody has to add it{% if is_admin %} under
         <i>Add pages</i>{% endif %}.</li>
       <li><b>A few finder pages</b> only capture their first page of results.</li>
