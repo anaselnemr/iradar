@@ -32,7 +32,7 @@
     {% for r in rows %}
     <tr>
       <td><input type="checkbox" name="id" value="{{ r.id }}"></td>
-      <td style="white-space:nowrap">{{ r.ts[:16].replace('T',' ') }}</td>
+      <td style="white-space:nowrap">{{ r.ts|localtime }}</td>
       <td>{{ r.kind or 'file' }}</td>
       <td style="max-width:380px; overflow-wrap:anywhere">
         <a href="{{ r.url }}" target="_blank">{{ r.url.rsplit('/',1)[-1] or r.url }}</a>

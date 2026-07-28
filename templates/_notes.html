@@ -32,7 +32,7 @@
       <div class="note-main">
         <div class="note-meta">
           <b>{{ n['author'] or 'someone' }}</b>
-          <time title="{{ n['created'] }}">{{ n['created'][:16] }}</time>
+          <time title="{{ n['created']|localtime }}">{{ n['created']|localtime }}</time>
           {%- if n['edited'] %}<span class="note-edited" title="Edited {{ n['edited'] }}">edited</span>{% endif %}
           {%- if n['resolved'] %}<span class="badge b-unchanged">done</span>{% endif %}
         </div>
@@ -76,7 +76,7 @@
 
         {% if n['resolved'] and n['resolved_by'] %}
         <div class="note-done-by">Marked done by {{ n['resolved_by'] }}
-          {%- if n['resolved_at'] %} · {{ n['resolved_at'][:16] }}{% endif %}</div>
+          {%- if n['resolved_at'] %} · {{ n['resolved_at']|localtime }}{% endif %}</div>
         {% endif %}
       </div>
     </li>

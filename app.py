@@ -513,14 +513,32 @@ def pretty_slug_filter(s):
     return " ".join(out)
 
 
+# The zone every time on screen is shown in. Named, not inherited: this used
+# to be a bare .astimezone(), which means "whatever zone the machine is set
+# to". On the laptop that was right by accident. In a container it is whatever
+# the platform felt like, and a platform that quietly switches to UTC moves
+# every timestamp in the app two hours without one line of code changing.
+DISPLAY_TZ = os.environ.get("IRADAR_TZ", "Europe/Berlin")
+try:
+    from zoneinfo import ZoneInfo
+    _DISPLAY_ZONE = ZoneInfo(DISPLAY_TZ)
+except Exception:                       # no tzdata installed - fall back
+    _DISPLAY_ZONE = None
+
+
+def to_local(s):
+    """A stored UTC timestamp as a datetime in the display zone."""
+    dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    return dt.astimezone(_DISPLAY_ZONE) if _DISPLAY_ZONE else dt.astimezone()
+
+
 @app.template_filter("localtime")
 def localtime_filter(s):
-    """DB timestamps are UTC; show them in the user's local time."""
+    """DB timestamps are UTC; show them where the people reading them are."""
     if not s:
         return "—"
     try:
-        dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
-        return dt.replace(tzinfo=timezone.utc).astimezone().strftime("%d %b %Y, %H:%M")
+        return to_local(s).strftime("%d %b %Y, %H:%M")
     except (ValueError, TypeError):
         return s
 
@@ -540,12 +558,18 @@ def reschedule():
     if weekday not in WEEKDAYS:
         weekday = "mon"
 
+    # tz=, not the machine's: "23:00" has to mean 23:00 to the people who set
+    # it, on whatever box this happens to be running on. Without it the
+    # schedule silently follows the container and a move to UTC would run the
+    # weekly check at 01:00 on Tuesday instead of 23:00 on Monday.
+    _tz = _DISPLAY_ZONE
     if freq == "daily":
-        trigger = CronTrigger(hour=hour, minute=0)
+        trigger = CronTrigger(hour=hour, minute=0, timezone=_tz)
     elif freq == "bidaily":
-        trigger = CronTrigger(day="*/2", hour=hour, minute=0)
+        trigger = CronTrigger(day="*/2", hour=hour, minute=0, timezone=_tz)
     else:  # weekly
-        trigger = CronTrigger(day_of_week=weekday, hour=hour, minute=0)
+        trigger = CronTrigger(day_of_week=weekday, hour=hour, minute=0,
+                              timezone=_tz)
 
     scheduler.add_job(_scheduled_check, trigger, id="check",
                       replace_existing=True, misfire_grace_time=3600 * 6)

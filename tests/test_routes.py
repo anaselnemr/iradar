@@ -360,3 +360,37 @@ def test_the_backup_needs_no_csrf_token():
     assert "settings_backup" not in app.EDITOR_MAY_POST
     r = _client.get("/settings/backup.db")
     assert r.status_code == 200
+
+
+# --- times on screen -------------------------------------------------------
+# Everything is stored UTC and shown local. The conversion used to be a bare
+# .astimezone(), which means "whatever zone this machine is set to" - right on
+# a laptop by accident, and wrong the moment it moved into a container.
+
+def test_a_stored_time_is_shown_in_the_display_zone():
+    from datetime import datetime, timezone as _tz
+    stamped = "2026-07-28 08:02:20"                    # UTC
+    shown = app.localtime_filter(stamped)
+    utc = datetime.strptime(stamped, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz.utc)
+    want = utc.astimezone(app._DISPLAY_ZONE) if app._DISPLAY_ZONE else utc.astimezone()
+    assert shown == want.strftime("%d %b %Y, %H:%M"), shown
+    if app._DISPLAY_ZONE:                              # Berlin is ahead of UTC
+        assert shown != stamped[:16], "it is still showing the raw UTC string"
+
+
+def test_the_display_zone_is_named_not_inherited():
+    assert app.DISPLAY_TZ, "no display zone configured"
+    assert app._DISPLAY_ZONE is not None, \
+        f"tzdata is missing, so times fall back to the machine's own zone"
+
+
+def test_no_page_prints_a_raw_timestamp():
+    # a raw slice of the stored string shows UTC and looks like a real time
+    import re
+    from pathlib import Path as _P
+    bad = []
+    for tpl in _P("templates").glob("*.html"):
+        for n, line in enumerate(tpl.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\[:16\]|\[:19\]", line) and "localtime" not in line:
+                bad.append(f"{tpl.name}:{n}")
+    assert not bad, f"raw timestamps still on screen: {bad}"
