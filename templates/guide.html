@@ -626,7 +626,9 @@
     <p class="lede">Changes to iRadar itself &mdash; not to the website it
       watches.</p>
     <ol class="rel">
-      {% for r in whatsnew %}
+      {#- the last three. Older ones are in the git log, which is where
+          somebody looking that far back should be. -#}
+      {% for r in whatsnew[:3] %}
       <li>
         <time>{{ r.on }}</time>
         <ul>{% for line in r.what %}<li>{{ line }}</li>{% endfor %}</ul>

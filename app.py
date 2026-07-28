@@ -6562,17 +6562,26 @@ def guide_page():
 # here, because it changes what lands in somebody's queue on Monday.
 WHATS_NEW = [
     {"on": "2026-07-28", "what": [
-        "Help rewritten: how the progress bar reads, what happens when a check "
-        "is interrupted, and every page state written down.",
-        "Bugs and suggestions can be posted at the bottom of this page.",
-        "Everyone gets their own avatar colour, readable in both themes.",
-        "iRadar has a logo, so the browser tab is findable again.",
+        "Updates could name things that were not in either capture — one read "
+        "“Products table filled” about a page that had one all along. "
+        "Fixed at both ends, so it cannot restate itself.",
+        "Times were shown in UTC. A sign-in at 10:02 read as 08:02. Everything "
+        "on screen is now in local time.",
+        "Bugs and suggestions moved to Notes, which has a box of its own at "
+        "the top and reads as a conversation rather than a table.",
+        "The Dashboard table fills the screen and its columns stop shifting "
+        "when a filter brings in a longer badge.",
+        "Admins can download a copy of the database under Settings → Backup.",
     ]},
     {"on": "2026-07-27", "what": [
         "Dark mode reworked: it was pure black, which made every card look "
-        "flat. Cards now lift off the page.",
+        "flat. Cards lift off the page now.",
         "The estimate before checking a lot of pages was ten times too high "
-        "(86 hours for a nine-hour job). It is measured from real runs now.",
+        "(86 hours for a nine-hour job). It is measured from real runs.",
+        "iRadar has a logo, so the browser tab is findable again, and everyone "
+        "gets their own avatar colour.",
+        "Help rewritten: how the progress bar reads, what happens when a check "
+        "is interrupted, and every page state written down.",
     ]},
     {"on": "2026-07-20", "what": [
         "Accounts, roles and sign-in, and iRadar moved to iradar.net.",

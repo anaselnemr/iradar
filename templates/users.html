@@ -130,16 +130,15 @@
                   {% if u['id'] == me['id'] %}<span class="u-me">you</span>{% endif %}
                   {% if not u['active'] %}<span class="u-tag u-tag-off"
                       title="Cannot sign in. Nothing they wrote is deleted.">suspended</span>{% endif %}
-                  {#- two different facts, and they were sharing one badge:
-                      "never signed in" is last_login being empty, while
-                      must_change_pw only means they are still on the shared
-                      starting password. Somebody can sign in and close the
-                      tab without choosing one, which read as "not signed in
-                      yet" beside the time they signed in. -#}
+                  {#- one badge, not two. It used to fire on must_change_pw
+                      while reading "not signed in yet", which is a different
+                      fact and was shown beside the time they signed in. The
+                      condition is the plain one now; and whether they are
+                      still on the starting password is a second badge that
+                      crowded the row without telling anyone anything the
+                      first one did not imply. -#}
                   {% if not u['last_login'] %}<span class="u-tag"
-                      title="Has never signed in.">never signed in</span>{% endif %}
-                  {% if u['must_change_pw'] %}<span class="u-tag"
-                      title="Still on the shared starting password — they are asked to choose their own, but can close the tab without doing it.">shared password</span>{% endif %}
+                      title="Has never signed in, so is still on the shared starting password.">never signed in</span>{% endif %}
                 </div>
               </div>
             </div>
