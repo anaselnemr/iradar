@@ -782,6 +782,12 @@
   .navdd .panel a span { display: block; font-weight: 400; font-size: 12px;
                          color: var(--muted); margin-top: 1px; }
   .navdd .panel a:hover { background: var(--hover); }
+  /* new enough to say so: a quiet tag, not a colour that shouts */
+  .navbeta { display: inline-block; margin-left: 6px; padding: 1px 7px;
+             border-radius: 999px; font-style: normal; font-size: 9.5px;
+             font-weight: 700; text-transform: uppercase;
+             letter-spacing: .06em; vertical-align: 1px;
+             background: rgba(124, 58, 237, .13); color: #8b5cf6; }
   .acct-sep { font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
               font-weight: 700; color: var(--muted); padding: 10px 10px 4px;
               margin-top: 4px; border-top: 1px solid var(--line); }
@@ -1136,6 +1142,7 @@
         <a href="{{ url_for('history') }}">Run history
           <span>every check and what it found</span></a>
         <a href="{{ url_for('sentiment_page') }}">What people say
+          <em class="navbeta">beta</em>
           <span>mentions of the products across the web</span></a>
       </div>
     </details>
