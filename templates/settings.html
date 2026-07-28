@@ -56,9 +56,8 @@
     </div>
 
     <div class="pane" id="pane-sensitivity">
-      <p class="muted" style="margin-top:0; max-width:62ch">How different a
-        page has to look before it is worth your time. Both are compared
-        against the previous capture of the same page.</p>
+      <p class="muted" style="margin-top:0">How different a page has to look
+        before it is worth your time, against its previous capture.</p>
       <div class="grid2">
         <label>Visual update threshold (% of pixels)
           <input type="text" name="visual_threshold" value="{{ s.visual_threshold }}">
@@ -71,11 +70,10 @@
 
     <div class="pane" id="pane-advanced">
       <h3 style="margin:0 0 10px; font-size:15px">Where your assets live</h3>
-      <p class="muted" style="margin-top:0; max-width:62ch">Paste each
-        system's <b>search page URL</b> to make the DAM and Windchill badges
-        clickable. With <code>{q}</code> in it, the asset name goes straight
-        into the search; without, the click opens the search page and copies
-        the name for you to paste.</p>
+      <p class="muted" style="margin-top:0">Paste each system's <b>search
+        page URL</b> to make its badges clickable. <code>{q}</code> puts the
+        asset name into the search; without it, the name is copied for you to
+        paste.</p>
       <label style="display:block">DAM search URL
         <input type="text" name="dam_search_url" value="{{ s.dam_search_url }}"
                placeholder="e.g. https://dam.infineon.com/search/?q={q}">
@@ -94,21 +92,9 @@
         is greyed out.</p>
 
       <h3 style="margin:26px 0 10px; font-size:15px; padding-top:20px;
-                 border-top:1px solid var(--line)">Lines and images to ignore</h3>
-      <p class="muted" style="margin-top:0; max-width:62ch">Left out of the
-        comparison. For text that rewrites itself with nobody editing the page
-        — a relative date, a result count. One pattern per line.</p>
-      <label style="display:block">Ignore text lines matching these patterns
-        <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
-      </label>
-      <label style="display:block; margin-top:10px">Ignore image URLs matching these patterns
-        <textarea name="ignore_image_patterns" rows="2">{{ s.ignore_image_patterns }}</textarea>
-      </label>
-
-      <h3 style="margin:26px 0 10px; font-size:15px; padding-top:20px;
                  border-top:1px solid var(--line)">Backup</h3>
-      <p class="muted" style="margin-top:0; max-width:62ch">The server's disk is
-        not backed up by anything. This is the copy you keep.</p>
+      <p class="muted" style="margin-top:0">The server's disk is not backed
+        up by anything. This is the copy you keep.</p>
 
       <div class="flagrow"><span>The database</span>
         <span class="muted" style="font-size:13px">
@@ -117,11 +103,11 @@
           <a href="{{ url_for('settings_backup') }}" download>Download a copy →</a>
         </span></div>
 
-      <p class="muted" style="font-size:12.5px; margin-top:12px; max-width:62ch">
-        It holds what cannot be rebuilt: the page list, who owns what, every
-        update anyone has reviewed, every note and every account. Safe to
-        download mid-check. Arrives gzipped. <b>Worth doing after every
-        check</b>, and keep more than one.</p>
+      <p class="muted" style="font-size:12.5px; margin-top:12px">It holds
+        what cannot be rebuilt: the page list, who owns what, every update
+        anyone has reviewed, every note and every account. It is safe to take
+        while a check is running, and it arrives gzipped.
+        <b>Worth doing after every check</b>, and keep more than one.</p>
 
     </div>
 

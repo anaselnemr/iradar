@@ -589,6 +589,16 @@
         opens it next.</li>
     </ul>
 
+    <figure>
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/page.png') }}" alt="One page's own page: breadcrumb, title, ownership and the page library">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/page-dark.png') }}" alt="One page's own page: breadcrumb, title, ownership and the page library">
+      <figcaption>Everything read off this page at the last capture. The ticks
+        are the components found on it, the greyed ones are what pages of its
+        shape usually carry and this one does not.</figcaption>
+    </figure>
+
     <div class="note"><p>A page that is <b>paused</b>, <b>not live</b> or
       <b>blank</b> still has all of this. Nothing is deleted when a page stops
       answering — that is how you can see what it used to carry.</p></div>
@@ -736,17 +746,15 @@
       <li><b>Where your assets live</b> — the DAM and Windchill search
         addresses. Set them and the badges on every document become one-click
         links to the system that owns the file.</li>
-      <li><b>Lines and images to ignore</b> — text that rewrites itself with
-        nobody editing the page, like a relative date or a result count. One
-        pattern per line; anything matching is left out of the comparison.</li>
       <li><b>Backup</b> — a copy of the database, which is the part that
         cannot be rebuilt.</li>
     </ul>
 
     <div class="note warn"><p><b>What you cannot change:</b> the five signals
-      themselves, the double-check, the retry rounds, or how many captures are
-      kept per page beyond the number in Schedule. Those are the parts that
-      decide whether iRadar is right, and they are not knobs.</p></div>
+      themselves, the double-check, the retry rounds, and the list of lines
+      left out of the comparison — the relative dates and result counts that
+      rewrite themselves with nobody editing the page. Those are the parts
+      that decide whether iRadar is right, and they are not knobs.</p></div>
   </section>
 
   <!-- where things live -->
@@ -779,8 +787,16 @@
   <section id="account" class="card">
     <h2><span class="secn">10</span>Your account</h2>
     <p class="lede">Sign in with your Infineon email address.</p>
-    <p>Your name and password are under the avatar, top right. Changing your name
-      also updates it on notes you have already written.</p>
+    <p>Your name and password are under the avatar, top right. Changing your
+      name also updates it on notes you have already written.</p>
+    <figure>
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/account.png') }}" alt="The account menu: name, role, theme, profile and sign out">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/account-dark.png') }}" alt="The account menu: name, role, theme, profile and sign out">
+      <figcaption>The chip beside your name is what you are allowed to do.
+        <b>Manage people</b> and <b>Settings</b> only appear for admins.</figcaption>
+    </figure>
     <ul class="map" style="margin-top:8px">
       <li>Admin<span>Everything — people, settings, the page list, and starting a
         check by hand.</span></li>
