@@ -285,3 +285,50 @@ def test_restoring_survives_a_baseline_with_no_sections_file():
     row = con.execute("SELECT flags FROM urls WHERE id=18").fetchone()
     con.close()
     assert row["flags"] == '{"a":1}', "it overwrote the row with nothing"
+
+
+# --- the bar after a resume -------------------------------------------------
+# It came back reading "0 of 3,273" on a run that had done 163 of 3,436: the
+# state was seeded with zeros and counted only what was LEFT, so a resume
+# looked like a fresh start and every bucket sat empty until the first page.
+
+def _seed_state(pages_total, remaining, saved, changed, errors):
+    """What runner._go writes into RUN_STATE when a run starts."""
+    already = max(0, pages_total - remaining)
+    return {"total": pages_total, "done": already, "done0": already,
+            "saved": saved, "changed": changed, "errors": errors,
+            "phase_total": pages_total, "phase_done": already,
+            "pages_total": pages_total}
+
+
+def test_a_resumed_run_picks_the_bar_up_where_it_left_it():
+    s = _seed_state(pages_total=3436, remaining=3273, saved=163,
+                    changed=0, errors=0)
+    assert s["phase_done"] == 163 and s["phase_total"] == 3436, \
+        f"the bar would read {s['phase_done']} of {s['phase_total']}"
+    no_update = s["saved"] - s["changed"] - s["errors"]
+    waiting = s["pages_total"] - no_update - s["changed"] - s["errors"]
+    assert no_update == 163, no_update
+    assert waiting == 3273, waiting
+
+
+def test_a_fresh_run_still_starts_at_zero():
+    s = _seed_state(pages_total=4188, remaining=4188, saved=0,
+                    changed=0, errors=0)
+    assert s["done"] == 0 and s["phase_done"] == 0 and s["done0"] == 0
+    assert s["phase_total"] == 4188
+
+
+def test_the_eta_rates_only_this_session():
+    # 163 pages carried in, 5 captured since: the rate is 5 per elapsed
+    # second, not 168 - or a resume reads as nearly finished the moment it
+    # starts
+    s = _seed_state(3436, 3273, 163, 0, 0)
+    s["done"] = 168
+    did = s["done"] - s["done0"]
+    assert did == 5, did
+    elapsed = 50.0
+    rate = did / elapsed
+    remaining = max(0, s["total"] - s["done"])
+    eta = int(remaining / rate)
+    assert eta > 30000, f"eta collapsed to {eta}s"

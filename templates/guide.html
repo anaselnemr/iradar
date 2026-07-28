@@ -336,15 +336,19 @@
       <li><b>Start it again and it continues</b> — you do not have to do
         anything special{% if is_admin %}, just press <i>Check all pages</i>{% endif %}.</li>
     </ul>
-    <p style="color:var(--muted); font-size:13.5px">Run history shows a check
-      that has not finished with no end time. That is normal while one is
-      running, and a sign it was interrupted if the time has passed.</p>
+    <p style="color:var(--muted); font-size:13.5px">The Dashboard says so
+      directly: a check left open with nobody working on it shows how far it
+      got and a button to carry on. Run history shows the same thing as a run
+      with no end time.</p>
 
     <h3 style="margin:26px 0 4px; font-size:15px">Page states you will see</h3>
     <p style="margin-top:0; color:var(--muted); font-size:13.5px">These are the
       chips along the top of the Dashboard. Each one is a filter.</p>
     <ul class="lim" style="margin-top:6px">
       <li><b>Unchanged</b> — checked, nothing moved. The normal state.</li>
+      <li><b>Interrupted</b> — not a page state, but worth knowing: if the
+        server restarts mid-check the Dashboard says a check was interrupted
+        and offers to carry on. Every page already done stays done.</li>
       <li><b>Updated</b> — something changed and it is waiting for you.</li>
       <li><b>Blank page</b> — the address answered but there was nothing on it.
         Usually Infineon serving an empty shell; it is retried next check.</li>
@@ -400,6 +404,9 @@
             instead.</span></li>
           <li><b>Timestamps, "3 days ago"</b><span>They change with nobody
             editing anything.</span></li>
+          <li><b>The same words, set differently</b><span>A page is
+            photographed only once its fonts have arrived, so text that wraps
+            at a different word is never mistaken for text that changed.</span></li>
         </ul>
       </div>
     </div>
@@ -519,7 +526,9 @@
       decision outlives the conversation.</p>
     <p>Edit or delete your own whenever, mark one <b>done</b> once it is handled,
       and read everything anyone has written under
-      <a href="{{ url_for('notes_page') }}">Notes</a>.</p>
+      <a href="{{ url_for('notes_page') }}">Notes</a> — which is also where you
+      say something is broken, confusing or missing. There is a box for it at
+      the top of that page.</p>
     <figure>
       <img class="m-light" loading="lazy"
            src="{{ url_for('static', filename='guide/notes.png') }}" alt="The notes box at the bottom of a page">
@@ -550,6 +559,8 @@
       <li>Your avatar
         <span>Top right. Your profile, light or dark mode, sign
           out{% if is_admin %}, and the admin screens{% endif %}.</span></li>
+      <li>Times
+        <span>Everything on screen is your local time, not the server's.</span></li>
     </ul>
   </section>
 
@@ -604,7 +615,10 @@
         <i>Paused</i>, and is simply not checked.</li>
       <li><b>Redirects are followed and merged.</b> If two addresses land on the
         same page it is watched once, not twice, so you do not review the same
-        change twice over.</li>
+        change twice over. Where a page's own address is not the one that
+        answered, the page says so in a <b>Redirects</b> box under its
+        snapshots. A <code>?tab=</code> on the end is not a redirect — that is
+        the same page opening on a tab, often one iRadar clicked itself.</li>
       <li><b>The server's disk is not backed up by anything</b>, so somebody
         has to keep a copy. {% if is_admin %}<a href="{{ url_for('settings_backup') }}">Download
         the database</a> — it holds the page list, the ownership, every update

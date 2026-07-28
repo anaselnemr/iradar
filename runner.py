@@ -669,14 +669,26 @@ def _run_check_inner(kind, url_ids, baseline=False):
             (run_id,)).fetchone()[0] or len(urls)
     except Exception:
         pages_total = len(urls)
+    # A RESUMED RUN IS NOT A NEW RUN. These all started at zero and counted
+    # only what was LEFT, so the bar came back reading "0 of 3,273" on a run
+    # that had already done 163 of 3,436, with every bucket empty until the
+    # first page landed and they all jumped at once. Seeded from what the run
+    # has actually done, a resume picks the bar up where it put it down.
+    #
+    # done0 is the same number kept aside: the ETA divides pages by elapsed
+    # time, so it has to rate only what THIS session captured, or a resume
+    # would look like it had done 163 pages in two seconds.
+    already = max(0, pages_total - len(urls))
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
-                     total=len(urls), done=0, saved=0, changed=0, errors=0,
+                     total=pages_total, done=already, done0=already,
+                     saved=counters["saved"], changed=counters["changed"],
+                     errors=counters["errors"],
                      suspects=len(suspects), started=db.now_iso(),
                      started_ts=time.time(), message="",
                      # the runner is the authority on WHERE the run is - the
                      # page renders these instead of guessing from messages
-                     phase="capture", round=0, phase_total=len(urls),
-                     phase_done=0, held=len(suspects),
+                     phase="capture", round=0, phase_total=pages_total,
+                     phase_done=already, held=len(suspects),
                      pages_total=max(pages_total, len(urls) + len(suspects)))
     if not urls and not suspects:
         RUN_STATE["message"] = "Nothing left to check."

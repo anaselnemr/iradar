@@ -3238,10 +3238,14 @@ def status():
             "SELECT COUNT(*) FROM urls WHERE last_checked >= ?",
             (s["started"],)).fetchone()[0]
         con.close()
-    if s.get("running") and s.get("done", 0) >= 3 and s.get("started_ts"):
+    # rate THIS session only: a resumed run starts with the pages it had
+    # already finished on the clock, and dividing those by two seconds of
+    # elapsed time reads as "done in a moment"
+    did = s.get("done", 0) - s.get("done0", 0)
+    if s.get("running") and did >= 3 and s.get("started_ts"):
         elapsed = _time.time() - s["started_ts"]
         if elapsed > 0:
-            rate = s["done"] / elapsed
+            rate = did / elapsed
             # each parked suspect owes ONE more capture in the verify pass -
             # count that debt now, or the ETA quietly ignores the whole tail
             # and "time doesn't move" once verification starts
