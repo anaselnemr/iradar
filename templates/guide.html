@@ -53,7 +53,7 @@
      the SAME numeral, colour and width as the one in the rail, so a section
      and its contents entry are one label rather than two. */
   .gd h2 { display: flex; align-items: baseline; gap: 12px; }
-  .secn { flex: 0 0 auto; color: var(--accent); font-size: 14.5px;
+  .secn { flex: 0 0 auto; color: var(--accent); font-size: 16px;
           font-weight: 700; letter-spacing: .04em;
           font-variant-numeric: tabular-nums; }
   .toc .n { display: inline-block; width: 26px; font-size: 12.5px;
@@ -75,7 +75,7 @@
      reason a page of prose is tiring rather than long. Text stops at 68ch;
      pictures, tables and the figure strip still use the whole card. */
   .gd p, .gd .lim li, .gd .plist span, .gd figcaption, .gd .note p,
-  .gd .map span, .gd .rel ul li { max-width: 68ch; }
+  .gd .map span, .gd .rel ul li { max-width: 78ch; }
   .gd p { line-height: 1.68; font-size: 14.5px; margin: 0 0 13px; }
   .gd p:last-child { margin-bottom: 0; }
   .gd a { color: var(--link); }
@@ -262,9 +262,8 @@
         <p>Not downloaded as code — genuinely rendered, the way you would see it.
           It scrolls to the bottom so anything that loads late appears, opens
           tabs and accordions, and waits for the images to arrive.</p>
-        <span class="aside">A page that only half-loads is thrown away instead
-          of saved. If it were kept, it would become next week's reference —
-          and then everything missing from it looks like it was deleted.</span></li>
+        <span class="aside">A page that only half-loads is thrown away
+          instead of saved.</span></li>
 
       <li><b>What is on it is written down</b>
         <p>The visible text, every image, the whole library — documents, videos,
@@ -537,11 +536,10 @@
     </figure>
 
     <h3 style="margin:26px 0 4px; font-size:15px">File updates: the other queue</h3>
-    <p style="margin-top:0">A datasheet can be replaced without the page moving
-      at all — same link, same title, new file behind it. Nothing on the page
-      changed, so no page comes up, and reading the site would never tell you.
-      iRadar asks each file for its size and date without downloading it, and
-      when those move it goes to
+    <p style="margin-top:0">A datasheet can be replaced without the page
+      moving at all — same link, same title, new file behind it. iRadar asks
+      each file for its size and date without downloading it, and when those
+      move it goes to
       <a href="{{ url_for('assets_page') }}">File updates</a> instead.</p>
     <ul class="lim" style="margin-top:6px">
       <li><b>Its own queue, its own Accept and Reject</b>, separate from page
@@ -557,10 +555,8 @@
   <!-- one page's own page -->
   <section id="pagepage" class="card">
     <h2><span class="secn">05</span>What a page&rsquo;s own page shows</h2>
-    <p class="lede">Click any row on the Dashboard and you get everything
-      iRadar knows about that one page. It is where you go to answer &ldquo;what
-      is on this, and what has happened to it&rdquo; without opening
-      infineon.com.</p>
+    <p class="lede">Click any row on the Dashboard for everything iRadar
+      knows about that one page.</p>
 
     <ul class="lim">
       <li><b>Where it sits</b> — the breadcrumb, the way Infineon nests it.
@@ -609,10 +605,8 @@
     <h2><span class="secn">06</span>Leaving a note</h2>
     <p class="lede">Every page, document, board and update has a notes box at the
       bottom.</p>
-    <p>It is for the reasoning, not the fact — <i>"checked with marketing, the
-      new subheadline is intentional, leaving it"</i>. Whoever opens that page
-      next reads it without having to ask you, which is the whole point: the
-      decision outlives the conversation.</p>
+    <p>It is for the reasoning, not the fact — <i>"checked with marketing,
+      the new subheadline is intentional, leaving it"</i>.</p>
     <p>Edit or delete your own whenever, mark one <b>done</b> once it is handled,
       and read everything anyone has written under
       <a href="{{ url_for('notes_page') }}">Notes</a> — which is also where you
@@ -660,7 +654,7 @@
            src="{{ url_for('static', filename='guide/export.png') }}" alt="The export builder: rows on the left, columns on the right">
       <img class="m-dark" loading="lazy"
            src="{{ url_for('static', filename='guide/export-dark.png') }}" alt="The export builder: rows on the left, columns on the right">
-      <figcaption>Rows on the left, columns on the right. The number beside every option is how many of the rows you have picked actually have it — a column showing 0 comes out empty.</figcaption>
+      <figcaption>Rows on the left, columns on the right. The number beside an option is how many of your chosen rows have it.</figcaption>
     </figure>
 
     <p style="margin-top:14px"><b>Export everything</b> skips the building: one
@@ -672,10 +666,7 @@
   <section id="settings" class="card">
     <h2><span class="secn">08</span>Settings: what you can change</h2>
     <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings</a>
-      is{% else %}Settings is admin-only, and is{% endif %} four tabs. Everything
-      else about iRadar — the five signals, what it ignores, how the
-      double-check works — is not a setting, on purpose: they are the things
-      that took the longest to get right.</p>
+      is{% else %}Settings is admin-only, and is{% endif %} four tabs.</p>
 
     <h3>Schedule</h3>
     <p>It runs <b>{{ every }} at {{ at_time }}</b> today.</p>
@@ -787,15 +778,14 @@
   <section id="account" class="card">
     <h2><span class="secn">10</span>Your account</h2>
     <p class="lede">Sign in with your Infineon email address.</p>
-    <p>Your name and password are under the avatar, top right. Changing your
-      name also updates it on notes you have already written.</p>
+    <p>Changing your name also updates it on notes you have already
+      written.</p>
     <figure>
       <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/account.png') }}" alt="The account menu: name, role, theme, profile and sign out">
+           src="{{ url_for('static', filename='guide/account.png') }}" alt="My profile: avatar, name, role and password">
       <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/account-dark.png') }}" alt="The account menu: name, role, theme, profile and sign out">
-      <figcaption>The chip beside your name is what you are allowed to do.
-        <b>Manage people</b> and <b>Settings</b> only appear for admins.</figcaption>
+           src="{{ url_for('static', filename='guide/account-dark.png') }}" alt="My profile: avatar, name, role and password">
+      <figcaption><b>My profile</b>, under the avatar, top right.</figcaption>
     </figure>
     <ul class="map" style="margin-top:8px">
       <li>Admin<span>Everything — people, settings, the page list, and starting a
@@ -863,7 +853,7 @@
     <h2><span class="secn">12</span>What it does not do</h2>
     <ul class="lim">
       <li><b>It does not find new pages by itself.</b> iRadar watches the
-        {{ '{:,}'.format(f.pages) }} pages it has been given. If Infineon
+        4,267 pages it has been given. If Infineon
         publishes a new one, somebody has to add it{% if is_admin %} under
         <i>Add pages</i>{% endif %}.</li>
       <li><b>A few finder pages</b> only capture their first page of results.</li>
