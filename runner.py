@@ -603,7 +603,27 @@ def _run_check_inner(kind, url_ids, baseline=False):
             baseline = True
         suspects, requeue = _rebuild_suspects(con, run_id)
         keep_pending = {s["new1_id"] for s in suspects}
-        want = set(requeue) | {r["url_id"] for r in con.execute(
+        # THE RETRY DEBT SURVIVES THE RESTART. A page that fails its first
+        # capture is written as an error immediately and owed two retries at
+        # the end of the run - but the retry queue is a list in memory, so a
+        # restart paid nobody. Those pages sat 'done' in the ledger wearing an
+        # error the run never confirmed. On resume they go back in the queue:
+        # a clean capture heals them, and a page that keeps failing lands in
+        # the fresh transient rounds and earns its error properly. 404s are
+        # 'notlive', not 'error', so nothing gone is re-fetched by this.
+        owed = [r["url_id"] for r in con.execute(
+            "SELECT ri.url_id FROM run_items ri JOIN urls u ON u.id=ri.url_id"
+            " WHERE ri.run_id=? AND ri.state='done'"
+            " AND u.last_status='error' AND u.active=1", (run_id,)).fetchall()]
+        if owed:
+            marks = ",".join("?" * len(owed))
+            con.execute(f"UPDATE run_items SET state='queued'"
+                        f" WHERE run_id=? AND url_id IN ({marks})",
+                        [run_id] + owed)
+            con.commit()
+            print(f"[resume] re-queueing {len(owed)} page(s) whose error was"
+                  " never given its retries", flush=True)
+        want = set(requeue) | set(owed) | {r["url_id"] for r in con.execute(
             "SELECT url_id FROM run_items WHERE run_id=? AND state='queued'",
             (run_id,)).fetchall()}
         urls = []

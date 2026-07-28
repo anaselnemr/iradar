@@ -428,3 +428,55 @@ def test_a_run_with_nothing_left_is_not_resumed():
     got = runner._resumable_run(con)
     con.close()
     assert got is None, "a run with no work left would restart forever"
+
+
+def test_a_restart_does_not_confiscate_a_pages_retries():
+    """A first-try failure is written as an error immediately and owed two
+    retries at the end of the run - but the retry queue was a list in memory,
+    so a restart paid nobody: the page sat 'done' wearing an error the run
+    never confirmed. Six real pages spent a day like that. On resume, a done
+    page still marked error goes back in the queue; a page that settled
+    cleanly stays done, and a 404 ('notlive') is not re-fetched.
+    """
+    import runner as R
+
+    _fresh_db()
+    con = db.connect()
+    for uid, status in ((1, "error"), (2, "unchanged"), (3, "notlive")):
+        con.execute("INSERT INTO urls(id, url, active, ptype, last_status)"
+                    " VALUES(?, ?, 1, 'Part', ?)",
+                    (uid, "https://example.invalid/%d" % uid, status))
+        con.execute("INSERT INTO run_items(run_id, url_id, state)"
+                    " VALUES(1, ?, 'done')", (uid,))
+    # one page genuinely still queued, so the run is resumable
+    con.execute("INSERT INTO urls(id, url, active, ptype)"
+                " VALUES(4, 'https://example.invalid/4', 1, 'Part')")
+    con.execute("INSERT INTO run_items(run_id, url_id, state)"
+                " VALUES(1, 4, 'queued')")
+    con.execute("INSERT INTO runs(id, started, finished, kind, total)"
+                " VALUES(1, '2026-01-01 00:00:00', NULL, 'full', 4)")
+    con.commit()
+    con.close()
+
+    captured = []
+
+    async def _nothing(jobs, *a, **k):     # jobs are (url, snap_dir) pairs
+        captured.extend(u for u, _dir in jobs)
+        return []
+    real = R.capture.capture_all
+    R.capture.capture_all = _nothing
+    try:
+        R.run_check("test")
+    finally:
+        R.capture.capture_all = real
+
+    u = "https://example.invalid/%d"
+    assert u % 1 in captured, "the error page was not re-queued on resume"
+    assert u % 4 in captured, "the genuinely queued page must still run"
+    assert u % 2 not in captured, "a settled page must not be redone"
+    assert u % 3 not in captured, "a 404 is not an error and is not re-fetched"
+    con = db.connect()
+    st = con.execute("SELECT state FROM run_items WHERE run_id=1 AND url_id=1"
+                     ).fetchone()[0]
+    con.close()
+    assert st in ("queued", "done"), st
