@@ -1544,6 +1544,7 @@ def index():
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            secs_per_page=seconds_per_page(),
+                           stranded=_stranded_run(),
                            q=q, page=page, pages=pages, sort=sort,
                            new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
                            notlive_total=notlive_total, comp_pending=comp_pending,
@@ -3248,6 +3249,35 @@ def status():
                          + s.get("suspects", 0))
             s["eta_s"] = int(remaining / rate) if rate > 0 else None
     return jsonify(s)
+
+
+def _stranded_run():
+    """A run that is open in the database with nobody working on it.
+
+    RUN_STATE lives in memory, so a restart - a redeploy, a crash, the machine
+    sleeping - loses it while the run row and its per-page state survive. The
+    dashboard then showed nothing at all: the progress bar simply vanished
+    mid-run and there was no way to tell "finished" from "the server went
+    away". Nothing is lost either way; it just has to be started again.
+    """
+    if runner.RUN_STATE.get("running"):
+        return None
+    con = db.connect()
+    try:
+        r = runner._resumable_run(con)
+        if not r:
+            return None
+        left = con.execute(
+            "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
+            (r["id"],)).fetchone()[0]
+        total = con.execute("SELECT COUNT(*) FROM run_items WHERE run_id=?",
+                            (r["id"],)).fetchone()[0]
+        return {"id": r["id"], "started": r["started"],
+                "left": left, "total": total, "done": total - left}
+    except Exception:
+        return None
+    finally:
+        con.close()
 
 
 @app.route("/settings/backup.db")
@@ -6566,16 +6596,17 @@ def guide_page():
 # here, because it changes what lands in somebody's queue on Monday.
 WHATS_NEW = [
     {"on": "2026-07-28", "what": [
+        "Pages were photographed before their fonts arrived, so the same page "
+        "wrapped its text differently between two checks and came up as "
+        "changed when nothing had. That was most of the double-checking.",
+        "552 pages claimed to redirect. Two of them do — the rest were the "
+        "capture's own tab-clicking putting ?ftab=04 on the address.",
         "Updates could name things that were not in either capture — one read "
-        "“Products table filled” about a page that had one all along. "
-        "Fixed at both ends, so it cannot restate itself.",
-        "Times were shown in UTC. A sign-in at 10:02 read as 08:02. Everything "
-        "on screen is now in local time.",
+        "“Products table filled” about a page that had one all along.",
+        "Times were shown in UTC. A sign-in at 10:02 read as 08:02. "
+        "Everything on screen is now in local time.",
         "Bugs and suggestions moved to Notes, which has a box of its own at "
-        "the top and reads as a conversation rather than a table.",
-        "The Dashboard table fills the screen and its columns stop shifting "
-        "when a filter brings in a longer badge.",
-        "Admins can download a copy of the database under Settings → Backup.",
+        "the top. Admins can download a copy of the database under Settings.",
     ]},
     {"on": "2026-07-27", "what": [
         "Dark mode reworked: it was pure black, which made every card look "

@@ -10,11 +10,13 @@
     what is deliberately ignored - sit side by side where the contrast does the
     explaining. -#}
 <style>
-  .gd { max-width: 1140px; margin: 0 auto; display: grid;
-        grid-template-columns: 208px minmax(0, 1fr); gap: 28px;
+  .gd { max-width: 1080px; margin: 0 auto; display: grid;
+        grid-template-columns: 200px minmax(0, 1fr); gap: 30px;
         align-items: start; }
-  .gdmain { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .gd .card { padding: 26px 28px; }
+  /* 22px between cards, not 16: the sections are separate subjects and the gap
+     is the only thing saying so once you are inside one */
+  .gdmain { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  .gd .card { padding: 28px 30px; }
   .gdmain > section[id] { scroll-margin-top: 16px; }
 
   /* contents: help is jumped into, not read start to finish */
@@ -42,9 +44,24 @@
     .toc a.on { border-color: var(--accent); }
     .gdmain > section[id] { scroll-margin-top: 10px; }
   }
-  .gd h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.25px; }
-  .gd h2 + .lede { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
-  .gd p { line-height: 1.62; font-size: 14.5px; }
+  /* A HEADING NEEDS AIR ABOVE IT. Every h3 in here used to sit as close to
+     the paragraph before it as to its own, so a section read as one grey
+     block and the eye had nothing to rest on. */
+  .gd h2 { margin: 0 0 5px; font-size: 20px; letter-spacing: -.25px; }
+  .gd h2 + .lede { margin: 0 0 22px; color: var(--muted); font-size: 14px;
+                   max-width: 66ch; line-height: 1.55; }
+  .gd h3 { margin: 30px 0 8px; font-size: 15px; letter-spacing: -.1px;
+           padding-top: 22px; border-top: 1px solid var(--line); }
+  .gd h3:first-of-type { border-top: 0; padding-top: 0; margin-top: 22px; }
+
+  /* THE MEASURE. The column is 850px wide, which at this size is about 95
+     characters a line - half again what is comfortable to read, and the
+     reason a page of prose is tiring rather than long. Text stops at 68ch;
+     pictures, tables and the figure strip still use the whole card. */
+  .gd p, .gd .lim li, .gd .plist span, .gd figcaption, .gd .note p,
+  .gd .map span, .gd .rel ul li { max-width: 68ch; }
+  .gd p { line-height: 1.68; font-size: 14.5px; margin: 0 0 13px; }
+  .gd p:last-child { margin-bottom: 0; }
   .gd a { color: var(--link); }
 
   /* The opening card is now the four figures and nothing else. NOT .hero:
