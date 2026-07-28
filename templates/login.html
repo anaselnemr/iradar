@@ -34,7 +34,12 @@
          font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
          background: var(--bg); color: var(--ink); font-size: 15px; }
   .box { width: 100%; max-width: 372px; }
-  .brand { display: flex; align-items: center; justify-content: center;
+  {#- the wordmark takes the accent, not the page's body ink: beside a tile
+      whose letters are white, a near-black "i" read as two different things
+      stuck together. Accent for the i and violet for "Radar" is the mark's
+      own gradient, in the same order. -#}
+  .brand { color: var(--accent);
+           display: flex; align-items: center; justify-content: center;
            gap: 11px; font-size: 21px; font-weight: 700;
            letter-spacing: -.3px; margin-bottom: 6px; }
   .brand img { width: 40px; height: 40px; border-radius: 11px; display: block; }

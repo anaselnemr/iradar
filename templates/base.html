@@ -103,8 +103,11 @@
   main { max-width: 1200px; margin: 24px auto; padding: 0 20px 60px; }
   /* 1200 is a reading width and right for most pages. The Dashboard is a wide
      data table and was leaving 300px of a 1500px screen unused while its Page
-     column truncated every address. It opts out. */
-  main.wide { max-width: 1560px; }
+     column truncated every address, so it opts out.
+     No second fixed width: it fills whatever screen it is on. The 2100 is
+     only a backstop so a very wide monitor does not stretch one column across
+     a metre of glass. */
+  main.wide { max-width: 2100px; }
   .card { background: var(--card); border: 1px solid var(--line);
           border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
           box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
