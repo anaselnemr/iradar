@@ -19,9 +19,8 @@
 
   <form method="post">
     <div class="pane on" id="pane-schedule">
-      <p class="muted">Next automatic check: <b>{{ next_run }}</b>. The app must be
-        running (START.bat window open) for scheduled checks to fire. You can always
-        use "Run check now" on the dashboard.</p>
+      <p class="muted">Next automatic check: <b>{{ next_run }}</b>. You can
+        start one yourself any time from the dashboard.</p>
       <label>Check frequency
         <select name="frequency">
           <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
@@ -41,23 +40,16 @@
       </div>
       <label style="display:block; margin-top:16px">Parallel browser tabs
         <span class="muted" style="font-weight:400">— 8 is the tested value.
-          Raising it is faster and <b>quietly captures less</b>: at 16 tabs the
-          same pages came back missing items on 6 of 14, with no error raised,
-          because a contended page misses its load deadline and gets read
-          half-finished. Two passes at 8 are identical.</span>
+          Higher is faster, but pages start coming back half-read and nothing
+          says so.</span>
         <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
       </label>
 
       <label style="display:block; margin-top:16px">Captures kept per page
-        <span class="muted" style="font-weight:400">— every check stores a full
-          copy of each page, and the screenshot is most of it. This is the
-          number that stops the archive growing forever (it hit 25 GB in two
-          weeks before there was one). A capture is about <b>267 KB</b>, so
-          across 4,188 pages <b>2 settles near 2.7 GB</b> and 3 near 3.8 GB.
-          Nothing is lost at 2: a diff needs this capture and the one before
-          it. Older copies are deleted after each check, and a page's newest
-          capture, anything an open update needs, and anything mid-check are
-          always kept.</span>
+        <span class="muted" style="font-weight:400">— older copies are
+          deleted after each check. A comparison only needs this capture and
+          the one before it, so 2 loses nothing and holds the disk near
+          2.7 GB.</span>
         <input type="number" name="keep_snapshots" min="1" max="20"
                value="{{ s.keep_snapshots }}">
       </label>
@@ -79,13 +71,11 @@
 
     <div class="pane" id="pane-advanced">
       <h3 style="margin:0 0 10px; font-size:15px">Where your assets live</h3>
-      <p class="muted" style="margin-top:0; max-width:62ch">Where your assets
-        live. Paste each system's <b>search page URL</b> and the DAM/Windchill
-        badges become one-click links. Two modes: with <code>{q}</code> in the
-        URL, the asset name is injected straight into the search. Without
-        <code>{q}</code> (Infineon's DAM keeps queries out of its URL), the
-        click opens the search page <b>and copies the asset name</b> — paste,
-        Enter, done.</p>
+      <p class="muted" style="margin-top:0; max-width:62ch">Paste each
+        system's <b>search page URL</b> to make the DAM and Windchill badges
+        clickable. With <code>{q}</code> in it, the asset name goes straight
+        into the search; without, the click opens the search page and copies
+        the name for you to paste.</p>
       <label style="display:block">DAM search URL
         <input type="text" name="dam_search_url" value="{{ s.dam_search_url }}"
                placeholder="e.g. https://dam.infineon.com/search/?q={q}">
@@ -99,19 +89,15 @@
                placeholder="https://author.infineon.com/editor.html/content/ifx/language-masters/en{path}.html">
       </label>
       <p class="muted" style="font-size:12.5px; margin-top:12px">
-        The AEM badge on every tracked page opens the author editor:
-        <code>{path}</code> is replaced by the page's public path
-        (…/content/ifx/language-masters/en<b>/products/…</b>.html). Part and evaluation-board pages are generated, not authored, so their badge is grayed out. Name extraction for
-        assets: videos use the URL's last segment; images the part before the
-        first dot; gated documents drop the trailing _id and language; public
-        documents drop the extension and language.</p>
+        The AEM badge on a page opens it in the author editor. Part and
+        evaluation-board pages are generated rather than authored, so theirs
+        is greyed out.</p>
 
       <h3 style="margin:26px 0 10px; font-size:15px; padding-top:20px;
                  border-top:1px solid var(--line)">Lines and images to ignore</h3>
-      <p class="muted" style="margin-top:0; max-width:62ch">Anything matching
-        these is left out of the comparison. Use it for text that rewrites
-        itself with nobody editing the page — a relative date, a result count.
-        One pattern per line.</p>
+      <p class="muted" style="margin-top:0; max-width:62ch">Left out of the
+        comparison. For text that rewrites itself with nobody editing the page
+        — a relative date, a result count. One pattern per line.</p>
       <label style="display:block">Ignore text lines matching these patterns
         <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
       </label>
@@ -132,18 +118,10 @@
         </span></div>
 
       <p class="muted" style="font-size:12.5px; margin-top:12px; max-width:62ch">
-        It holds the part that cannot be rebuilt: the page list, who owns what,
-        every update anyone has reviewed, every note and every account. The
-        screenshots beside it are four-fifths of the disk and none of the loss —
-        lose those and the next check simply re-baselines.</p>
-      <p class="muted" style="font-size:12.5px; max-width:62ch">
-        Taken with SQLite's own backup, so it is safe to download while a check
-        is running — a plain file copy taken mid-write opens fine and is wrong
-        in places. It arrives gzipped; <code>gunzip</code> it to get
-        <code>watch.db</code> back.</p>
-      <p class="muted" style="font-size:12.5px; max-width:62ch">
-        <b>Worth doing after every check</b>, or at least before anyone edits
-        the page list. Keep more than one.</p>
+        It holds what cannot be rebuilt: the page list, who owns what, every
+        update anyone has reviewed, every note and every account. Safe to
+        download mid-check. Arrives gzipped. <b>Worth doing after every
+        check</b>, and keep more than one.</p>
 
     </div>
 
@@ -158,9 +136,8 @@
     not care that this one lives out here. -#}
 <div class="pane matrixpane" id="pane-components">
   <p class="muted" style="max-width:70ch; margin:0 auto 16px">Which components
-    each page shape is expected to carry. The number in a cell is how many
-    captured pages of that shape actually have it — <b>0</b> means it has never
-    been seen there. Tick what <i>should</i> be there, then Save.
+    each page shape should carry. The number in a cell is how many captured
+    pages of that shape have it. Tick what <i>should</i> be there, then Save.
     <a href="{{ url_for('settings_components') }}">Open it on its own page →</a></p>
   {% include "_matrix.html" %}
 </div>

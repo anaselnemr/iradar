@@ -3988,10 +3988,10 @@ def settings_components():
                         removed.append(f"{lbl} ({t})")
             db.set_setting("component_matrix",
                            json.dumps({t: sorted(v) for t, v in matrix.items()}))
-            flash(("Pruned " + str(len(removed)) + " never-seen pairing(s): "
+            flash(("Unticked " + str(len(removed)) + " never-seen pairing(s): "
                    + ", ".join(removed[:12])
                    + ("…" if len(removed) > 12 else "")) if removed
-                  else "Nothing to prune — every expected component appears somewhere.")
+                  else "Nothing to untick — every expected component appears somewhere.")
             return redirect(url_for("settings_components"))
         # default: save the whole grid as drawn
         matrix = {}

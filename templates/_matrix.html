@@ -17,14 +17,14 @@
 {% if state.running %}
 <div class="card" style="padding:10px 14px; border-left:3px solid #f59e0b">
   A capture run is in progress ({{ state.done }}/{{ state.total }}) — counts
-  below grow as it goes. Best to <b>Prune</b> only after it finishes
-  ({{ pending }} page{{ 's' if pending != 1 }} still pending component detection).
+  below grow as it goes. Wait for it to finish before clearing anything
+  ({{ pending }} page{{ 's' if pending != 1 }} still to be read).
 </div>
 {% elif pending %}
 <div class="card" style="padding:10px 14px; border-left:3px solid #f59e0b">
-  {{ pending }} page{{ 's' if pending != 1 }} have not been through component
-  detection yet — resume the run from the dashboard before pruning, or 0-counts
-  may just mean “not captured yet”.
+  {{ pending }} page{{ 's' if pending != 1 }} have not been read for
+  components yet — finish the run from the dashboard first, or a 0 may just
+  mean “not captured yet”.
 </div>
 {% endif %}
 
@@ -73,10 +73,11 @@
 
 <div style="display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap">
   <button name="action" value="save">Save matrix</button>
+  {#- the POST value stays "prune" - it is the backend's key, not a word
+      anyone reads. The label says what the button does to the grid. -#}
   <button name="action" value="prune" class="btn btn-ghost"
-          onclick="return confirm('Remove every component that appears on ZERO pages of a type? Your manual ticks for those pairings are removed too (you can re-tick).')">
-    Prune never-seen</button>
-  <span class="muted" style="font-size:12.5px">Prune = untick every pairing whose count is 0.</span>
+          onclick="return confirm('Untick every component that appears on ZERO pages of a shape? Ones you ticked by hand go too, and can be re-ticked.')">
+    Untick never-seen</button>
   <button type="button" class="btn btn-ghost" id="emptytoggle"
           onclick="document.querySelector('.cmatrix').classList.toggle('showempty');
                    this.textContent = document.querySelector('.cmatrix').classList.contains('showempty')

@@ -47,17 +47,20 @@
   /* A HEADING NEEDS AIR ABOVE IT. Every h3 in here used to sit as close to
      the paragraph before it as to its own, so a section read as one grey
      block and the eye had nothing to rest on. */
-  /* a number on the heading and the same number in the rail: the two are one
-     label, so "where am I" is answered without reading either in full */
-  .secn { display: inline-grid; place-items: center; width: 24px; height: 24px;
-          margin-right: 10px; border-radius: 7px; font-size: 12px;
-          font-weight: 700; vertical-align: 2px;
-          background: var(--hover); color: var(--muted);
+  /* An index mark, not a chapter plate. The grey chip it replaces was a
+     second grey box beside a grey heading, which read as decoration; a small
+     accent numeral in its own column reads as a reference number - and it is
+     the SAME numeral, colour and width as the one in the rail, so a section
+     and its contents entry are one label rather than two. */
+  .gd h2 { display: flex; align-items: baseline; gap: 12px; }
+  .secn { flex: 0 0 auto; color: var(--accent); font-size: 12.5px;
+          font-weight: 700; letter-spacing: .06em;
           font-variant-numeric: tabular-nums; }
-  .gd h2 { display: flex; align-items: center; }
-  .toc .n { display: inline-block; width: 18px; color: var(--muted);
-            font-variant-numeric: tabular-nums; font-weight: 600; }
-  .toc a.on .n { color: var(--accent); }
+  .toc .n { display: inline-block; width: 25px; font-size: 12px;
+            color: var(--muted); opacity: .75;
+            font-variant-numeric: tabular-nums; font-weight: 700;
+            letter-spacing: .06em; }
+  .toc a.on .n { color: var(--accent); opacity: 1; }
   /* the sections are separate subjects - say so with a real gap and a rule */
   .gdmain > section[id] + section[id] { position: relative; }
   .gd h2 { margin: 0 0 5px; font-size: 20px; letter-spacing: -.25px; }
@@ -205,20 +208,19 @@
   <nav class="toc" aria-label="On this page">
     <h4>On this page</h4>
     <ol>
-      <li><a href="#overview"><span class="n">1</span>Where things stand</a></li>
-      <li><a href="#check"><span class="n">2</span>What happens on a check</a></li>
-      <li><a href="#signals"><span class="n">3</span>What it notices</a></li>
-      <li><a href="#review"><span class="n">4</span>Reviewing an update</a></li>
-      <li><a href="#content"><span class="n">5</span>Content &amp; file updates</a></li>
-      <li><a href="#pagepage"><span class="n">6</span>A page&rsquo;s own page</a></li>
-      <li><a href="#writing-notes"><span class="n">7</span>Leaving a note</a></li>
-      <li><a href="#export"><span class="n">8</span>Export</a></li>
-      <li><a href="#settings"><span class="n">9</span>Settings</a></li>
-      <li><a href="#where"><span class="n">10</span>Where things are</a></li>
-      <li><a href="#account"><span class="n">11</span>Your account</a></li>
-      <li><a href="#know"><span class="n">12</span>Worth knowing</a></li>
-      <li><a href="#limits"><span class="n">13</span>What it does not do</a></li>
-      <li><a href="#whatsnew"><span class="n">14</span>What&rsquo;s new</a></li>
+      <li><a href="#check"><span class="n">01</span>What happens on a check</a></li>
+      <li><a href="#signals"><span class="n">02</span>What it notices</a></li>
+      <li><a href="#review"><span class="n">03</span>Reviewing an update</a></li>
+      <li><a href="#content"><span class="n">04</span>Content &amp; file updates</a></li>
+      <li><a href="#pagepage"><span class="n">05</span>A page&rsquo;s own page</a></li>
+      <li><a href="#writing-notes"><span class="n">06</span>Leaving a note</a></li>
+      <li><a href="#export"><span class="n">07</span>Export</a></li>
+      <li><a href="#settings"><span class="n">08</span>Settings</a></li>
+      <li><a href="#where"><span class="n">09</span>Where things are</a></li>
+      <li><a href="#account"><span class="n">10</span>Your account</a></li>
+      <li><a href="#know"><span class="n">11</span>Worth knowing</a></li>
+      <li><a href="#limits"><span class="n">12</span>What it does not do</a></li>
+      <li><a href="#whatsnew"><span class="n">13</span>What&rsquo;s new</a></li>
     </ol>
   </nav>
 
@@ -250,7 +252,7 @@
 
   <!-- the run -->
   <section id="check" class="card">
-    <h2><span class="secn">2</span><span class="secn">1</span>What happens on a check</h2>
+    <h2><span class="secn">01</span>What happens on a check</h2>
     {#- NOT |capitalize: it lowercases the rest, so "every Monday" comes out
         "Every monday". Starting the sentence with a word of our own instead. -#}
     <p class="lede">Runs {{ every }} at {{ at_time }}, on its own — nobody starts
@@ -379,7 +381,7 @@
 
   <!-- the distinction people get wrong -->
   <section id="signals" class="card">
-    <h2><span class="secn">3</span>What it notices, and what it lets pass</h2>
+    <h2><span class="secn">02</span>What it notices, and what it lets pass</h2>
     <p class="lede">The right-hand column is why something you expected did not
       come up. Each one caused a flood of false alarms before it was handled.</p>
     <div class="pair">
@@ -426,7 +428,7 @@
 
   <!-- reviewing -->
   <section id="review" class="card">
-    <h2><span class="secn">4</span>Reviewing an update</h2>
+    <h2><span class="secn">03</span>Reviewing an update</h2>
     <p class="lede">Open one from the Dashboard. You see exactly what moved —
       the wording before and after, which documents came and went, and the two
       screenshots with the changed areas boxed.</p>
@@ -480,7 +482,7 @@
 
   <!-- the content library -->
   <section id="content" class="card">
-    <h2><span class="secn">5</span>Content: every document, and where it is used</h2>
+    <h2><span class="secn">04</span>Content: every document, and where it is used</h2>
     <p class="lede">Every check reads the whole library off each page — so
       <a href="{{ url_for('search_items') }}">Content</a> is not a separate list
       somebody maintains, it is what the site actually says today.</p>
@@ -554,7 +556,7 @@
 
   <!-- one page's own page -->
   <section id="pagepage" class="card">
-    <h2><span class="secn">6</span>What a page&rsquo;s own page shows</h2>
+    <h2><span class="secn">05</span>What a page&rsquo;s own page shows</h2>
     <p class="lede">Click any row on the Dashboard and you get everything
       iRadar knows about that one page. It is where you go to answer &ldquo;what
       is on this, and what has happened to it&rdquo; without opening
@@ -594,7 +596,7 @@
 
   <!-- notes -->
   <section id="writing-notes" class="card">
-    <h2><span class="secn">7</span>Leaving a note</h2>
+    <h2><span class="secn">06</span>Leaving a note</h2>
     <p class="lede">Every page, document, board and update has a notes box at the
       bottom.</p>
     <p>It is for the reasoning, not the fact — <i>"checked with marketing, the
@@ -617,7 +619,7 @@
 
   <!-- getting it out as a spreadsheet -->
   <section id="export" class="card">
-    <h2><span class="secn">8</span>Export: getting it out as a spreadsheet</h2>
+    <h2><span class="secn">07</span>Export: getting it out as a spreadsheet</h2>
     <p class="lede">Anything on screen can leave as a workbook. You pick the
       rows and you pick the columns; the numbers beside every option tell you
       how much you would get before you ask for it.</p>
@@ -658,7 +660,7 @@
 
   <!-- what an admin can change -->
   <section id="settings" class="card">
-    <h2><span class="secn">9</span>Settings: what you can change</h2>
+    <h2><span class="secn">08</span>Settings: what you can change</h2>
     <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings</a>
       is{% else %}Settings is admin-only, and is{% endif %} four tabs. Everything
       else about iRadar — the five signals, what it ignores, how the
@@ -721,9 +723,9 @@
     <ul class="lim" style="margin-top:6px">
       <li><b>Until you save, nothing is expected.</b> The grid opens showing
         what the captured data says today, as a starting point.</li>
-      <li><b>Prune</b> clears components that appear on zero pages of a type —
-        tidying, not a decision. Do it after a check finishes, not during one,
-        or you will prune against half-collected counts.</li>
+      <li><b>Untick never-seen</b> clears components that appear on zero
+        pages of a type — tidying, not a decision. Do it after a check
+        finishes, not during one, or the counts are half-collected.</li>
       <li><b>Pages with no level yet</b> can be given one automatically from
         their siblings, their depth in the hierarchy and which components they
         carry. Every page's level stays editable on its own page.</li>
@@ -749,7 +751,7 @@
 
   <!-- where things live -->
   <section id="where" class="card">
-    <h2><span class="secn">10</span>Where things are</h2>
+    <h2><span class="secn">09</span>Where things are</h2>
     <ul class="map">
       <li><a href="{{ url_for('index') }}">Dashboard</a>
         <span>Every tracked page, its state, and your review queue. Filter by
@@ -775,7 +777,7 @@
 
   <!-- account -->
   <section id="account" class="card">
-    <h2><span class="secn">11</span>Your account</h2>
+    <h2><span class="secn">10</span>Your account</h2>
     <p class="lede">Sign in with your Infineon email address.</p>
     <p>Your name and password are under the avatar, top right. Changing your name
       also updates it on notes you have already written.</p>
@@ -794,7 +796,7 @@
 
   <!-- the rest of it -->
   <section id="know" class="card">
-    <h2><span class="secn">12</span>Worth knowing</h2>
+    <h2><span class="secn">11</span>Worth knowing</h2>
     <p class="lede">The things people ask about in the second week.</p>
     <ul class="lim">
       <li><b>Only the last {{ s.keep_snapshots }} captures of a page are kept.</b>
@@ -842,7 +844,7 @@
 
   <!-- honest limits -->
   <section id="limits" class="card">
-    <h2><span class="secn">13</span>What it does not do</h2>
+    <h2><span class="secn">12</span>What it does not do</h2>
     <ul class="lim">
       <li><b>It does not find new pages by itself.</b> iRadar watches the
         {{ '{:,}'.format(f.pages) }} pages it has been given. If Infineon
@@ -862,7 +864,7 @@
 
   <!-- what changed lately -->
   <section id="whatsnew" class="card">
-    <h2><span class="secn">14</span>What&rsquo;s new</h2>
+    <h2><span class="secn">13</span>What&rsquo;s new</h2>
     <p class="lede">Changes to iRadar itself &mdash; not to the website it
       watches.</p>
     <ol class="rel">
