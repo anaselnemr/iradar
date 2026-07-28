@@ -6,9 +6,9 @@ Confluence Cloud accepts Markdown on paste (`/markdown` if it does not convert
 automatically). Images do not come across with the text — drag each file from
 `confluence/images/` into the spot marked `[IMAGE: …]`, then delete the marker.
 
-The same content lives inside the app at **https://iradar.net/guide**, where the
-numbers update themselves. This copy will drift; link to the live one where you
-can.
+The same content lives inside the app at **https://iradar.net/guide**, where
+every number is read live. This copy is a snapshot and will drift; link to the
+live one where you can.
 
 ---
 
@@ -21,8 +21,24 @@ actually changed since last time — wording, documents, images, videos, boards
 and prices.
 
 It exists because the alternative is opening a page and trying to remember what
-it said last month. At the time of writing it watches **4,188 pages** and
-**199,812 individual items** across them.
+it said last month. At the time of writing it watches **4,267 pages** and
+**202,378 individual items** across them, including **6,550 distinct documents**.
+
+## Contents
+
+1. [Getting in](#getting-in)
+2. [What happens on a check](#what-happens-on-a-check)
+3. [What it notices, and what it lets pass](#what-it-notices-and-what-it-lets-pass)
+4. [Reviewing an update](#reviewing-an-update)
+5. [Content, and file updates](#content-every-document-and-where-it-is-used)
+6. [Leaving a note](#leaving-a-note)
+7. [Export](#export-getting-it-out-as-a-spreadsheet)
+8. [The component matrix](#which-components-a-page-type-should-have)
+9. [Changing the schedule](#changing-when-it-runs)
+10. [Where things are](#where-things-are)
+11. [Accounts and roles](#accounts-and-roles)
+12. [Worth knowing](#worth-knowing)
+13. [What it does not do](#what-it-does-not-do)
 
 ---
 
@@ -35,7 +51,8 @@ Sign in with your Infineon email address. Your starting password is
 > `harbour-cactus-lantern-42`. Long beats complicated, and it is far stronger
 > than something like `P@ssw0rd!`.
 
-Your display name and password are under your avatar, top right.
+Your display name and password are under your avatar, top right. Everything on
+screen is in **your local time**, not the server's.
 
 [IMAGE: 01-sign-in.png]
 
@@ -49,7 +66,7 @@ hours and is finished long before Monday morning.
 **1. Every page is opened in a real browser.**
 Not downloaded as code — genuinely rendered, the way you would see it. It
 scrolls to the bottom so anything that loads late appears, opens tabs and
-accordions, and waits for the images to arrive.
+accordions, waits for the images to arrive, and waits for the page's fonts.
 
 *A page that only half-loads is thrown away instead of saved. If it were kept it
 would become next week's reference, and then everything missing from it looks
@@ -111,10 +128,8 @@ starting the whole thing again.
   never kept, so an interruption cannot leave a corrupted reference behind.
 - **Updates already found are still in your queue.** Nothing waiting for review
   is lost.
-- **Start it again and it continues.** Nothing special to do.
-
-Run history shows a check that has not finished with no end time. That is normal
-while one is running, and a sign it was interrupted if the time has passed.
+- **The Dashboard says so** — a check left open with nobody working on it shows
+  how far it got and offers a button to carry on.
 
 ### Page states you will see
 
@@ -145,6 +160,7 @@ caused a flood of false alarms before it was handled.
 | **Images** — a picture appears on or disappears from the page. | **Latest news and the mega-menu** — identical on every page. One retired thumbnail once raised 585 pages at once. |
 | **Screenshot** — more than 1.5% of pixels differ, or the page height moves more than 80px. | **Tabs loading differently** — two visits can land on different tabs. Their contents are tracked item by item instead. |
 | **File updates** — a file republished at the same address. The page is identical; the datasheet behind it is new. | **Timestamps and "3 days ago"** — they change with nobody editing anything. |
+| | **The same words, set differently** — a page is photographed only once its fonts have arrived, so text that wraps at a different word is never mistaken for text that changed. |
 
 *Thresholds are the live values as of writing; an admin can change them under
 Settings, and the in-app Help page always shows the current ones.*
@@ -164,7 +180,7 @@ Then one of two buttons:
 | | What it does | Use it when |
 |---|---|---|
 | **Accept** | Confirms this is the page now. It becomes the reference the next check compares against. | The change is real — whether it matters or not. |
-| **Reject** | Says "do not use *this capture* as the reference". The previous version stays. | The capture is wrong — something did not load. |
+| **Reject** | Says "do not use *this capture* as the reference". The previous version stays. | The capture is wrong, or the change is going to be undone. |
 
 ### Two reasons to reject
 
@@ -205,7 +221,6 @@ and you get the answer to the question that is otherwise a morning's work:
   system
 
 The same is true of videos, images, boards, design resources and partner logos.
-Anything the page lists, iRadar lists — grouped by what it is.
 
 > **This is what makes a removal visible.** When a datasheet disappears from a
 > page, iRadar knows because it compares the whole library, not just the words.
@@ -228,6 +243,8 @@ instead.
   old reading, for when the server is reporting nonsense rather than the file
   genuinely changing.
 
+[IMAGE: 06-content.png]
+
 ---
 
 ## Leaving a note
@@ -241,7 +258,82 @@ without having to ask you. The decision outlives the conversation.
 Edit or delete your own whenever, mark one **done** once it is handled, and read
 everything anyone has written under **Notes**.
 
+**Something broken, confusing or missing?** There is a box at the top of the
+**Notes** page for exactly that. It lands in the same feed as everything else,
+so it gets read — rather than sitting in somebody's inbox.
+
 [IMAGE: 05-notes.png]
+
+---
+
+## Export: getting it out as a spreadsheet
+
+Anything on screen can leave as a workbook. You pick the rows and you pick the
+columns; the numbers beside every option tell you how much you would get before
+you ask for it.
+
+**Two shapes, and which you want depends on the question.**
+
+| | One row per | Use it for |
+|---|---|---|
+| **A row per page** | each tracked page | "every product page missing datasheets", or handing a business line its own list |
+| **A row per document, video, board…** | each item, with where it is used | "which datasheets are on the most pages", or finding the ones on none |
+
+- **Rows are what to include.** Tick the page types you want; ticking a family
+  ticks everything under it. Nothing ticked means everything.
+- **Columns are what to say about each one.** The count beside each column is how
+  many of the rows you picked actually have it, so a column showing 0 will come
+  out empty and you can leave it off.
+
+> **The counts move as you tick.** They are not a fixed list — they recount
+> against the rows you have chosen, so you can see the shape of the answer
+> before you download it.
+
+**Export everything** skips the building: one workbook with every page and all of
+its content, then a sheet per kind of content with its own pages beside it.
+
+---
+
+## Which components a page type should have
+
+A grid of page types against components, under **Settings → Components**
+(admin only). It is what makes "this page is missing something" a question
+iRadar can answer.
+
+Every cell holds a number: **how many captured pages of that type actually carry
+that component**. So a **0** means it has never been seen there, and a large
+number means it is normal for that type.
+
+**You tick what SHOULD be there.** The numbers describe what is; the ticks say
+what is expected. Once saved, a page can be read against its type — a product
+page with no documents section stands out because its type says it should have
+one.
+
+- **Until you save, nothing is expected.** The grid opens showing what the
+  captured data says today, as a starting point.
+- **Prune** clears components that appear on zero pages of a type — tidying, not
+  a decision. Do it after a check finishes, not during one, or you will prune
+  against half-collected counts.
+- **Pages with no level yet** can be given one automatically from their siblings,
+  their depth in the hierarchy and which components they carry. Every page's
+  level stays editable on its own page.
+
+---
+
+## Changing when it runs
+
+**Settings → Schedule** (admin only). It runs **every Monday at 23:00** today.
+
+| Setting | What it means |
+|---|---|
+| **How often** | Every day, every two days, or weekly. Weekly is the normal choice: Infineon does not republish a page most days, and a daily check mostly re-reads pages that have not moved. |
+| **Which day** | For a weekly check. |
+| **What hour** | 0 to 23, **in your time**, not the server's. A check takes several hours, so an evening start finishes overnight and the queue is waiting when people arrive. |
+| **Parallel browser tabs** | How many pages are opened at once. Higher is faster and heavier; too high and Infineon starts refusing us, which shows up as capture errors rather than as speed. Currently 8. |
+
+> Changing the schedule does not touch a check already running, and never loses
+> one: the next run starts at the new time. To run it now instead, use
+> **Check all pages**.
 
 ---
 
@@ -251,12 +343,10 @@ everything anyone has written under **Notes**.
 |---|---|
 | **Dashboard** | Every tracked page, its state, and your review queue. Filter by type, status, or by what content a page has. |
 | **Content** | Every document, video, image and board across all pages, and which pages each appears on. Answers *"where is this datasheet used?"* |
-| **Notes** | Everything anyone has written, newest first. |
+| **Notes** | Everything anyone has written, newest first — and the box for telling us something is broken, confusing or missing. |
 | **Reports** | Hierarchy (the site as a tree), Export (any of it as a spreadsheet), Run history (every check and what it found). |
 | **Help** | This document, inside the app, with the numbers kept current. |
-| **Your avatar** | Top right. Your profile, light or dark mode, sign out — and for admins, people and settings. |
-
-[IMAGE: 06-content.png]
+| **Your avatar** | Top right. Your profile, light or dark mode, sign out — and for admins, people, settings and the backup. |
 
 ---
 
@@ -264,7 +354,7 @@ everything anyone has written under **Notes**.
 
 | Role | Can |
 |---|---|
-| **Admin** | Everything — people, settings, the page list, and starting a check by hand. |
+| **Admin** | Everything — people, settings, the page list, the backup, and starting a check by hand. |
 | **Editor** | Review updates and edit page details. Not settings, the page list, or runs. |
 
 Everyone can write notes. Admins manage people under the avatar menu →
@@ -290,24 +380,21 @@ The things people ask about in the second week.
   the page and available as export columns. Where a page disagrees with what was
   imported it is flagged *Ownership mismatch* for somebody to settle, never
   quietly corrected.
-- **Which parts a page has is tracked too** — whether it carries a documents
-  section, a video block, a partner list. Filter the Dashboard by them to find,
-  say, every product page with no datasheets. A section that disappears entirely
-  is a change worth seeing.
 - **There is a small test set** — a fixed handful of pages used to try a change
   out before it goes near all of them. It is a filter on the Dashboard, not
   something that happens to a page.
 - **A page can be paused** when it is known to be in flux and you do not want it
-  coming up every week. It stays in the list, marked *Paused*, and is simply not
-  checked.
+  coming up every week. It stays in the list, marked *Paused*, and is not checked.
 - **Redirects are followed and merged.** If two addresses land on the same page
-  it is watched once, not twice, so you do not review the same change twice over.
+  it is watched once, not twice. Where a page's own address is not the one that
+  answered, the page says so in a **Redirects** box under its snapshots. A
+  `?tab=` on the end is not a redirect — that is the same page opening on a tab,
+  often one iRadar clicked itself.
 - **The server's disk is not backed up by anything**, so somebody has to keep a
   copy. An admin can download the database from **Settings → Backup**. It holds
   the page list, the ownership, every update anyone has reviewed and every note;
   the screenshots are four-fifths of the disk and none of the loss.
-- **Anything on screen can be exported.** **Export** turns any filter and any set
-  of columns into a spreadsheet.
+- **Anything on screen can be exported.**
 
 ---
 
@@ -330,7 +417,9 @@ The things people ask about in the second week.
 
 ## Questions and problems
 
-Raise them with Anas, or comment on this page.
+Use the box at the top of the **Notes** page — it goes to the same feed as
+everything else, so it gets read. For anything else, raise it with Anas or
+comment on this page.
 
 The in-app version of this guide is at **https://iradar.net/guide** and always
 shows the current numbers and settings.
