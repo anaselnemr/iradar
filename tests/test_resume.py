@@ -187,3 +187,66 @@ def test_every_page_lands_in_exactly_one_bucket():
     assert no_update + c["changed"] + suspect + c["errors"] + waiting == total
     assert waiting == queued, \
         f"waiting read {waiting}, but {queued} pages have not been reached"
+
+
+# --- what the review NAMES must come from the two captures ------------------
+# component_changes said "Products table filled - section 'design resources'
+# added" about a page whose two captures were byte-identical in both. It was
+# comparing the new capture against the urls ROW, which every capture
+# overwrites - including a failed one, which writes {} over it. So a failure
+# between two good captures made the second one look like it had grown a
+# products table and a section.
+
+import json as _json_mod
+
+
+def _cap_dir(root, name, flags, components):
+    d = Path(root) / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "sections.json").write_text(_json_mod.dumps(
+        {"flags": flags, "components": components}), encoding="utf-8")
+    return str(d)
+
+
+FULL_FLAGS = {"product_table": {"exists": True, "has_content": True}}
+FULL_NAV = ["Overview", "Documents", "Design resources"]
+
+
+def test_an_emptied_row_does_not_invent_a_change():
+    root = _fresh_db()
+    old = _cap_dir(root, "old", FULL_FLAGS, FULL_NAV)
+    new = _cap_dir(root, "new", FULL_FLAGS, FULL_NAV)
+    # the row as a failed capture in between left it
+    row = {"flags": "{}", "components": "[]"}
+    parts = runner.component_changes(
+        old, new, row, {"flags": FULL_FLAGS, "components": FULL_NAV},
+        {"text_changed": False, "library": {"per_section": {}}})
+    assert not parts, f"invented a change out of an emptied row: {parts}"
+
+
+def test_a_real_section_arrival_is_still_named():
+    root = _fresh_db()
+    old = _cap_dir(root, "old", {"product_table": {"exists": False}},
+                   ["Overview"])
+    new = _cap_dir(root, "new", FULL_FLAGS, FULL_NAV)
+    parts = runner.component_changes(
+        old, new, {"flags": "{}", "components": "[]"},
+        {"flags": FULL_FLAGS, "components": FULL_NAV},
+        {"text_changed": False, "library": {"per_section": {}}})
+    joined = " · ".join(parts)
+    assert "Products table added" in joined, joined
+    assert "design resources' added" in joined, joined
+
+
+def test_a_capture_too_old_to_carry_them_falls_back_to_the_row():
+    root = _fresh_db()
+    old = Path(root) / "ancient"
+    old.mkdir(parents=True, exist_ok=True)          # no sections.json at all
+    new = _cap_dir(root, "new", FULL_FLAGS, FULL_NAV)
+    parts = runner.component_changes(
+        str(old), new,
+        {"flags": _json_mod.dumps(FULL_FLAGS),
+         "components": _json_mod.dumps(FULL_NAV)},
+        {"flags": FULL_FLAGS, "components": FULL_NAV},
+        {"text_changed": False, "library": {"per_section": {}}})
+    assert not parts, f"the row fallback stopped working: {parts}"

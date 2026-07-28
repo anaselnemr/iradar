@@ -334,7 +334,21 @@ def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
             return json.loads(v or default)
         except Exception:
             return json.loads(default)
-    of = _json(old_row["flags"] if "flags" in old_row.keys() else "", "{}")
+    # THE OLD CAPTURE's own flags, not the urls row's. The row is a live
+    # field that every capture overwrites, including a failed one - an errored
+    # or dead capture writes {} over it - so comparing against the row asks
+    # "does this page differ from whatever touched the row last", which is not
+    # the question. It produced "Products table filled · section 'design
+    # resources' added" on a page whose two captures were identical, because a
+    # failure in between had emptied the row.
+    #
+    # sections.json has carried flags and components since it existed, so the
+    # right answer is already on disk beside the capture that raised this. The
+    # row is kept only as a fallback for captures older than that.
+    _osec = _sections(old_dir)
+    of = _osec.get("flags") or {}
+    if not of and old_row is not None and "flags" in old_row.keys():
+        of = _json(old_row["flags"], "{}")
     nf = new_res.get("flags") or {}
     for key, label in _DIFF_FLAGS:
         oe = bool((of.get(key) or {}).get("exists"))
@@ -352,8 +366,10 @@ def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
             return {str(x).strip().lower() for x in (v or [])}
         except Exception:
             return set()
-    onav = _set(_json(old_row["components"]
-                      if "components" in old_row.keys() else "", "[]"))
+    _ocomp = _osec.get("components")
+    if not _ocomp and old_row is not None and "components" in old_row.keys():
+        _ocomp = _json(old_row["components"], "[]")
+    onav = _set(_ocomp)
     nnav = _set(new_res.get("components") or [])
     # a section whose ITEMS already reported a change is not also reported as
     # a nav add/remove - one real change, one line
