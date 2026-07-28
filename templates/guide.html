@@ -201,9 +201,14 @@
       <a class="fig" href="{{ url_for('search_items') }}">
         <div class="n">{{ '{:,}'.format(f.tracked) }}</div>
         <div class="l">items tracked</div></a>
-      <a class="fig" href="{{ url_for('index', status='changed') }}">
-        <div class="n" style="color:{{ 'var(--warn)' if f.open else 'inherit' }}">{{ f.open }}</div>
-        <div class="l">waiting for you</div></a>
+      {#- the PAGE count, because that is what the link opens. The update
+          count rides along only when they differ, which is when somebody
+          would otherwise notice the tile and the list disagreeing. -#}
+      <a class="fig" href="{{ url_for('index', status='changed') }}"
+         title="{{ f.open }} update{{ '' if f.open == 1 else 's' }} across {{ f.open_pages }} page{{ '' if f.open_pages == 1 else 's' }}">
+        <div class="n" style="color:{{ 'var(--warn)' if f.open_pages else 'inherit' }}">{{ f.open_pages }}</div>
+        <div class="l">pages waiting{% if f.open != f.open_pages %}
+          <span style="text-transform:none; letter-spacing:0">({{ f.open }} updates)</span>{% endif %}</div></a>
       <div class="fig">
         <div class="n" style="font-size:15px; padding-top:5px">{{ next_run }}</div>
         <div class="l">next check</div></div>

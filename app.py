@@ -6498,6 +6498,11 @@ def guide_page():
             # built-in method, and formatting it throws
             "tracked": q("SELECT COUNT(*) FROM items"),
             "open": q("SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0"),
+            # updates and PAGES are different numbers - one page can carry
+            # more than one. The tile links to the page list, so it has to
+            # count what that list will show or the two disagree on screen.
+            "open_pages": q("SELECT COUNT(DISTINCT url_id) FROM changes"
+                            " WHERE IFNULL(reviewed,0)=0"),
             "people": q("SELECT COUNT(*) FROM users WHERE active=1"),
         }
         last = con.execute(
