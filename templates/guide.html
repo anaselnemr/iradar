@@ -47,12 +47,10 @@
   .gd p { line-height: 1.62; font-size: 14.5px; }
   .gd a { color: var(--link); }
 
-  /* hero - NOT .hero: base.html already has one, for the dashboard, and it
-     brings a gradient background and its own h1 size with it */
-  .gd-hero { text-align: center; padding: 22px 28px; }
-  .gd-hero h1 { margin: 0 0 10px; font-size: 32px; letter-spacing: -.7px; }
-  .gd-hero .say { font-size: 17px; line-height: 1.55; margin: 0 auto 24px;
-               max-width: 58ch; }
+  /* The opening card is now the four figures and nothing else. NOT .hero:
+     base.html already has one, for the dashboard, and it would bring a
+     gradient background and its own h1 size with it. */
+  .gd-hero { padding: 22px 28px; }
   .figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
           background: var(--line); border: 1px solid var(--line);
           border-radius: 12px; overflow: hidden; }
@@ -583,6 +581,12 @@
       <li><b>Redirects are followed and merged.</b> If two addresses land on the
         same page it is watched once, not twice, so you do not review the same
         change twice over.</li>
+      <li><b>The server's disk is not backed up by anything</b>, so somebody
+        has to keep a copy. {% if is_admin %}<a href="{{ url_for('settings_backup') }}">Download
+        the database</a> — it holds the page list, the ownership, every update
+        anyone has reviewed and every note. The screenshots are four-fifths of
+        the disk and none of the loss.{% else %}An admin can download it from
+        Settings.{% endif %}</li>
       <li><b>Anything on screen can be exported.</b>
         <a href="{{ url_for('export_builder') }}">Export</a> turns any filter and
         any set of columns into a spreadsheet.</li>

@@ -82,6 +82,23 @@ previous version stays until you decide.
 **File updates** beside it is a separate queue, for files that changed behind a
 link that did not.*
 
+### The bar you watch while it runs
+
+While a check is going, the Dashboard shows one bar with every page in it. Each
+page sits in exactly one colour, and the five always add up to the total.
+
+| | |
+|---|---|
+| **No update** | Captured, compared, nothing moved. On a normal check this is nearly the whole bar. |
+| **Updated** | Confirmed. It survived the second capture and is in your queue. |
+| **Double-checking** | The page looked different and is being held for a second capture. **Not an update yet.** These are settled at the very end, so this number climbs all the way through and then empties in one go — most of it into *no update*. |
+| **Failed (will retry)** | Did not load this time. Every one gets two more tries at the end, so this usually falls near the end rather than rising. |
+| **Waiting** | Not reached yet. |
+
+> A big **double-checking** number part way through is normal and is not that
+> many updates waiting for you. It is the holding pen, and the second capture
+> is what empties it.
+
 ### If a check stops half way
 
 It picks up where it left off. Every page is recorded as it is done, so a check
@@ -113,7 +130,6 @@ These are the chips along the top of the Dashboard. Each one is a filter.
 | **Not captured** | Added but never successfully read yet, so there is nothing to compare against. It gets its first reading next check. |
 | **Paused** | Deliberately skipped. Still listed, not checked. |
 | **Ownership mismatch** | The owner or business line on the page does not agree with what was imported. Flagged for a human, never auto-corrected. |
-| **Test set** | A small fixed group used to try a change out before putting it near every page. |
 
 ---
 
@@ -278,11 +294,18 @@ The things people ask about in the second week.
   section, a video block, a partner list. Filter the Dashboard by them to find,
   say, every product page with no datasheets. A section that disappears entirely
   is a change worth seeing.
+- **There is a small test set** — a fixed handful of pages used to try a change
+  out before it goes near all of them. It is a filter on the Dashboard, not
+  something that happens to a page.
 - **A page can be paused** when it is known to be in flux and you do not want it
   coming up every week. It stays in the list, marked *Paused*, and is simply not
   checked.
 - **Redirects are followed and merged.** If two addresses land on the same page
   it is watched once, not twice, so you do not review the same change twice over.
+- **The server's disk is not backed up by anything**, so somebody has to keep a
+  copy. An admin can download the database from **Settings → Backup**. It holds
+  the page list, the ownership, every update anyone has reviewed and every note;
+  the screenshots are four-fifths of the disk and none of the loss.
 - **Anything on screen can be exported.** **Export** turns any filter and any set
   of columns into a spreadsheet.
 

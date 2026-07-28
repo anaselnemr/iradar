@@ -12,6 +12,7 @@
     <button type="button" class="seg-b" data-pane="components" onclick="segGo(this)">Components</button>
     <button type="button" class="seg-b" data-pane="backends" onclick="segGo(this)">Backends</button>
     <button type="button" class="seg-b" data-pane="access" onclick="segGo(this)">Access</button>
+    <button type="button" class="seg-b" data-pane="backup" onclick="segGo(this)">Backup</button>
   </div>
 
   <form method="post">
@@ -130,6 +131,32 @@
         start on a shared password and must replace it at first sign-in.
         <b>Admins</b> manage people, settings, the page list and checks;
         <b>editors</b> review updates and edit page details.</p>
+    </div>
+
+    <div class="pane" id="pane-backup">
+      <p class="muted" style="margin-top:0; max-width:62ch">The server's disk is
+        not backed up by anything. This is the copy you keep.</p>
+
+      <div class="flagrow"><span>The database</span>
+        <span class="muted" style="font-size:13px">
+          {#- a plain link, not a form: this is a GET and it must not need the
+              CSRF token, or a scheduled fetch could never take one -#}
+          <a href="{{ url_for('settings_backup') }}" download>Download a copy →</a>
+        </span></div>
+
+      <p class="muted" style="font-size:12.5px; margin-top:12px; max-width:62ch">
+        It holds the part that cannot be rebuilt: the page list, who owns what,
+        every update anyone has reviewed, every note and every account. The
+        screenshots beside it are four-fifths of the disk and none of the loss —
+        lose those and the next check simply re-baselines.</p>
+      <p class="muted" style="font-size:12.5px; max-width:62ch">
+        Taken with SQLite's own backup, so it is safe to download while a check
+        is running — a plain file copy taken mid-write opens fine and is wrong
+        in places. It arrives gzipped; <code>gunzip</code> it to get
+        <code>watch.db</code> back.</p>
+      <p class="muted" style="font-size:12.5px; max-width:62ch">
+        <b>Worth doing after every check</b>, or at least before anyone edits
+        the page list. Keep more than one.</p>
     </div>
 
     <div style="margin-top:18px" id="savebar"><button>Save settings</button></div>

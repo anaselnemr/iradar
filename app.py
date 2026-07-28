@@ -3,6 +3,7 @@
 Run:  python app.py     then open http://127.0.0.1:5000
 """
 import colorsys
+import gzip
 import hashlib
 import io
 import json
@@ -10,6 +11,7 @@ import os
 import re
 import secrets
 import sqlite3
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -77,7 +79,8 @@ EDITOR_MAY_POST = {
     "account_name",          # your own display name is yours
 }
 # Pages an editor cannot even look at (they configure the system).
-ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page"}
+ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page",
+                    "settings_backup"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static"}
 
@@ -3217,6 +3220,70 @@ def status():
                          + s.get("suspects", 0))
             s["eta_s"] = int(remaining / rate) if rate > 0 else None
     return jsonify(s)
+
+
+@app.route("/settings/backup.db")
+def settings_backup():
+    """Download a consistent copy of the database.
+
+    The volume this runs on is not backed up by anything, and the database is
+    the part that cannot be rebuilt: the page list, who owns what, every
+    update anyone has reviewed, every note, the accounts. The screenshots
+    beside it are four-fifths of the disk and none of the loss - lose those
+    and the next check simply re-baselines.
+
+    sqlite3's own backup API, not a file copy: a copy taken while a check is
+    writing is a torn file that opens fine and is wrong in places. This walks
+    the database under a read lock, so what comes back is a real point in
+    time and safe to take mid-run.
+
+    Gzipped on the way out - a SQLite file is mostly repeated structure and
+    compresses to a fraction, which matters over a home connection.
+    """
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    tmp = Path(tempfile.gettempdir()) / f"iradar-backup-{stamp}.db"
+    src = db.connect()
+    try:
+        dst = sqlite3.connect(str(tmp))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+    def stream():
+        # compressed in flight rather than to a second temp file: the copy is
+        # already the size of the database, and this box does not have room to
+        # hold two of it
+        buf = io.BytesIO()
+        gz = gzip.GzipFile(fileobj=buf, mode="wb")
+        try:
+            with open(tmp, "rb") as fh:
+                while True:
+                    chunk = fh.read(1 << 20)
+                    if not chunk:
+                        break
+                    gz.write(chunk)
+                    if buf.tell() >= (1 << 20):
+                        yield buf.getvalue()
+                        buf.seek(0)
+                        buf.truncate(0)
+            gz.close()
+            if buf.tell():
+                yield buf.getvalue()
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+    who = current_user()
+    print("[backup] %s requested by %s" % (tmp.name, who["email"] if who else "?"),
+          flush=True)
+    return Response(stream(), mimetype="application/gzip", headers={
+        "Content-Disposition":
+            'attachment; filename="iradar-backup-%s.db.gz"' % stamp})
 
 
 @app.route("/settings", methods=["GET", "POST"])

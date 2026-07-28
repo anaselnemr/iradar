@@ -317,3 +317,46 @@ def test_bending_the_wheel_keeps_it_a_wheel():
     ys = [app._skip_olive(x) for x in xs]
     assert all(a <= b + 1e-9 for a, b in zip(ys, ys[1:])), "the remap folds back"
     assert ys[0] < 1 and ys[-1] > 358, f"it no longer covers the wheel: {ys[0]}..{ys[-1]}"
+
+
+# --- the backup ------------------------------------------------------------
+# The volume the server runs on is not backed up by anything, and the database
+# is the part that cannot be rebuilt. A backup that is never checked is not a
+# backup, so these open what comes out.
+
+def test_the_backup_downloads_and_is_a_real_database():
+    import gzip
+    import io as _io
+    import sqlite3 as _sq
+    import tempfile as _tf
+
+    r = _client.get("/settings/backup.db")
+    assert r.status_code == 200, r.status_code
+    assert "gzip" in r.headers.get("Content-Type", "")
+    assert ".db.gz" in r.headers.get("Content-Disposition", "")
+
+    raw = gzip.GzipFile(fileobj=_io.BytesIO(r.data)).read()
+    assert raw[:16] == b"SQLite format 3\x00", "that is not a SQLite file"
+
+    # and it opens, and the rows are in it
+    path = Path(_tf.mkdtemp(prefix="bk_")) / "restored.db"
+    path.write_bytes(raw)
+    con = _sq.connect(str(path))
+    try:
+        got = con.execute("SELECT COUNT(*) FROM urls").fetchone()[0]
+        assert got >= 1, "the copy came back empty"
+        assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        con.close()
+
+
+def test_the_backup_is_admin_only():
+    assert "settings_backup" in app.ADMIN_ONLY_VIEWS, \
+        "anyone signed in could download the whole database"
+
+
+def test_the_backup_needs_no_csrf_token():
+    # it has to be fetchable by a scheduled download, which cannot hold a token
+    assert "settings_backup" not in app.EDITOR_MAY_POST
+    r = _client.get("/settings/backup.db")
+    assert r.status_code == 200
