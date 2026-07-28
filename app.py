@@ -3240,9 +3240,14 @@ def status():
     import time as _time
     s = dict(runner.RUN_STATE)
     if s.get("running") and s.get("started"):
-        # how many are actually committed to the database so far
+        # How many are actually committed to the database so far - counted
+        # rather than trusted, because a page is only really done once its row
+        # says so. But "started" is stamped fresh on every RESUME, so this
+        # counts THIS session only: on its own it threw away the 1,875 pages a
+        # resumed run had carried forward and the bar read "0 no update" over
+        # a run that was 55% through. saved0 is that carried base.
         con = db.connect()
-        s["saved"] = con.execute(
+        s["saved"] = s.get("saved0", 0) + con.execute(
             "SELECT COUNT(*) FROM urls WHERE last_checked >= ?",
             (s["started"],)).fetchone()[0]
         con.close()

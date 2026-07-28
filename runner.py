@@ -710,7 +710,8 @@ def _run_check_inner(kind, url_ids, baseline=False):
     already = max(0, pages_total - len(urls))
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
                      total=pages_total, done=already, done0=already,
-                     saved=counters["saved"], changed=counters["changed"],
+                     saved=counters["saved"], saved0=counters["saved"],
+                     changed=counters["changed"],
                      errors=counters["errors"],
                      suspects=len(suspects), started=db.now_iso(),
                      started_ts=time.time(), message="",
@@ -781,6 +782,7 @@ def _run_check_inner(kind, url_ids, baseline=False):
             n_susp = len(suspects)
             try:
                 _handle_result(con, res, row, ts_label, counters, suspects,
+                               retry_queue=transient,
                                baseline=baseline)
                 # Record this page's outcome for resume: held for the double-
                 # check (with its baseline + capture, so the verify can be
@@ -1001,7 +1003,7 @@ def _load_failure_added(prev_dir, new_dir, settings=None):
 
 
 def _handle_result(con, res, row, ts_label, counters, suspects,
-                   baseline=False):
+                   baseline=False, retry_queue=None):
     """Record ONE finished capture and decide its fate: error/blank, redirect,
     baseline, unchanged, or queue as a suspected change. Mutates counters and
     suspects; the caller owns the commit (one commit per page).
@@ -1153,6 +1155,12 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         if prev_n >= 5 and 0 <= new_n < prev_n * 0.5:
             con.execute("UPDATE urls SET last_checked=?, last_status='error'"
                         " WHERE id=?", (now, url_id))
+            # ...and try again before the run ends. A library that collapsed
+            # to under half is a broken RENDER, which is exactly what a retry
+            # is for - this used to be written as a final error on the first
+            # attempt while a plain timeout got two more goes.
+            if retry_queue is not None:
+                retry_queue.append(row)
             # the row still describes the capture we are about to discard
             _restore_page_meta(con, url_id, prev)
             shutil.rmtree(snap_dir, ignore_errors=True)
@@ -1171,6 +1179,10 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
             and _load_failure_added(prev["dir"], snap_dir, db.get_settings()):
         con.execute("UPDATE urls SET last_checked=?, last_status='error'"
                     " WHERE id=?", (now, url_id))
+        # a section that said "could not be loaded" is a transient render
+        # failure by definition - give it the same two tries as a timeout
+        if retry_queue is not None:
+            retry_queue.append(row)
         _restore_page_meta(con, url_id, prev)
         shutil.rmtree(snap_dir, ignore_errors=True)
         con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))

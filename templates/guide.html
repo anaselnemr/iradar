@@ -500,6 +500,14 @@
       whole library, not just the words. That is the <b>Library</b> signal, and
       it is the one that catches the changes reading the page would not.</p></div>
 
+    <figure>
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/content.png') }}" alt="The Content library, one row per item with the pages under it">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/content-dark.png') }}" alt="The Content library, one row per item with the pages under it">
+      <figcaption>One row per <b>thing</b>, not per page. The count beside each says how many pages carry it — that is the number that answers &ldquo;where is this datasheet used?&rdquo;</figcaption>
+    </figure>
+
     <h3 style="margin:26px 0 4px; font-size:15px">File updates: the other queue</h3>
     <p style="margin-top:0">A datasheet can be replaced without the page moving
       at all — same link, same title, new file behind it. Nothing on the page
@@ -586,6 +594,110 @@
       <code>P@ssw0rd!</code>.</p></div>
   </section>
 
+  <!-- getting it out as a spreadsheet -->
+  <section id="export" class="card">
+    <h2>Export: getting it out as a spreadsheet</h2>
+    <p class="lede">Anything on screen can leave as a workbook. You pick the
+      rows and you pick the columns; the numbers beside every option tell you
+      how much you would get before you ask for it.</p>
+
+    <p><b>Two shapes, and which you want depends on the question.</b></p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>A row per page</b> — which pages have which components, and who
+        owns them. Use it for "every product page missing datasheets", or to
+        hand a business line its own list.</li>
+      <li><b>A row per document, video or board</b> — where each one is used,
+        and on how many pages of each type. Use it for "which datasheets are
+        on the most pages", or to find the ones on none.</li>
+    </ul>
+
+    <p style="margin-top:14px"><b>Rows are what to include.</b> Tick the page
+      types you want; ticking a family ticks everything under it. Nothing
+      ticked means everything.</p>
+    <p><b>Columns are what to say about each one.</b> The count beside each
+      column is how many of the rows you picked actually have it, so a column
+      showing 0 will come out empty and you can leave it off.</p>
+
+    <div class="note"><p><b>The counts move as you tick.</b> They are not a
+      fixed list — they recount against the rows you have chosen, so you can
+      see the shape of the answer before you download it.</p></div>
+
+    <figure>
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/export.png') }}" alt="The export builder: rows on the left, columns on the right">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/export-dark.png') }}" alt="The export builder: rows on the left, columns on the right">
+      <figcaption>Rows on the left, columns on the right. The number beside every option is how many of the rows you have picked actually have it — a column showing 0 comes out empty.</figcaption>
+    </figure>
+
+    <p style="margin-top:14px"><b>Export everything</b> skips the building: one
+      workbook with every page and all of its content, then a sheet per kind of
+      content with its own pages beside it.</p>
+  </section>
+
+  <!-- the matrix -->
+  <section id="components" class="card">
+    <h2>Which components a page type should have</h2>
+    <p class="lede">A grid of page types against components, under
+      {% if is_admin %}<a href="{{ url_for('settings_components') }}">Settings →
+      Components</a>{% else %}Settings → Components, admin only{% endif %}. It
+      is what makes "this page is missing something" a question iRadar can
+      answer.</p>
+
+    <p>Every cell holds a number: <b>how many captured pages of that type
+      actually carry that component</b>. So a <b>0</b> means it has never been
+      seen there, and a large number means it is normal for that type.</p>
+
+    <p><b>You tick what SHOULD be there.</b> The numbers describe what is; the
+      ticks say what is expected. Once saved, a page can be read against its
+      type — a product page with no documents section stands out because its
+      type says it should have one.</p>
+
+    <figure>
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/matrix.png') }}" alt="The component matrix: page types across, components down">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/matrix-dark.png') }}" alt="The component matrix: page types across, components down">
+      <figcaption>Page types across, components down. The number in a cell is how many captured pages of that type carry it; the tick is whether it <i>should</i>. Green is denser where a component is normal for that type.</figcaption>
+    </figure>
+
+    <ul class="lim" style="margin-top:6px">
+      <li><b>Until you save, nothing is expected.</b> The grid opens showing
+        what the captured data says today, as a starting point.</li>
+      <li><b>Prune</b> clears components that appear on zero pages of a type —
+        tidying, not a decision. Do it after a check finishes, not during one,
+        or you will prune against half-collected counts.</li>
+      <li><b>Pages with no level yet</b> can be given one automatically from
+        their siblings, their depth in the hierarchy and which components they
+        carry. Every page's level stays editable on its own page.</li>
+    </ul>
+  </section>
+
+  <!-- the schedule -->
+  <section id="schedule" class="card">
+    <h2>Changing when it runs</h2>
+    <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings
+      → Schedule</a>{% else %}Settings → Schedule, admin only{% endif %}. It
+      runs <b>{{ every }} at {{ at_time }}</b> today.</p>
+
+    <ul class="lim">
+      <li><b>How often</b> — every day, every two days, or weekly. Weekly is
+        the normal choice: Infineon does not republish a page most days, and a
+        daily check mostly re-reads pages that have not moved.</li>
+      <li><b>Which day</b>, for a weekly check.</li>
+      <li><b>What hour</b> — 0 to 23, <b>in your time</b>, not the server's. A
+        check takes several hours, so an evening start finishes overnight and
+        the queue is waiting when people arrive.</li>
+      <li><b>Parallel browser tabs</b> — how many pages are opened at once.
+        Higher is faster and heavier; too high and Infineon starts refusing
+        us, which shows up as capture errors rather than as speed.</li>
+    </ul>
+
+    <div class="note warn"><p>Changing the schedule does not touch a check
+      already running, and never loses one: the next run starts at the new
+      time. To run it now instead, use <b>Check all pages</b>.</p></div>
+  </section>
+
   <!-- the rest of it -->
   <section id="know" class="card">
     <h2>Worth knowing</h2>
@@ -654,94 +766,6 @@
     </ul>
   </section>
 
-
-  <!-- getting it out as a spreadsheet -->
-  <section id="export" class="card">
-    <h2>Export: getting it out as a spreadsheet</h2>
-    <p class="lede">Anything on screen can leave as a workbook. You pick the
-      rows and you pick the columns; the numbers beside every option tell you
-      how much you would get before you ask for it.</p>
-
-    <p><b>Two shapes, and which you want depends on the question.</b></p>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>A row per page</b> — which pages have which components, and who
-        owns them. Use it for "every product page missing datasheets", or to
-        hand a business line its own list.</li>
-      <li><b>A row per document, video or board</b> — where each one is used,
-        and on how many pages of each type. Use it for "which datasheets are
-        on the most pages", or to find the ones on none.</li>
-    </ul>
-
-    <p style="margin-top:14px"><b>Rows are what to include.</b> Tick the page
-      types you want; ticking a family ticks everything under it. Nothing
-      ticked means everything.</p>
-    <p><b>Columns are what to say about each one.</b> The count beside each
-      column is how many of the rows you picked actually have it, so a column
-      showing 0 will come out empty and you can leave it off.</p>
-
-    <div class="note"><p><b>The counts move as you tick.</b> They are not a
-      fixed list — they recount against the rows you have chosen, so you can
-      see the shape of the answer before you download it.</p></div>
-
-    <p style="margin-top:14px"><b>Export everything</b> skips the building: one
-      workbook with every page and all of its content, then a sheet per kind of
-      content with its own pages beside it.</p>
-  </section>
-
-  <!-- the matrix -->
-  <section id="components" class="card">
-    <h2>Which components a page type should have</h2>
-    <p class="lede">A grid of page types against components, under
-      {% if is_admin %}<a href="{{ url_for('settings_components') }}">Settings →
-      Components</a>{% else %}Settings → Components, admin only{% endif %}. It
-      is what makes "this page is missing something" a question iRadar can
-      answer.</p>
-
-    <p>Every cell holds a number: <b>how many captured pages of that type
-      actually carry that component</b>. So a <b>0</b> means it has never been
-      seen there, and a large number means it is normal for that type.</p>
-
-    <p><b>You tick what SHOULD be there.</b> The numbers describe what is; the
-      ticks say what is expected. Once saved, a page can be read against its
-      type — a product page with no documents section stands out because its
-      type says it should have one.</p>
-
-    <ul class="lim" style="margin-top:6px">
-      <li><b>Until you save, nothing is expected.</b> The grid opens showing
-        what the captured data says today, as a starting point.</li>
-      <li><b>Prune</b> clears components that appear on zero pages of a type —
-        tidying, not a decision. Do it after a check finishes, not during one,
-        or you will prune against half-collected counts.</li>
-      <li><b>Pages with no level yet</b> can be given one automatically from
-        their siblings, their depth in the hierarchy and which components they
-        carry. Every page's level stays editable on its own page.</li>
-    </ul>
-  </section>
-
-  <!-- the schedule -->
-  <section id="schedule" class="card">
-    <h2>Changing when it runs</h2>
-    <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings
-      → Schedule</a>{% else %}Settings → Schedule, admin only{% endif %}. It
-      runs <b>{{ every }} at {{ at_time }}</b> today.</p>
-
-    <ul class="lim">
-      <li><b>How often</b> — every day, every two days, or weekly. Weekly is
-        the normal choice: Infineon does not republish a page most days, and a
-        daily check mostly re-reads pages that have not moved.</li>
-      <li><b>Which day</b>, for a weekly check.</li>
-      <li><b>What hour</b> — 0 to 23, <b>in your time</b>, not the server's. A
-        check takes several hours, so an evening start finishes overnight and
-        the queue is waiting when people arrive.</li>
-      <li><b>Parallel browser tabs</b> — how many pages are opened at once.
-        Higher is faster and heavier; too high and Infineon starts refusing
-        us, which shows up as capture errors rather than as speed.</li>
-    </ul>
-
-    <div class="note warn"><p>Changing the schedule does not touch a check
-      already running, and never loses one: the next run starts at the new
-      time. To run it now instead, use <b>Check all pages</b>.</p></div>
-  </section>
 
   <!-- what changed lately -->
   <section id="whatsnew" class="card">
