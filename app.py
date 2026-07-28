@@ -6522,14 +6522,11 @@ def guide_page():
              "weekly": "every %s" % _WEEKDAY_NAME.get(s.get("weekday", "mon"),
                                                       "Monday")}.get(
         s.get("frequency", "weekly"), s.get("frequency", "weekly"))
-    notes, _n, n_open = _notes_for("app", "iradar")
     return render_template(
         "guide.html", f=facts, s=s, every=every,
         at_time="%02d:00" % int(s.get("hour", 23) or 0),
         next_run=next_run_text(), run_hours=hours, last=last,
-        whatsnew=WHATS_NEW,
-        notes=notes, notes_open=n_open, notes_kind="app",
-        notes_target="iradar", notes_label="iRadar")
+        whatsnew=WHATS_NEW)
 
 
 # What changed, newest first. Here rather than in the template because it is

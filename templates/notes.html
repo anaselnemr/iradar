@@ -24,9 +24,44 @@
   .nl-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
              font-weight: 600; color: var(--muted); background: var(--hover);
              padding: 1px 7px; border-radius: 999px; }
+  /* the composer: writing a note about iRadar itself used to mean going to
+     Help and scrolling to the bottom. It belongs where the notes are. */
+  .nl-new { margin-bottom: 16px; }
+  .nl-new h3 { margin: 0 0 3px; font-size: 15px; }
+  .nl-new .why { color: var(--muted); font-size: 13px; margin: 0 0 12px;
+                 max-width: 68ch; line-height: 1.5; }
+  .nl-new textarea { width: 100%; font-family: inherit; font-size: 14px;
+                     padding: 10px 12px; border-radius: 10px;
+                     border: 1px solid var(--line); background: var(--bg);
+                     color: var(--ink); resize: vertical; }
+  .nl-new textarea:focus { outline: 2px solid var(--accent);
+                           outline-offset: 1px; border-color: transparent; }
+  .nl-new .row { display: flex; align-items: center; gap: 10px;
+                 margin-top: 10px; }
 </style>
 
 <div class="nl-wrap">
+  <div class="card nl-new">
+    <h3>Something broken, confusing or missing?</h3>
+    <p class="why">Write it here. It lands in the same feed as everything else,
+      so it gets read — rather than sitting in somebody's inbox. For a note
+      about one page, one document or one update, leave it on that thing
+      instead: it stays there for whoever opens it next.</p>
+    <form method="post" action="{{ url_for('comment_add') }}">
+      <input type="hidden" name="kind"   value="app">
+      <input type="hidden" name="target" value="iradar">
+      <input type="hidden" name="label"  value="iRadar">
+      <input type="hidden" name="next"   value="{{ request.full_path }}">
+      <textarea name="body" rows="3" required
+                placeholder="A bug, a suggestion, something that reads wrong…"
+                onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter')this.form.requestSubmit()"></textarea>
+      <div class="row">
+        <button type="submit">Post</button>
+        <span class="muted" style="font-size:12px">Ctrl + Enter</span>
+      </div>
+    </form>
+  </div>
+
   <div class="card">
     <div class="nl-tabs">
       <a class="chip {{ '' if only_open else 'chip-on' }}"

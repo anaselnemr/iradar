@@ -1,0 +1,27 @@
+{#- THE wordmark, defined once. Included inside each page's own <style>,
+    because the sign-in and first-password screens are standalone and cannot
+    reach base.html's stylesheet - so without this the same three rules were
+    written out three times and had already drifted into three colours.
+
+    The i takes currentColor, so it is white on the dark bar and the page's
+    ink on a card, without anything having to say so. "Radar" is one violet
+    everywhere: #8b5cf6 reads at 4.2:1 or better on all four grounds this app
+    has - the bar in either theme, and a card in either theme - so there is no
+    reason for it to change.
+
+    A text "i" is one glyph and its dot cannot be coloured on its own, so the
+    i is painted with a VERTICAL gradient whose violet band crosses the top
+    third: that is where the dot is and where the stem is not. Keyed to the
+    glyph's own height, so it survives whatever font the machine has. The
+    plain colour underneath is what shows if a browser cannot clip a
+    background to text - readable, rather than nothing. -#}
+  .wm { font-weight: 800; letter-spacing: -.4px; }
+  .wm .wm-i { color: currentColor; }
+  .wm .wm-r { color: #8b5cf6; }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .wm .wm-i {
+      background: linear-gradient(to bottom,
+                  #8b5cf6 0%, #8b5cf6 18%, currentColor 34%, currentColor 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; }
+  }

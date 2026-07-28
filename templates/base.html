@@ -70,28 +70,7 @@
                   display: flex; align-items: center; gap: 9px;
                   color: #b9beff; text-decoration: none; }
   header a.logo:hover { color: #d5d8ff; }
-  /* THE WORDMARK, mirroring the mark beside it: the i in the ink colour, its
-     dot picking up the gradient, "Radar" in the violet.
-
-     A text "i" is one glyph - you cannot colour its dot on its own. So the i
-     is painted with a VERTICAL gradient whose coloured band sits across the
-     top ~30%, which is where the dot is and where the stem is not. The stem
-     comes out solid ink, the dot comes out gradient, and it survives any font
-     because it is keyed to the glyph's own height rather than to coordinates.
-
-     A plain colour sits under every one of these, so a browser that cannot
-     clip a background to text shows a readable wordmark instead of nothing. */
-  header a.logo .wm { font-weight: 800; letter-spacing: -.4px; }
-  header a.logo .wm .wm-i { color: #ffffff; }
-  header a.logo .wm .wm-r { color: #b18cf8; }
-  @supports (background-clip: text) or (-webkit-background-clip: text) {
-    header a.logo .wm .wm-i {
-      background: linear-gradient(to bottom,
-                  #c9a6ff 0%, #a78bfa 20%, #ffffff 33%, #ffffff 100%);
-      -webkit-background-clip: text; background-clip: text;
-      -webkit-text-fill-color: transparent; }
-  }
-
+{% include "_wordmark_css.html" %}
   header .logo img { width: 26px; height: 26px; border-radius: 7px;
                      display: block; }
   /* below this the wordmark is the first thing to go - the mark still says

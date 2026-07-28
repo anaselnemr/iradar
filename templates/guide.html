@@ -186,7 +186,6 @@
       <li><a href="#know">Worth knowing</a></li>
       <li><a href="#limits">What it does not do</a></li>
       <li><a href="#whatsnew">What&rsquo;s new</a></li>
-      <li><a href="#notes">Bugs &amp; suggestions</a></li>
     </ol>
   </nav>
 
@@ -524,7 +523,8 @@
         <span>Every document, video, image and board across all pages, and which
           pages each appears on. Answers "where is this datasheet used?"</span></li>
       <li><a href="{{ url_for('notes_page') }}">Notes</a>
-        <span>Everything anyone has written, newest first.</span></li>
+        <span>Everything anyone has written, newest first — and the box for
+          telling us something is broken, confusing or missing.</span></li>
       <li>Reports
         <span><a href="{{ url_for('hierarchy') }}">Hierarchy</a> — the site as a
           tree. <a href="{{ url_for('export_builder') }}">Export</a> — any of it
@@ -634,11 +634,6 @@
       {% endfor %}
     </ol>
   </section>
-
-  {#- the ordinary notes section, pointed at iRadar itself: a bug report lands
-      in the same feed as everything else, so it gets read rather than sitting
-      in somebody's inbox -#}
-  {% include "_notes.html" %}
 
   </div><!-- /.gdmain -->
 
