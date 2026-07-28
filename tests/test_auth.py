@@ -504,3 +504,63 @@ def test_session_key_is_not_the_old_constant():
     assert appmod.app.secret_key != "infineonwatch-local-only", \
         "session cookies still signed with the constant from the source"
     assert len(appmod.app.secret_key) >= 32
+
+
+# --- "last active", not "last sign-in" --------------------------------------
+# last_login only moves when the sign-in FORM is submitted. A session lasts
+# days, so somebody can open the dashboard every morning for a week and still
+# show a week-old time — which is the opposite of what the column is for.
+
+def test_using_it_without_signing_in_again_still_counts():
+    import time as _t
+    u = auth.by_email(ADMIN)
+    con = db.connect()
+    con.execute("UPDATE users SET last_seen='' WHERE id=?", (u["id"],))
+    con.commit()
+    con.close()
+
+    auth.touch_seen(auth.by_email(ADMIN))
+    first = auth.by_email(ADMIN)["last_seen"]
+    assert first, "browsing did not register at all"
+
+    login_before = auth.by_email(ADMIN)["last_login"]
+    auth.touch_seen(auth.by_email(ADMIN))
+    assert auth.by_email(ADMIN)["last_login"] == login_before, \
+        "browsing moved last_login, which should only move on a real sign-in"
+
+
+def test_it_does_not_write_on_every_single_request():
+    u = auth.by_email(ADMIN)
+    con = db.connect()
+    con.execute("UPDATE users SET last_seen=? WHERE id=?", (auth._now(), u["id"]))
+    con.commit()
+    con.close()
+    before = auth.by_email(ADMIN)["last_seen"]
+    for _ in range(20):
+        auth.touch_seen(auth.by_email(ADMIN))
+    assert auth.by_email(ADMIN)["last_seen"] == before, \
+        "twenty page views wrote twenty times"
+
+
+def test_a_stale_stamp_is_refreshed():
+    u = auth.by_email(ADMIN)
+    con = db.connect()
+    con.execute("UPDATE users SET last_seen='2020-01-01 00:00:00' WHERE id=?",
+                (u["id"],))
+    con.commit()
+    con.close()
+    auth.touch_seen(auth.by_email(ADMIN))
+    assert auth.by_email(ADMIN)["last_seen"] != "2020-01-01 00:00:00", \
+        "an old stamp was never refreshed"
+
+
+def test_signing_in_sets_both():
+    auth.set_password(auth.by_email(ADMIN)["id"], NEWPW, must_change=False)
+    con = db.connect()
+    con.execute("UPDATE users SET last_login='', last_seen='' WHERE email=?", (ADMIN,))
+    con.commit()
+    con.close()
+    u, err = auth.check_login(ADMIN, NEWPW)
+    assert not err, err
+    row = auth.by_email(ADMIN)
+    assert row["last_login"] and row["last_seen"], dict(row)

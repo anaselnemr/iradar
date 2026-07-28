@@ -195,6 +195,14 @@ def _require_login():
     if request.method in ("POST", "PUT", "PATCH", "DELETE") \
             and ep not in EDITOR_MAY_POST and not is_admin():
         abort(403)
+    # Somebody who signed in on Monday and has opened the dashboard every
+    # morning since is still using iRadar - but last_login cannot see that,
+    # it only moves when the sign-in FORM is submitted. Throttled to one
+    # write per five minutes of real use, so a page view costs nothing.
+    try:
+        auth.touch_seen(u)
+    except Exception:
+        pass
 
 
 @app.context_processor

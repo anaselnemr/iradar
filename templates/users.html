@@ -112,7 +112,7 @@
     <table class="u-list">
       <thead>
         <tr><th>Person</th><th class="col-role">Role</th>
-            <th class="col-when">Last sign-in</th><th class="col-acts"></th></tr>
+            <th class="col-when" title="When they last used iRadar — not when they last typed their password, which a long session never updates">Last active</th><th class="col-acts"></th></tr>
       </thead>
       <tbody>
       {% for u in users %}
@@ -153,10 +153,12 @@
             </form>
           </td>
           <td class="u-when">
-            {#- |localtime, not a raw slice: the database stores UTC and
-                the raw string showed a sign-in two hours before it
-                happened -#}
-            {{ u['last_login']|localtime if u['last_login'] else '—' }}
+            {#- last_seen, not last_login: a session lasts days, so somebody
+                can open the dashboard every morning for a week and still show
+                a week-old "last sign-in". Falls back for rows written before
+                last_seen existed. -#}
+            {% set seen = u['last_seen'] or u['last_login'] %}
+            {{ seen|localtime if seen else '—' }}
           </td>
           <td>
             {#- short labels, each with a title that says what it really does:

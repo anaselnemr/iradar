@@ -223,7 +223,13 @@ def init_db():
         active INTEGER NOT NULL DEFAULT 1,
         must_change_pw INTEGER NOT NULL DEFAULT 1,
         created TEXT DEFAULT '',
-        last_login TEXT DEFAULT ''
+        last_login TEXT DEFAULT '',
+        -- last_login only moves when somebody submits the SIGN-IN FORM. A
+        -- session lasts days, so a person can use iRadar every morning for a
+        -- week and still show a week-old "last sign-in". last_seen is stamped
+        -- while they are actually using it, which is the question an admin is
+        -- really asking.
+        last_seen TEXT DEFAULT ''
     );
     -- every AUTOMATIC level change, so hierarchy assignments are auditable:
     -- the user can see exactly what moved, when, and why - and that nothing
@@ -297,6 +303,7 @@ def init_db():
     # open when the note was written is remembered here instead, so the link is
     # one lookup. It is a HINT, not the identity: if that key is gone the note
     # still belongs to the same asset.
+    _ensure_column(con, "users", "last_seen", "TEXT DEFAULT ''")
     _ensure_column(con, "comments", "target_hint", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "last_http", "INTEGER")
     _ensure_column(con, "snapshots", "http_status", "INTEGER")

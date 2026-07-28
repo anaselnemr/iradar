@@ -19,6 +19,7 @@ import os
 import re
 import secrets
 import time
+from datetime import datetime
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -306,6 +307,42 @@ def _clear_fails(email):
     _FAILS.pop(norm_email(email), None)
 
 
+# How stale last_seen may get before it is written again. Every request would
+# be a write per page view for a number nobody reads to the minute; five
+# minutes answers "are they using it today" for one write per five minutes of
+# actual use.
+SEEN_EVERY = 300
+
+
+def touch_seen(user_row, con=None):
+    """Record that this person is using iRadar right now.
+
+    Called from the request gate, not from sign-in: the point is to catch the
+    week where somebody opens the dashboard daily on a session they started
+    last Monday, which last_login cannot see.
+    """
+    if not user_row:
+        return
+    last = (user_row["last_seen"] if "last_seen" in user_row.keys() else "") or ""
+    now = _now()
+    if last:
+        try:
+            gap = (datetime.strptime(now, "%Y-%m-%d %H:%M:%S")
+                   - datetime.strptime(last, "%Y-%m-%d %H:%M:%S")).total_seconds()
+            if gap < SEEN_EVERY:
+                return
+        except ValueError:
+            pass
+    own = con is None
+    con = con or db.connect()
+    try:
+        con.execute("UPDATE users SET last_seen=? WHERE id=?", (now, user_row["id"]))
+        con.commit()
+    finally:
+        if own:
+            con.close()
+
+
 def check_login(email, password, ip=None):
     """(user_row, None) on success, (None, 'why not') otherwise.
 
@@ -326,7 +363,8 @@ def check_login(email, password, ip=None):
         return None, "That account has been switched off."
     _clear_fails(email)
     con = db.connect()
-    con.execute("UPDATE users SET last_login=? WHERE id=?", (_now(), u["id"]))
+    con.execute("UPDATE users SET last_login=?, last_seen=? WHERE id=?",
+                (_now(), _now(), u["id"]))
     con.commit()
     con.close()
     return u, None
