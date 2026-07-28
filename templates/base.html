@@ -104,10 +104,11 @@
   /* 1200 is a reading width and right for most pages. The Dashboard is a wide
      data table and was leaving 300px of a 1500px screen unused while its Page
      column truncated every address, so it opts out.
-     No second fixed width: it fills whatever screen it is on. The 2100 is
-     only a backstop so a very wide monitor does not stretch one column across
-     a metre of glass. */
-  main.wide { max-width: 2100px; }
+     1440 rather than the whole screen: filling a wide monitor put the Type,
+     Live and Status badges an arm's length from the address they belong to,
+     and the eye had to travel the width of the glass to join a row up. A
+     shade wider than the reading pages, not a different kind of layout. */
+  main.wide { max-width: 1440px; }
   .card { background: var(--card); border: 1px solid var(--line);
           border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
           box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
