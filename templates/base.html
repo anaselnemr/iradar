@@ -900,7 +900,8 @@
     {% for ep, label in (('index', 'Dashboard'), ('search_items', 'Content'),
                          ('hierarchy', 'Hierarchy'), ('notes_page', 'Notes'),
                          ('export_builder', 'Export'),
-                         ('history', 'Run history'), ('settings_view', 'Settings')) %}
+                         ('history', 'Run history'), ('settings_view', 'Settings'),
+                         ('guide_page', 'How it works')) %}
     <a href="{{ url_for(ep) }}"
        class="{{ 'on' if request.endpoint == ep }}"
        {% if request.endpoint == ep %}aria-current="page"{% endif %}>{{ label }}</a>

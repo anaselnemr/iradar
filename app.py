@@ -6251,6 +6251,28 @@ def comment_resolve(comment_id):
     return redirect(_back() + "#notes")
 
 
+@app.route("/guide")
+def guide_page():
+    """What the tool does and how the check works, for the team.
+
+    In the app rather than a wiki deliberately: a wiki copy goes stale the
+    first time the behaviour changes and nobody notices for months. The bug
+    box at the bottom is the ordinary notes section pointed at iRadar itself,
+    so reports land in the same feed everything else does.
+    """
+    con = db.connect()
+    try:
+        total = con.execute(
+            "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
+    finally:
+        con.close()
+    notes, _n, n_open = _notes_for("app", "feedback")
+    return render_template(
+        "guide.html", page_total=f"{total:,}", sched=next_run_text(),
+        notes=notes, notes_open=n_open, notes_kind="app",
+        notes_target="feedback", notes_label="iRadar itself")
+
+
 @app.route("/notes")
 def notes_page():
     """Every note anyone has written, newest first. A note nobody can find is a
@@ -6269,6 +6291,8 @@ def notes_page():
                 if r:
                     link, what = url_for("url_detail", url_id=r["id"]), \
                         (c["target_label"] or r["url"])
+            elif c["target_kind"] == "app":
+                link, what = url_for("guide_page"), "iRadar itself"
             elif c["target_kind"] == "change":
                 r = con.execute("SELECT id FROM changes WHERE id=?",
                                 (c["target_id"],)).fetchone()

@@ -47,7 +47,7 @@
           <div class="nl-meta">
             <b>{{ r.c['author'] or 'someone' }}</b>
             <time title="{{ r.c['created'] }}">{{ r.c['created'][:16] }}</time>
-            <span class="nl-kind">{{ {'page':'page','item':'asset','change':'update'}[r.c['target_kind']] }}</span>
+            <span class="nl-kind">{{ {'page':'page','item':'asset','change':'update','app':'iRadar'}.get(r.c['target_kind'], r.c['target_kind']) }}</span>
             {%- if r.c['resolved'] %}<span class="badge b-unchanged">done</span>{% endif %}
           </div>
           <div class="nl-body">{{ r.c['body']|notemd }}</div>

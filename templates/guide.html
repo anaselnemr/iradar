@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}How it works — iRadar{% endblock %}
+{% block content %}
+{#- The team's reference. In the app rather than a wiki on purpose: a wiki copy
+    goes stale the first time the app changes and nobody notices for months. -#}
+<style>
+  .gd { max-width: 820px; margin: 0 auto; }
+  .gd h2 { margin: 30px 0 10px; font-size: 20px; letter-spacing: -.2px; }
+  .gd h3 { margin: 22px 0 6px; font-size: 15.5px; }
+  .gd p, .gd li { line-height: 1.62; font-size: 14.5px; }
+  .gd ul, .gd ol { padding-left: 22px; margin: 8px 0; }
+  .gd li { margin: 5px 0; }
+  .gd .lead { font-size: 16px; color: var(--muted); line-height: 1.6; }
+  .gd table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  .gd th { text-align: left; font-size: 12px; text-transform: uppercase;
+           letter-spacing: .04em; color: var(--muted); font-weight: 600;
+           padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .gd td { padding: 10px; border-bottom: 1px solid var(--line);
+           vertical-align: top; font-size: 14px; }
+  .gd tr:last-child td { border-bottom: 0; }
+  .steps { list-style: none; padding: 0; counter-reset: s; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 42px;
+                margin: 14px 0; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 0;
+        width: 27px; height: 27px; border-radius: 50%; display: grid;
+        place-items: center; font-size: 13px; font-weight: 700; color: #fff;
+        background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
+  .steps b { display: block; margin-bottom: 2px; }
+  .yn { display: inline-block; font-size: 11px; font-weight: 600;
+        padding: 1px 8px; border-radius: 999px; }
+  .yn-y { background: rgba(22,163,74,.14); color: var(--ok); }
+  .yn-n { background: rgba(110,109,122,.16); color: var(--muted); }
+</style>
+
+<div class="gd">
+  <div class="card">
+    <h1 style="margin:0 0 8px; font-size:26px; letter-spacing:-.4px">How iRadar works</h1>
+    <p class="lead">iRadar watches <b>{{ page_total }}</b> Infineon pages and tells you
+      what actually changed on them — text, documents, images, videos, boards,
+      prices. It exists so nobody has to open a page and try to remember what it
+      said last month.</p>
+
+    <h2>The weekly check</h2>
+    <p>Every <b>{{ sched }}</b>, automatically. Nobody starts it.</p>
+    <ol class="steps">
+      <li><b>Every page is opened in a real browser</b>
+        Not fetched as HTML — actually rendered, scrolled to the bottom to
+        trigger anything that loads late, with tabs and accordions expanded.
+        A page that only half-loads is thrown away rather than saved, because
+        a half-page becomes next week's baseline and invents changes.</li>
+      <li><b>What's on it is written down</b>
+        The visible text, every image, the full library (documents, videos,
+        boards, design resources, partners), the price, and a screenshot.</li>
+      <li><b>It's compared with last time</b>
+        Four independent signals, below. Any one of them is enough to flag.</li>
+      <li><b>Anything flagged is captured a second time</b>
+        Immediately, before the run ends. If the difference doesn't reappear it
+        was the website being inconsistent, not an edit, and it's dropped. This
+        is what stops most false alarms.</li>
+      <li><b>Failures get two more tries</b>
+        A page that times out is retried at the end of the run. Only something
+        that fails every attempt is recorded as an error — a bad moment is not
+        a verdict.</li>
+      <li><b>What survives lands in your queue</b>
+        On the Dashboard, as <b>Updated</b>.</li>
+    </ol>
+
+    <h2>What counts as a change</h2>
+    <table>
+      <tr><th>Signal</th><th>Flags when</th></tr>
+      <tr><td><b>Text</b></td><td>Wording is added, removed or edited. Text that
+        merely <i>moved</i> does not count — the same lines in a new order is a
+        layout change, not an edit.</td></tr>
+      <tr><td><b>Library</b></td><td>A document, video, board, design resource or
+        partner is added or removed, or one of their details changes (version,
+        date, size, price).</td></tr>
+      <tr><td><b>Images</b></td><td>A picture appears or disappears from the page.</td></tr>
+      <tr><td><b>Screenshot</b></td><td>More than 1.5% of the pixels differ — a real
+        visual change, not a shifted word.</td></tr>
+      <tr><td><b>File updates</b></td><td>A datasheet is <b>republished at the same
+        address</b>. The page looks identical, the file behind it is not. Shown
+        separately under <a href="{{ url_for('assets_page') }}">File updates</a>.</td></tr>
+    </table>
+
+    <h2>What it deliberately ignores</h2>
+    <p>Each of these was a real flood of false alarms before it was fixed. If
+      you ever wonder why something <i>didn't</i> flag, it is probably here.</p>
+    <table>
+      <tr><th>Ignored</th><th>Why</th></tr>
+      <tr><td>Stock levels</td><td>"4387 in stock" becomes 4382 overnight. The
+        <b>price</b> is still watched — a real price move flags.</td></tr>
+      <tr><td>The community forum feed</td><td>Re-sorts and re-dates itself
+        constantly. Whether the widget is <i>there</i>, empty, or has
+        discussions is still tracked.</td></tr>
+      <tr><td>"Latest news" and the mega-menu</td><td>Identical on every page.
+        One retired thumbnail once flagged 585 pages at once.</td></tr>
+      <tr><td>Tabbed sections loading differently</td><td>Two visits can land on
+        different tabs. Their contents are tracked item by item instead, which
+        doesn't flap.</td></tr>
+      <tr><td>Timestamps and "3 days ago"</td><td>They change by themselves.</td></tr>
+    </table>
+
+    <h2>Reviewing an update</h2>
+    <p>Open one from the Dashboard. You'll see exactly what moved, with the
+      before and after. Then one of two buttons:</p>
+    <table>
+      <tr><th>Button</th><th>Means</th><th>Use it when</th></tr>
+      <tr><td><span class="yn yn-y">Accept</span></td>
+        <td>This is the page now. It becomes the baseline the next check
+          compares against.</td>
+        <td>The change is real — whether it's important or not.</td></tr>
+      <tr><td><span class="yn yn-n">Reject</span></td>
+        <td>Don't use <i>this capture</i> as the baseline. The previous version
+          stays as the reference.</td>
+        <td>The capture is wrong — something didn't load properly.</td></tr>
+    </table>
+    <p><b>Accept is the normal one.</b> Reject is for when iRadar got the page
+      wrong, not for when you dislike the change. Either way the page goes back
+      to normal afterwards; nothing is left hanging.</p>
+
+    <h2>Notes</h2>
+    <p>Every page, document, board and update has a <b>Notes</b> section at the
+      bottom. Use it for the reasoning — <i>"checked with marketing, the new
+      subheadline is intentional"</i>. Whoever opens that page next reads it
+      without having to ask you.</p>
+    <p>Edit or delete your own, mark any note <b>done</b> when it's handled, and
+      see everything in one place under <a href="{{ url_for('notes_page') }}">Notes</a>.</p>
+
+    <h2>The rest of the site</h2>
+    <table>
+      <tr><td><b><a href="{{ url_for('index') }}">Dashboard</a></b></td>
+        <td>Every tracked page, its state, and the review queue. Filter by type,
+          status, or what content a page has.</td></tr>
+      <tr><td><b><a href="{{ url_for('search_items') }}">Content</a></b></td>
+        <td>Every document, video, image and board across all pages, and which
+          pages each one appears on. The place to answer "where is this
+          datasheet used?"</td></tr>
+      <tr><td><b><a href="{{ url_for('hierarchy') }}">Hierarchy</a></b></td>
+        <td>The whole site as a tree, built from the site's own structure.</td></tr>
+      <tr><td><b><a href="{{ url_for('export_builder') }}">Export</a></b></td>
+        <td>Any of it as a spreadsheet.</td></tr>
+      <tr><td><b><a href="{{ url_for('history') }}">Run history</a></b></td>
+        <td>Every check, when it ran and what it found.</td></tr>
+    </table>
+
+    <h2>Accounts</h2>
+    <p>Sign in with your Infineon email. Change your <b>display name</b> and
+      <b>password</b> under the avatar, top right.</p>
+    <p><b>Admins</b> manage people, settings, the page list and checks.
+      <b>Editors</b> review updates and edit page details. Everyone can write
+      notes.</p>
+    <p style="color:var(--muted)">Please use a passphrase — three or four random
+      words like <code>harbour-cactus-lantern-42</code>. Long beats
+      complicated.</p>
+
+    <h2 id="known">Known limits</h2>
+    <ul>
+      <li><b>New pages aren't found automatically.</b> iRadar watches the pages
+        it's been given. If Infineon publishes a new one, someone has to add it
+        under <i>Add pages</i>.</li>
+      <li><b>Five finder pages</b> only capture their first page of results.</li>
+      <li><b>Gated documents</b> (behind a MyInfineon login) can't be previewed —
+        we only see the login wall.</li>
+    </ul>
+  </div>
+
+  {% include "_notes.html" %}
+</div>
+{% endblock %}

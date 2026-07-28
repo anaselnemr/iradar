@@ -19,7 +19,11 @@ import db
 # an asset (document, image, video, board - the item view keys them all the
 # same way), and a detected update, which is where the reasoning behind an
 # accept or a reject actually belongs.
-KINDS = ("page", "item", "change")
+# 'app' is the odd one out: not a thing the monitor watches, but iRadar itself.
+# Bugs and suggestions belong where the team already is, not in a separate
+# tracker nobody opens - and they show up in the same Notes feed, so they get
+# read.
+KINDS = ("page", "item", "change", "app")
 MAX_BODY = 4000            # a note, not an essay; the column is TEXT regardless
 
 

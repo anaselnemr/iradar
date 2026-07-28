@@ -7,13 +7,20 @@
 <div class="card notes" id="notes">
   <div class="notes-head">
     <h3>
-      Notes
+      {{ "Bugs & suggestions" if notes_kind == 'app' else "Notes" }}
       {%- if notes %} <span class="notes-n">{{ notes|length }}</span>{% endif %}
       {%- if notes_open %} <span class="notes-open">{{ notes_open }} open</span>{% endif %}
     </h3>
-    <span class="muted notes-hint">Anything you write here stays on this
-      {{ {'page':'page','item':'item','change':'update'}[notes_kind] }} for
-      whoever opens it next.</span>
+    <span class="muted notes-hint">
+      {%- if notes_kind == 'app' -%}
+        Something broken, confusing, or missing? Write it here — it goes to the
+        same place as everything else, so it gets read.
+      {%- else -%}
+        Anything you write here stays on this
+        {{ {'page':'page','item':'item','change':'update'}.get(notes_kind, 'item') }}
+        for whoever opens it next.
+      {%- endif -%}
+    </span>
   </div>
 
   {% if notes %}
