@@ -22,7 +22,7 @@ sweep edge and the letter edges clean.
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 OUT = Path(__file__).parent / "static"
 SS = 6                       # supersample factor
@@ -30,8 +30,8 @@ SS = 6                       # supersample factor
 # the app's own accent pair, so the mark is the same colour as the interface
 INDIGO = (0x6d, 0x78, 0xe0)
 VIOLET = (0x8b, 0x5c, 0xf6)
-NEAR_BLACK = (0x0d, 0x0d, 0x12)
 WHITE = (255, 255, 255)
+BLACK = (0x0b, 0x0b, 0x10)
 
 TEXT = "iR"
 FONTS = ("segoeuib.ttf", "arialbd.ttf", "calibrib.ttf", "DejaVuSans-Bold.ttf")
@@ -92,28 +92,96 @@ def _sweep(im, ink, alpha, start=-96, span=74, steps=26):
     return Image.alpha_composite(im, over)
 
 
-def _letters(im, colour, text_frac):
+def _ink_rows(mask, x0, x1):
+    """Which rows carry ink between two columns, as (start, end) bands."""
+    px = mask.load()
+    rows, bands, run = [], [], None
+    for y in range(mask.size[1]):
+        has = any(px[x, y] > 40 for x in range(x0, x1))
+        rows.append(has)
+    for y, has in enumerate(rows):
+        if has and run is None:
+            run = y
+        elif not has and run is not None:
+            bands.append((run, y))
+            run = None
+    if run is not None:
+        bands.append((run, mask.size[1]))
+    return bands
+
+
+def _letters(im, colour, fade_to, text_frac):
+    """Draw "iR", with the dot of the i fading into the tile behind it.
+
+    The dot is the one piece of the wordmark that is pure decoration - it
+    carries no shape you need to read - so it is where a gradient can go
+    without costing legibility. It is isolated by rendering the text to a mask
+    and taking the topmost separate band of ink inside the i's columns; the
+    gap between the dot and the stem is what makes that reliable, in any font.
+    """
     n = im.size[0]
-    d = ImageDraw.Draw(im)
     f = _font(int(n * text_frac))
-    box = d.textbbox((0, 0), TEXT, font=f)
+    scratch = Image.new("L", (n, n), 0)
+    sd = ImageDraw.Draw(scratch)
+    box = sd.textbbox((0, 0), TEXT, font=f)
     w, h = box[2] - box[0], box[3] - box[1]
     # centred on the ink, not the line box, then nudged up a touch: the dot of
     # the i sits above the cap line and drags the optical centre down
-    d.text(((n - w) / 2 - box[0], (n - h) / 2 - box[1] - n * 0.012),
-           TEXT, font=f, fill=colour)
+    x0 = (n - w) / 2 - box[0]
+    y0 = (n - h) / 2 - box[1] - n * 0.012
+    sd.text((x0, y0), TEXT, font=f, fill=255)
+
+    i_left = max(0, int(x0))
+    i_right = min(n, int(x0 + sd.textlength("i", font=f)))
+    bands = _ink_rows(scratch, i_left, i_right)
+
+    dot = Image.new("L", (n, n), 0)
+    if len(bands) >= 2:
+        top, bottom = bands[0]
+        crop = scratch.crop((i_left, top, i_right, bottom))
+        dot.paste(crop, (i_left, top))
+    body = ImageChops.subtract(scratch, dot)
+
+    solid = Image.new("RGBA", (n, n), colour + (255,))
+    im = Image.composite(solid, im, body)
+
+    if dot.getbbox():
+        grad = Image.new("RGBA", (n, n))
+        gp = grad.load()
+        bb = dot.getbbox()
+        span = max(1, (bb[2] - bb[0]) + (bb[3] - bb[1]))
+        for y in range(bb[1], bb[3]):
+            for x in range(bb[0], bb[2]):
+                t = ((x - bb[0]) + (y - bb[1])) / span
+                gp[x, y] = (round(colour[0] + (fade_to[0] - colour[0]) * t),
+                            round(colour[1] + (fade_to[1] - colour[1]) * t),
+                            round(colour[2] + (fade_to[2] - colour[2]) * t), 255)
+        im = Image.composite(grad, im, dot)
     return im
+
+
+# The same tile, a touch deeper, so dark mode is the same mark rather than a
+# different one - only the ink flips.
+#
+# Not much deeper, though: the ink that goes on it is BLACK, so darkening the
+# tile takes contrast away rather than adding it. At 0.72 the letters sat at
+# 2.8:1 and went soft at tab size; 0.88 keeps the tile clearly the deeper of
+# the two while the letters read.
+def _darker(c, k=0.88):
+    return tuple(round(v * k) for v in c)
 
 
 def mark(size, dark=False, text_frac=0.55, radius_frac=0.235):
     n = size * SS
     if dark:
-        im = _tile(n, NEAR_BLACK, NEAR_BLACK, radius_frac)
-        im = _sweep(im, VIOLET, 150)
+        top, bottom = _darker(INDIGO), _darker(VIOLET)
+        ink, sweep_ink, sweep_a = BLACK, BLACK, 52
     else:
-        im = _tile(n, INDIGO, VIOLET, radius_frac)
-        im = _sweep(im, WHITE, 62)
-    im = _letters(im, WHITE, text_frac)
+        top, bottom, ink, sweep_ink, sweep_a = INDIGO, VIOLET, WHITE, WHITE, 62
+    im = _tile(n, top, bottom, radius_frac)
+    im = _sweep(im, sweep_ink, sweep_a)
+    # the dot fades from the letter colour into the tile under it
+    im = _letters(im, ink, bottom, text_frac)
     return im.resize((size, size), Image.LANCZOS)
 
 

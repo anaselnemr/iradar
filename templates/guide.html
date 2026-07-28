@@ -53,8 +53,20 @@
   .gd-hero h1 { margin: 0 0 10px; font-size: 32px; letter-spacing: -.7px; }
   .gd-hero .say { font-size: 17px; line-height: 1.55; margin: 0 auto 24px;
                max-width: 58ch; }
+  .idnt { display: flex; align-items: center; justify-content: center;
+          gap: 13px; margin-bottom: 22px; }
   .gd-hero .mark { width: 46px; height: 46px; border-radius: 12px;
-                   display: block; margin: 0 auto 14px; }
+                   display: block; }
+  /* same gradient as the mark beside it, and as the corner of every page */
+  .idnt b { font-size: 30px; font-weight: 800; letter-spacing: -.7px;
+            color: var(--accent); }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .idnt b { background: linear-gradient(120deg, #6d78e0 10%, #8b5cf6 90%);
+              -webkit-background-clip: text; background-clip: text;
+              -webkit-text-fill-color: transparent; color: transparent; }
+  }
+  [data-theme="dark"] .idnt b {
+    background: linear-gradient(120deg, #aab2ff 10%, #c9a6ff 90%); }
   .gd-hero .m-dark { display: none; }
   [data-theme="dark"] .gd-hero .m-light { display: none; }
   [data-theme="dark"] .gd-hero .m-dark { display: block; }
@@ -183,7 +195,7 @@
   <nav class="toc" aria-label="On this page">
     <h4>On this page</h4>
     <ol>
-      <li><a href="#overview">What iRadar does</a></li>
+      <li><a href="#overview">Where things stand</a></li>
       <li><a href="#check">What happens on a check</a></li>
       <li><a href="#signals">What it notices</a></li>
       <li><a href="#review">Reviewing an update</a></li>
@@ -202,16 +214,13 @@
 
   <!-- what it is, and where it stands right now -->
   <section id="overview" class="card gd-hero">
-    <img class="mark m-light" alt=""
-         src="{{ url_for('static', filename='logo.png') }}?v=2">
-    <img class="mark m-dark" alt=""
-         src="{{ url_for('static', filename='logo-dark.png') }}?v=2">
-    <h1>What iRadar does</h1>
-    <p class="say">iRadar is website change monitoring for infineon.com. It
-      opens every page we track, once a week, and tells you what actually
-      changed since last time — wording, datasheets and other documents,
-      images, videos, boards and prices. So nobody has to open a page and try
-      to remember what it said last month.</p>
+    <div class="idnt">
+      <img class="mark m-light" alt=""
+           src="{{ url_for('static', filename='logo.png') }}?v=3">
+      <img class="mark m-dark" alt=""
+           src="{{ url_for('static', filename='logo-dark.png') }}?v=3">
+      <b>iRadar</b>
+    </div>
     <div class="figs">
       <a class="fig" href="{{ url_for('index') }}">
         <div class="n">{{ '{:,}'.format(f.pages) }}</div>
@@ -353,8 +362,6 @@
       <li><b>Ownership mismatch</b> — the owner or business line on the page does
         not agree with what was imported. Flagged for a human, never
         auto-corrected.</li>
-      <li><b>Test set</b> — a small fixed group used to try a change out before
-        putting it near all {{ '{:,}'.format(f.pages) }} pages.</li>
     </ul>
   </section>
 
@@ -591,6 +598,10 @@
         documents section, a video block, a partner list. Filter the Dashboard
         by them to find, say, every product page with no datasheets. A section
         that disappears entirely is a change worth seeing.</li>
+      <li><b>There is a small test set</b> — a fixed handful of pages used to
+        try a change out before it goes near all
+        {{ '{:,}'.format(f.pages) }}. It is a filter on the Dashboard, not
+        something that happens to a page.</li>
       <li><b>A page can be paused</b> when it is known to be in flux and you do
         not want it coming up every week. It stays in the list, marked
         <i>Paused</i>, and is simply not checked.</li>

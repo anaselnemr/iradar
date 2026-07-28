@@ -8,8 +8,8 @@
     the mark is ever redrawn. Regenerate with: python make_logo.py -#}
 <link rel="icon" id="favicon" sizes="any"
       data-base="{{ url_for('static', filename='') }}"
-      href="{{ url_for('static', filename='favicon.ico') }}?v=2">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=2">
+      href="{{ url_for('static', filename='favicon.ico') }}?v=3">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=3">
 <meta name="theme-color" content="#17161c">
 <script>
   // apply the saved theme BEFORE first paint so dark mode never flashes white
@@ -24,7 +24,7 @@
     var el = document.getElementById("favicon");
     if (!el) return;
     var dark = document.documentElement.dataset.theme === "dark";
-    var want = el.dataset.base + (dark ? "favicon-dark.ico" : "favicon.ico") + "?v=2";
+    var want = el.dataset.base + (dark ? "favicon-dark.ico" : "favicon.ico") + "?v=3";
     if (el.getAttribute("href") !== want) el.setAttribute("href", want);
   }
   paintFavicon();
@@ -82,6 +82,18 @@
                   display: flex; align-items: center; gap: 9px;
                   color: #b9beff; text-decoration: none; }
   header a.logo:hover { color: #d5d8ff; }
+  /* The wordmark wears the mark's gradient, so "iRadar" is the same thing in
+     the corner, on the sign-in screen and in Help. Painted through the text;
+     the plain colour under it is what shows if background-clip is unavailable,
+     so it degrades to something readable rather than to nothing. */
+  header a.logo b { color: #b9beff; }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    header a.logo b {
+      background: linear-gradient(120deg, #aab2ff 10%, #c9a6ff 90%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent; }
+  }
+
   header .logo img { width: 26px; height: 26px; border-radius: 7px;
                      display: block; }
   /* Both marks are in the markup and CSS shows the one that suits the theme.
@@ -940,6 +952,12 @@
   [data-theme="dark"] a.chip,
   [data-theme="dark"] a.btn-ghost { color: var(--ink); }
   [data-theme="dark"] a.chip-on { color: #fff; }
+  /* The nav too. Its items are a mix of <a> and a <summary> for the dropdown,
+     and only the links were being repainted - so in dark mode "Reports" sat
+     there in a different colour from everything beside it. */
+  [data-theme="dark"] header nav a { color: #b9b8c6; }
+  [data-theme="dark"] header nav a:hover,
+  [data-theme="dark"] header nav a.on { color: #fff; }
   [data-theme="dark"] .pagecard-url { color: #a5b4fc; }
   [data-theme="dark"] .liveurl { color: #a5b4fc !important; }
   /* filled-button colour is the --btn token now. Restating it here as
@@ -987,9 +1005,9 @@
 <body>
 <header>
   <a class="logo" href="{{ url_for('index') }}">
-    <img class="m-light" src="{{ url_for('static', filename='logo.png') }}?v=2"
+    <img class="m-light" src="{{ url_for('static', filename='logo.png') }}?v=3"
          alt="" width="26" height="26">
-    <img class="m-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v=2"
+    <img class="m-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v=3"
          alt="" width="26" height="26">
     <b>iRadar</b>
   </a>
