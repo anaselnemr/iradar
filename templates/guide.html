@@ -141,8 +141,10 @@
   <!-- the run -->
   <section class="card">
     <h2>What happens on a check</h2>
-    <p class="lede">{{ every|capitalize }} at {{ at_time }}, on its own — nobody
-      starts it{% if run_hours %}, and it takes about {{ run_hours }}{% endif %}.</p>
+    {#- NOT |capitalize: it lowercases the rest, so "every Monday" comes out
+        "Every monday". Starting the sentence with a word of our own instead. -#}
+    <p class="lede">Runs {{ every }} at {{ at_time }}, on its own — nobody starts
+      it{% if run_hours %}, and it takes about {{ run_hours }}{% endif %}.</p>
     <ol class="flow">
       <li><b>Every page is opened in a real browser</b>
         <p>Not downloaded as code — genuinely rendered, the way you would see it.
