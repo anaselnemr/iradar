@@ -789,13 +789,16 @@
   .acct-head { padding: 9px 10px 10px; border-bottom: 1px solid var(--line);
                margin-bottom: 6px; }
   /* two lines, not three: the role is one word and belongs beside the name */
-  .acct-who { display: flex; align-items: center; gap: 8px; }
+  .acct-id { display: flex; align-items: center; gap: 8px; }
   .acct-name { font-weight: 650; font-size: 13.5px; min-width: 0;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acct-mail { color: var(--muted); font-size: 12px; margin-top: 2px;
                overflow: hidden; text-overflow: ellipsis; }
-  .acct-role { flex-shrink: 0; font-size: 11px; line-height: 1.65;
-               text-transform: capitalize; padding: 1px 8px; border-radius: 999px;
+  /* the same small chip as "you" on the People page: the name is the thing
+     being read here, and the role is a footnote to it */
+  .acct-role { flex-shrink: 0; font-size: 10px; font-weight: 700;
+               text-transform: uppercase; letter-spacing: .05em;
+               padding: 1px 6px; border-radius: 999px;
                background: rgba(110,109,122,.14); color: var(--muted); }
   .acct-role.is-admin { background: rgba(94,106,210,.16); color: var(--accent); }
   /* every row is the same control whether it is a link, a button or in a form */
@@ -1058,7 +1061,7 @@
       </summary>
       <div class="panel">
         <div class="acct-head">
-          <div class="acct-who">
+          <div class="acct-id">
             <div class="acct-name">{{ me['name'] or me['email'].split('@')[0] }}</div>
             <span class="acct-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
           </div>
