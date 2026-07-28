@@ -664,6 +664,20 @@ def _run_check_inner(kind, url_ids, baseline=False):
             counters["ok"] = prev_row["ok"] or 0
             counters["changed"] = prev_row["changed"] or 0
             counters["errors"] = prev_row["errors"] or 0
+        # ...and "saved" with them. It has no column on runs, but it means
+        # "pages whose outcome is final", which is exactly what a done item is.
+        #
+        # Leaving it at zero did not just under-report: the dashboard draws
+        # "no update" as saved - updated - errors, so a resumed run subtracted
+        # CUMULATIVE updates and errors from a counter that had just restarted.
+        # A run 40 errors deep showed 39 pages checked out of hundreds, and the
+        # bar read as though almost nothing had been done.
+        try:
+            counters["saved"] = con.execute(
+                "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='done'",
+                (run_id,)).fetchone()[0] or 0
+        except Exception:
+            pass
     # suspects is set up above (holds any rebuilt from a resumed run); the
     # capture loop appends newly-found ones to it.
     url_by_addr = {row["url"]: row for row in urls}

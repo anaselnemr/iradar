@@ -1487,6 +1487,7 @@ def index():
                            facets=facets,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
+                           secs_per_page=seconds_per_page(),
                            q=q, page=page, pages=pages, sort=sort,
                            new_cutoff=new_cutoff, bulk_days=bulk_days, ranks=ranks,
                            notlive_total=notlive_total, comp_pending=comp_pending,
@@ -6420,15 +6421,89 @@ def guide_page():
              "weekly": "every %s" % _WEEKDAY_NAME.get(s.get("weekday", "mon"),
                                                       "Monday")}.get(
         s.get("frequency", "weekly"), s.get("frequency", "weekly"))
+    notes, _n, n_open = _notes_for("app", "iradar")
     return render_template(
         "guide.html", f=facts, s=s, every=every,
         at_time="%02d:00" % int(s.get("hour", 23) or 0),
-        next_run=next_run_text(), run_hours=hours, last=last)
+        next_run=next_run_text(), run_hours=hours, last=last,
+        whatsnew=WHATS_NEW,
+        notes=notes, notes_open=n_open, notes_kind="app",
+        notes_target="iradar", notes_label="iRadar")
+
+
+# What changed, newest first. Here rather than in the template because it is
+# content, not layout - and here rather than in the database because it is
+# written when the change ships, by whoever shipped it.
+#
+# Keep it to things a REVIEWER would notice. "Refactored the compare module"
+# belongs in the git log; "removals of a datasheet now raise the page" belongs
+# here, because it changes what lands in somebody's queue on Monday.
+WHATS_NEW = [
+    {"on": "2026-07-28", "what": [
+        "Help rewritten: how the progress bar reads, what happens when a check "
+        "is interrupted, and every page state written down.",
+        "Bugs and suggestions can be posted at the bottom of this page.",
+        "Everyone gets their own avatar colour, readable in both themes.",
+        "iRadar has a logo, so the browser tab is findable again.",
+    ]},
+    {"on": "2026-07-27", "what": [
+        "Dark mode reworked: it was pure black, which made every card look "
+        "flat. Cards now lift off the page.",
+        "The estimate before checking a lot of pages was ten times too high "
+        "(86 hours for a nine-hour job). It is measured from real runs now.",
+    ]},
+    {"on": "2026-07-20", "what": [
+        "Accounts, roles and sign-in, and iRadar moved to iradar.net.",
+        "Notes on every page, item and update, gathered under Notes.",
+    ]},
+]
 
 
 _WEEKDAY_NAME = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday",
                  "thu": "Thursday", "fri": "Friday", "sat": "Saturday",
                  "sun": "Sunday"}
+
+# what one page costs when there is no history to measure - only used on a
+# fresh install, and replaced by the real figure after the first run
+_FALLBACK_SECS_PER_PAGE = 9.0
+
+
+def seconds_per_page(con=None):
+    """How long a page actually takes, from the runs that have finished.
+
+    Typed-in estimates rot. This one was 90 seconds against a real 8, so a
+    confirmation box offered to spend 86 hours on a job that takes 9 - which
+    reads as "do not press this" and is the opposite of informed consent.
+
+    The MEDIAN of the last few runs, not the mean and not the latest: elapsed
+    time is wall clock, so a run that was interrupted and resumed hours later
+    counts the downtime as work and comes out two or three times too slow. One
+    such run drags a mean badly and is a disaster as the latest; the median
+    steps over it as long as most runs finished in one go.
+    """
+    own = con is None
+    con = con or db.connect()
+    try:
+        rates = []
+        for r in con.execute(
+                "SELECT started, finished, total FROM runs"
+                " WHERE finished IS NOT NULL AND IFNULL(total,0) > 50"
+                " ORDER BY id DESC LIMIT 7"):
+            try:
+                a = datetime.strptime(r["started"], "%Y-%m-%d %H:%M:%S")
+                b = datetime.strptime(r["finished"], "%Y-%m-%d %H:%M:%S")
+            except (TypeError, ValueError):
+                continue
+            secs = (b - a).total_seconds()
+            if secs > 0:
+                rates.append(secs / r["total"])
+    finally:
+        if own:
+            con.close()
+    if not rates:
+        return _FALLBACK_SECS_PER_PAGE
+    rates.sort()
+    return rates[len(rates) // 2]
 
 
 @app.route("/notes")

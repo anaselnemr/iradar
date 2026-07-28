@@ -664,7 +664,7 @@ function bulk(action, btn) {
   if (action === 'delete' &&
       !confirm(`Remove ${n} page(s) and all their stored snapshots? This cannot be undone.`)) return;
   if (action === 'check' && n > 200 &&
-      !confirm(`Capture ${n} pages now? That takes roughly ${Math.round(n * 90 / 3600 * 10) / 10} hours.`)) return;
+      !confirm(`Check ${n.toLocaleString()} pages now? That takes ${roughly(n * SECS_PER_PAGE)}.`)) return;
   stageSel();
   document.getElementById('bulk-action').value = action;
   document.getElementById('bulkform').submit();
@@ -673,6 +673,18 @@ function fmtEta(sec) {
   if (sec == null) return '';
   const h = Math.floor(sec / 3600), m = Math.max(1, Math.round((sec % 3600) / 60));
   return h ? ` · ≈ ${h}h ${m}m left` : ` · ≈ ${m}m left`;
+}
+// measured from the runs that have finished, not typed in - see
+// seconds_per_page() in app.py
+const SECS_PER_PAGE = {{ '%.2f'|format(secs_per_page) }};
+// "roughly 85.9 hours" is two lies in three words: the number was wrong and
+// the decimal claimed a precision an estimate does not have
+function roughly(sec) {
+  const mins = sec / 60;
+  if (mins < 90) return `about ${Math.max(1, Math.round(mins / 5) * 5)} minutes`;
+  const hrs = sec / 3600;
+  if (hrs < 4) return `about ${Math.round(hrs * 2) / 2} hours`;
+  return `about ${Math.round(hrs)} hours`;
 }
 let sawRunning = {{ 'true' if state.running else 'false' }};
 let isPaused = {{ 'true' if state.paused else 'false' }};

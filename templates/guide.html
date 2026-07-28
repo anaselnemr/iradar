@@ -10,19 +10,55 @@
     what is deliberately ignored - sit side by side where the contrast does the
     explaining. -#}
 <style>
-  .gd { max-width: 900px; margin: 0 auto; display: flex;
-        flex-direction: column; gap: 16px; }
+  .gd { max-width: 1140px; margin: 0 auto; display: grid;
+        grid-template-columns: 208px minmax(0, 1fr); gap: 28px;
+        align-items: start; }
+  .gdmain { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .gd .card { padding: 26px 28px; }
+  .gdmain > section[id] { scroll-margin-top: 16px; }
+
+  /* contents: help is jumped into, not read start to finish */
+  .toc { position: sticky; top: 16px; font-size: 13.5px; }
+  .toc h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
+            letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+  .toc ol { list-style: none; margin: 0; padding: 0;
+            border-left: 1px solid var(--line); }
+  .toc a { display: block; padding: 6px 0 6px 13px; margin-left: -1px;
+           border-left: 2px solid transparent; color: var(--muted);
+           text-decoration: none; line-height: 1.35; }
+  .toc a:hover { color: var(--ink); }
+  .toc a.on { color: var(--accent); border-left-color: var(--accent);
+              font-weight: 600; }
+  @media (max-width: 940px) {
+    .gd { grid-template-columns: 1fr; gap: 14px; }
+    /* the rail becomes a scrolling strip rather than disappearing - on a phone
+       it is the only way to reach the bottom of a long page */
+    .toc { position: static; overflow-x: auto; }
+    .toc h4 { display: none; }
+    .toc ol { display: flex; gap: 6px; border-left: 0; padding-bottom: 4px; }
+    .toc a { white-space: nowrap; padding: 6px 12px; border-left: 0;
+             border: 1px solid var(--line); border-radius: 999px;
+             background: var(--card); }
+    .toc a.on { border-color: var(--accent); }
+    .gdmain > section[id] { scroll-margin-top: 10px; }
+  }
   .gd h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.25px; }
   .gd h2 + .lede { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
   .gd p { line-height: 1.62; font-size: 14.5px; }
   .gd a { color: var(--link); }
 
-  /* hero */
-  .hero h1 { margin: 0 0 10px; font-size: 30px; letter-spacing: -.6px; }
-  .hero .say { font-size: 17px; line-height: 1.55; margin: 0 0 22px;
-               max-width: 62ch; }
-  .hero .say b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  /* hero - NOT .hero: base.html already has one, for the dashboard, and it
+     brings a gradient background and its own h1 size with it */
+  .gd-hero { text-align: center; padding: 34px 28px 26px; }
+  .gd-hero h1 { margin: 0 0 10px; font-size: 32px; letter-spacing: -.7px; }
+  .gd-hero .say { font-size: 17px; line-height: 1.55; margin: 0 auto 24px;
+               max-width: 58ch; }
+  .gd-hero .mark { width: 46px; height: 46px; border-radius: 12px;
+                   display: block; margin: 0 auto 14px; }
+  .gd-hero .m-dark { display: none; }
+  [data-theme="dark"] .gd-hero .m-light { display: none; }
+  [data-theme="dark"] .gd-hero .m-dark { display: block; }
+  .gd-hero .say b { color: var(--accent); font-variant-numeric: tabular-nums; }
   .figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
           background: var(--line); border: 1px solid var(--line);
           border-radius: 12px; overflow: hidden; }
@@ -49,7 +85,10 @@
         left: 13.5px; top: 32px; bottom: 6px; width: 1px;
         background: var(--line); }
   .flow { counter-reset: f; }
-  .flow b { display: block; font-size: 15px; margin-bottom: 3px; }
+  /* > li > b, not .flow b: the loose selector caught every bold word INSIDE
+     the paragraphs too, so "marked Updated." broke across three lines with the
+     full stop stranded on its own */
+  .flow > li > b { display: block; font-size: 15px; margin-bottom: 3px; }
   .flow p { margin: 0; font-size: 14px; color: var(--ink); }
   .flow .aside { display: block; margin-top: 5px; font-size: 13px;
                  color: var(--muted); line-height: 1.55; }
@@ -88,6 +127,11 @@
   figure { margin: 18px 0 0; }
   figure img { width: 100%; display: block; border: 1px solid var(--line);
                border-radius: 12px; }
+  /* one shot per theme: a light screenshot on a dark page is a torch in the
+     face, and it also shows the reader an interface that is not theirs */
+  figure .m-dark { display: none; }
+  [data-theme="dark"] figure .m-light { display: none; }
+  [data-theme="dark"] figure .m-dark { display: block; }
   figcaption { color: var(--muted); font-size: 13px; margin-top: 9px;
                line-height: 1.55; }
 
@@ -111,17 +155,63 @@
   .lim li:last-child { border-bottom: 0; }
   .lim li::before { content: "—"; position: absolute; left: 0;
                     color: var(--muted); }
+  /* a list whose items name a colour swaps the dash for the colour itself */
+  .lim li:has(> .sw)::before { content: none; }
+  .sw { width: 11px; height: 11px; border-radius: 3px; position: absolute;
+        left: 0; top: 14px; }
+
+  /* the progress bar, rebuilt - same colours and proportions as the real one */
+  .barex { margin-top: 14px; }
+  .bx { display: flex; height: 12px; border-radius: 999px; overflow: hidden;
+        background: var(--hover); border: 1px solid var(--line); }
+  .bx i { display: block; height: 100%; }
+  /* what's new */
+  .rel { list-style: none; margin: 0; padding: 0; }
+  .rel > li { display: grid; grid-template-columns: 104px 1fr; gap: 16px;
+              padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .rel > li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .rel time { color: var(--muted); font-size: 12.5px; padding-top: 2px;
+              font-variant-numeric: tabular-nums; }
+  .rel ul { margin: 0; padding-left: 17px; }
+  .rel ul li { font-size: 14px; line-height: 1.55; margin-bottom: 5px; }
+  .rel ul li:last-child { margin-bottom: 0; }
+  @media (max-width: 620px) { .rel > li { grid-template-columns: 1fr; gap: 4px; } }
 </style>
 
 <div class="gd">
 
+  <nav class="toc" aria-label="On this page">
+    <h4>On this page</h4>
+    <ol>
+      <li><a href="#overview">What iRadar does</a></li>
+      <li><a href="#check">What happens on a check</a></li>
+      <li><a href="#signals">What it notices</a></li>
+      <li><a href="#review">Reviewing an update</a></li>
+      <li><a href="#content">Content &amp; file updates</a></li>
+      <li><a href="#writing-notes">Leaving a note</a></li>
+      <li><a href="#where">Where things are</a></li>
+      <li><a href="#account">Your account</a></li>
+      <li><a href="#know">Worth knowing</a></li>
+      <li><a href="#limits">What it does not do</a></li>
+      <li><a href="#whatsnew">What&rsquo;s new</a></li>
+      <li><a href="#notes">Bugs &amp; suggestions</a></li>
+    </ol>
+  </nav>
+
+  <div class="gdmain">
+
   <!-- what it is, and where it stands right now -->
-  <section class="card hero">
+  <section id="overview" class="card gd-hero">
+    <img class="mark m-light" alt=""
+         src="{{ url_for('static', filename='logo.png') }}?v=2">
+    <img class="mark m-dark" alt=""
+         src="{{ url_for('static', filename='logo-dark.png') }}?v=2">
     <h1>What iRadar does</h1>
-    <p class="say">It opens every page we track, once a week, and tells you what
-      actually changed since last time — wording, documents, images, videos,
-      boards and prices. So nobody has to open a page and try to remember what
-      it said last month.</p>
+    <p class="say">iRadar is website change monitoring for infineon.com. It
+      opens every page we track, once a week, and tells you what actually
+      changed since last time — wording, datasheets and other documents,
+      images, videos, boards and prices. So nobody has to open a page and try
+      to remember what it said last month.</p>
     <div class="figs">
       <a class="fig" href="{{ url_for('index') }}">
         <div class="n">{{ '{:,}'.format(f.pages) }}</div>
@@ -139,7 +229,7 @@
   </section>
 
   <!-- the run -->
-  <section class="card">
+  <section id="check" class="card">
     <h2>What happens on a check</h2>
     {#- NOT |capitalize: it lowercases the rest, so "every Monday" comes out
         "Every monday". Starting the sentence with a word of our own instead. -#}
@@ -180,12 +270,51 @@
     </ol>
 
     <figure>
-      <img src="{{ url_for('static', filename='guide/dashboard.png') }}" loading="lazy"
-           alt="The Dashboard: counts across the top, tracked pages below">
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/dashboard.png') }}" alt="The Dashboard: counts across the top, tracked pages below">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/dashboard-dark.png') }}" alt="The Dashboard: counts across the top, tracked pages below">
       <figcaption>The number under <b>Updated</b> is your queue — click it to
         see only those. <b>File updates</b> beside it is a separate queue, for
         files that changed behind a link that did not.</figcaption>
     </figure>
+
+    <h3 style="margin:26px 0 6px; font-size:15px">The bar you watch while it runs</h3>
+    <p style="margin-top:0">While a check is going, the Dashboard shows one bar
+      with every page in it. Each page sits in exactly one colour, and the five
+      always add up to the total — so the bar answers "how far along is it"
+      without you reading any numbers.</p>
+
+    {#- a replica, not a screenshot: a picture of the bar is out of date the
+        first time the colours change, and would be wrong in one of the two
+        themes no matter which one it was taken in -#}
+    <div class="barex" aria-hidden="true">
+      <div class="bx"><i style="width:46%;background:#16a34a"></i><i
+        style="width:6%;background:#ea580c"></i><i
+        style="width:9%;background:#7c3aed"></i><i
+        style="width:3%;background:#dc2626"></i></div>
+    </div>
+    <ul class="lim" style="margin-top:10px">
+      <li><span class="sw" style="background:#16a34a"></span><b>No update</b> —
+        captured, compared, nothing moved. On a normal check this is nearly the
+        whole bar.</li>
+      <li><span class="sw" style="background:#ea580c"></span><b>Updated</b> —
+        confirmed. It survived the second capture and is in your queue.</li>
+      <li><span class="sw" style="background:#7c3aed"></span><b>Double-checking</b>
+        — the page looked different and is being held for a second capture.
+        <b>Not an update yet.</b> These are only settled at the very end of the
+        check, so this number climbs all the way through and then empties in one
+        go — most of it into <i>no update</i>.</li>
+      <li><span class="sw" style="background:#dc2626"></span><b>Failed (will
+        retry)</b> — did not load this time. Every one gets two more tries at
+        the end. Only what fails all three is written down as an error, so this
+        number usually falls near the end rather than rising.</li>
+      <li><span class="sw" style="background:var(--muted)"></span><b>Waiting</b>
+        — not reached yet.</li>
+    </ul>
+    <div class="note"><p>A big <b>double-checking</b> number part way through is
+      normal and is not 173 updates waiting for you. It is the holding pen, and
+      the second capture is what empties it.</p></div>
 
     <h3 style="margin:26px 0 4px; font-size:15px">If a check stops half way</h3>
     <p style="margin-top:0">It picks up where it left off. Every page is recorded
@@ -230,7 +359,7 @@
   </section>
 
   <!-- the distinction people get wrong -->
-  <section class="card">
+  <section id="signals" class="card">
     <h2>What it notices, and what it lets pass</h2>
     <p class="lede">The right-hand column is why something you expected did not
       come up. Each one caused a flood of false alarms before it was handled.</p>
@@ -274,7 +403,7 @@
   </section>
 
   <!-- reviewing -->
-  <section class="card">
+  <section id="review" class="card">
     <h2>Reviewing an update</h2>
     <p class="lede">Open one from the Dashboard. You see exactly what moved —
       the wording before and after, which documents came and went, and the two
@@ -317,8 +446,10 @@
       records what the page says today.</p></div>
 
     <figure>
-      <img src="{{ url_for('static', filename='guide/update.png') }}" loading="lazy"
-           alt="An update, showing which signals fired and the before and after">
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/update.png') }}" alt="An update, showing which signals fired and the before and after">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/update-dark.png') }}" alt="An update, showing which signals fired and the before and after">
       <figcaption>Only what actually changed is shown, so a page raised on
         wording alone does not make you scroll past an unchanged
         screenshot.</figcaption>
@@ -326,7 +457,7 @@
   </section>
 
   <!-- the content library -->
-  <section class="card">
+  <section id="content" class="card">
     <h2>Content: every document, and where it is used</h2>
     <p class="lede">Every check reads the whole library off each page — so
       <a href="{{ url_for('search_items') }}">Content</a> is not a separate list
@@ -375,7 +506,7 @@
   </section>
 
   <!-- notes -->
-  <section class="card">
+  <section id="writing-notes" class="card">
     <h2>Leaving a note</h2>
     <p class="lede">Every page, document, board and update has a notes box at the
       bottom.</p>
@@ -387,14 +518,16 @@
       and read everything anyone has written under
       <a href="{{ url_for('notes_page') }}">Notes</a>.</p>
     <figure>
-      <img src="{{ url_for('static', filename='guide/notes.png') }}" loading="lazy"
-           alt="The notes box at the bottom of a page">
+      <img class="m-light" loading="lazy"
+           src="{{ url_for('static', filename='guide/notes.png') }}" alt="The notes box at the bottom of a page">
+      <img class="m-dark" loading="lazy"
+           src="{{ url_for('static', filename='guide/notes-dark.png') }}" alt="The notes box at the bottom of a page">
       <figcaption>Ctrl + Enter posts.</figcaption>
     </figure>
   </section>
 
   <!-- where things live -->
-  <section class="card">
+  <section id="where" class="card">
     <h2>Where things are</h2>
     <ul class="map">
       <li><a href="{{ url_for('index') }}">Dashboard</a>
@@ -417,7 +550,7 @@
   </section>
 
   <!-- account -->
-  <section class="card">
+  <section id="account" class="card">
     <h2>Your account</h2>
     <p class="lede">Sign in with your Infineon email address.</p>
     <p>Your name and password are under the avatar, top right. Changing your name
@@ -436,7 +569,7 @@
   </section>
 
   <!-- the rest of it -->
-  <section class="card">
+  <section id="know" class="card">
     <h2>Worth knowing</h2>
     <p class="lede">The things people ask about in the second week.</p>
     <ul class="lim">
@@ -471,7 +604,7 @@
   </section>
 
   <!-- honest limits -->
-  <section class="card">
+  <section id="limits" class="card">
     <h2>What it does not do</h2>
     <ul class="lim">
       <li><b>It does not find new pages by itself.</b> iRadar watches the
@@ -490,5 +623,53 @@
     </ul>
   </section>
 
+  <!-- what changed lately -->
+  <section id="whatsnew" class="card">
+    <h2>What&rsquo;s new</h2>
+    <p class="lede">Changes to iRadar itself &mdash; not to the website it
+      watches.</p>
+    <ol class="rel">
+      {% for r in whatsnew %}
+      <li>
+        <time>{{ r.on }}</time>
+        <ul>{% for line in r.what %}<li>{{ line }}</li>{% endfor %}</ul>
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {#- the ordinary notes section, pointed at iRadar itself: a bug report lands
+      in the same feed as everything else, so it gets read rather than sitting
+      in somebody's inbox -#}
+  {% include "_notes.html" %}
+
+  </div><!-- /.gdmain -->
+
 </div>
+{#- the rail follows the reading position: a contents list that never says
+    where you are is a list of links, not a map -#}
+<script>
+(function () {
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  if (!links.length || !('IntersectionObserver' in window)) return;
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+  var seen = {};
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
+    // the topmost visible section wins, so scrolling up highlights correctly
+    var current = null;
+    Object.keys(byId).forEach(function (id) {
+      if (!current && seen[id]) current = id;
+    });
+    links.forEach(function (a) {
+      a.classList.toggle('on', a.getAttribute('href') === '#' + current);
+    });
+  }, { rootMargin: '-8% 0px -70% 0px' });
+  Object.keys(byId).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) io.observe(el);
+  });
+})();
+</script>
 {% endblock %}

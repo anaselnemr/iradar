@@ -118,3 +118,72 @@ def test_rebuild_suspects_reconstructs_valid_and_requeues_broken():
     assert s["res"] is None, "a rebuilt suspect has no stored capture result"
     assert requeue == [2], f"broken suspect should be re-queued, got {requeue}"
     con.close()
+
+
+# --- the outcome bar after a resume ----------------------------------------
+# Every counter but one was carried across a restart. The dashboard draws
+# "no update" as saved - updated - errors, so the one that restarted at zero
+# had CUMULATIVE totals subtracted from it: a run 40 errors deep reported 39
+# pages checked out of hundreds, and looked like it had barely started.
+
+def _run_with_history(done, suspect, queued, ok, changed, errors):
+    _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO runs(id, started, kind, total, ok, changed, errors)"
+                " VALUES(1, '2026-01-01 00:00:00', 'full', ?, ?, ?, ?)",
+                (done + suspect + queued, ok, changed, errors))
+    uid = 1
+    for state, n in (("done", done), ("suspect", suspect), ("queued", queued)):
+        for _ in range(n):
+            con.execute("INSERT INTO run_items(run_id, url_id, state)"
+                        " VALUES(1, ?, ?)", (uid, state))
+            uid += 1
+    con.commit()
+    return con
+
+
+def _counters_on_resume(con, run_id=1):
+    """What a resume seeds its counters with - the block runner._go runs."""
+    c = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    row = con.execute("SELECT ok, changed, errors FROM runs WHERE id=?",
+                      (run_id,)).fetchone()
+    if row:
+        c["ok"] = row["ok"] or 0
+        c["changed"] = row["changed"] or 0
+        c["errors"] = row["errors"] or 0
+    c["saved"] = con.execute(
+        "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='done'",
+        (run_id,)).fetchone()[0] or 0
+    return c
+
+
+def test_saved_survives_a_restart_like_the_others():
+    con = _run_with_history(done=618, suspect=54, queued=2763,
+                            ok=578, changed=0, errors=40)
+    c = _counters_on_resume(con)
+    con.close()
+    assert c["saved"] == 618, \
+        f"saved restarted at {c['saved']} instead of carrying 618 forward"
+
+
+def test_no_update_is_not_driven_negative_by_carried_errors():
+    # what the dashboard computes: noUpd = saved - updated - errors
+    con = _run_with_history(done=618, suspect=54, queued=2763,
+                            ok=578, changed=0, errors=40)
+    c = _counters_on_resume(con)
+    con.close()
+    no_update = c["saved"] - c["changed"] - c["errors"]
+    assert no_update == 578, f"the bar would show {no_update} pages with no update"
+
+
+def test_every_page_lands_in_exactly_one_bucket():
+    done, suspect, queued = 618, 54, 2763
+    con = _run_with_history(done, suspect, queued, ok=578, changed=0, errors=40)
+    c = _counters_on_resume(con)
+    con.close()
+    total = done + suspect + queued
+    no_update = c["saved"] - c["changed"] - c["errors"]
+    waiting = total - no_update - c["changed"] - suspect - c["errors"]
+    assert no_update + c["changed"] + suspect + c["errors"] + waiting == total
+    assert waiting == queued, \
+        f"waiting read {waiting}, but {queued} pages have not been reached"

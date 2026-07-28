@@ -4,10 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}iRadar{% endblock %}</title>
-{#- ?v= so a browser that cached the old default icon picks the new one up.
-    Bump it if the mark is ever redrawn. Regenerate with: python make_logo.py -#}
-<link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}?v=1" sizes="any">
-<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=1">
+{#- ?v= so a browser that cached the old icon picks the new one up. Bump it if
+    the mark is ever redrawn. Regenerate with: python make_logo.py -#}
+<link rel="icon" id="favicon" sizes="any"
+      data-base="{{ url_for('static', filename='') }}"
+      href="{{ url_for('static', filename='favicon.ico') }}?v=2">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=2">
 <meta name="theme-color" content="#17161c">
 <script>
   // apply the saved theme BEFORE first paint so dark mode never flashes white
@@ -15,6 +17,17 @@
     var t = localStorage.getItem("theme");
     if (t === "dark") document.documentElement.dataset.theme = "dark";
   })();
+  // The tab icon cannot follow CSS, so it is set here and again on every
+  // toggle. Deliberately not a <link media="prefers-color-scheme"> - that
+  // follows the OS, and the setting people actually changed is ours.
+  function paintFavicon() {
+    var el = document.getElementById("favicon");
+    if (!el) return;
+    var dark = document.documentElement.dataset.theme === "dark";
+    var want = el.dataset.base + (dark ? "favicon-dark.ico" : "favicon.ico") + "?v=2";
+    if (el.getAttribute("href") !== want) el.setAttribute("href", want);
+  }
+  paintFavicon();
 </script>
 <style>
   :root {
@@ -26,16 +39,26 @@
        and .linkbtn and painted every one of them solid indigo. */
     --btn: var(--accent); --btn-ink: #ffffff;
     --link: #5e6ad2;
+    /* the bar has its own token: in light mode it is the one dark thing on the
+       page, in dark mode it has to sit BELOW the page or it reads as a card
+       floating at the top rather than a lid on it */
+    --head: #17161c;
     color-scheme: light;
   }
+  /* Not pure black. #000 with cards at #0d0d11 gives you two shades that read
+     as one, so nothing looks raised and every edge has to be drawn with a
+     border - which is what made it harsh. A page that is already slightly off
+     black lets the cards sit above it on tone alone, and the greys carry a
+     touch of the accent's blue so they look chosen rather than switched off. */
   [data-theme="dark"] {
-    --bg: #000000; --card: #0d0d11; --ink: #ededf2; --muted: #9a99a5;
+    --bg: #0e0e13; --card: #16161d; --ink: #e9e9f0; --muted: #9b9aa8;
     --accent: #818cf8; --ok: #4ade80; --warn: #fb923c; --err: #f87171;
-    --line: #232329; --hover: #17171c; --panel: #101014;
+    --line: #272730; --hover: #1e1e27; --panel: #1a1a22;
     /* the light accent is too pale to carry white text, so filled buttons keep
        the deeper indigo while everything else uses the brighter --accent */
     --btn: #5e6ad2; --btn-ink: #ffffff;
     --link: #a5b4fc;
+    --head: #0a0a0e;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -44,16 +67,28 @@
   /* Three tracks, so the nav is centred on the PAGE rather than on whatever is
      left over after the logo - with a plain flex row it drifts left or right
      as the logo or the buttons change width. */
-  header { background: #17161c; color: #fff; padding: 10px 22px;
+  header { background: var(--head); color: #fff; padding: 10px 22px;
            display: grid; grid-template-columns: 1fr auto 1fr;
            align-items: center; gap: 18px;
            border-bottom: 1px solid rgba(255,255,255,.07); }
-  header .logo { font-weight: 700; font-size: 17px; letter-spacing: .2px;
-                 display: flex; align-items: center; gap: 9px;
-                 color: inherit; text-decoration: none; }
+  /* The wordmark wears the brand, not plain white - the bar is dark in both
+     themes, so a light indigo reads as well as white did and says which
+     product this is. One colour, not two: splitting the "i" off in another
+     shade at 17px read as a typo rather than a device. */
+  /* a.logo, not .logo: the logo is a link now, and [data-theme="dark"] a lower
+     down carries the same specificity - so in dark mode the generic link
+     colour was winning on source order alone */
+  header a.logo { font-weight: 800; font-size: 18px; letter-spacing: -.2px;
+                  display: flex; align-items: center; gap: 9px;
+                  color: #b9beff; text-decoration: none; }
+  header a.logo:hover { color: #d5d8ff; }
   header .logo img { width: 26px; height: 26px; border-radius: 7px;
                      display: block; }
-  header .logo span { color: #8b93e8; }
+  /* Both marks are in the markup and CSS shows the one that suits the theme.
+     Swapping the src in JS instead would flash the wrong one on every load. */
+  header .logo .m-dark { display: none; }
+  [data-theme="dark"] header .logo .m-light { display: none; }
+  [data-theme="dark"] header .logo .m-dark { display: block; }
   /* below this the wordmark is the first thing to go - the mark still says
      which app this is, and the width buys the nav its room back */
   @media (max-width: 560px) { header .logo b { display: none; } }
@@ -455,7 +490,9 @@
   .b-live { background: #dcfce7; color: #166534; }
   .b-rejected { background: #fee2e2; color: #991b1b; }
   .b-type { background: #eef2ff; color: #3730a3; font-weight: 600; }
-  .btn-reject { background: var(--panel); color: #dc2626; border: 1.5px solid #fca5a5; }
+  /* var(--err), not a literal: the light red on a dark panel read at 3.6:1 */
+  .btn-reject { background: var(--panel); color: var(--err);
+                border: 1.5px solid rgba(220,38,38,.45); }
   .verdict { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
              margin-top: 14px; padding-top: 12px;
              border-top: 1px solid var(--line); }
@@ -543,7 +580,9 @@
   /* tone a chip's COUNT so problems (red) and healthy (green) scan at a glance,
      while the chip body stays neutral and calm */
   .chip-bad b  { color: #dc2626; }
-  .chip-warn b { color: #ea580c; }
+  /* one step darker than --warn: the orange that works as a badge ground is
+     3.6:1 as small bold text on a white chip */
+  .chip-warn b { color: #c2410c; }
   .chip-good b { color: #16a34a; }
   .chip-on.chip-bad b, .chip-on.chip-warn b, .chip-on.chip-good b { color: #fff; }
   .pager { display: flex; gap: 14px; align-items: center;
@@ -723,11 +762,14 @@
                  box-shadow: 0 14px 38px rgba(0,0,0,.20); }
   .acct-head { padding: 9px 10px 10px; border-bottom: 1px solid var(--line);
                margin-bottom: 6px; }
-  .acct-name { font-weight: 650; font-size: 13.5px; }
-  .acct-mail { color: var(--muted); font-size: 12px; margin-top: 1px;
+  /* two lines, not three: the role is one word and belongs beside the name */
+  .acct-who { display: flex; align-items: center; gap: 8px; }
+  .acct-name { font-weight: 650; font-size: 13.5px; min-width: 0;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-mail { color: var(--muted); font-size: 12px; margin-top: 2px;
                overflow: hidden; text-overflow: ellipsis; }
-  .acct-role { display: inline-block; margin-top: 7px; font-size: 11px;
-               text-transform: capitalize; padding: 2px 8px; border-radius: 999px;
+  .acct-role { flex-shrink: 0; font-size: 11px; line-height: 1.65;
+               text-transform: capitalize; padding: 1px 8px; border-radius: 999px;
                background: rgba(110,109,122,.14); color: var(--muted); }
   .acct-role.is-admin { background: rgba(94,106,210,.16); color: var(--accent); }
   /* every row is the same control whether it is a link, a button or in a form */
@@ -890,6 +932,14 @@
   [data-theme="dark"] .chip-on     { background: #e9e9e9; color: #000; border-color: #e9e9e9; }
   [data-theme="dark"] .chip-on b   { color: #818cf8; }
   [data-theme="dark"] a { color: #a5b4fc; }
+  /* ...but a link DRESSED AS A CONTROL keeps the control's colour. This rule
+     carries the same weight as .btn and .chip and sits below them, so without
+     these it repainted their labels: "Export everything" came out lavender on
+     indigo at 2.4:1, and the same trick had already swallowed the logo. */
+  [data-theme="dark"] a.btn { color: var(--btn-ink); }
+  [data-theme="dark"] a.chip,
+  [data-theme="dark"] a.btn-ghost { color: var(--ink); }
+  [data-theme="dark"] a.chip-on { color: #fff; }
   [data-theme="dark"] .pagecard-url { color: #a5b4fc; }
   [data-theme="dark"] .liveurl { color: #a5b4fc !important; }
   /* filled-button colour is the --btn token now. Restating it here as
@@ -937,8 +987,11 @@
 <body>
 <header>
   <a class="logo" href="{{ url_for('index') }}">
-    <img src="{{ url_for('static', filename='logo.png') }}?v=1" alt="" width="26" height="26">
-    <b>i<span>Radar</span></b>
+    <img class="m-light" src="{{ url_for('static', filename='logo.png') }}?v=2"
+         alt="" width="26" height="26">
+    <img class="m-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v=2"
+         alt="" width="26" height="26">
+    <b>iRadar</b>
   </a>
   {#- the nav carries which page you are on, so the pages themselves no longer
       repeat their own name in a heading -#}
@@ -980,9 +1033,11 @@
       </summary>
       <div class="panel">
         <div class="acct-head">
-          <div class="acct-name">{{ me['name'] or me['email'].split('@')[0] }}</div>
+          <div class="acct-who">
+            <div class="acct-name">{{ me['name'] or me['email'].split('@')[0] }}</div>
+            <span class="acct-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
+          </div>
           <div class="acct-mail">{{ me['email'] }}</div>
-          <span class="acct-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
         </div>
 
         {#- the theme toggle lives here now; it is a preference, not an action -#}
@@ -1134,8 +1189,10 @@
     var dark = root.dataset.theme === "dark";
     if (dark) { delete root.dataset.theme; localStorage.setItem("theme", "light"); }
     else { root.dataset.theme = "dark"; localStorage.setItem("theme", "dark"); }
-    // the icon itself is swapped in CSS off data-theme - setting textContent
-    // here used to replace the whole button, SVG included
+    // the button's own icon is swapped in CSS off data-theme - setting
+    // textContent here used to replace the whole button, SVG included.
+    // The tab icon is not reachable from CSS, so it is repainted by hand.
+    paintFavicon();
   }
 
 // Every search bar gets the same clear button and the same "/" shortcut,

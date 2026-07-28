@@ -241,3 +241,57 @@ def test_a_deleted_authors_notes_still_get_a_colour():
     css = app._avatar_filter(orphan)
     assert css.startswith("linear-gradient")
     assert app._avatar_filter("Someone Who Left") == css
+
+
+# --- how long a check will take -------------------------------------------
+# The confirmation box used to multiply by a typed-in 90 seconds a page against
+# a real 8, and offer to spend 86 hours on a job that takes 9. An estimate that
+# wrong is worse than none: it reads as "do not press this".
+
+def _runs(*specs):
+    """Replace run history with (pages, elapsed_seconds) pairs, newest last."""
+    con = db.connect()
+    con.execute("DELETE FROM runs")
+    for i, (pages, secs) in enumerate(specs):
+        start = 1_700_000_000 + i * 1_000_000
+        fmt = lambda t: __import__("datetime").datetime.utcfromtimestamp(t) \
+            .strftime("%Y-%m-%d %H:%M:%S")
+        con.execute("INSERT INTO runs(started, finished, kind, total)"
+                    " VALUES(?,?,?,?)", (fmt(start), fmt(start + secs),
+                                         "full", pages))
+    con.commit()
+    con.close()
+
+
+def test_the_estimate_is_measured_not_typed_in():
+    _runs((4000, 4000 * 8), (4000, 4000 * 8), (4000, 4000 * 8))
+    assert abs(app.seconds_per_page() - 8.0) < 0.01
+
+
+def test_an_interrupted_run_does_not_poison_the_estimate():
+    # elapsed is wall clock, so a run that stopped overnight and resumed counts
+    # the downtime as work. It must not drag the estimate with it.
+    _runs((4000, 4000 * 8), (4000, 4000 * 40), (4000, 4000 * 9))
+    got = app.seconds_per_page()
+    assert got < 12, f"one interrupted run moved the estimate to {got:.1f}s/page"
+
+
+def test_a_fresh_install_still_gets_a_number():
+    _runs()
+    assert app.seconds_per_page() == app._FALLBACK_SECS_PER_PAGE
+
+
+def test_a_tiny_run_is_not_treated_as_a_rate():
+    # checking one page has a fixed browser-startup cost that says nothing
+    # about what four thousand pages cost each
+    _runs((1, 120))
+    assert app.seconds_per_page() == app._FALLBACK_SECS_PER_PAGE
+
+
+def test_the_dashboard_hands_the_page_a_real_rate():
+    _runs((4000, 4000 * 8), (4000, 4000 * 8))
+    html = _client.get("/").data.decode("utf-8", "replace")
+    m = __import__("re").search(r"SECS_PER_PAGE = ([\d.]+)", html)
+    assert m, "the dashboard no longer passes a measured rate to the page"
+    assert 7.5 < float(m.group(1)) < 8.5, m.group(1)
+    assert "* 90 / 3600" not in html, "the hardcoded 90s guess is back"
