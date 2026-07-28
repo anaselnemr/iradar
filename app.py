@@ -3175,6 +3175,25 @@ def run_now():
         if not ids:
             flash("Component detection has run on every page already.")
             return redirect(url_for("index"))
+    elif (request.form.get("skip_gone") == "1"
+          or request.args.get("skip_gone") == "1"
+          or request.form.get("skip_gone_blank") == "1"
+          or request.args.get("skip_gone_blank") == "1"):
+        # Everything EXCEPT the pages that are gone (404) - and optionally the
+        # blank ones too. Those are the pages that spend the longest in
+        # retries, so leaving them out is how a near-full run finishes fast.
+        # The scheduled full check still covers them, so a page coming back
+        # to life is never missed for more than a week.
+        skip = ("notlive", "blank")             if (request.form.get("skip_gone_blank") == "1"
+                or request.args.get("skip_gone_blank") == "1") else ("notlive",)
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls WHERE active=1 AND IFNULL(last_status,'')"
+            " NOT IN (%s)" % ",".join("?" * len(skip)), skip)]
+        con.close()
+        if not ids:
+            flash("Nothing left to check once those are skipped.")
+            return redirect(url_for("index"))
     elif (request.form.get("refresh_price") == "1"
           or request.args.get("refresh_price") == "1"):
         # PTPs captured before the volume-pricing fix: their price lacks the
@@ -3199,7 +3218,7 @@ def run_now():
             flash("A check is already running.")
         return redirect(url_for("index"))
     if runner.run_check_background(kind="manual", url_ids=ids):
-        flash(f"Checking {len(ids)} pending page(s)…" if ids
+        flash(f"Checking {len(ids)} page(s)…" if ids
               else "Check started - progress is shown below.")
     else:
         flash("A check is already running.")

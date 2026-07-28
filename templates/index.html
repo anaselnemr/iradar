@@ -73,6 +73,21 @@
             <button class="linkbtn" title="Continue the component pass: only pages that have not been through component detection yet">resume component pass ({{ comp_pending }} left)</button>
           </form>
           {% endif %}
+          {#- the gone pages are the slow pages: every one burns its full
+              retry rounds. Leaving them out is how a near-full run finishes
+              fast; the scheduled full check still covers them. -#}
+          {% if notlive_total %}
+          <form method="post" action="{{ url_for('run_now') }}">
+            <input type="hidden" name="skip_gone" value="1">
+            <button class="linkbtn" title="Check every page except the {{ notlive_total }} the server says are gone (404). Those spend the longest in retries, so this run finishes much faster. The scheduled full check still covers them.">everything except {{ notlive_total }} not-live</button>
+          </form>
+          {% if counts.blank %}
+          <form method="post" action="{{ url_for('run_now') }}">
+            <input type="hidden" name="skip_gone_blank" value="1">
+            <button class="linkbtn" title="Also skip the {{ counts.blank }} pages that answer but render empty — the other slow group. {{ notlive_total + counts.blank }} skipped in all.">everything except not-live + blank ({{ notlive_total + counts.blank }} skipped)</button>
+          </form>
+          {% endif %}
+          {% endif %}
         </div>
       </details>
       {% endif %}
