@@ -34,7 +34,7 @@
 <div class="pf">
   <div class="card">
     <div class="pf-head">
-      <span class="av pf-av" style="--h: {{ me|avatar_hue }}">{{ me|initials }}</span>
+      <span class="av pf-av" style="--avatar:{{ me|avatar }}">{{ me|initials }}</span>
       <div class="pf-who">
         <h2>{{ me['name'] or me['email'].split('@')[0] }}</h2>
         <div class="mail">{{ me['email'] }}</div>

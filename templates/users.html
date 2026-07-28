@@ -120,7 +120,7 @@
           <td>
             <div class="u-who">
               <span class="av u-av {{ 'av-off' if not u['active'] }}"
-                    style="--h: {{ u|avatar_hue }}">{{ u|initials }}</span>
+                    style="--avatar:{{ u|avatar }}">{{ u|initials }}</span>
               <div class="u-id">
                 {#- name alone on its line: a badge beside it used to push it
                     around and wrap long names onto two rows -#}

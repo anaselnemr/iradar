@@ -39,7 +39,8 @@
     <ol class="nl">
       {% for r in rows %}
       <li class="{{ 'nl-done' if r.c['resolved'] }}">
-        <span class="av nl-av" aria-hidden="true" style="--h: {{ r.c['author']|avatar_hue }}">{{ r.c['author']|initials }}</span>
+        <span class="av nl-av" aria-hidden="true"
+              style="--avatar:{{ r.c|avatar }}">{{ r.c['author']|initials }}</span>
         <div class="nl-main">
           <div class="nl-meta">
             <b>{{ r.c['author'] or 'someone' }}</b>

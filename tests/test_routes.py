@@ -170,3 +170,74 @@ def test_awaiting_fix_is_gone_from_the_filters():
         "the retired 'Awaiting fix' filter is still selectable"
     html = _client.get("/").data.decode("utf-8", "replace")
     assert "Awaiting fix" not in html, "the Awaiting fix chip is still rendered"
+
+
+# --- avatar colours ---------------------------------------------------------
+# A fixed palette of N colours fails twice: the N+1th person repeats somebody,
+# and white initials disappear on the bright half of the wheel. Both are the
+# kind of thing you only notice after the tenth person joins.
+
+def _rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _white_contrast(hexcode):
+    def ch(v):
+        v /= 255.0
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = _rgb(hexcode)
+    lum = 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+    return 1.05 / (lum + 0.05)
+
+
+def _colours(css):
+    import re
+    return re.findall(r"#[0-9a-f]{6}", css)
+
+
+def test_every_avatar_carries_white_text():
+    for uid in range(1, 61):
+        for hexcode in _colours(app._avatar_css(uid)):
+            c = _white_contrast(hexcode)
+            assert c >= 4.5, \
+                f"account {uid} got {hexcode}, {c:.2f}:1 against white initials"
+
+
+def test_sixty_accounts_get_sixty_different_colours():
+    seen = [app._avatar_css(uid) for uid in range(1, 61)]
+    assert len(set(seen)) == 60, "two accounts were handed the same colour"
+
+
+def test_neighbouring_accounts_are_not_near_neighbouring_colours():
+    # ids handed out in a row must not come out as shades of one another
+    for uid in range(1, 40):
+        a = _rgb(_colours(app._avatar_css(uid))[0])
+        b = _rgb(_colours(app._avatar_css(uid + 1))[0])
+        apart = sum(abs(x - y) for x, y in zip(a, b))
+        assert apart > 90, f"accounts {uid} and {uid + 1} look alike"
+
+
+def test_a_persons_colour_never_moves():
+    # renaming somebody, or anyone else joining or leaving, must not reshuffle
+    row = {"id": 7, "name": "Ada Lovelace", "email": "ada@example.com"}
+    before = app._avatar_filter(row)
+    row["name"] = "Ada L"
+    assert app._avatar_filter(row) == before, "a rename changed the colour"
+    assert app._avatar_filter({"id": 7}) == before
+
+
+def test_a_note_is_the_same_colour_as_its_author():
+    # the notes feed stores the author's name, not just their id - the avatar
+    # must still key off the account or one person shows up two colours
+    account = {"id": 12, "name": "Grace", "email": "grace@example.com"}
+    note = {"id": 5000, "user_id": 12, "author": "Grace"}
+    assert app._avatar_filter(note) == app._avatar_filter(account), \
+        "the same person is one colour in notes and another in the corner"
+
+
+def test_a_deleted_authors_notes_still_get_a_colour():
+    orphan = {"id": 5001, "user_id": None, "author": "Someone Who Left"}
+    css = app._avatar_filter(orphan)
+    assert css.startswith("linear-gradient")
+    assert app._avatar_filter("Someone Who Left") == css

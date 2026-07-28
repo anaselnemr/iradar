@@ -186,6 +186,47 @@
         see only those. <b>File updates</b> beside it is a separate queue, for
         files that changed behind a link that did not.</figcaption>
     </figure>
+
+    <h3 style="margin:26px 0 4px; font-size:15px">If a check stops half way</h3>
+    <p style="margin-top:0">It picks up where it left off. Every page is recorded
+      as it is done, so a check that is interrupted — the machine restarts, the
+      server redeploys, somebody presses stop — resumes from the first page it
+      had not reached, rather than starting the whole thing again.</p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>Pages already checked are not re-checked.</b> Their results stand.</li>
+      <li><b>Pages caught mid-capture are simply redone.</b> A half-written
+        capture is never kept, so an interruption cannot leave a corrupted
+        reference behind.</li>
+      <li><b>Updates already found are still in your queue.</b> Nothing waiting
+        for review is lost.</li>
+      <li><b>Start it again and it continues</b> — you do not have to do
+        anything special{% if is_admin %}, just press <i>Check all pages</i>{% endif %}.</li>
+    </ul>
+    <p style="color:var(--muted); font-size:13.5px">Run history shows a check
+      that has not finished with no end time. That is normal while one is
+      running, and a sign it was interrupted if the time has passed.</p>
+
+    <h3 style="margin:26px 0 4px; font-size:15px">Page states you will see</h3>
+    <p style="margin-top:0; color:var(--muted); font-size:13.5px">These are the
+      chips along the top of the Dashboard. Each one is a filter.</p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>Unchanged</b> — checked, nothing moved. The normal state.</li>
+      <li><b>Updated</b> — something changed and it is waiting for you.</li>
+      <li><b>Blank page</b> — the address answered but there was nothing on it.
+        Usually Infineon serving an empty shell; it is retried next check.</li>
+      <li><b>Capture error</b> — it failed all three attempts. Almost always the
+        site being slow or refusing us, not the page being broken.</li>
+      <li><b>Not live</b> — the address answers 4xx. The page is gone, or was
+        never published. It stays in the list so you can see it went.</li>
+      <li><b>Not captured</b> — added but never successfully read yet, so there
+        is nothing to compare against. It gets its first reading next check.</li>
+      <li><b>Paused</b> — deliberately skipped. Still listed, not checked.</li>
+      <li><b>Ownership mismatch</b> — the owner or business line on the page does
+        not agree with what was imported. Flagged for a human, never
+        auto-corrected.</li>
+      <li><b>Test set</b> — a small fixed group used to try a change out before
+        putting it near all {{ '{:,}'.format(f.pages) }} pages.</li>
+    </ul>
   </section>
 
   <!-- the distinction people get wrong -->
@@ -254,10 +295,26 @@
       </div>
     </div>
 
-    <div class="note warn"><p><b>Accept is the normal one.</b> Reject is for when
-      iRadar got the page wrong, not for when you dislike what Infineon
-      published. Either way the page returns to normal — nothing is left
-      hanging.</p></div>
+    <h3 style="margin:22px 0 4px; font-size:15px">Two reasons to reject</h3>
+    <p style="margin-top:0">Both keep the previous version as the reference, and
+      that is exactly what makes them work:</p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>The capture is wrong.</b> Something did not load and iRadar saw
+        half a page. Next week it captures properly, matches the version you
+        kept, and says nothing.</li>
+      <li><b>The change is real but wrong, and will be put back.</b> Somebody
+        published a mistake. Reject it, tell whoever owns the page, and the
+        reference stays on the correct version — so when they fix it, the page
+        matches again and goes quiet on its own.
+        <br><span style="color:var(--muted)">Until it is fixed the page will come
+        up again on every check. That is the point: it is a standing reminder
+        that the site still does not say what it should.</span></li>
+    </ul>
+
+    <div class="note warn"><p><b>Accept is the normal one.</b> Reject is for a
+      capture that is wrong or a change that is going to be undone — not for a
+      change you simply dislike. Accepting does not endorse anything; it only
+      records what the page says today.</p></div>
 
     <figure>
       <img src="{{ url_for('static', filename='guide/update.png') }}" loading="lazy"
@@ -266,6 +323,55 @@
         wording alone does not make you scroll past an unchanged
         screenshot.</figcaption>
     </figure>
+  </section>
+
+  <!-- the content library -->
+  <section class="card">
+    <h2>Content: every document, and where it is used</h2>
+    <p class="lede">Every check reads the whole library off each page — so
+      <a href="{{ url_for('search_items') }}">Content</a> is not a separate list
+      somebody maintains, it is what the site actually says today.</p>
+
+    <p><b>It is organised by the thing, not by the page.</b> One datasheet used on
+      forty product pages is <i>one</i> entry with forty pages under it — not
+      forty copies. Open it and you get the answer to the question that is
+      otherwise a morning's work:</p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>Which pages carry this document</b> — every one, with its type and
+        the heading it sits under on that page</li>
+      <li><b>Its details</b> — version, language, date, size, and whether it is
+        public or behind a MyInfineon login</li>
+      <li><b>A picture of the first page</b>, rendered here, so you can tell at a
+        glance whether it is the right file without downloading it</li>
+      <li><b>Where to edit it</b> — the DAM and Windchill badges go straight to
+        the source system{% if is_admin %} (an admin sets those links under
+        Settings → Backends){% endif %}</li>
+    </ul>
+
+    <p>The same is true of videos, images, boards, design resources and partner
+      logos. Anything the page lists, iRadar lists — grouped by what it is.</p>
+
+    <div class="note"><p><b>This is what makes a removal visible.</b> When a
+      datasheet disappears from a page, iRadar knows because it compares the
+      whole library, not just the words. That is the <b>Library</b> signal, and
+      it is the one that catches the changes reading the page would not.</p></div>
+
+    <h3 style="margin:26px 0 4px; font-size:15px">File updates: the other queue</h3>
+    <p style="margin-top:0">A datasheet can be replaced without the page moving
+      at all — same link, same title, new file behind it. Nothing on the page
+      changed, so no page comes up, and reading the site would never tell you.
+      iRadar asks each file for its size and date without downloading it, and
+      when those move it goes to
+      <a href="{{ url_for('assets_page') }}">File updates</a> instead.</p>
+    <ul class="lim" style="margin-top:6px">
+      <li><b>Its own queue, its own Accept and Reject</b>, separate from page
+        updates so a quiet republish does not get lost among them.</li>
+      <li><b>Every page carrying that file is listed</b> — one replaced
+        datasheet can be forty pages' worth of news.</li>
+      <li><b>Accept</b> records the new file as the one we know about.
+        <b>Reject</b> keeps the old reading, for when the server is reporting
+        nonsense rather than the file genuinely changing.</li>
+    </ul>
   </section>
 
   <!-- notes -->
@@ -329,6 +435,41 @@
       <code>P@ssw0rd!</code>.</p></div>
   </section>
 
+  <!-- the rest of it -->
+  <section class="card">
+    <h2>Worth knowing</h2>
+    <p class="lede">The things people ask about in the second week.</p>
+    <ul class="lim">
+      <li><b>Only the last {{ s.keep_snapshots }} captures of a page are kept.</b>
+        Enough to compare against and to show you a before and after — not an
+        archive. You cannot ask what a page looked like in March.
+        <br><span style="color:var(--muted)">Anything an open update needs is
+        never removed, however old, so nothing waiting for review can be
+        cleared out from under you.</span></li>
+      <li><b>The site is also a tree.</b>
+        <a href="{{ url_for('hierarchy') }}">Hierarchy</a> lays the pages out
+        the way infineon.com nests them, so you can see a whole product family
+        and everything under it rather than a flat list.</li>
+      <li><b>Pages carry who owns them</b> — BL, PL, CM and the marketing owner,
+        shown on the page and available as export columns. Where a page
+        disagrees with what was imported it is flagged <i>Ownership mismatch</i>
+        for somebody to settle, never quietly corrected.</li>
+      <li><b>Which parts a page has is tracked too</b> — whether it carries a
+        documents section, a video block, a partner list. Filter the Dashboard
+        by them to find, say, every product page with no datasheets. A section
+        that disappears entirely is a change worth seeing.</li>
+      <li><b>A page can be paused</b> when it is known to be in flux and you do
+        not want it coming up every week. It stays in the list, marked
+        <i>Paused</i>, and is simply not checked.</li>
+      <li><b>Redirects are followed and merged.</b> If two addresses land on the
+        same page it is watched once, not twice, so you do not review the same
+        change twice over.</li>
+      <li><b>Anything on screen can be exported.</b>
+        <a href="{{ url_for('export_builder') }}">Export</a> turns any filter and
+        any set of columns into a spreadsheet.</li>
+    </ul>
+  </section>
+
   <!-- honest limits -->
   <section class="card">
     <h2>What it does not do</h2>
@@ -340,6 +481,10 @@
       <li><b>A few finder pages</b> only capture their first page of results.</li>
       <li><b>Gated documents</b> — the ones behind a MyInfineon login — cannot be
         previewed, because all we can see is the login wall.</li>
+      <li><b>It does not watch continuously.</b> A change published and undone
+        between two checks is a change nobody sees.</li>
+      <li><b>It does not tell anyone.</b> No email, no alert — the queue waits
+        on the Dashboard until somebody opens it.</li>
       <li><b>It reports; it does not judge.</b> Whether a change matters is your
         call. iRadar only promises to notice it.</li>
     </ul>

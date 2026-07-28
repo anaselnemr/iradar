@@ -690,14 +690,14 @@
   .acct > summary:hover { background: rgba(255,255,255,.13); color: #fff;
                           border-color: rgba(255,255,255,.2); }
   .acct[open] > summary { background: rgba(255,255,255,.15); color: #fff; }
-  /* One avatar everywhere: the account menu, the people list, notes. The hue
-     comes from the person, so the same face is the same colour on every screen
-     and two people are never almost-the-same colour. */
+  /* One avatar everywhere: the account menu, the people list, notes. The
+     colour is placed on the wheel per account rather than picked from a list,
+     so it is the same face on every screen, nobody shares with anybody, and
+     the hundredth person still gets their own. See _avatar_filter in app.py. */
   .av { border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
         font-weight: 700; color: #fff; letter-spacing: .3px; line-height: 1;
-        background: linear-gradient(135deg,
-                    hsl(var(--h) 62% 52%), hsl(calc(var(--h) + 24) 58% 42%));
-        text-shadow: 0 1px 1px rgba(0,0,0,.22); }
+        background: var(--avatar, linear-gradient(135deg, #6d78e0, #8b5cf6));
+        text-shadow: 0 1px 1px rgba(0,0,0,.25); }
   .av-off { filter: grayscale(1); opacity: .45; }
   .acct-av { width: 26px; height: 26px; font-size: 11px; }
   .acct-who { max-width: 130px; overflow: hidden; text-overflow: ellipsis;
@@ -960,7 +960,7 @@
     {% if me %}
     <details class="acct">
       <summary title="{{ me['email'] }}" aria-label="Account menu">
-        <span class="av acct-av" style="--h: {{ me|avatar_hue }}">{{ me|initials }}</span>
+        <span class="av acct-av" style="--avatar:{{ me|avatar }}">{{ me|initials }}</span>
         <span class="acct-who">{{ me['name'] or me['email'].split('@')[0] }}</span>
       </summary>
       <div class="panel">

@@ -2,6 +2,7 @@
 
 Run:  python app.py     then open http://127.0.0.1:5000
 """
+import colorsys
 import hashlib
 import io
 import json
@@ -353,23 +354,103 @@ def _initials_filter(person):
     return (parts[0][:1] + parts[-1][:1]).upper()
 
 
-@app.template_filter("avatar_hue")
-def _avatar_hue_filter(person):
-    """A colour that is always the same for the same person, and different from
-    their neighbours'. Derived from the name, so nothing has to be stored and
-    everyone is recognisable by colour before they read the letters."""
-    s = ""
-    if isinstance(person, str):
-        s = person
-    else:
+_GOLDEN_ANGLE = 137.508      # successive multiples are maximally far apart
+
+
+@app.template_filter("avatar")
+def _avatar_filter(person):
+    """This person's avatar colour, as a ready CSS gradient.
+
+    Two problems a fixed palette of N colours cannot solve: the N+1th person
+    repeats somebody, and with ten colours and eight people a clash is already
+    more likely than not. So the colour is placed on the wheel rather than
+    chosen from a list.
+
+    Successive accounts are spun by the golden angle, which is the arrangement
+    that keeps every neighbour as far from the last as possible no matter how
+    many there are - the first twenty are all obviously different, and it keeps
+    working past that instead of wrapping onto itself.
+
+    Lightness is not constant, because a constant one does not survive the
+    wheel: yellow at the lightness that makes blue readable is a highlighter
+    pen with invisible white text on it. Yellows and greens are darkened
+    exactly enough to carry the initials.
+
+    Anchored on the account id where there is one, so a person's colour never
+    changes - not when they are renamed, and not when somebody else is added or
+    removed.
+    """
+    def field(key):
+        """(present, value) - a NULL user_id is not the same as no user_id."""
         try:
-            s = (person["email"] or person["name"] or "")
-        except Exception:
-            s = str(person or "")
-    h = hashlib.sha1(s.strip().lower().encode("utf-8")).digest()
-    # 12 well-separated hues rather than 360, so two people are never
-    # almost-the-same colour
-    return (h[0] % 12) * 30
+            return True, person[key]
+        except (KeyError, IndexError, TypeError):
+            return False, None
+
+    seed = None
+    if not isinstance(person, str):
+        # a note carries the account that wrote it; an account carries its own
+        # id. user_id first, because a note row has both and its own id is the
+        # note's, not the person's. A note whose author has since been deleted
+        # has the column but no value, and must fall through to the name -
+        # taking the note's id would give that person a new colour per note.
+        seen, val = field("user_id")
+        if not seen:
+            seen, val = field("id")
+        if val is not None:
+            try:
+                seed = int(val)
+            except (TypeError, ValueError):
+                seed = None
+    if seed is None:
+        # a name with no account behind it any more - the person was deleted,
+        # their notes stay. Falls back to the name, which is all that is left.
+        s = person if isinstance(person, str) else ""
+        if not s:
+            try:
+                s = person["author"] or person["email"] or person["name"] or ""
+            except Exception:
+                s = str(person or "")
+        seed = int.from_bytes(
+            hashlib.sha1(s.strip().lower().encode("utf-8")).digest()[:4], "big")
+
+    return _avatar_css(seed)
+
+
+def _luminance(r, g, b):
+    def ch(v):
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def _at_brightness(hue, sat, target):
+    """The colour at this hue and saturation that is exactly `target` bright.
+
+    One lightness across the whole wheel does not give one brightness: at the
+    value that makes indigo comfortable, teal is a highlighter pen and white
+    text vanishes into it. So brightness is the thing held fixed and lightness
+    is solved for, which is why the greens come out deep and the blues do not.
+    """
+    lo, hi = 0.0, 1.0
+    for _ in range(24):
+        mid = (lo + hi) / 2
+        r, g, b = colorsys.hls_to_rgb(hue / 360.0, mid, sat)
+        if _luminance(r, g, b) < target:
+            lo = mid
+        else:
+            hi = mid
+    r, g, b = colorsys.hls_to_rgb(hue / 360.0, (lo + hi) / 2, sat)
+    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+
+@lru_cache(maxsize=512)
+def _avatar_css(seed):
+    hue = (seed * _GOLDEN_ANGLE) % 360
+    # 0.16 puts white text at 5:1 - past the 4.5 the guidelines ask for, on
+    # every hue, with the darker end of the gradient better still
+    return ("linear-gradient(135deg, %s, %s)"
+            % (_at_brightness(hue, 0.66, 0.16),
+               _at_brightness(hue, 0.62, 0.085)))
 
 
 @app.template_filter("notemd")
