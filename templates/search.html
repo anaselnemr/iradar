@@ -77,6 +77,18 @@
 
 <style>
   .launchpad { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  /* two tiles per row on a phone: seven full-width, mostly-empty cards were
+     a thousand pixels of scrolling to read six numbers */
+  @media (max-width: 560px) {
+    .launchpad { grid-template-columns: 1fr 1fr; gap: 9px; }
+    .lp-tile { padding: 12px 12px 10px; }
+    .lp-n { font-size: 22px; }
+    /* the filter chips: one row you swipe, not a five-row centred wall */
+    .pills { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start;
+             padding-bottom: 6px; scrollbar-width: none; }
+    .pills::-webkit-scrollbar { display: none; }
+    .pills .pill { flex: 0 0 auto; }
+  }
   .lp-tile { display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 15px;
              background: var(--card); border: 1px solid var(--line); border-radius: 14px;
              text-decoration: none; color: inherit;

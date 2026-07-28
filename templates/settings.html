@@ -147,6 +147,12 @@
   body:has(#pane-components.on) .settingscard { max-width: 1560px; }
   .matrixpane.on { display: block; }
   @keyframes paneIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
+  /* width:max-content cannot shrink, so at 375px the fourth tab hung past
+     the screen edge. A 2x2 grid keeps all four visible and tappable. */
+  @media (max-width: 520px) {
+    .seg { display: grid; grid-template-columns: 1fr 1fr; width: auto; }
+    .seg-b { padding: 9px 8px; }
+  }
 </style>
 <script>
   function segGo(btn) {

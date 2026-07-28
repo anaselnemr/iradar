@@ -33,16 +33,31 @@
               font-weight: 600; }
   @media (max-width: 940px) {
     .gd { grid-template-columns: 1fr; gap: 14px; }
-    /* the rail becomes a scrolling strip rather than disappearing - on a phone
-       it is the only way to reach the bottom of a long page */
-    .toc { position: static; overflow-x: auto; }
+    /* The rail becomes a chip strip - and STAYS, stuck to the top edge. A
+       static strip navigated the first screen of a twenty-thousand-pixel
+       page and then abandoned you; one sticky row is cheap. */
+    .toc { position: sticky; top: 0; z-index: 30; overflow-x: auto;
+           background: var(--bg); padding: 8px 0 4px; margin: 0 -4px;
+           scrollbar-width: none; }
+    .toc::-webkit-scrollbar { display: none; }
     .toc h4 { display: none; }
-    .toc ol { display: flex; gap: 6px; border-left: 0; padding-bottom: 4px; }
-    .toc a { white-space: nowrap; padding: 6px 12px; border-left: 0;
+    .toc ol { display: flex; gap: 6px; border-left: 0; padding: 0 4px 4px; }
+    .toc a { white-space: nowrap; padding: 9px 13px; border-left: 0;
              border: 1px solid var(--line); border-radius: 999px;
              background: var(--card); }
     .toc a.on { border-color: var(--accent); }
-    .gdmain > section[id] { scroll-margin-top: 10px; }
+    .gdmain > section[id] { scroll-margin-top: 62px; }
+  }
+  /* give the prose the width back: 50px of card padding on a 375px screen
+     left a 36-character column */
+  @media (max-width: 620px) {
+    .gd .card { padding: 20px 16px; }
+    .gd-hero { padding: 12px; }
+    figure { margin-left: -16px; margin-right: -16px; }
+    figure img { border-radius: 0; border-left: 0; border-right: 0; }
+    .flow li { padding-left: 36px; }
+    .flow li::before { width: 24px; height: 24px; font-size: 12px; }
+    .flow li:not(:last-child)::after { left: 11.5px; }
   }
   /* A HEADING NEEDS AIR ABOVE IT. Every h3 in here used to sit as close to
      the paragraph before it as to its own, so a section read as one grey
@@ -120,7 +135,9 @@
 
   /* the pair that gets confused, side by side */
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; }
+    .pair > div + div { margin-top: 8px; padding-top: 18px;
+                        border-top: 1px solid var(--line); } }
   .pair > div { min-width: 0; }
   .plist { list-style: none; margin: 0; padding: 0; }
   .plist li { padding: 11px 0; border-bottom: 1px solid var(--line); }
@@ -381,8 +398,9 @@
   <!-- the distinction people get wrong -->
   <section id="signals" class="card">
     <h2><span class="secn">02</span>What it notices, and what it lets pass</h2>
-    <p class="lede">The right-hand column is why something you expected did not
-      come up. Each one caused a flood of false alarms before it was handled.</p>
+    <p class="lede">The second list — ignored on purpose — is why something you
+      expected did not come up. Each one caused a flood of false alarms before
+      it was handled.</p>
     <div class="pair">
       <div>
         <h3 style="margin:0 0 4px; font-size:14px"><span class="tick">✓</span>
@@ -927,6 +945,13 @@
     if (window.innerHeight + window.scrollY >=
         document.documentElement.scrollHeight - 4) cur = secs.length - 1;
     links.forEach(function (a, n) { a.classList.toggle('on', n === cur); });
+    // on the phone strip, keep the lit chip in view - only when it CHANGES,
+    // or re-centring on every scroll event fights a finger swiping the strip
+    if (cur !== pick.last && links[cur] &&
+        window.matchMedia('(max-width: 940px)').matches) {
+      links[cur].scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+    pick.last = cur;
   }
 
   // Straight on the event, no requestAnimationFrame: a background or

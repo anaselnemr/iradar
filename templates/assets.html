@@ -24,6 +24,7 @@
 
   {% if rows %}
   <form method="post" action="{{ url_for('assets_review') }}">
+  <div class="tablewrap">
   <table class="tbl" style="width:100%">
     <tr>
       <th style="width:26px"></th>
@@ -34,7 +35,7 @@
       <td><input type="checkbox" name="id" value="{{ r.id }}"></td>
       <td style="white-space:nowrap">{{ r.ts|localtime }}</td>
       <td>{{ r.kind or 'file' }}</td>
-      <td style="max-width:380px; overflow-wrap:anywhere">
+      <td class="urlcell" style="max-width:380px">
         <a href="{{ r.url }}" target="_blank">{{ r.url.rsplit('/',1)[-1] or r.url }}</a>
       </td>
       <td class="muted" style="font-size:12px">
@@ -52,7 +53,8 @@
     </tr>
     {% endfor %}
   </table>
-  <div style="margin-top:12px; display:flex; gap:10px">
+  </div>
+  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
     <button class="btn" type="submit">Mark selected as reviewed</button>
     <button class="btn btn-ghost" type="submit" name="all" value="1">Mark all as reviewed</button>
   </div>

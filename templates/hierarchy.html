@@ -88,6 +88,10 @@
     .hgroup { animation: gin .22s ease; }
     @keyframes gin { from { opacity: 0; transform: translateY(4px); } }
   }
+  @media (max-width: 520px) {
+    .ghead { flex-wrap: wrap; }
+    .ghead .gcount { flex-basis: 100%; }
+  }
 </style>
 
 <div class="card" style="padding:12px 14px">
@@ -145,7 +149,7 @@
   <div style="display:flex; gap:10px; margin-bottom:6px; align-items:center; flex-wrap:wrap">
     <span class="sbar" style="flex:1; min-width:230px"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       <input id="treefilter" type="text" oninput="tfChange()"
-             placeholder="Search the tree — a product, board or family name…"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+             placeholder="Search the tree…"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
     </span>
     <span id="tfcount" class="muted" style="font-size:12px"></span>
     <button type="button" class="linkbtn" onclick="setAllTree(true)">⊕ Expand all pages</button>

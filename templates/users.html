@@ -14,7 +14,22 @@
            gap: 12px; align-items: end; }
   @media (max-width: 760px) { .u-add { grid-template-columns: 1fr 1fr; }
                               .u-add .u-go { grid-column: 1 / -1; } }
-  @media (max-width: 460px) { .u-add { grid-template-columns: 1fr; } }
+  @media (max-width: 460px) { .u-add { grid-template-columns: 1fr; }
+                              .u-add .u-go button { width: 100%; } }
+  @media (max-width: 620px) {
+    table.u-list, table.u-list tbody { display: block; width: 100%; }
+    table.u-list thead { display: none; }
+    table.u-list tr { display: flex; flex-wrap: wrap; align-items: center;
+                      gap: 8px 12px; padding: 13px 0;
+                      border-bottom: 1px solid var(--line); }
+    table.u-list tr:last-child { border-bottom: 0; }
+    table.u-list td { display: block; padding: 0; border: 0; width: auto; }
+    /* who they are takes the whole first line */
+    table.u-list td:first-child { flex: 1 1 100%; }
+    .roleform select { width: auto; }
+    .u-acts { justify-content: flex-start; }
+    .u-acts button { padding: 8px 13px; font-size: 13px; }
+  }
   .u-add label { display: block; font-size: 12px; font-weight: 600;
                  color: var(--muted); margin-bottom: 6px;
                  letter-spacing: .01em; }
@@ -41,7 +56,7 @@
   .col-role { width: 118px; }
   .col-when { width: 118px; }
   .col-acts { width: 236px; }
-  @media (max-width: 760px) { .col-when { display: none; } }
+  @media (max-width: 760px) { .col-when, table.u-list td.u-when { display: none; } }
 
   .u-acts { display: flex; gap: 6px; justify-content: flex-end;
             flex-wrap: nowrap; }

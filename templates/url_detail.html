@@ -88,6 +88,11 @@
              background: var(--panel); border: 1px solid var(--line);
              border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.13);
              padding: 5px; }
+  /* on a phone the sibling menu takes the screen width, not 250px hanging
+     off wherever the breadcrumb happened to end */
+  @media (max-width: 560px) {
+    .bc-menu { position: fixed; top: auto; left: 12px; right: 12px;
+               min-width: 0; } }
   .bc-menu-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
                   color: var(--muted); padding: 5px 9px 6px;
                   display: flex; align-items: center; gap: 6px; }
@@ -108,14 +113,17 @@
      Title and its pencil on one line; then a row that reads left to right as
      what KIND of page, which page, and how it answered; then the dates. */
   .pgtitle { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-  .pgtitle h1 { font-size: 19px; margin: 0; }
+  /* min-width:0 + anywhere: when the title IS the address, a 40-character
+     unbreakable run must fold instead of running off a phone screen */
+  .pgtitle h1 { font-size: 19px; margin: 0; min-width: 0;
+                overflow-wrap: anywhere; }
   .pgpen > summary { list-style: none; cursor: pointer; padding: 2px 5px;
                      border-radius: 6px; line-height: 1; }
   .pgpen > summary::-webkit-details-marker { display: none; }
   .pgpen > summary:hover { background: var(--hover); }
   .pgaddr { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
             margin: 9px 0 0; }
-  .pgurl { font-size: 13.5px; word-break: break-all; }
+  .pgurl { font-size: 13.5px; overflow-wrap: anywhere; }
   .pgfacts { font-size: 12.5px; margin-top: 7px; }
   /* the level editor sits in the row, so its popover anchors to itself */
   .pgaddr .lvledit { display: inline-flex; align-items: center; }
@@ -466,6 +474,7 @@
   <h2>Detected updates</h2>
   {% if not changes %}<p class="muted">No updates detected so far.</p>
   {% else %}
+  <div class="tablewrap">
   <table>
     <tr><th>When (local)</th><th>What updated</th><th>Verdict</th><th></th></tr>
     {% for c in changes %}
@@ -481,6 +490,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
   {% endif %}
 </div>
 
@@ -488,6 +498,7 @@
   <h2>Stored snapshots</h2>
   <p class="muted">The newest snapshot is always kept; older ones are kept only while a
      flagged change refers to them (saves disk space).</p>
+  <div class="tablewrap">
   <table>
     <tr><th>When (local)</th><th>Status</th><th>HTTP</th><th>Page title</th><th>Text lines</th><th>Images</th><th></th></tr>
     {% for s in snaps %}
@@ -502,6 +513,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
 </div>
 
 {#- Redirects, folded away. Two yellow banners at the top of the page made a

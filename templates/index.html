@@ -368,6 +368,37 @@
     #pagetable .c-type { width: 108px; }
     #pagetable .c-upd  { width: 168px; }
   }
+  /* THE PHONE COLUMN BUDGET. Fixed widths summing to 884px gave the auto
+     Page column - the name, the address, the only way into a page - exactly
+     0px: a table of checkboxes and Type chips. On a phone the Page column is
+     the table. The rank and Type go (the rank is decoration, Type is a
+     filter), Page gets a real width, and the rest scrolls into view inside
+     the card. Cells lose their class-less columns by position: 1 select,
+     2 rank, 3 page, 4 type, 5 live, 6 status, 7 captured, 8 updates. */
+  @media (max-width: 700px) {
+    #pagetable .c-num, #pagetable .c-type,
+    #pagetable td:nth-child(2), #pagetable td:nth-child(4) { display: none; }
+    /* max-width:0 is the desktop truncation trick for an AUTO column; against
+       an explicit width the fixed-layout algorithm takes the minimum of the
+       two and the column collapsed to its padding. Lift it here. */
+    #pagetable .c-page { width: 230px; max-width: none; }
+    #pagetable .urlcell { max-width: none; }
+    #pagetable .c-live { width: 116px; }
+    #pagetable .c-stat { width: 110px; }
+    #pagetable .c-when { width: 118px; }
+    #pagetable .c-upd  { width: 190px; }
+  }
+  /* the filters: search on its own line, the four pickers two-up, Apply full
+     width - a flex-wrap row landed the filled button mid-row and read broken */
+  @media (max-width: 640px) {
+    form.toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    form.toolbar .sbar { grid-column: 1 / -1; }
+    form.toolbar .dd > summary { display: block; text-align: center; }
+    form.toolbar > button, form.toolbar > .btn-ghost { grid-column: 1 / -1; }
+    .stat { padding: 4px 8px; }
+    .stat .n { font-size: 21px; }
+    .stat .l { font-size: 11px; }
+  }
 </style>
   <div class="tablewrap">
   <table id="pagetable">

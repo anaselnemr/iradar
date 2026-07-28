@@ -5,7 +5,7 @@
    <a href="{{ url_for('url_detail', url_id=u.id) }}">URL history</a></p>
 
 <div class="card">
-  <h1 style="font-size:17px; word-break:break-all">
+  <h1 style="font-size:17px; overflow-wrap:anywhere">
     Update detected on <a href="{{ u.url }}" target="_blank">{{ u.url }}</a></h1>
   <div class="muted">Detected {{ c.ts|localtime }} (local time) — comparing snapshot of
     {{ old_snap.ts|localtime if old_snap else '?' }} vs {{ new_snap.ts|localtime if new_snap else '?' }}</div>

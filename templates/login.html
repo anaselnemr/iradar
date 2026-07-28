@@ -29,7 +29,7 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+  body { margin: 0; min-height: 100vh; min-height: 100svh; display: grid; place-items: center;
          padding: 24px;
          font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
          background: var(--bg); color: var(--ink); font-size: 15px; }
@@ -67,6 +67,8 @@
          padding: 9px 11px; font-size: 13px; margin-bottom: 16px; }
   .foot { text-align: center; color: var(--muted); font-size: 12px;
           margin-top: 16px; }
+  /* 16px inputs stop iOS Safari zooming the page when a field is focused */
+  @media (max-width: 480px) { input { font-size: 16px; } }
 </style>
 </head>
 <body>

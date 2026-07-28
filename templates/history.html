@@ -5,7 +5,8 @@
   <h1>Run history</h1>
   {% if not runs %}<p class="muted">No checks have run yet.</p>
   {% else %}
-  <table>
+  <div class="tablewrap">
+  <table style="white-space:nowrap">
     <tr><th>Started (local)</th><th>Finished</th><th>Type</th><th>URLs</th><th>OK</th><th>Updated</th><th>Errors</th></tr>
     {% for r in runs %}
     <tr>
@@ -19,6 +20,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}
