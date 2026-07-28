@@ -2982,9 +2982,18 @@ def sentiment_page():
         "SELECT COUNT(*) n, AVG(score) avg FROM mentions"
         " WHERE score IS NOT NULL").fetchone()
     con.close()
+    terms = sn.entities()
+    try:
+        removed_terms = sorted(json.loads(
+            db.get_settings().get("sn_removed") or "[]"))
+    except Exception:
+        removed_terms = []
+    mention_counts = {r["entity"]: r["n"] for r in per_entity}
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
                            total=total, scored_n=scored["n"],
                            avg_all=scored["avg"], src_totals=src_totals,
+                           terms=terms, removed_terms=removed_terms,
+                           mention_counts=mention_counts,
                            sources=sn.SOURCES,
                            ready_keys={s["key"] for s in sn.sources_ready()},
                            sel_entity=ent, sel_source=src, q=q,
@@ -2999,16 +3008,60 @@ def sentiment_rows():
     of truth via the shared partial."""
     import sentiment as sn
     ent = request.args.get("entity", "")
+    src = request.args.get("source", "")
     if not ent:
         abort(404)
     con = db.connect()
-    rows = con.execute(
-        "SELECT * FROM mentions WHERE entity=? ORDER BY"
-        " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC LIMIT 500",
-        (ent,)).fetchall()
+    if src:
+        rows = con.execute(
+            "SELECT * FROM mentions WHERE entity=? AND source=? ORDER BY"
+            " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC LIMIT 500",
+            (ent, src)).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT * FROM mentions WHERE entity=? ORDER BY"
+            " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC LIMIT 500",
+            (ent,)).fetchall()
     con.close()
     return render_template("_mention_rows.html", rows=rows,
                            sources=sn.SOURCES, sel_entity=ent)
+
+
+@app.route("/sentiment/terms", methods=["POST"])
+def sentiment_terms():
+    """The managed term list: add a term, remove one (whatever its origin),
+    put a removed one back. Admin-only via default-deny."""
+    import sentiment as sn
+    action = request.form.get("action", "")
+    name = (request.form.get("entity") or "").strip()[:60]
+    if not name:
+        flash("Name the term first.")
+        return redirect(url_for("sentiment_page"))
+    try:
+        removed = set(json.loads(db.get_settings().get("sn_removed") or "[]"))
+    except Exception:
+        removed = set()
+    try:
+        custom = json.loads(db.get_settings().get("sn_custom") or "[]")
+    except Exception:
+        custom = []
+    if action == "add":
+        q = (request.form.get("query") or "").strip()[:120]
+        custom = [c for c in custom if c.get("entity") != name]
+        custom.append({"entity": name, "queries": [q] if q else [name]})
+        removed.discard(name)
+        flash("Now tracking \u201c%s\u201d — the next collection searches it." % name)
+    elif action == "remove":
+        custom = [c for c in custom if c.get("entity") != name]
+        removed.add(name)
+        flash("\u201c%s\u201d is no longer searched. Its stored mentions stay." % name)
+    elif action == "restore":
+        removed.discard(name)
+        flash("\u201c%s\u201d is searched again." % name)
+    db.set_setting("sn_removed", json.dumps(sorted(removed)))
+    db.set_setting("sn_custom", json.dumps(custom))
+    sn._ENT_CACHE["val"] = None
+    return redirect(url_for("sentiment_page"))
 
 
 @app.route("/sentiment/collect", methods=["POST"])

@@ -28,7 +28,7 @@ DEFAULT_SETTINGS = {
     # A page's newest capture, anything an open update still needs, and
     # anything mid-check are always kept regardless of this.
     "keep_snapshots": "2",
-    "visual_threshold": "0.5",    # % of pixels that must differ to flag a visual change
+    "visual_threshold": "2.5",    # % of pixels that must differ to flag a visual change
     "height_threshold": "80",     # px difference in page height to flag
     # one regex per line; matching text lines are ignored.
     # Defaults: relative timestamps ("13 days ago") change by themselves, and

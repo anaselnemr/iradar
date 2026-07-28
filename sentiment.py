@@ -45,7 +45,12 @@ SENT_STATE = {"running": False, "message": "", "done": 0, "total": 0,
 _DISTINCTIVE = ("PSOC", "PSoC", "XMC", "AIROC", "OPTIGA", "AURIX", "TRAVEO",
                 "CIPURSE", "Calypso", "XENSIV", "CoolMOS", "CoolGaN",
                 "CoolSiC", "EasyPIM", "HybridPACK", "ModusToolbox", "TriCore",
-                "SECORA", "iMOTION", "EiceDRIVER", "OptiMOS", "StrongIRFET")
+                "SECORA", "iMOTION", "EiceDRIVER", "OptiMOS", "StrongIRFET",
+                # the wider brand shelf - every one is an Infineon trade name
+                # distinctive enough to search bare
+                "MOTIX", "PROFET", "LITIX", "HITFET", "CoolSET", "TRENCHSTOP",
+                "CIPOS", "MERUS", "EZ-USB", "EZ-PD", "OPTIREG", "EasyPACK",
+                "EconoPACK", "EconoDUAL")
 
 
 # The other names the same silicon answers to. Infineon bought Cypress in
@@ -56,7 +61,7 @@ _DISTINCTIVE = ("PSOC", "PSoC", "XMC", "AIROC", "OPTIGA", "AURIX", "TRAVEO",
 # relevance gate judges each hit against the query that found it.
 _ALIASES = {
     "PSOC": ["CY8C", "Cypress PSoC", "ModusToolbox"],
-    "AIROC": ["CYW43", "Cypress WICED"],
+    "AIROC": ["CYW43", "CYW20", "CYW55", "Cypress WICED"],
     "AURIX": ["TriCore"],
     "TRAVEO": ["Cypress Traveo"],
     "OPTIGA": ["OPTIGA Trust M"],
@@ -75,11 +80,38 @@ def _clean_family(title):
     return re.sub(r"\s+", " ", t).strip()
 
 
+_ENT_CACHE = {"at": 0.0, "val": None}
+
+
+def _term_overrides():
+    """What the team changed by hand: {'removed': set, 'custom': [{entity,
+    queries}]}. Stored in settings as JSON so it survives every restart."""
+    s = db.get_settings()
+    try:
+        removed = set(json.loads(s.get("sn_removed") or "[]"))
+    except Exception:
+        removed = set()
+    try:
+        custom = json.loads(s.get("sn_custom") or "[]")
+    except Exception:
+        custom = []
+    return removed, custom
+
+
 def entities():
-    """The searchable product families from the watched hierarchy:
-    [{entity, query}] - entity is the display name, query the search string."""
+    """Everything searched, [{entity, query, queries, origin}].
+
+    Three origins. 'brand': a distinctive Infineon trade name (PSOC, AURIX,
+    TRENCHSTOP...) found ANYWHERE in the watched pages' titles or addresses -
+    which is what admits AURIX and TRAVEO, whose part pages are watched but
+    whose product-family page is not. 'pages': a generic family name from
+    the product hierarchy, searched as "infineon <name>". 'custom': added by
+    hand on the page. Hand-removed terms are dropped whatever their origin.
+    Cached for a minute - the product-page box calls this per view."""
+    if _ENT_CACHE["val"] is not None and time.time() - _ENT_CACHE["at"] < 60:
+        return _ENT_CACHE["val"]
     con = db.connect()
-    rows = con.execute(
+    fam_rows = con.execute(
         "SELECT COALESCE(NULLIF(u.title_override,''), NULLIF(s.page_title,''),"
         " u.url) t FROM urls u"
         " JOIN (SELECT url_id, MAX(id) mid FROM snapshots WHERE status='ok'"
@@ -87,41 +119,63 @@ def entities():
         " JOIN snapshots s ON s.id=m.mid"
         " WHERE u.active=1 AND u.ptype='Product' AND u.level IN ('PFP','PSFP')"
     ).fetchall()
+    # one big haystack of everything we watch: titles and addresses
+    hay = " ".join(
+        (r["t"] or "") + " " + (r["u"] or "") for r in con.execute(
+            "SELECT COALESCE(NULLIF(u.title_override,''),"
+            " NULLIF(s.page_title,''), '') t, u.url u FROM urls u"
+            " LEFT JOIN (SELECT url_id, MAX(id) mid FROM snapshots"
+            "            WHERE status='ok' GROUP BY url_id) m ON m.url_id=u.id"
+            " LEFT JOIN snapshots s ON s.id=m.mid WHERE u.active=1"))
     con.close()
+    removed, custom = _term_overrides()
+
     out, seen = [], set()
-    for r in rows:
+
+    def _add(entity, queries, origin):
+        if entity.lower() in seen or entity in removed:
+            return
+        qs = []
+        for q in queries:
+            if q.lower() not in seen:
+                qs.append(q)
+                seen.add(q.lower())
+        if not qs:
+            return
+        seen.add(entity.lower())
+        out.append({"entity": entity, "query": qs[0], "queries": qs,
+                    "origin": origin})
+
+    # the brand shelf, admitted by ANY watched page naming it
+    canon = {}
+    for d in _DISTINCTIVE:
+        canon.setdefault(d.upper(), d if d.isupper() else d)
+    for tok in canon.values():
+        if re.search(r"(?<![a-z0-9])" + re.escape(tok), hay, re.I):
+            name = tok.upper() if len(tok) <= 6 and "-" not in tok else tok
+            _add(name, [tok] + _ALIASES.get(name, _ALIASES.get(tok, [])),
+                 "brand")
+
+    # the generic families from the product hierarchy, as before
+    for r in fam_rows:
         name = _clean_family(r["t"])
         if not name:
             continue
-        # prefix match, not whole-word: "XMC1000" and "PSOC4" belong to the
-        # XMC / PSOC families just as much as the bare token does
-        tok = next((d for d in _DISTINCTIVE
-                    if re.search(r"\b" + re.escape(d), name, re.I)), None)
-        if tok:
-            # collapse the series pages to ONE canonical family: "PSOC 4 ...",
-            # "PSOC Edge ..." and "PSOC Control ..." are all the PSOC family
-            # out in the world - three copies would triple-store every mention
-            entity, query = tok, tok
-        else:
-            # generic name: a compact query beats the full mouthful -
-            # "infineon FM3" finds what "infineon FM3 32-bit Arm Cortex-M3
-            # microcontroller (MCU) families" never would. And the cut must
-            # not end on a joining word.
-            entity = name
-            words = [w for w in name.split()[:2]]
-            if len(words) == 2 and words[1].lower() in _QUERY_STOP:
-                words = words[:1]
-            query = "infineon " + " ".join(words)
-        # dedup by QUERY as well as name: "Radar sensors for automotive",
-        # "... for IoT" and plain "Radar sensors" all searched the same
-        # string and stored every hit three times
-        k = (entity.lower(), query.lower())
-        if entity.lower() in seen or query.lower() in seen:
-            continue
-        seen.add(entity.lower())
-        seen.add(query.lower())
-        out.append({"entity": entity, "query": query,
-                    "queries": [query] + _ALIASES.get(entity, [])})
+        if any(re.search(r"(?<![a-z0-9])" + re.escape(d), name, re.I)
+               for d in _DISTINCTIVE):
+            continue                    # its brand already carries it
+        words = [w for w in name.split()[:2]]
+        if len(words) == 2 and words[1].lower() in _QUERY_STOP:
+            words = words[:1]
+        _add(name, ["infineon " + " ".join(words)], "pages")
+
+    # hand-added terms win their spot whatever else exists
+    for c in custom:
+        _add(str(c.get("entity", "")).strip(),
+             [q for q in (c.get("queries") or []) if q] or
+             [str(c.get("entity", "")).strip()], "custom")
+
+    _ENT_CACHE.update(at=time.time(), val=out)
     return out
 
 

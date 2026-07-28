@@ -57,9 +57,18 @@
   .tone-neg { color: var(--err); }
   .tone-mix, .tone-none { color: var(--muted); font-weight: 400; }
   /* which corners of the internet: the logo and its count */
-  .fam-srcs { display: flex; gap: 3px 11px; flex-wrap: wrap; margin-top: 9px;
+  .fam-srcs { display: flex; gap: 4px 7px; flex-wrap: wrap; margin-top: 9px;
               font-size: 11px; color: var(--muted); align-items: center; }
-  .fam-srcs span { display: inline-flex; align-items: center; gap: 4px; }
+  /* each source is a FILTER: click the youtube count and the open drawer
+     shows only youtube for this family */
+  .fam-src { display: inline-flex; align-items: center; gap: 4px;
+             background: none; border: 1px solid transparent; color: inherit;
+             font: inherit; padding: 3px 7px; border-radius: 999px;
+             cursor: pointer; }
+  .fam-src:hover { border-color: var(--line); background: var(--hover); }
+  .fam-src.on { border-color: var(--accent); color: var(--ink); }
+  .fam-src-all { display: none; }
+  .fam.open .fam-src-all { display: inline-flex; }
   .fam-srcs b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .fam-srcs .sic { width: 13px; height: 13px; }
   /* the drawer an open card reveals: its own scroll, never the page's */
@@ -104,6 +113,30 @@
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
   .sn-search { display: flex; gap: 8px; margin: 0 0 12px; }
+  .terms > summary { list-style: none; cursor: pointer; }
+  .terms > summary::-webkit-details-marker { display: none; }
+  .terms > summary::after { content: " \25BE"; color: var(--muted);
+                            font-size: 11px; }
+  .terms[open] > summary::after { content: " \25B4"; }
+  .term-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+  .term-add input[name=entity] { flex: 1 1 200px; }
+  .term-add input[name=query] { flex: 2 1 280px; }
+  .termtbl { width: 100%; border-collapse: collapse; margin-top: 10px;
+             font-size: 13px; }
+  .termtbl th { text-align: left; font-size: 11px; color: var(--muted);
+                text-transform: uppercase; letter-spacing: .05em;
+                padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); }
+  .termtbl td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line);
+                vertical-align: baseline; }
+  .termtbl tr:last-child td { border-bottom: 0; }
+  .tt-name { font-weight: 600; white-space: nowrap; }
+  .tt-q { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  .tt-o { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .tt-n { text-align: right; font-variant-numeric: tabular-nums; }
+  .tt-act { text-align: right; white-space: nowrap; }
+  .tt-act form { display: inline; margin: 0; }
+  .tt-off .tt-name { opacity: .55; text-decoration: line-through; }
+  @media (max-width: 620px) { .tt-o { display: none; } }
 </style>
 
 <div class="sn-wrap">
@@ -131,6 +164,23 @@
       {% endif %}
     </div>
     {% endif %}
+
+    {#- the search lives up top where Content keeps its own, not halfway
+        down the page inside a card nobody scrolled to yet -#}
+    <form method="get" class="sn-search" autocomplete="off" style="margin-top:14px">
+      <span class="sbar sbar-lg grow">
+        <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+        <input type="text" name="q" value="{{ q }}" id="snq"
+               placeholder="Search mentions — a part, a tool, an author…">
+        <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"
+                onclick="var i=document.getElementById('snq'); i.value=''; i.form.submit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+      </span>
+      {% if sel_entity %}<input type="hidden" name="entity" value="{{ sel_entity }}">{% endif %}
+      {% if sel_source %}<input type="hidden" name="source" value="{{ sel_source }}">{% endif %}
+      <button type="submit">Search</button>
+    </form>
 
     <div class="sn-figs">
       <div class="sn-fig"><div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
@@ -172,8 +222,11 @@
           {% else %}<div class="fam-tone tone-mix">mixed</div>{% endif %}
         {% else %}<div class="fam-tone tone-none">not scored yet</div>{% endif %}
         <div class="fam-srcs">
+          <button type="button" class="fam-src fam-src-all" data-src=""
+                  title="Every source">all <b>{{ e.n }}</b></button>
           {% for s in sources %}{% set c = e['src_' + s.key] %}
-            {% if c %}<span title="{{ s.label }}"><span class="sic sic-{{ s.key }}">{{ si.icon(s.key) }}</span><b>{{ c }}</b></span>{% endif %}
+            {% if c %}<button type="button" class="fam-src" data-src="{{ s.key }}"
+                title="Only {{ s.label }}"><span class="sic sic-{{ s.key }}">{{ si.icon(s.key) }}</span><b>{{ c }}</b></button>{% endif %}
           {% endfor %}
         </div>
         <div class="fam-panel" aria-live="polite"></div>
@@ -183,26 +236,68 @@
   </div>
   {% endif %}
 
+  {% if is_admin %}
+  <div class="card">
+    <details class="terms">
+      <summary><h3 style="margin:0; display:inline">What is searched
+        <span class="muted" style="font-weight:400; font-size:12.5px">—
+        {{ terms|length }} term(s){% if removed_terms %},
+        {{ removed_terms|length }} switched off{% endif %} · click to
+        manage</span></h3></summary>
+
+      <form method="post" action="{{ url_for('sentiment_terms') }}"
+            class="term-add">
+        <input type="hidden" name="action" value="add">
+        <input type="text" name="entity" required maxlength="60"
+               placeholder="Track another term… e.g. Wireless charging ICs">
+        <input type="text" name="query" maxlength="120"
+               placeholder="searched as (optional) — e.g. infineon wireless charging">
+        <button type="submit">Track it</button>
+      </form>
+
+      <table class="termtbl">
+        <tr><th>Term</th><th>Searched as</th><th>From</th>
+            <th class="tt-n">Mentions</th><th></th></tr>
+        {% for t in terms %}
+        <tr>
+          <td class="tt-name">{{ t.entity }}</td>
+          <td class="tt-q">{{ t.queries | join(' · ') }}</td>
+          <td class="tt-o">{{ {'brand': 'your pages (brand name)',
+                               'pages': 'your pages (family)',
+                               'custom': 'added by hand'}[t.origin] }}</td>
+          <td class="tt-n">{{ mention_counts.get(t.entity, 0) or '' }}</td>
+          <td class="tt-act">
+            <form method="post" action="{{ url_for('sentiment_terms') }}">
+              <input type="hidden" name="action" value="remove">
+              <input type="hidden" name="entity" value="{{ t.entity }}">
+              <button type="submit" class="linkbtn linkbtn-danger"
+                      title="Stop searching this. Stored mentions stay.">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% for name in removed_terms %}
+        <tr class="tt-off">
+          <td class="tt-name">{{ name }}</td>
+          <td class="tt-q muted">switched off — not searched</td>
+          <td class="tt-o"></td><td class="tt-n"></td>
+          <td class="tt-act">
+            <form method="post" action="{{ url_for('sentiment_terms') }}">
+              <input type="hidden" name="action" value="restore">
+              <input type="hidden" name="entity" value="{{ name }}">
+              <button type="submit" class="linkbtn">Search again</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </details>
+  </div>
+  {% endif %}
+
   <div class="card">
     <h3 style="margin:0 0 12px">
       Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}</h3>
-
-    {#- the same search Content has: same classes, same magnifier, same
-        clear button, so the hands already know how it works -#}
-    <form method="get" class="sn-search" autocomplete="off">
-      <span class="sbar grow">
-        <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
-        <input type="text" name="q" value="{{ q }}" id="snq"
-               placeholder="Search mentions — a part, a tool, an author…">
-        <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"
-                onclick="var i=document.getElementById('snq'); i.value=''; i.form.submit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
-      </span>
-      {% if sel_entity %}<input type="hidden" name="entity" value="{{ sel_entity }}">{% endif %}
-      {% if sel_source %}<input type="hidden" name="source" value="{{ sel_source }}">{% endif %}
-      <button type="submit">Search</button>
-    </form>
 
     <div class="sn-chips">
       <a class="chip {{ 'chip-on' if not sel_source }}"
@@ -247,23 +342,41 @@
       f.classList.add('open');
       f.setAttribute('aria-expanded', 'true');
       var panel = f.querySelector('.fam-panel');
-      if (!panel.dataset.loaded) {
-        panel.innerHTML = '<p class="muted" style="padding:10px 0">Loading…</p>';
-        fetch('{{ url_for("sentiment_rows") }}?entity=' +
-              encodeURIComponent(f.dataset.entity))
-          .then(function (r) { return r.text(); })
-          .then(function (html) {
-            panel.innerHTML = html;
-            panel.dataset.loaded = '1';
-          })
-          .catch(function () {
-            panel.innerHTML = '<p class="muted">Could not load — reload the page.</p>';
-          });
-      }
+      load(f, '');
       f.scrollIntoView({ block: 'nearest' });
+    }
+    function load(f, src) {
+      var panel = f.querySelector('.fam-panel');
+      if (panel.dataset.loaded === (src || 'all')) return;
+      f.querySelectorAll('.fam-src').forEach(function (b) {
+        b.classList.toggle('on', (b.dataset.src || '') === src);
+      });
+      panel.innerHTML = '<p class="muted" style="padding:10px 0">Loading…</p>';
+      fetch('{{ url_for("sentiment_rows") }}?entity=' +
+            encodeURIComponent(f.dataset.entity) +
+            (src ? '&source=' + encodeURIComponent(src) : ''))
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          panel.innerHTML = html ||
+            '<p class="muted" style="padding:10px 0">Nothing from this source.</p>';
+          panel.dataset.loaded = src || 'all';
+        })
+        .catch(function () {
+          panel.innerHTML = '<p class="muted">Could not load — reload the page.</p>';
+        });
     }
     f.addEventListener('click', function (e) {
       if (e.target.closest('a')) return;        // links inside stay links
+      var srcBtn = e.target.closest('.fam-src');
+      if (srcBtn) {
+        // clicking the youtube count: open if closed, then only youtube
+        if (!f.classList.contains('open')) toggle();
+        load(f, srcBtn.dataset.src || '');
+        e.stopPropagation();
+        return;
+      }
+      if (e.target.closest('.fam-close')) { toggle(); return; }
+      if (f.classList.contains('open')) return; // open card only closes via Close
       toggle();
     });
     f.addEventListener('keydown', function (e) {

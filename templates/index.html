@@ -40,7 +40,6 @@
         to File updates anywhere in the app, so a whole review queue became
         unreachable the moment it was caught up. -#}
     <a class="stat statlink" href="{{ url_for('assets_page') }}" title="Files (datasheets, images) whose bytes changed behind an unchanged address — invisible to the page compare, caught by their server fingerprint"><div class="n" style="color:{{ '#7c3aed' if asset_open else 'var(--muted)' }}">{{ asset_open or 0 }}</div><div class="l">File updates</div></a>
-    {% if mention_total %}<a class="stat statlink" href="{{ url_for('sentiment_page') }}" title="What engineers say about the watched product families — StackExchange, Reddit, Hacker News, Infineon's own community"><div class="n" style="color:#0891b2">{{ mention_total }}</div><div class="l">Mentions</div></a>{% endif %}
     <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
     <div class="stat" style="padding-top:8px; text-align:right">
       <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
