@@ -49,8 +49,16 @@
   .nl-body p:last-child { margin-bottom: 0; }
 
   /* what it is about: a chip you can click, not a sentence you have to read */
+  .nl-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+             margin-top: 9px; }
+  .nl-acts { display: flex; align-items: center; gap: 12px; }
+  .nl-acts form { display: inline; margin: 0; }
+  .nl > li:not(:hover) .nl-acts { opacity: 0; }
+  .nl > li:focus-within .nl-acts { opacity: 1; }
+  .nl-acts { transition: opacity .12s; }
+  @media (hover: none) { .nl > li:not(:hover) .nl-acts { opacity: 1; } }
   .nl-on { display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
-           margin-top: 9px; padding: 4px 11px 4px 4px; border-radius: 999px;
+           padding: 4px 11px 4px 4px; border-radius: 999px;
            border: 1px solid var(--line); background: var(--panel);
            font-size: 12.5px; text-decoration: none; color: var(--muted); }
   a.nl-on:hover { border-color: var(--accent); color: var(--ink); }
@@ -86,10 +94,8 @@
 <div class="nl-wrap">
   <div class="card nl-new">
     <h3>Something broken, confusing or missing?</h3>
-    <p class="why">Write it here. It lands in the same feed as everything else,
-      so it gets read — rather than sitting in somebody's inbox. For a note
-      about one page, one document or one update, leave it on that thing
-      instead: it stays there for whoever opens it next.</p>
+    <p class="why">About one page or document? Leave the note on that thing
+      instead — it stays there for whoever opens it next.</p>
     <form method="post" action="{{ url_for('comment_add') }}">
       <input type="hidden" name="kind"   value="app">
       <input type="hidden" name="target" value="iradar">
@@ -136,15 +142,39 @@
               rather than pushing the row around -#}
           {% set label = {'page': 'page', 'item': 'asset',
                           'change': 'update', 'app': 'iRadar'}.get(kind, kind) %}
-          {% if r.link %}
-            <a class="nl-on" href="{{ r.link }}#note-{{ r.c['id'] }}">
-              <span class="k k-{{ kind }}">{{ label }}</span>
-              <span class="w">{{ r.what }}</span></a>
-          {% else %}
-            <span class="nl-on gone" title="This is no longer tracked">
-              <span class="k k-{{ kind }}">{{ label }}</span>
-              <span class="w">{{ r.what }}</span></span>
-          {% endif %}
+          <div class="nl-foot">
+            {% if r.link %}
+              <a class="nl-on" href="{{ r.link }}#note-{{ r.c['id'] }}">
+                <span class="k k-{{ kind }}">{{ label }}</span>
+                <span class="w">{{ r.what }}</span></a>
+            {% else %}
+              <span class="nl-on{{ ' gone' if kind != 'app' }}"
+                    {% if kind != 'app' %}title="This is no longer tracked"{% endif %}>
+                <span class="k k-{{ kind }}">{{ label }}</span>
+                <span class="w">{{ r.what }}</span></span>
+            {% endif %}
+
+            {#- closing a note used to mean finding the thing it was about and
+                doing it there. A note posted about iRadar itself had nowhere
+                to go at all, so it could never be closed. -#}
+            <span class="nl-acts">
+              <form method="post"
+                    action="{{ url_for('comment_resolve', comment_id=r.c['id']) }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="hidden" name="on" value="{{ 0 if r.c['resolved'] else 1 }}">
+                <button type="submit" class="linkbtn">
+                  {{ 'Reopen' if r.c['resolved'] else 'Mark done' }}</button>
+              </form>
+              {% if me and (r.c['user_id'] == me['id'] or is_admin) %}
+              <form method="post"
+                    action="{{ url_for('comment_delete', comment_id=r.c['id']) }}"
+                    onsubmit="return confirm('Delete this note? It cannot be undone.')">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" class="linkbtn linkbtn-danger">Delete</button>
+              </form>
+              {% endif %}
+            </span>
+          </div>
         </div>
       </li>
       {% endfor %}

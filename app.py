@@ -6695,7 +6695,10 @@ def notes_page():
                     link, what = url_for("url_detail", url_id=r["id"]), \
                         (c["target_label"] or r["url"])
             elif c["target_kind"] == "app":
-                link, what = url_for("guide_page"), "iRadar itself"
+                # No link. It used to point at Help, because that is where the
+                # box lived - it is on this page now, so the link went from
+                # here to Help and back for no reason. The chip is a label.
+                link, what = None, "iRadar itself"
             elif c["target_kind"] == "change":
                 r = con.execute("SELECT id FROM changes WHERE id=?",
                                 (c["target_id"],)).fetchone()
