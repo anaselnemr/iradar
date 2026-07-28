@@ -2937,7 +2937,7 @@ def assets_run():
     return redirect(url_for("assets_page"))
 
 
-# ---- What people say (mentions of the watched products) --------------------
+# ---- Sentiment analysis (mentions of the watched products) -----------------
 # Parked 2026-07-21, brought back on Anas's request 2026-07-28. The one guard
 # that stays is the capture run: collection and a check share the network, so
 # collect waits its turn. Both POSTs are admin-only via the default-deny rule.
