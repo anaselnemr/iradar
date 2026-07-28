@@ -318,7 +318,7 @@ VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
 #       both sides scale identically, so an unchanged page still diffs to 0% -
 #       but a rev boundary is still a rev boundary, so it re-baselines silently
 #       rather than reporting every page as visually changed once.
-SHOT_REV = 5
+SHOT_REV = 6
 
 # How the screenshot is STORED, not how the page is rendered - the browser still
 # lays out at full width, so nothing about the capture changes, only the file
@@ -1757,6 +1757,11 @@ async (capMs) => {
 # case across the whole list is minutes, not hours.
 IMAGES_SETTLE_MS = 4000
 
+# How long to wait for the page's webfonts before photographing it. See the
+# call site: a fallback-font render wraps the paragraphs differently, and one
+# extra line at the top shifts every pixel below it.
+FONTS_SETTLE_MS = 6000
+
 # The canonical section-nav selector, mirrored from NAV_ANCHORS inside
 # SECTIONS_JS. Kept in sync deliberately - the component read and this
 # stabiliser must agree on what "the nav" is.
@@ -2352,6 +2357,29 @@ async def capture_one(browser, url, out_dir):
         except Exception as exc:
             if INJECT_JS:
                 print(f"  [images] settle skipped: {exc}")
+
+        # WAIT FOR THE WEB FONTS. Infineon sets its body copy in a webfont; a
+        # capture taken before it arrives renders in the fallback, whose
+        # metrics are different, so the paragraphs wrap at different words. One
+        # extra line near the top pushes everything below it down twenty pixels
+        # and the pixel diff then reports the WHOLE PAGE as changed - on a page
+        # whose text is byte-identical, which is why these came through with
+        # text_changed=0 and filled the double-check queue.
+        #
+        # document.fonts.ready settles when every face the page asked for has
+        # loaded or failed. Capped, because a font that never arrives must not
+        # hold the run.
+        try:
+            await page.evaluate(
+                """(ms) => Promise.race([
+                       document.fonts ? document.fonts.ready : Promise.resolve(),
+                       new Promise(r => setTimeout(r, ms))
+                   ])""", FONTS_SETTLE_MS)
+            # one frame after the faces land, so re-layout is on the page
+            await page.wait_for_timeout(250)
+        except Exception as exc:
+            if INJECT_JS:
+                print(f"  [fonts] wait skipped: {exc}")
 
         # Record WHERE the live feeds sit (layout is final after the unstick):
         # the screenshot keeps them - the whole page, community included, is
