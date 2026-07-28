@@ -2971,9 +2971,19 @@ def sentiment_page():
                      " OR author LIKE ?)")
         like = "%" + q + "%"
         args += [like, like, like, like]
-    sql = "SELECT * FROM mentions"
+    # One video about GaN drivers legitimately files under two families -
+    # but the unfiltered feed must not show it twice. Without an entity
+    # filter, one row per LINK; with one, the family's own copy.
+    base = "FROM mentions"
     if where:
-        sql += " WHERE " + " AND ".join(where)
+        base += " WHERE " + " AND ".join(where)
+    if ent:
+        sql = "SELECT * " + base
+    else:
+        sql = ("SELECT * FROM mentions WHERE id IN"
+               " (SELECT MIN(id) " + base + " GROUP BY url)")
+    filtered_total = con.execute(
+        "SELECT COUNT(*) FROM (" + sql + ")", args).fetchone()[0]
     sql += " ORDER BY COALESCE(NULLIF(posted,''), fetched) DESC, id DESC"
     sql += " LIMIT 200"
     rows = con.execute(sql, args).fetchall()
@@ -2992,6 +3002,7 @@ def sentiment_page():
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
                            total=total, scored_n=scored["n"],
                            avg_all=scored["avg"], src_totals=src_totals,
+                           filtered_total=filtered_total,
                            terms=terms, removed_terms=removed_terms,
                            mention_counts=mention_counts,
                            sources=sn.SOURCES,

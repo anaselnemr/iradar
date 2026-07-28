@@ -297,7 +297,11 @@
 
   <div class="card">
     <h3 style="margin:0 0 12px">
-      Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}</h3>
+      Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}
+      <span class="muted" style="font-weight:400; font-size:12.5px">—
+        {% if filtered_total > rows|length %}latest {{ rows|length }} of
+        {{ '{:,}'.format(filtered_total) }} · narrow with the search or a
+        family{% else %}{{ filtered_total }}{% endif %}</span></h3>
 
     <div class="sn-chips">
       <a class="chip {{ 'chip-on' if not sel_source }}"

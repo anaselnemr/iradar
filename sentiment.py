@@ -297,24 +297,36 @@ SE_SITES = ("electronics", "stackoverflow", "arduino", "raspberrypi")
 def collect_stackexchange(query):
     out = []
     for site in SE_SITES:
-        u = ("https://api.stackexchange.com/2.3/search/advanced?order=desc"
-             "&sort=creation&pagesize=30&q=" + urllib.parse.quote(query)
-             + "&site=" + site)
-        try:
-            out += parse_stackexchange(_get_json(u), site)
-        except Exception:
-            pass
-        time.sleep(0.4)
+        for page in (1, 2):
+            u = ("https://api.stackexchange.com/2.3/search/advanced?order=desc"
+                 "&sort=creation&pagesize=100&page=%d&q=" % page
+                 + urllib.parse.quote(query) + "&site=" + site)
+            try:
+                payload = _get_json(u)
+            except Exception:
+                break
+            out += parse_stackexchange(payload, site)
+            time.sleep(0.4)
+            if not (payload or {}).get("has_more"):
+                break
     return [m for m in out if _relevant(m, query)]
 
 
 def collect_hn(query):
-    u = ("https://hn.algolia.com/api/v1/search?hitsPerPage=30&query="
-         + urllib.parse.quote(query))
-    try:
-        return [m for m in parse_hn(_get_json(u)) if _relevant(m, query)]
-    except Exception:
-        return []
+    out = []
+    for page in (0, 1):
+        u = ("https://hn.algolia.com/api/v1/search?hitsPerPage=100&page=%d"
+             "&query=" % page + urllib.parse.quote(query))
+        try:
+            payload = _get_json(u)
+        except Exception:
+            break
+        hits = parse_hn(payload)
+        out += hits
+        if len((payload or {}).get("hits") or []) < 100:
+            break
+        time.sleep(0.3)
+    return [m for m in out if _relevant(m, query)]
 
 
 _REDDIT_TOKEN = {"value": "", "until": 0.0}
@@ -399,7 +411,7 @@ def collect_reddit(query):
     family and a pause - two back-to-back calls already earn a 429."""
     if os.environ.get("REDDIT_CLIENT_ID") and os.environ.get("REDDIT_SECRET"):
         return _collect_reddit_oauth(query)
-    u = ("https://www.reddit.com/search.rss?sort=new&limit=25&q="
+    u = ("https://www.reddit.com/search.rss?sort=new&limit=100&q="
          + urllib.parse.quote(query))
     try:
         req = urllib.request.Request(u, headers={"User-Agent": UA})
@@ -446,17 +458,23 @@ def collect_github(query):
     tok = os.environ.get("GITHUB_TOKEN")
     if tok:
         head["Authorization"] = "Bearer " + tok
-    u = ("https://api.github.com/search/issues?per_page=30&sort=created"
-         "&order=desc&q=" + urllib.parse.quote(query))
-    try:
-        req = urllib.request.Request(u, headers={"User-Agent": UA, **head})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            payload = json.loads(r.read().decode("utf-8", "replace"))
-    except Exception:
-        return []                      # 403 = rate limit; next pass gets it
-    finally:
-        time.sleep(_github_pause())
-    return [m for m in parse_github(payload) if _relevant(m, query)]
+    out = []
+    for page in (1, 2, 3):
+        u = ("https://api.github.com/search/issues?per_page=30&page=%d"
+             "&sort=created&order=desc&q=" % page + urllib.parse.quote(query))
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": UA, **head})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                payload = json.loads(r.read().decode("utf-8", "replace"))
+        except Exception:
+            break                      # 403 = rate limit; next pass gets it
+        finally:
+            time.sleep(_github_pause())
+        batch = parse_github(payload)
+        out += batch
+        if len(batch) < 30:
+            break                      # the well ran dry; stop paying pauses
+    return [m for m in out if _relevant(m, query)]
 
 
 # --- Discourse forums -------------------------------------------------------
@@ -494,12 +512,18 @@ def parse_discourse(payload, host, label):
 def collect_forum(query):
     out = []
     for host, label in DISCOURSE_HOSTS:
-        u = "https://%s/search.json?q=%s" % (host, urllib.parse.quote(query))
-        try:
-            out += parse_discourse(_get_json(u), host, label)
-        except Exception:
-            pass
-        time.sleep(0.5)
+        for page in (1, 2, 3):
+            u = ("https://%s/search.json?page=%d&q=%s"
+                 % (host, page, urllib.parse.quote(query)))
+            try:
+                payload = _get_json(u)
+            except Exception:
+                break
+            batch = parse_discourse(payload, host, label)
+            out += batch
+            time.sleep(0.5)
+            if len((payload or {}).get("topics") or []) < 20:
+                break
     return [m for m in out if _relevant(m, query)]
 
 
@@ -537,7 +561,7 @@ def parse_wordpress(payload, label):
 def collect_blog(query):
     out = []
     for host, label in WP_HOSTS:
-        u = ("https://%s/wp-json/wp/v2/posts?per_page=15&search=%s"
+        u = ("https://%s/wp-json/wp/v2/posts?per_page=50&search=%s"
              % (host, urllib.parse.quote(query)))
         try:
             out += parse_wordpress(_get_json(u), label)
