@@ -960,7 +960,16 @@ def _run_check_inner(kind, url_ids, baseline=False):
         print(f"[retry] {len(transient)} page(s) still failing after the"
               " extra rounds - kept as errors, next run tries again", flush=True)
 
-    ok, changed, errors = counters["ok"], counters["changed"], counters["errors"]
+    ok, changed = counters["ok"], counters["changed"]
+    # The record gets FINAL page states, not attempt tallies. The event
+    # counter rises every time anything fails - including first tries the
+    # retry rounds later heal, and captures a mid-run restart killed - so a
+    # run that ended with zero broken pages once recorded "345 errors" while
+    # 3186+7+345 exceeded its own total. What a person means by the number
+    # is "how many pages ended broken", so that is what is stored.
+    errors = con.execute(
+        "SELECT COUNT(*) FROM run_items ri JOIN urls u ON u.id=ri.url_id"
+        " WHERE ri.run_id=? AND u.last_status='error'", (run_id,)).fetchone()[0]
     stopped = stopping()
     con.execute("UPDATE runs SET finished=?, ok=?, changed=?, errors=? WHERE id=?",
                 (db.now_iso(), ok, changed, errors, run_id))

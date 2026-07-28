@@ -480,3 +480,37 @@ def test_a_restart_does_not_confiscate_a_pages_retries():
                      ).fetchone()[0]
     con.close()
     assert st in ("queued", "done"), st
+
+
+def test_the_run_row_records_final_pages_not_attempts():
+    """Run 3 recorded "345 errors" while zero pages ended broken: the event
+    counter rises on every failed ATTEMPT - first tries the retry rounds
+    heal, captures a restart killed - and 3186+7+345 exceeded the run's own
+    total. The stored number must be how many pages ENDED in error."""
+    import runner as R
+
+    _fresh_db()
+    con = db.connect()
+    # two pages: one that will end healthy, one that ends in error
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_status)"
+                " VALUES(1, 'https://example.invalid/ok', 1, 'Part', 'unchanged')")
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_status)"
+                " VALUES(2, 'https://example.invalid/bad', 1, 'Part', 'error')")
+    con.commit()
+    con.close()
+
+    async def _nothing(*a, **k):
+        return []
+    real = R.capture.capture_all
+    R.capture.capture_all = _nothing
+    try:
+        R.run_check("test")
+    finally:
+        R.capture.capture_all = real
+
+    con = db.connect()
+    r = con.execute("SELECT errors FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    # page 2 was re-queued (retry debt), captured nothing, and stays error -
+    # the row records THAT, one page, regardless of how many attempts failed
+    assert r["errors"] == 1, r["errors"]
