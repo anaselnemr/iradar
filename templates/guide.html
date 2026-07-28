@@ -1,288 +1,347 @@
 {% extends "base.html" %}
 {% block title %}Help — iRadar{% endblock %}
 {% block content %}
-{#- Every number here is READ LIVE. A figure typed into help text is wrong the
-    day someone changes the setting and nobody notices for months, so the
-    thresholds, the schedule, the counts and even the stock example come from
-    the running system. -#}
+{#- Every figure here is READ LIVE. A number typed into help text is wrong the
+    day someone changes the setting and nobody notices for months.
+
+    Laid out as separate cards rather than one long document: help is scanned
+    for the one thing you came for, not read start to finish, so each idea gets
+    its own edge and the two that people confuse - what counts as a change and
+    what is deliberately ignored - sit side by side where the contrast does the
+    explaining. -#}
 <style>
-  .gd { max-width: 840px; margin: 0 auto; }
-  .gd h2 { margin: 34px 0 6px; font-size: 21px; letter-spacing: -.25px; }
-  .gd h2:first-of-type { margin-top: 8px; }
-  .gd h3 { margin: 24px 0 6px; font-size: 15.5px; }
-  .gd p, .gd li { line-height: 1.65; font-size: 14.5px; }
-  .gd ul, .gd ol { padding-left: 22px; margin: 8px 0; }
-  .gd li { margin: 6px 0; }
-  .gd .sub { color: var(--muted); margin-top: 0; }
-  .gd .lead { font-size: 16.5px; line-height: 1.6; }
-  .gd table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-  .gd th { text-align: left; font-size: 11.5px; text-transform: uppercase;
-           letter-spacing: .04em; color: var(--muted); font-weight: 600;
-           padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  .gd td { padding: 11px 10px; border-bottom: 1px solid var(--line);
-           vertical-align: top; font-size: 14px; line-height: 1.55; }
-  .gd tr:last-child td { border-bottom: 0; }
-  .gd td:first-child { white-space: nowrap; font-weight: 600; }
-  .gd td.wrap:first-child { white-space: normal; }
+  .gd { max-width: 900px; margin: 0 auto; display: flex;
+        flex-direction: column; gap: 16px; }
+  .gd .card { padding: 26px 28px; }
+  .gd h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.25px; }
+  .gd h2 + .lede { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+  .gd p { line-height: 1.62; font-size: 14.5px; }
+  .gd a { color: var(--link); }
 
-  /* a live number, so it reads as fact rather than decoration */
-  .num { font-weight: 700; color: var(--accent);
-         font-variant-numeric: tabular-nums; }
+  /* hero */
+  .hero h1 { margin: 0 0 10px; font-size: 30px; letter-spacing: -.6px; }
+  .hero .say { font-size: 17px; line-height: 1.55; margin: 0 0 22px;
+               max-width: 62ch; }
+  .hero .say b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+          background: var(--line); border: 1px solid var(--line);
+          border-radius: 12px; overflow: hidden; }
+  @media (max-width: 620px) { .figs { grid-template-columns: repeat(2, 1fr); } }
+  .fig { background: var(--card); padding: 14px 16px; }
+  .fig .n { font-size: 22px; font-weight: 700; letter-spacing: -.5px;
+            font-variant-numeric: tabular-nums; }
+  .fig .l { font-size: 11.5px; color: var(--muted); text-transform: uppercase;
+            letter-spacing: .05em; margin-top: 2px; }
+  a.fig { text-decoration: none; color: inherit; }
+  a.fig:hover { background: var(--hover); }
 
-  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
-  .toc a { font-size: 13px; padding: 5px 11px; border-radius: 999px;
-           background: var(--hover); color: var(--ink); text-decoration: none; }
-  .toc a:hover { background: var(--accent); color: #fff; }
-
-  .steps { list-style: none; padding: 0; counter-reset: s; margin: 14px 0; }
-  .steps > li { counter-increment: s; position: relative; padding-left: 46px;
-                margin: 18px 0; }
-  .steps > li::before { content: counter(s); position: absolute; left: 0; top: -1px;
-        width: 30px; height: 30px; border-radius: 50%; display: grid;
-        place-items: center; font-size: 13.5px; font-weight: 700; color: #fff;
+  /* the run, as a timeline */
+  .flow { list-style: none; margin: 0; padding: 0; }
+  .flow li { position: relative; padding: 0 0 22px 44px; }
+  .flow li:last-child { padding-bottom: 0; }
+  .flow li::before { content: counter(f); counter-increment: f;
+        position: absolute; left: 0; top: 0; width: 28px; height: 28px;
+        border-radius: 50%; display: grid; place-items: center;
+        font-size: 13px; font-weight: 700; color: #fff;
         background: linear-gradient(135deg, #6d78e0, #8b5cf6); }
-  .steps b { display: block; margin-bottom: 3px; font-size: 15px; }
+  /* the line joining the dots - stops at the last one */
+  .flow li:not(:last-child)::after { content: ""; position: absolute;
+        left: 13.5px; top: 32px; bottom: 6px; width: 1px;
+        background: var(--line); }
+  .flow { counter-reset: f; }
+  .flow b { display: block; font-size: 15px; margin-bottom: 3px; }
+  .flow p { margin: 0; font-size: 14px; color: var(--ink); }
+  .flow .aside { display: block; margin-top: 5px; font-size: 13px;
+                 color: var(--muted); line-height: 1.55; }
 
-  .callout { border-left: 3px solid var(--accent); background: var(--hover);
-             padding: 12px 15px; border-radius: 0 9px 9px 0; margin: 14px 0; }
-  .callout.warn { border-left-color: var(--warn); }
-  .callout p { margin: 0; }
-  .yn { display: inline-block; font-size: 11px; font-weight: 700;
-        padding: 2px 9px; border-radius: 999px; }
-  .yn-y { background: rgba(22,163,74,.14); color: var(--ok); }
-  .yn-n { background: rgba(110,109,122,.16); color: var(--muted); }
-  .shot { width: 100%; border: 1px solid var(--line); border-radius: 10px;
-          margin: 10px 0 4px; display: block; }
-  .cap { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
+  /* the pair that gets confused, side by side */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+  .pair > div { min-width: 0; }
+  .plist { list-style: none; margin: 0; padding: 0; }
+  .plist li { padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .plist li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .plist b { display: block; font-size: 14px; margin-bottom: 2px; }
+  .plist span { font-size: 13.5px; color: var(--muted); line-height: 1.5;
+                display: block; }
+  .tick { color: var(--ok); font-weight: 700; }
+  .cross { color: var(--muted); font-weight: 700; }
+
+  /* accept / reject, as two things you choose between */
+  .choose { display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+            margin-top: 4px; }
+  @media (max-width: 620px) { .choose { grid-template-columns: 1fr; } }
+  .opt { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .opt.go { border-color: rgba(22,163,74,.45);
+            background: rgba(22,163,74,.055); }
+  .opt.no { background: var(--hover); }
+  .opt h3 { margin: 0 0 6px; font-size: 15.5px; display: flex;
+            align-items: center; gap: 8px; }
+  .opt .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .opt.go .dot { background: var(--ok); }
+  .opt.no .dot { background: var(--muted); }
+  .opt p { margin: 0 0 8px; font-size: 13.5px; }
+  .opt .when { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line);
+               padding-top: 9px; margin: 0; }
+
+  /* pictures */
+  figure { margin: 18px 0 0; }
+  figure img { width: 100%; display: block; border: 1px solid var(--line);
+               border-radius: 12px; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 9px;
+               line-height: 1.55; }
+
+  .note { border-left: 3px solid var(--accent); background: var(--hover);
+          padding: 13px 16px; border-radius: 0 10px 10px 0; margin: 16px 0 0; }
+  .note p { margin: 0; font-size: 14px; }
+  .note.warn { border-left-color: var(--warn); }
+
+  .map { list-style: none; margin: 0; padding: 0; }
+  .map li { display: grid; grid-template-columns: 150px 1fr; gap: 14px;
+            padding: 11px 0; border-bottom: 1px solid var(--line);
+            font-size: 14px; align-items: baseline; }
+  .map li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .map li > :first-child { font-weight: 600; }
+  .map span { color: var(--muted); line-height: 1.5; }
+  @media (max-width: 620px) { .map li { grid-template-columns: 1fr; gap: 2px; } }
+
+  .lim { list-style: none; margin: 0; padding: 0; }
+  .lim li { padding: 10px 0 10px 26px; position: relative; font-size: 14px;
+            line-height: 1.55; border-bottom: 1px solid var(--line); }
+  .lim li:last-child { border-bottom: 0; }
+  .lim li::before { content: "—"; position: absolute; left: 0;
+                    color: var(--muted); }
 </style>
 
 <div class="gd">
-  <div class="card">
-    <h1 style="margin:0 0 6px; font-size:27px; letter-spacing:-.5px">Help</h1>
-    <p class="lead sub" style="margin-bottom:16px">Everything on this page is read
-      from the running system, so it can never describe a version of iRadar that
-      no longer exists.</p>
 
-    <div class="toc">
-      <a href="#what">What it is</a>
-      <a href="#check">The weekly check</a>
-      <a href="#counts">What counts as a change</a>
-      <a href="#ignores">What it ignores</a>
-      <a href="#review">Reviewing</a>
-      <a href="#notes">Notes</a>
-      <a href="#around">Finding your way</a>
-      <a href="#account">Your account</a>
-      <a href="#limits">Limits</a>
+  <!-- what it is, and where it stands right now -->
+  <section class="card hero">
+    <h1>What iRadar does</h1>
+    <p class="say">It opens every page we track, once a week, and tells you what
+      actually changed since last time — wording, documents, images, videos,
+      boards and prices. So nobody has to open a page and try to remember what
+      it said last month.</p>
+    <div class="figs">
+      <a class="fig" href="{{ url_for('index') }}">
+        <div class="n">{{ '{:,}'.format(f.pages) }}</div>
+        <div class="l">pages watched</div></a>
+      <a class="fig" href="{{ url_for('search_items') }}">
+        <div class="n">{{ '{:,}'.format(f.tracked) }}</div>
+        <div class="l">items tracked</div></a>
+      <a class="fig" href="{{ url_for('index', status='changed') }}">
+        <div class="n" style="color:{{ 'var(--warn)' if f.open else 'inherit' }}">{{ f.open }}</div>
+        <div class="l">waiting for you</div></a>
+      <div class="fig">
+        <div class="n" style="font-size:15px; padding-top:5px">{{ next_run }}</div>
+        <div class="l">next check</div></div>
     </div>
+  </section>
 
-    <h2 id="what">What iRadar is</h2>
-    <p>iRadar opens <span class="num">{{ '{:,}'.format(f.pages) }}</span> Infineon.com
-      pages on a schedule and tells you what actually changed on them since last
-      time — wording, documents, images, videos, boards, prices.</p>
-    <p>It exists because the alternative is opening a page and trying to remember
-      what it said last month. Right now it is tracking
-      <span class="num">{{ '{:,}'.format(f.tracked) }}</span> individual items across
-      those pages, including <span class="num">{{ '{:,}'.format(f.docs) }}</span>
-      distinct documents, and <span class="num">{{ f.people }}</span>
-      {{ 'person is' if f.people == 1 else 'people are' }} using it.</p>
-    {% if f.open %}
-    <div class="callout"><p>There
-      {{ 'is' if f.open == 1 else 'are' }} <b>{{ f.open }}</b>
-      update{{ '' if f.open == 1 else 's' }} waiting for review right now —
-      <a href="{{ url_for('index', status='changed') }}">open the queue</a>.</p></div>
-    {% endif %}
-
-    <h2 id="check">The weekly check</h2>
-    <p class="sub">Runs <b>{{ every }} at {{ at_time }}</b>, automatically. Nobody
-      starts it. Next one: <b>{{ next_run }}</b>{% if run_hours %}. The last one took
-      about <b>{{ run_hours }}</b>{% endif %}.</p>
-
-    <ol class="steps">
-      <li><b>Each page is opened in a real browser</b>
-        Not downloaded as HTML — genuinely rendered, the way you would see it.
-        It scrolls to the bottom so anything that loads late appears, opens tabs
-        and accordions, and waits for images to finish arriving.
-        <br><span class="sub">If a page only half-loads it is thrown away rather
-        than saved. A half-loaded page would become next week's reference, and
-        then everything missing from it looks like it was deleted.</span></li>
+  <!-- the run -->
+  <section class="card">
+    <h2>What happens on a check</h2>
+    <p class="lede">{{ every|capitalize }} at {{ at_time }}, on its own — nobody
+      starts it{% if run_hours %}, and it takes about {{ run_hours }}{% endif %}.</p>
+    <ol class="flow">
+      <li><b>Every page is opened in a real browser</b>
+        <p>Not downloaded as code — genuinely rendered, the way you would see it.
+          It scrolls to the bottom so anything that loads late appears, opens
+          tabs and accordions, and waits for the images to arrive.</p>
+        <span class="aside">A page that only half-loads is thrown away instead
+          of saved. If it were kept, it would become next week's reference —
+          and then everything missing from it looks like it was deleted.</span></li>
 
       <li><b>What is on it is written down</b>
-        The visible text, every image, the full library — documents, videos,
-        boards, design resources, partners — the price, and a full-page
-        screenshot.</li>
+        <p>The visible text, every image, the whole library — documents, videos,
+          boards, design resources, partners — the price, and a full-page
+          screenshot.</p></li>
 
-      <li><b>It is compared with the previous capture</b>
-        Five signals, listed in the next section. Any one of them is enough to
-        raise it for review.</li>
+      <li><b>It is compared with last time</b>
+        <p>Five signals, below. Any one of them is enough to raise the page.</p></li>
 
-      <li><b>Anything raised is captured a second time, straight away</b>
-        Before the run finishes. If the difference does not appear again it was
-        the website being inconsistent rather than an edit, and it is dropped
-        without you ever seeing it.
-        <br><span class="sub">This single step removes most false alarms.</span></li>
+      <li><b>Anything raised is captured again, immediately</b>
+        <p>Before the run ends. If the difference does not show up the second
+          time, it was the website being inconsistent rather than an edit, and
+          it is dropped.</p>
+        <span class="aside">This one step removes most false alarms before
+          anybody sees them.</span></li>
 
-      <li><b>Pages that fail get two more attempts</b>
-        A page that times out is retried at the end of the run. Only something
-        that fails every attempt is recorded as an error — one bad moment is not
-        a verdict.</li>
+      <li><b>Pages that fail get two more tries</b>
+        <p>Retried at the end of the run. Only something that fails every
+          attempt is recorded as an error — one bad moment is not a verdict.</p></li>
 
       <li><b>What survives lands in your queue</b>
-        On the <a href="{{ url_for('index') }}">Dashboard</a>, marked
-        <b>Updated</b>. Nothing else is deleted or altered; the previous version
-        stays until you decide.</li>
+        <p>On the <a href="{{ url_for('index') }}">Dashboard</a>, marked
+          <b>Updated</b>. Nothing is altered or deleted; the previous version
+          stays until you decide.</p></li>
     </ol>
 
-    <img class="shot" src="{{ url_for('static', filename='guide/dashboard.png') }}"
-         alt="The dashboard, showing the counts along the top and the list of
-              tracked pages below" loading="lazy">
-    <p class="cap">The Dashboard. The number under <b>Updated</b> is your queue —
-      click it to see only those. <b>File updates</b> beside it is the separate
-      queue for files that changed behind an unchanged link.</p>
+    <figure>
+      <img src="{{ url_for('static', filename='guide/dashboard.png') }}" loading="lazy"
+           alt="The Dashboard: counts across the top, tracked pages below">
+      <figcaption>The number under <b>Updated</b> is your queue — click it to
+        see only those. <b>File updates</b> beside it is a separate queue, for
+        files that changed behind a link that did not.</figcaption>
+    </figure>
+  </section>
 
-    <h2 id="counts">What counts as a change</h2>
-    <table>
-      <tr><th>Signal</th><th>Raises a page when</th></tr>
-      <tr><td>Text</td><td>Wording is added, removed or edited.
-        <br><span class="sub">Text that merely <i>moved</i> does not count. The
-        same lines in a different order is a layout change, not an edit.</span></td></tr>
-      <tr><td>Library</td><td>A document, video, board, design resource or partner
-        is added or removed — or one of their details changes: version, date,
-        size, price.</td></tr>
-      <tr><td>Images</td><td>A picture appears on, or disappears from, the page.</td></tr>
-      <tr><td>Screenshot</td><td>More than <b>{{ s.visual_threshold }}%</b> of the
-        pixels differ, or the page height moves by more than
-        <b>{{ s.height_threshold }}px</b>.
-        <br><span class="sub">A real visual change, not a word shifting one line
-        down.</span></td></tr>
-      <tr><td class="wrap">File updates</td><td>A file is <b>republished at the same
-        address</b>. The page looks identical and nothing on it moved, but the
-        datasheet behind the link is a new one. Listed separately under
-        <a href="{{ url_for('assets_page') }}">File updates</a> on the
-        Dashboard.</td></tr>
-    </table>
+  <!-- the distinction people get wrong -->
+  <section class="card">
+    <h2>What it notices, and what it lets pass</h2>
+    <p class="lede">The right-hand column is why something you expected did not
+      come up. Each one caused a flood of false alarms before it was handled.</p>
+    <div class="pair">
+      <div>
+        <h3 style="margin:0 0 4px; font-size:14px"><span class="tick">✓</span>
+          Raises a page</h3>
+        <ul class="plist">
+          <li><b>Text</b><span>Wording added, removed or edited. Text that only
+            <i>moved</i> does not count — same lines, new order, is layout.</span></li>
+          <li><b>Library</b><span>A document, video, board, design resource or
+            partner appears or disappears — or its version, date, size or price
+            changes.</span></li>
+          <li><b>Images</b><span>A picture appears on or disappears from the
+            page.</span></li>
+          <li><b>Screenshot</b><span>More than {{ s.visual_threshold }}% of
+            pixels differ, or the page height moves more than
+            {{ s.height_threshold }}px.</span></li>
+          <li><b>File updates</b><span>A file republished at the same address.
+            The page is identical; the datasheet behind it is new.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="margin:0 0 4px; font-size:14px"><span class="cross">✕</span>
+          Ignored on purpose</h3>
+        <ul class="plist">
+          <li><b>Stock levels</b><span>"4387 in stock" reads 4382 by morning. The
+            price is still watched.</span></li>
+          <li><b>The community feed</b><span>Re-sorts itself constantly. Whether
+            the widget is present, empty or busy <i>is</i> tracked.</span></li>
+          <li><b>Latest news, the mega-menu</b><span>Identical on every page. One
+            retired thumbnail once raised 585 pages at once.</span></li>
+          <li><b>Tabs loading differently</b><span>Two visits can land on
+            different tabs. Their contents are tracked item by item
+            instead.</span></li>
+          <li><b>Timestamps, "3 days ago"</b><span>They change with nobody
+            editing anything.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
 
-    <h2 id="ignores">What it deliberately ignores</h2>
-    <p>Every item here caused a flood of false alarms before it was handled. If
-      you ever wonder why something did <i>not</i> come up, it is probably one of
-      these.</p>
-    <table>
-      <tr><th>Ignored</th><th>Why</th></tr>
-      <tr><td class="wrap">Stock levels</td><td>The number in the buy box changes
-        overnight on its own — a part showing "4387 in stock" reads 4382 the next
-        morning. The <b>price</b> is still watched, so a genuine price move still
-        comes up.</td></tr>
-      <tr><td class="wrap">The developer community feed</td><td>It re-sorts and
-        re-dates itself constantly. Whether the widget is <i>present</i>, empty,
-        or has discussions <b>is</b> still tracked — only its churn is ignored.</td></tr>
-      <tr><td class="wrap">"Latest news" and the mega-menu</td><td>Identical on
-        every page, and updated centrally. One retired news thumbnail once raised
-        585 pages at the same time.</td></tr>
-      <tr><td class="wrap">Tabbed sections loading differently</td><td>Two visits
-        can land on different tabs of the same section. Their contents are
-        tracked item by item instead, which does not flap.</td></tr>
-      <tr><td class="wrap">Timestamps and "3 days ago"</td><td>They change by
-        themselves without anybody editing anything.</td></tr>
-    </table>
-    <p class="sub">An admin can adjust what is ignored under
-      {% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings</a>{% else %}Settings{% endif %}.</p>
+  <!-- reviewing -->
+  <section class="card">
+    <h2>Reviewing an update</h2>
+    <p class="lede">Open one from the Dashboard. You see exactly what moved —
+      the wording before and after, which documents came and went, and the two
+      screenshots with the changed areas boxed.</p>
 
-    <h2 id="review">Reviewing an update</h2>
-    <p>Open one from the Dashboard. You see exactly what moved — the wording
-      before and after, which documents came and went, and the two screenshots
-      with the changed areas boxed.</p>
+    <div class="choose">
+      <div class="opt go">
+        <h3><span class="dot"></span>Accept</h3>
+        <p>Confirms this is the page now. It becomes the reference the next
+          check compares against.</p>
+        <p class="when">Use when the change is real — whether it matters or not.</p>
+      </div>
+      <div class="opt no">
+        <h3><span class="dot"></span>Reject</h3>
+        <p>Says "do not use <i>this capture</i> as the reference". The previous
+          version stays.</p>
+        <p class="when">Use when the capture is wrong — something did not load.</p>
+      </div>
+    </div>
 
-    <img class="shot" src="{{ url_for('static', filename='guide/update.png') }}"
-         alt="An update, showing which signals fired and the before and after"
-         loading="lazy">
-    <p class="cap">An update. The badges at the top say which signals fired —
-      only what actually changed is shown, so a page raised on text alone does
-      not make you scroll past an unchanged screenshot.</p>
+    <div class="note warn"><p><b>Accept is the normal one.</b> Reject is for when
+      iRadar got the page wrong, not for when you dislike what Infineon
+      published. Either way the page returns to normal — nothing is left
+      hanging.</p></div>
 
-    <p>Then one of two buttons:</p>
-    <table>
-      <tr><th>Button</th><th>What it does</th><th>Use it when</th></tr>
-      <tr><td><span class="yn yn-y">Accept</span></td>
-        <td>Confirms this is the page now. It becomes the reference the next
-          check compares against.</td>
-        <td>The change is real — whether it is important or not.</td></tr>
-      <tr><td><span class="yn yn-n">Reject</span></td>
-        <td>Says "do not use <i>this capture</i> as the reference". The previous
-          version stays.</td>
-        <td>The capture is wrong — something clearly did not load.</td></tr>
-    </table>
-    <div class="callout warn"><p><b>Accept is the normal one.</b> Reject is for
-      when iRadar got the page wrong, not for when you dislike what Infineon
-      published. Either way the page goes back to normal afterwards — nothing is
-      left hanging or waiting on you.</p></div>
+    <figure>
+      <img src="{{ url_for('static', filename='guide/update.png') }}" loading="lazy"
+           alt="An update, showing which signals fired and the before and after">
+      <figcaption>Only what actually changed is shown, so a page raised on
+        wording alone does not make you scroll past an unchanged
+        screenshot.</figcaption>
+    </figure>
+  </section>
 
-    <h2 id="notes">Notes</h2>
-    <p>Every page, document, board and update has a <b>Notes</b> box at the
-      bottom. It is for the reasoning, not the fact — <i>"checked with marketing,
-      the new subheadline is intentional, leaving it"</i>.</p>
-    <p>Whoever opens that page next reads it without having to ask you, which is
-      the whole point: the decision outlives the conversation.</p>
-    <ul>
-      <li>Edit or delete your own at any time</li>
-      <li>Mark any note <b>done</b> once it has been handled</li>
-      <li>See everything anyone has written under
-        <a href="{{ url_for('notes_page') }}">Notes</a>, newest first</li>
-    </ul>
+  <!-- notes -->
+  <section class="card">
+    <h2>Leaving a note</h2>
+    <p class="lede">Every page, document, board and update has a notes box at the
+      bottom.</p>
+    <p>It is for the reasoning, not the fact — <i>"checked with marketing, the
+      new subheadline is intentional, leaving it"</i>. Whoever opens that page
+      next reads it without having to ask you, which is the whole point: the
+      decision outlives the conversation.</p>
+    <p>Edit or delete your own whenever, mark one <b>done</b> once it is handled,
+      and read everything anyone has written under
+      <a href="{{ url_for('notes_page') }}">Notes</a>.</p>
+    <figure>
+      <img src="{{ url_for('static', filename='guide/notes.png') }}" loading="lazy"
+           alt="The notes box at the bottom of a page">
+      <figcaption>Ctrl + Enter posts.</figcaption>
+    </figure>
+  </section>
 
-    <img class="shot" src="{{ url_for('static', filename='guide/notes.png') }}"
-         alt="The notes box at the bottom of a page" loading="lazy">
-    <p class="cap">The notes box, at the bottom of every page, document, board
-      and update. Ctrl + Enter posts.</p>
-
-    <h2 id="around">Finding your way</h2>
-    <table>
-      <tr><td><a href="{{ url_for('index') }}">Dashboard</a></td>
-        <td>Every tracked page, its state, and the review queue. Filter by type,
-          status, or by what content a page has.</td></tr>
-      <tr><td><a href="{{ url_for('search_items') }}">Content</a></td>
-        <td>Every document, video, image and board across all pages, and which
-          pages each one appears on. The place to answer <i>"where is this
-          datasheet used?"</i></td></tr>
-      <tr><td><a href="{{ url_for('notes_page') }}">Notes</a></td>
-        <td>Everything anyone has written, in one list.</td></tr>
-      <tr><td>Reports</td>
-        <td><a href="{{ url_for('hierarchy') }}">Hierarchy</a> — the site as a
+  <!-- where things live -->
+  <section class="card">
+    <h2>Where things are</h2>
+    <ul class="map">
+      <li><a href="{{ url_for('index') }}">Dashboard</a>
+        <span>Every tracked page, its state, and your review queue. Filter by
+          type, status, or by what content a page has.</span></li>
+      <li><a href="{{ url_for('search_items') }}">Content</a>
+        <span>Every document, video, image and board across all pages, and which
+          pages each appears on. Answers "where is this datasheet used?"</span></li>
+      <li><a href="{{ url_for('notes_page') }}">Notes</a>
+        <span>Everything anyone has written, newest first.</span></li>
+      <li>Reports
+        <span><a href="{{ url_for('hierarchy') }}">Hierarchy</a> — the site as a
           tree. <a href="{{ url_for('export_builder') }}">Export</a> — any of it
           as a spreadsheet. <a href="{{ url_for('history') }}">Run history</a> —
-          every check and what it found.</td></tr>
-      <tr><td>Your avatar</td>
-        <td>Top right. Your profile, light or dark mode, sign out{% if is_admin %},
-          and the admin screens{% endif %}.</td></tr>
-    </table>
+          every check and what it found.</span></li>
+      <li>Your avatar
+        <span>Top right. Your profile, light or dark mode, sign
+          out{% if is_admin %}, and the admin screens{% endif %}.</span></li>
+    </ul>
+  </section>
 
-    <h2 id="account">Your account</h2>
-    <p>Sign in with your Infineon email address. Your name and password are under
-      the avatar, top right — changing your name updates it on notes you have
-      already written.</p>
-    <table>
-      <tr><th>Role</th><th>Can</th></tr>
-      <tr><td>Admin</td><td>Everything — people, settings, the page list, and
-        starting checks by hand.</td></tr>
-      <tr><td>Editor</td><td>Review updates and edit page details. Not settings,
-        the page list, or runs.</td></tr>
-    </table>
-    <p>Everyone can write notes.</p>
-    <div class="callout"><p>Please use a <b>passphrase</b> — three or four random
+  <!-- account -->
+  <section class="card">
+    <h2>Your account</h2>
+    <p class="lede">Sign in with your Infineon email address.</p>
+    <p>Your name and password are under the avatar, top right. Changing your name
+      also updates it on notes you have already written.</p>
+    <ul class="map" style="margin-top:8px">
+      <li>Admin<span>Everything — people, settings, the page list, and starting a
+        check by hand.</span></li>
+      <li>Editor<span>Review updates and edit page details. Not settings, the
+        page list, or runs.</span></li>
+    </ul>
+    <p style="margin-top:12px">Everyone can write notes.</p>
+    <div class="note"><p>Please use a <b>passphrase</b> — three or four random
       words, like <code>harbour-cactus-lantern-42</code>. Long beats
       complicated, and it is far stronger than something like
       <code>P@ssw0rd!</code>.</p></div>
+  </section>
 
-    <h2 id="limits">What it does not do</h2>
-    <ul>
+  <!-- honest limits -->
+  <section class="card">
+    <h2>What it does not do</h2>
+    <ul class="lim">
       <li><b>It does not find new pages by itself.</b> iRadar watches the
         {{ '{:,}'.format(f.pages) }} pages it has been given. If Infineon
         publishes a new one, somebody has to add it{% if is_admin %} under
-        <i>Add pages</i> on the Dashboard{% endif %}.</li>
+        <i>Add pages</i>{% endif %}.</li>
       <li><b>A few finder pages</b> only capture their first page of results.</li>
       <li><b>Gated documents</b> — the ones behind a MyInfineon login — cannot be
         previewed, because all we can see is the login wall.</li>
-      <li><b>It reports, it does not judge.</b> Whether a change matters is your
-        call; iRadar only promises to notice it.</li>
+      <li><b>It reports; it does not judge.</b> Whether a change matters is your
+        call. iRadar only promises to notice it.</li>
     </ul>
-  </div>
+  </section>
+
 </div>
 {% endblock %}
