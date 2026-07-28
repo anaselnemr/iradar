@@ -3361,8 +3361,16 @@ def settings_view():
         reschedule()
         flash("Settings saved. Next automatic check: " + next_run_text())
         return redirect(url_for("settings_view"))
+    # the Components tab shows the real grid, not a button that leads to it,
+    # so it needs everything the matrix needs
+    con = db.connect()
+    try:
+        matrix_ctx = _matrix_context(con)
+    finally:
+        con.close()
     return render_template("settings.html", s=db.get_settings(),
-                           next_run=next_run_text(), weekdays=WEEKDAYS)
+                           next_run=next_run_text(), weekdays=WEEKDAYS,
+                           **matrix_ctx)
 
 
 @app.route("/url/<int:url_id>/level", methods=["POST"])
@@ -3839,6 +3847,42 @@ def levels_infer_missing():
     if skipped:
         flash(f"{skipped} page(s) had no evidence yet (not captured).")
     return redirect(request.referrer or url_for("settings_components"))
+
+
+def _matrix_context(con):
+    """Everything the component matrix needs to render.
+
+    Pulled out of settings_components so the Settings tab can show the grid
+    itself rather than a button that leads to it. One gatherer, so the two
+    never drift into showing different numbers for the same thing.
+    """
+    counts = _component_counts(con)
+    present = {_etype(r["ptype"], r["url"], r["level"]) for r in con.execute(
+        "SELECT ptype, url, level FROM urls WHERE ptype<>''")}
+    types = ([t for t in ETYPE_ORDER if t in present]
+             + sorted(present - set(ETYPE_ORDER)))
+    matrix = _effective_matrix(con)
+    comps = _all_components()
+    maxn = {t: max(list(counts.get(t, {}).values()) or [1]) for t in types}
+    # a component with zero everywhere and no manual tick has no business on
+    # the grid - its row hides unless the empty cells are opened for editing
+    row_any = {key: (any(counts.get(t, {}).get(key) for t in types)
+                     or any(key in matrix.get(t, ()) for t in types))
+               for key, _l, _k, _a in comps}
+    return {
+        "comps": comps, "types": types, "matrix": matrix, "counts": counts,
+        "maxn": maxn, "row_any": row_any,
+        "custom_keys": {c[0] for c in _custom_components()},
+        "pending": con.execute(
+            "SELECT COUNT(*) FROM urls WHERE active=1"
+            " AND (components IS NULL OR components='')").fetchone()[0],
+        "missing_levels": con.execute(
+            "SELECT COUNT(*) FROM urls WHERE ptype IN"
+            " ('Product','Application','Part')"
+            " AND (level IS NULL OR level='')").fetchone()[0],
+        "saved": bool((db.get_settings().get("component_matrix") or "").strip()),
+        "state": runner.RUN_STATE,
+    }
 
 
 @app.route("/settings/components", methods=["GET", "POST"])

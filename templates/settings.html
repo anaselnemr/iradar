@@ -4,15 +4,17 @@
 {#- Centred on the page and no heading: the nav already says which page this
     is, and a 680px form pinned to the left edge of a 1200px page reads as
     something that failed to load the rest of itself. -#}
-<div class="card" style="max-width:680px; margin-left:auto; margin-right:auto">
+<div class="card settingscard" style="max-width:680px; margin-left:auto; margin-right:auto">
   {# segmented nav: one form, four panes - switching tabs never loses input #}
   <div class="seg" role="tablist">
     <button type="button" class="seg-b on" data-pane="schedule" onclick="segGo(this)">Schedule</button>
     <button type="button" class="seg-b" data-pane="sensitivity" onclick="segGo(this)">Sensitivity</button>
     <button type="button" class="seg-b" data-pane="components" onclick="segGo(this)">Components</button>
-    <button type="button" class="seg-b" data-pane="backends" onclick="segGo(this)">Backends</button>
-    <button type="button" class="seg-b" data-pane="access" onclick="segGo(this)">Access</button>
-    <button type="button" class="seg-b" data-pane="backup" onclick="segGo(this)">Backup</button>
+    {#- Access held no settings - only a summary of things said better on the
+        People page and in Help, so it was a tab that could not be used.
+        Backends, the ignore lists and Backup are all set-up-once and now
+        share one. -#}
+    <button type="button" class="seg-b" data-pane="advanced" onclick="segGo(this)">Advanced</button>
   </div>
 
   <form method="post">
@@ -62,6 +64,9 @@
     </div>
 
     <div class="pane" id="pane-sensitivity">
+      <p class="muted" style="margin-top:0; max-width:62ch">How different a
+        page has to look before it is worth your time. Both are compared
+        against the previous capture of the same page.</p>
       <div class="grid2">
         <label>Visual update threshold (% of pixels)
           <input type="text" name="visual_threshold" value="{{ s.visual_threshold }}">
@@ -70,23 +75,10 @@
           <input type="number" name="height_threshold" value="{{ s.height_threshold }}">
         </label>
       </div>
-      <label style="display:block; margin-top:10px">Ignore text lines matching these patterns (one per line, e.g. <code>^\d+ results$</code>)
-        <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
-      </label>
-      <label style="display:block; margin-top:10px">Ignore image URLs matching these patterns (one per line — default excludes flaky auto-generated video-player thumbnails)
-        <textarea name="ignore_image_patterns" rows="2">{{ s.ignore_image_patterns }}</textarea>
-      </label>
     </div>
 
-    <div class="pane" id="pane-components">
-      <p class="muted" style="margin-top:0; max-width:60ch">The editable matrix of
-        which components (Product details, Documents, Diagrams, …) each page shape
-        is expected to carry — with live counts per cell, custom components, and
-        the prune step.</p>
-      <a class="btn" href="{{ url_for('settings_components') }}">Open the component matrix →</a>
-    </div>
-
-    <div class="pane" id="pane-backends">
+    <div class="pane" id="pane-advanced">
+      <h3 style="margin:0 0 10px; font-size:15px">Where your assets live</h3>
       <p class="muted" style="margin-top:0; max-width:62ch">Where your assets
         live. Paste each system's <b>search page URL</b> and the DAM/Windchill
         badges become one-click links. Two modes: with <code>{q}</code> in the
@@ -113,27 +105,22 @@
         assets: videos use the URL's last segment; images the part before the
         first dot; gated documents drop the trailing _id and language; public
         documents drop the extension and language.</p>
-    </div>
 
-    <div class="pane" id="pane-access">
-      <p class="muted" style="margin-top:0; max-width:60ch">Who can reach this
-        dashboard, and from where.</p>
-      <div class="flagrow"><span>Sign-in</span>
-        <span class="badge b-live">personal accounts — every page</span></div>
-      <div class="flagrow"><span>People</span>
-        <span class="muted" style="font-size:13px">
-          <a href="{{ url_for('users_page') }}">Manage people →</a></span></div>
-      <div class="flagrow"><span>This laptop</span>
-        <span class="muted" style="font-size:13px">http://127.0.0.1:5000</span></div>
-      <p class="muted" style="font-size:12.5px; margin-top:12px">
-        Everyone signs in with their own email and password; passwords are
-        stored only as a salted hash, never in the pages or in git. New accounts
-        start on a shared password and must replace it at first sign-in.
-        <b>Admins</b> manage people, settings, the page list and checks;
-        <b>editors</b> review updates and edit page details.</p>
-    </div>
+      <h3 style="margin:26px 0 10px; font-size:15px; padding-top:20px;
+                 border-top:1px solid var(--line)">Lines and images to ignore</h3>
+      <p class="muted" style="margin-top:0; max-width:62ch">Anything matching
+        these is left out of the comparison. Use it for text that rewrites
+        itself with nobody editing the page — a relative date, a result count.
+        One pattern per line.</p>
+      <label style="display:block">Ignore text lines matching these patterns
+        <textarea name="ignore_patterns" rows="3">{{ s.ignore_patterns }}</textarea>
+      </label>
+      <label style="display:block; margin-top:10px">Ignore image URLs matching these patterns
+        <textarea name="ignore_image_patterns" rows="2">{{ s.ignore_image_patterns }}</textarea>
+      </label>
 
-    <div class="pane" id="pane-backup">
+      <h3 style="margin:26px 0 10px; font-size:15px; padding-top:20px;
+                 border-top:1px solid var(--line)">Backup</h3>
       <p class="muted" style="margin-top:0; max-width:62ch">The server's disk is
         not backed up by anything. This is the copy you keep.</p>
 
@@ -157,10 +144,25 @@
       <p class="muted" style="font-size:12.5px; max-width:62ch">
         <b>Worth doing after every check</b>, or at least before anyone edits
         the page list. Keep more than one.</p>
+
     </div>
 
     <div style="margin-top:18px" id="savebar"><button>Save settings</button></div>
   </form>
+</div>
+
+{#- OUTSIDE the settings form and outside its 680px card, for two reasons: the
+    matrix carries its own forms and a form cannot be nested in another, and a
+    grid of 16 page types against 25 components does not fit a column sized for
+    reading. The tab switcher toggles every .pane on the document, so it does
+    not care that this one lives out here. -#}
+<div class="pane matrixpane" id="pane-components">
+  <p class="muted" style="max-width:70ch; margin:0 auto 16px">Which components
+    each page shape is expected to carry. The number in a cell is how many
+    captured pages of that shape actually have it — <b>0</b> means it has never
+    been seen there. Tick what <i>should</i> be there, then Save.
+    <a href="{{ url_for('settings_components') }}">Open it on its own page →</a></p>
+  {% include "_matrix.html" %}
 </div>
 
 <style>
@@ -177,6 +179,10 @@
               box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
   .pane { display: none; }
   .pane.on { display: block; animation: paneIn .14s ease; }
+  /* the matrix breaks out of the settings column - it is a grid, not a form */
+  .matrixpane { max-width: 1560px; margin: 0 auto; }
+  body:has(#pane-components.on) .settingscard { max-width: 1560px; }
+  .matrixpane.on { display: block; }
   @keyframes paneIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
 </style>
 <script>
@@ -187,8 +193,9 @@
     });
     // Save applies to the form fields (schedule + sensitivity); hide it on the
     // info-only panes so it can't read as "save my access settings"
-    var info = btn.dataset.pane === "components" || btn.dataset.pane === "access";
-    if (btn.dataset.pane === "backends") info = false;   // backends ARE saved fields
+    // the matrix saves itself, with its own button - the settings Save has
+    // nothing to do with it and reads as though it might
+    var info = btn.dataset.pane === "components";
     document.getElementById("savebar").style.display = info ? "none" : "";
     location.hash = btn.dataset.pane;
   }
