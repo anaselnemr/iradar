@@ -27,6 +27,7 @@
   </div>
 </details>
 {% endmacro %}
+{% block mainclass %}wide{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -349,7 +350,7 @@
   #pagetable .c-type { width: 128px; }
   #pagetable .c-live { width: 132px; }   /* fits LIVE BUT EMPTY */
   #pagetable .c-stat { width: 128px; }
-  #pagetable .c-when { width: 116px; }
+  #pagetable .c-when { width: 132px; }   /* one line, not two */
   #pagetable .c-upd  { width: 208px; }
   /* the badges keep their shape rather than being squeezed into two lines */
   #pagetable .c-live .badge, #pagetable .c-stat .badge { white-space: nowrap; }
