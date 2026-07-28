@@ -195,18 +195,23 @@
   <!-- what it is, and where it stands right now -->
   <section id="overview" class="card gd-hero">
     <div class="figs">
-      <a class="fig" href="{{ url_for('index') }}">
-        <div class="n">{{ '{:,}'.format(f.pages) }}</div>
+      {#- the same colours the Dashboard uses for the same facts: accent for
+          the count of pages, green for what is live, orange for what needs
+          you. One number should not change colour depending on which screen
+          you read it on. -#}
+      <a class="fig" href="{{ url_for('index') }}"
+         title="Every page iRadar watches">
+        <div class="n" style="color:var(--accent)">{{ '{:,}'.format(f.pages) }}</div>
         <div class="l">pages watched</div></a>
-      <a class="fig" href="{{ url_for('search_items') }}">
-        <div class="n">{{ '{:,}'.format(f.tracked) }}</div>
+      <a class="fig" href="{{ url_for('search_items') }}"
+         title="Documents, videos, boards and images across all of them">
+        <div class="n" style="color:#16a34a">{{ '{:,}'.format(f.tracked) }}</div>
         <div class="l">items tracked</div></a>
-      {#- the PAGE count, because that is what the link opens -#}
       <a class="fig" href="{{ url_for('index', status='changed') }}"
          title="Pages with an update waiting for your review">
-        <div class="n" style="color:{{ 'var(--warn)' if f.open_pages else 'inherit' }}">{{ f.open_pages }}</div>
+        <div class="n" style="color:{{ '#ea580c' if f.open_pages else 'var(--muted)' }}">{{ f.open_pages }}</div>
         <div class="l">waiting for you</div></a>
-      <div class="fig">
+      <div class="fig" title="When the next check runs on its own">
         <div class="n" style="font-size:15px; padding-top:5px">{{ next_run }}</div>
         <div class="l">next check</div></div>
     </div>
