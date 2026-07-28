@@ -703,15 +703,15 @@ def _noflag(block, key):
 # One canonical name per state, used everywhere (stats, chips, this dropdown),
 # so the same page-state never reads under two different words.
 # A hand-picked test set: the 2 richest pages (most components) of every page
-# shape, for quick QA of the whole extractor from one filter. Temporary - drop
-# the entry to remove it.
+# shape. NOT wired to anything since 2026-07-29 on Anas's call - the shortcut
+# chip and filter are gone, the list stays for the next time a change needs
+# trying on a representative handful before it goes near all 4,000. To bring
+# the filter back, re-add a STATUS_FILTERS entry pointing at these ids.
 TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
                  4177, 4180, 4203, 4220, 526, 574, 221, 264, 238, 4167, 239,
                  269, 244, 278, 298, 535, 193, 194, 4233)
 
 STATUS_FILTERS = {
-    "test":      ("🧪 Test set",
-                  "u.id IN (" + ",".join(map(str, TEST_PAGE_IDS)) + ")"),
     "metaflag":  ("⚠ Ownership mismatch", "IFNULL(u.meta_flag,'')<>''"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     # no 'rejected' state: rejecting a capture means "not this one as the
@@ -1508,8 +1508,6 @@ def index():
          "n": status_counts["paused"]},
         {"kind": "status", "vals": ["metaflag"], "label": "Ownership mismatch",
          "n": status_counts["metaflag"], "tone": "warn"},
-        {"kind": "status", "vals": ["test"], "label": "Test set",
-         "n": len(TEST_PAGE_IDS), "always": True},
     ) if c["n"] or c.get("always")]
     # A chip is one more filter, not a fresh start. It used to link to
     # ?status=x with everything else dropped, so picking a type and then a chip
