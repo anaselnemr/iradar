@@ -1,6 +1,27 @@
 {% extends "base.html" %}
 {% block title %}URL library — iRadar{% endblock %}
 {% block content %}
+<style>
+  .rdbox > summary { list-style: none; cursor: pointer; display: flex;
+                     align-items: center; gap: 10px; font-weight: 600;
+                     font-size: 15px; }
+  .rdbox > summary::-webkit-details-marker { display: none; }
+  .rdbox > summary::before { content: "▸"; color: var(--muted);
+                             font-size: 12px; transition: transform .15s; }
+  .rdbox[open] > summary::before { transform: rotate(90deg); }
+  .rdbox .rd-n { font-size: 11px; font-weight: 700; padding: 1px 8px;
+                 border-radius: 999px; background: var(--hover);
+                 color: var(--muted); }
+  .rd-body { margin-top: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .rd-row { display: grid; grid-template-columns: 108px minmax(0, 1fr);
+            gap: 14px; align-items: baseline; }
+  .rd-lbl { font-size: 12px; font-weight: 600; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .04em; }
+  .rd-row a { overflow-wrap: anywhere; }
+  .rd-why { color: var(--muted); font-size: 13px; line-height: 1.5;
+            margin-top: 3px; }
+  @media (max-width: 560px) { .rd-row { grid-template-columns: 1fr; gap: 3px; } }
+</style>
 <nav class="bcrumb" aria-label="Where this page sits">
   <a class="bc-back" href="{{ url_for('index') }}" title="Back to the dashboard">←</a>
   {% for c in crumbs %}
@@ -239,26 +260,6 @@
     {% if u.meta_flag %}
     <span class="ownflag" title="Imported from the CSS report; a mismatch was detected. Editing any field clears this flag.">— {{ u.meta_flag }}</span>
     {% endif %}
-  </div>
-  {% endif %}
-  {% if redirect_to %}
-  {# the listed address is not the page that answered: say so plainly, or the
-     library silently describes a page nobody asked about #}
-  <div class="notice" style="margin-top:10px">
-    <strong>This URL redirects.</strong> Infineon serves it from
-    <a href="{{ redirect_to }}" target="_blank">{{ redirect_to }}</a>, so
-    everything below describes <em>that</em> page. The address in your list may
-    be out of date.
-  </div>
-  {% endif %}
-  {% if u.redirect_from %}
-  {# this row IS a redirect destination: a stale address 301'd here and the
-     list was repointed to the page that actually answers #}
-  <div class="notice" style="margin-top:10px">
-    <span class="badge b-redir" title="Reached by a 301 redirect"><span style="display:inline-block; transform:scaleX(-1)">↪</span></span>
-    Reached by a 301 redirect from
-    <a href="{{ u.redirect_from }}" target="_blank" style="word-break:break-all">{{ u.redirect_from }}</a>.
-    The list tracks this destination, not the old address.
   </div>
   {% endif %}
 </div>
@@ -502,6 +503,42 @@
     {% endfor %}
   </table>
 </div>
+
+{#- Redirects, folded away. Two yellow banners at the top of the page made a
+    301 look like something had gone wrong, on pages where nothing had: a
+    redirect is a fact about the address, not a problem with the content. It
+    sits with the other facts now, closed unless there is something in it. -#}
+{% if redirect_to or u.redirect_from %}
+<details class="card rdbox"{% if redirect_to %} open{% endif %}>
+  <summary>
+    <span>Redirects</span>
+    <span class="rd-n">{{ (1 if redirect_to else 0) + (1 if u.redirect_from else 0) }}</span>
+  </summary>
+  <div class="rd-body">
+    {% if u.redirect_from %}
+    <div class="rd-row">
+      <span class="rd-lbl">Reached from</span>
+      <div>
+        <a href="{{ u.redirect_from }}" target="_blank">{{ u.redirect_from }}</a>
+        <div class="rd-why">A 301 sent us here, so the list tracks this
+          destination rather than the old address.</div>
+      </div>
+    </div>
+    {% endif %}
+    {% if redirect_to %}
+    <div class="rd-row">
+      <span class="rd-lbl">Serves</span>
+      <div>
+        <a href="{{ redirect_to }}" target="_blank">{{ redirect_to }}</a>
+        <div class="rd-why">The address in the list is not the page that
+          answers, so everything above describes <em>that</em> page. The listed
+          address may be out of date.</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
 
 {% include "_notes.html" %}
 {% endblock %}

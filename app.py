@@ -2471,8 +2471,12 @@ def _redirect_target(snap_dir, url):
                            .read_text(encoding="utf-8")).get("final_url") or ""
     except Exception:
         return ""
-    # ignore the trailing #anchor our own tab-clicking leaves behind
-    strip = lambda u: u.split("#")[0].rstrip("/")
+    # A QUERY STRING IS NOT A DIFFERENT PAGE. /presence-sensing serving
+    # /presence-sensing?ftab=04 is the same page opening on a tab, and calling
+    # that a redirect put a warning banner on pages nothing was wrong with.
+    # The runner's own _same_page has always stripped both; this did not, so
+    # the list correctly refused to repoint while the page shouted anyway.
+    strip = lambda u: u.split("#")[0].split("?")[0].rstrip("/")
     return final.split("#")[0] if strip(final) and strip(final) != strip(url) else ""
 
 
