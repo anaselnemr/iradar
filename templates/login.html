@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — iRadar</title>
+<link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}?v=1" sizes="any">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=1">
 {#- standalone on purpose: base.html carries the nav and the account menu,
     neither of which means anything to someone who is not signed in yet -#}
 <script>
@@ -31,8 +33,11 @@
          font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
          background: var(--bg); color: var(--ink); font-size: 15px; }
   .box { width: 100%; max-width: 372px; }
-  .brand { text-align: center; font-size: 21px; font-weight: 700;
-           letter-spacing: -.3px; margin-bottom: 4px; }
+  .brand { display: flex; align-items: center; justify-content: center;
+           gap: 11px; font-size: 21px; font-weight: 700;
+           letter-spacing: -.3px; margin-bottom: 6px; }
+  .brand img { width: 40px; height: 40px; border-radius: 11px; display: block; }
+  .brand b { font-weight: 700; }
   .brand span { color: var(--accent); }
   .sub { text-align: center; color: var(--muted); font-size: 13.5px;
          margin-bottom: 22px; }
@@ -61,7 +66,11 @@
 </head>
 <body>
   <div class="box">
-    <div class="brand">i<span>Radar</span></div>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}?v=1" alt="" width="40" height="40">
+      {#- one flex item, or the gap opens up between the "i" and "Radar" -#}
+      <b>i<span>Radar</span></b>
+    </div>
     <div class="sub">Sign in to review site updates</div>
     <form method="post" action="{{ url_for('login') }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}

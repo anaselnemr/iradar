@@ -8,9 +8,12 @@
   .pf { max-width: 720px; margin: 0 auto; }
   .pf-head { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
   .pf-av { width: 56px; height: 56px; font-size: 20px; }
+  /* two lines, not three: the role is one word and belongs beside the name,
+     not on a line of its own under the address */
+  .pf-name { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pf-who h2 { margin: 0; font-size: 20px; letter-spacing: -.2px; }
-  .pf-who .mail { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
-  .pf-role { display: inline-block; margin-top: 6px; font-size: 11px;
+  .pf-who .mail { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+  .pf-role { font-size: 11px; line-height: 1.7;
              text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
              padding: 2px 9px; border-radius: 999px;
              background: rgba(110,109,122,.16); color: var(--muted); }
@@ -36,9 +39,11 @@
     <div class="pf-head">
       <span class="av pf-av" style="--avatar:{{ me|avatar }}">{{ me|initials }}</span>
       <div class="pf-who">
-        <h2>{{ me['name'] or me['email'].split('@')[0] }}</h2>
+        <div class="pf-name">
+          <h2>{{ me['name'] or me['email'].split('@')[0] }}</h2>
+          <span class="pf-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
+        </div>
         <div class="mail">{{ me['email'] }}</div>
-        <span class="pf-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
       </div>
     </div>
   </div>
