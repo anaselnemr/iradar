@@ -82,6 +82,39 @@ previous version stays until you decide.
 **File updates** beside it is a separate queue, for files that changed behind a
 link that did not.*
 
+### If a check stops half way
+
+It picks up where it left off. Every page is recorded as it is done, so a check
+that is interrupted — the machine restarts, the server redeploys, somebody
+presses stop — resumes from the first page it had not reached, rather than
+starting the whole thing again.
+
+- **Pages already checked are not re-checked.** Their results stand.
+- **Pages caught mid-capture are simply redone.** A half-written capture is
+  never kept, so an interruption cannot leave a corrupted reference behind.
+- **Updates already found are still in your queue.** Nothing waiting for review
+  is lost.
+- **Start it again and it continues.** Nothing special to do.
+
+Run history shows a check that has not finished with no end time. That is normal
+while one is running, and a sign it was interrupted if the time has passed.
+
+### Page states you will see
+
+These are the chips along the top of the Dashboard. Each one is a filter.
+
+| | |
+|---|---|
+| **Unchanged** | Checked, nothing moved. The normal state. |
+| **Updated** | Something changed and it is waiting for you. |
+| **Blank page** | The address answered but there was nothing on it. Usually Infineon serving an empty shell; retried next check. |
+| **Capture error** | Failed all three attempts. Almost always the site being slow or refusing us, not the page being broken. |
+| **Not live** | The address answers 4xx. The page is gone, or was never published. It stays in the list so you can see it went. |
+| **Not captured** | Added but never successfully read yet, so there is nothing to compare against. It gets its first reading next check. |
+| **Paused** | Deliberately skipped. Still listed, not checked. |
+| **Ownership mismatch** | The owner or business line on the page does not agree with what was imported. Flagged for a human, never auto-corrected. |
+| **Test set** | A small fixed group used to try a change out before putting it near every page. |
+
 ---
 
 ## What it notices, and what it lets pass
@@ -117,9 +150,67 @@ Then one of two buttons:
 | **Accept** | Confirms this is the page now. It becomes the reference the next check compares against. | The change is real — whether it matters or not. |
 | **Reject** | Says "do not use *this capture* as the reference". The previous version stays. | The capture is wrong — something did not load. |
 
-> **Accept is the normal one.** Reject is for when iRadar got the page wrong, not
-> for when you dislike what Infineon published. Either way the page returns to
-> normal — nothing is left hanging.
+### Two reasons to reject
+
+Both keep the previous version as the reference, and that is exactly what makes
+them work:
+
+- **The capture is wrong.** Something did not load and iRadar saw half a page.
+  Next week it captures properly, matches the version you kept, and says nothing.
+- **The change is real but wrong, and will be put back.** Somebody published a
+  mistake. Reject it, tell whoever owns the page, and the reference stays on the
+  correct version — so when they fix it, the page matches again and goes quiet
+  on its own. *Until it is fixed the page will come up again on every check.
+  That is the point: it is a standing reminder that the site still does not say
+  what it should.*
+
+> **Accept is the normal one.** Reject is for a capture that is wrong or a change
+> that is going to be undone — not for a change you simply dislike. Accepting
+> does not endorse anything; it only records what the page says today.
+
+---
+
+## Content: every document, and where it is used
+
+Every check reads the whole library off each page, so **Content** is not a
+separate list somebody maintains — it is what the site actually says today.
+
+**It is organised by the thing, not by the page.** One datasheet used on forty
+product pages is *one* entry with forty pages under it, not forty copies. Open it
+and you get the answer to the question that is otherwise a morning's work:
+
+- **Which pages carry this document** — every one, with its type and the heading
+  it sits under on that page
+- **Its details** — version, language, date, size, and whether it is public or
+  behind a MyInfineon login
+- **A picture of the first page**, rendered here, so you can tell at a glance
+  whether it is the right file without downloading it
+- **Where to edit it** — the DAM and Windchill badges go straight to the source
+  system
+
+The same is true of videos, images, boards, design resources and partner logos.
+Anything the page lists, iRadar lists — grouped by what it is.
+
+> **This is what makes a removal visible.** When a datasheet disappears from a
+> page, iRadar knows because it compares the whole library, not just the words.
+> That is the **Library** signal, and it is the one that catches the changes
+> reading the page would not.
+
+### File updates: the other queue
+
+A datasheet can be replaced without the page moving at all — same link, same
+title, new file behind it. Nothing on the page changed, so no page comes up, and
+reading the site would never tell you. iRadar asks each file for its size and
+date without downloading it, and when those move it goes to **File updates**
+instead.
+
+- **Its own queue, its own Accept and Reject**, separate from page updates so a
+  quiet republish does not get lost among them.
+- **Every page carrying that file is listed** — one replaced datasheet can be
+  forty pages' worth of news.
+- **Accept** records the new file as the one we know about. **Reject** keeps the
+  old reading, for when the server is reporting nonsense rather than the file
+  genuinely changing.
 
 ---
 
@@ -168,6 +259,35 @@ and can be undone. Deleting cannot.
 
 ---
 
+## Worth knowing
+
+The things people ask about in the second week.
+
+- **Only the last two captures of a page are kept.** Enough to compare against
+  and to show you a before and after — not an archive. You cannot ask what a
+  page looked like in March. *Anything an open update needs is never removed,
+  however old, so nothing waiting for review can be cleared out from under you.*
+- **The site is also a tree.** **Hierarchy** lays the pages out the way
+  infineon.com nests them, so you can see a whole product family and everything
+  under it rather than a flat list.
+- **Pages carry who owns them** — BL, PL, CM and the marketing owner, shown on
+  the page and available as export columns. Where a page disagrees with what was
+  imported it is flagged *Ownership mismatch* for somebody to settle, never
+  quietly corrected.
+- **Which parts a page has is tracked too** — whether it carries a documents
+  section, a video block, a partner list. Filter the Dashboard by them to find,
+  say, every product page with no datasheets. A section that disappears entirely
+  is a change worth seeing.
+- **A page can be paused** when it is known to be in flux and you do not want it
+  coming up every week. It stays in the list, marked *Paused*, and is simply not
+  checked.
+- **Redirects are followed and merged.** If two addresses land on the same page
+  it is watched once, not twice, so you do not review the same change twice over.
+- **Anything on screen can be exported.** **Export** turns any filter and any set
+  of columns into a spreadsheet.
+
+---
+
 ## What it does not do
 
 - **It does not find new pages by itself.** iRadar watches the pages it has been
@@ -176,6 +296,10 @@ and can be undone. Deleting cannot.
 - **A few finder pages** only capture their first page of results.
 - **Gated documents** — the ones behind a MyInfineon login — cannot be previewed,
   because all we can see is the login wall.
+- **It does not watch continuously.** A change published and undone between two
+  checks is a change nobody sees.
+- **It does not tell anyone.** No email, no alert — the queue waits on the
+  Dashboard until somebody opens it.
 - **It reports; it does not judge.** Whether a change matters is your call.
   iRadar only promises to notice it.
 
