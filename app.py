@@ -2992,6 +2992,14 @@ def sentiment_page():
         "SELECT COUNT(*) n, AVG(score) avg FROM mentions"
         " WHERE score IS NOT NULL").fetchone()
     con.close()
+    last_collected = con2 = None
+    try:
+        con2 = db.connect()
+        last_collected = con2.execute(
+            "SELECT MAX(fetched) FROM mentions").fetchone()[0]
+    finally:
+        if con2 is not None:
+            con2.close()
     terms = sn.entities()
     try:
         removed_terms = sorted(json.loads(
@@ -3003,6 +3011,7 @@ def sentiment_page():
                            total=total, scored_n=scored["n"],
                            avg_all=scored["avg"], src_totals=src_totals,
                            filtered_total=filtered_total,
+                           last_collected=last_collected,
                            terms=terms, removed_terms=removed_terms,
                            mention_counts=mention_counts,
                            sources=sn.SOURCES,
@@ -3973,7 +3982,31 @@ def _post_run_watcher():
                 _housekeeping("after run")
             except Exception:
                 pass
+            _collect_mentions_after_run()
         prev = running
+
+
+def _collect_mentions_after_run():
+    """Mentions refresh themselves after every real check, so nobody has to
+    remember a button. The guard mirrors the button's own: never while a
+    capture is running (they share the network), and a tiny partial run - a
+    three-page manual poke - does not earn a forty-minute collection pass."""
+    try:
+        import sentiment as sn
+        con = db.connect()
+        last = con.execute(
+            "SELECT total FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        con.close()
+        if not last or (last["total"] or 0) < 50:
+            return
+        if runner.RUN_STATE.get("running"):
+            return
+        if sn.run_collect_background():
+            print("[post-run] collecting mentions across "
+                  + ", ".join(s["label"] for s in sn.sources_ready()),
+                  flush=True)
+    except Exception as exc:
+        print(f"[post-run] mention collection not started: {exc}", flush=True)
 
 
 @app.route("/levels/infer-missing", methods=["POST"])

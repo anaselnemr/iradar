@@ -144,7 +144,9 @@
     <h2 style="margin:0 0 5px">What people say</h2>
     <p class="muted" style="margin:0; max-width:74ch">Mentions of the watched
       product families across the places engineers actually talk — refreshed
-      when you ask, never on its own.</p>
+      on its own after every check, or whenever an admin presses the
+      button.{% if last_collected %} Last collected
+      {{ last_collected|localtime }}.{% endif %}</p>
 
     {% if sstate.running %}
     <p style="margin:12px 0 0"><b>Collecting…</b> {{ sstate.message }}
