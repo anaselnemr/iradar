@@ -380,8 +380,11 @@
      the table past its card as soon as a page of 100 rows contained a long
      one. A fixed cap gives the cell something real to truncate against. */
   .urlcell { max-width: 430px; overflow: hidden; }
+  /* 100%, not another 430px: the column is sized by the table now, and an
+     inner element that believes it has more room than the cell clips at the
+     cell edge with no ellipsis - the text just stops mid-word. */
   .urlcell a, .urlcell .pgtitle-txt {
-               display: inline-block; max-width: 430px; overflow: hidden;
+               display: inline-block; max-width: 100%; overflow: hidden;
                text-overflow: ellipsis; white-space: nowrap;
                vertical-align: bottom; }
   .liveurl { font-size: 12px; color: #5e6ad2 !important; }
@@ -501,7 +504,9 @@
           background: var(--panel); color: var(--ink); font-size: 12.5px;
           text-decoration: none; }
   .pill:hover { border-color: var(--muted); }
-  .pill-on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .pill-on { background: linear-gradient(135deg, #6d78e0, #8b5cf6);
+             color: #fff; border-color: transparent;
+             box-shadow: 0 1px 6px rgba(109,120,224,.35); }
   .rescard { border: 1px solid var(--line); border-radius: 12px;
              padding: 14px 16px; margin-bottom: 12px; background: var(--card);
              transition: box-shadow .15s, border-color .15s; }
@@ -582,8 +587,13 @@
           border: 1px solid var(--line); background: var(--panel); color: var(--ink);
           font-size: 13px; text-decoration: none; }
   .chip b { color: var(--accent); }
-  .chip-on { background: var(--ink); color: #fff; border-color: var(--ink); }
-  .chip-on b { color: #ff9eb0; }
+  /* A selected filter wears the brand, like the nav. It used to be filled
+     with var(--ink) - which in dark mode is nearly WHITE, so a chip you had
+     just ticked turned into a pale slab, and the count on it went with it. */
+  .chip-on { background: linear-gradient(135deg, #6d78e0, #8b5cf6);
+             color: #fff; border-color: transparent;
+             box-shadow: 0 1px 6px rgba(109,120,224,.35); }
+  .chip-on b { color: rgba(255,255,255,.92); }
   /* Docked to the bottom of the window rather than sitting in the page: it
      only exists while rows are ticked, and it has to stay reachable however
      far down a 4,000-row table you have scrolled. */
@@ -612,7 +622,14 @@
      3.6:1 as small bold text on a white chip */
   .chip-warn b { color: #c2410c; }
   .chip-good b { color: #16a34a; }
-  .chip-on.chip-bad b, .chip-on.chip-warn b, .chip-on.chip-good b { color: #fff; }
+  /* the count on a SELECTED chip sits on the brand gradient, so it is white
+     whatever tone the chip carries when it is not selected. Restated under
+     the dark selector because the dark tone rules match with equal weight and
+     sit lower in the file, and would otherwise win on order alone. */
+  .chip-on.chip-bad b, .chip-on.chip-warn b, .chip-on.chip-good b,
+  [data-theme="dark"] .chip-on.chip-bad b,
+  [data-theme="dark"] .chip-on.chip-warn b,
+  [data-theme="dark"] .chip-on.chip-good b { color: rgba(255,255,255,.94); }
   .pager { display: flex; gap: 14px; align-items: center;
            justify-content: center; margin-top: 14px; }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent);
@@ -689,7 +706,12 @@
   .navdd > summary::-webkit-details-marker { display: none; }
   .navdd > summary::after { content: " ▾"; font-size: 10px; opacity: .7; }
   .navdd > summary:hover { color: #fff; background: rgba(139,124,246,.20); }
-  .navdd[open] > summary,
+  /* "Where I am" and "menu I just opened" are different facts and must not
+     look the same. Only .on - you are ON a Reports page - gets the filled
+     brand pill. Merely opening the menu while you sit on the Dashboard gets
+     the same quiet highlight a hover does, so two things never claim to be
+     the current page at once. */
+  .navdd[open] > summary { color: #fff; background: rgba(139,124,246,.20); }
   .navdd.on > summary { color: #fff; font-weight: 600;
                         background: linear-gradient(135deg, #6d78e0, #8b5cf6);
                         box-shadow: 0 1px 8px rgba(109,120,224,.42); }
@@ -963,8 +985,6 @@
                                      border-color: rgba(251,191,36,.3); color: #fcd34d; }
   [data-theme="dark"] .flash       { background: rgba(52,211,153,.1);
                                      border-color: rgba(52,211,153,.3); color: #6ee7b7; }
-  [data-theme="dark"] .chip-on     { background: #e9e9e9; color: #000; border-color: #e9e9e9; }
-  [data-theme="dark"] .chip-on b   { color: #818cf8; }
   [data-theme="dark"] a { color: #a5b4fc; }
   /* ...but a link DRESSED AS A CONTROL keeps the control's colour. This rule
      carries the same weight as .btn and .chip and sits below them, so without
@@ -973,7 +993,8 @@
   [data-theme="dark"] a.btn { color: var(--btn-ink); }
   [data-theme="dark"] a.chip,
   [data-theme="dark"] a.btn-ghost { color: var(--ink); }
-  [data-theme="dark"] a.chip-on { color: #fff; }
+  [data-theme="dark"] a.chip-on,
+  [data-theme="dark"] a.pill-on { color: #fff; }
   /* The nav too. Its items are a mix of <a> and a <summary> for the dropdown,
      and only the links were being repainted - so in dark mode "Reports" sat
      there in a different colour from everything beside it. */
@@ -988,8 +1009,6 @@
   [data-theme="dark"] .chip-bad b  { color: #f87171; }
   [data-theme="dark"] .chip-warn b { color: #fb923c; }
   [data-theme="dark"] .chip-good b { color: #34d399; }
-  [data-theme="dark"] .chip-on.chip-bad b, [data-theme="dark"] .chip-on.chip-warn b,
-  [data-theme="dark"] .chip-on.chip-good b { color: #000; }
   
   [data-theme="dark"] .lvl-pefp { background: rgba(147,197,253,.2); color: #93c5fd; }
   [data-theme="dark"] .lvl-ptp  { background: rgba(129,140,248,.2); color: #a5b4fc; }
@@ -1002,8 +1021,6 @@
   [data-theme="dark"] .b-newpg  { background: #16a34a; color: #fff; }
   [data-theme="dark"] .diff .del { background: rgba(248,113,113,.14); }
   [data-theme="dark"] .diff .add { background: rgba(52,211,153,.14); }
-  [data-theme="dark"] .pill-on   { background: #e9e9e9; color: #000;
-                                   border-color: #e9e9e9; }
 
   /* back to the top of a four-thousand-row table without dragging the
      scrollbar. Appears once there is enough behind you to be worth it. */

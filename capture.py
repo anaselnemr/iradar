@@ -375,6 +375,20 @@ FEED_RECTS_JS = r"""
 #       inside it (a distributor mark) leaves the inventory with it.
 IMG_REV = 4
 
+# Revision of the STRUCTURED read - the library, the sections, the price -
+# stamped like the other three and gated the same way by compare.
+#
+# It went without one for too long, and that is exactly what let a flood
+# through: text, images and the screenshot all re-baseline silently when their
+# method changes, so when rev 5 moved the price/stock block out of the raw
+# walk, the library was the ONE signal with nothing to suppress it. Every page
+# came up with a section difference and nothing a human could see, which is
+# the worst kind of false positive - it teaches people to stop reading them.
+#   1 - everything before this stamp existed (implicit)
+#   2 - VOLATILE_SEL grew to cover the price/stock block, so what SECTIONS_JS
+#       reads into `price` and what it leaves out of the sections moved with it
+SECTIONS_REV = 2
+
 TEXT_JS = r"""
 () => {
   const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','IFRAME',
@@ -2640,6 +2654,7 @@ async def capture_one(browser, url, out_dir):
             "text_rev": TEXT_REV,
             "shot_rev": SHOT_REV,
             "img_rev": IMG_REV,
+            "sections_rev": SECTIONS_REV,
             # what the stored picture is, relative to the real page. compare
             # divides the height difference by this to get REAL page pixels, so
             # the height threshold keeps meaning what it says on the settings

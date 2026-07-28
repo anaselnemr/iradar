@@ -335,15 +335,41 @@
       the page column and the whole table grows past the card holding it,
       which is what showed up as soon as 100 rows made a long one likely.
       The wrapper is the hard stop; the ellipsis still does the tidy work. -#}
+<style>
+  /* The table used to size itself from its contents, so the SAME table looked
+     different depending on which rows a filter happened to show: one
+     "LIVE BUT EMPTY" badge widened Live and Status, Updates lost the room,
+     and every summary in it wrapped onto four lines. Fixed widths mean the
+     layout is the layout - the page column absorbs the slack instead. */
+  #pagetable { table-layout: fixed; }
+  #pagetable th, #pagetable td { overflow: hidden; }
+  #pagetable .c-sel  { width: 34px; }
+  #pagetable .c-num  { width: 54px; }
+  #pagetable .c-page { width: auto; }
+  #pagetable .c-type { width: 128px; }
+  #pagetable .c-live { width: 132px; }   /* fits LIVE BUT EMPTY */
+  #pagetable .c-stat { width: 128px; }
+  #pagetable .c-when { width: 116px; }
+  #pagetable .c-upd  { width: 208px; }
+  /* the badges keep their shape rather than being squeezed into two lines */
+  #pagetable .c-live .badge, #pagetable .c-stat .badge { white-space: nowrap; }
+  /* the page column absorbs the slack, so its contents must track it rather
+     than assume a width of their own */
+  #pagetable .c-page, #pagetable .urlcell { max-width: 0; }
+  @media (max-width: 1180px) {
+    #pagetable .c-type { width: 108px; }
+    #pagetable .c-upd  { width: 168px; }
+  }
+</style>
   <div class="tablewrap">
-  <table>
+  <table id="pagetable">
     <tr>
-      <th style="width:34px"><input type="checkbox" id="selall" title="Select all on this page"></th>
-      <th><a href="#" class="sorth" onclick="return sortBy('page')" title="# is each page's alphabetical position (1, 2, 3…) — click to order by it">#</a></th>
-      <th><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
-      <th>Type</th><th>Live</th><th>Status</th>
-      <th><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
-      <th><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has been updated (click again for fewest first)">Updates{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
+      <th class="c-sel"><input type="checkbox" id="selall" title="Select all on this page"></th>
+      <th class="c-num"><a href="#" class="sorth" onclick="return sortBy('page')" title="# is each page's alphabetical position (1, 2, 3…) — click to order by it">#</a></th>
+      <th class="c-page"><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
+      <th class="c-type">Type</th><th class="c-live">Live</th><th class="c-stat">Status</th>
+      <th class="c-when"><a href="#" class="sorth" onclick="return sortBy('date')" title="Sort by when it was last captured">Last captured{% if sort=='date' %} ↓{% elif sort=='date_asc' %} ↑{% endif %}</a></th>
+      <th class="c-upd"><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has been updated (click again for fewest first)">Updates{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
     </tr>
     {% for u in urls %}
     <tr>

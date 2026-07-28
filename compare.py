@@ -73,6 +73,11 @@ def _img_rev(snap_dir):
     return _meta_rev(snap_dir, "img_rev")
 
 
+def _sections_rev(snap_dir):
+    """Which revision of SECTIONS_JS produced this snapshot's sections.json."""
+    return _meta_rev(snap_dir, "sections_rev")
+
+
 def text_diff(old_dir, new_dir, ignore_patterns=None):
     """Returns (changed, added_count, removed_count, hunks).
 
@@ -522,7 +527,15 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     else:
         i_changed, i_added, i_removed = images_diff(old_dir, new_dir,
                                                     ignore_image_patterns)
-    lib = library_diff(old_dir, new_dir)
+    # ACROSS A STRUCTURED-READ REVISION the sections are not comparable, the
+    # same as the text, the images and the screenshot. This was the one signal
+    # without a stamp, and when rev 5 moved the price/stock block it was also
+    # the only signal left un-suppressed - so every page came up with a section
+    # difference and nothing a human could see behind it.
+    if _sections_rev(old_dir) != _sections_rev(new_dir):
+        lib = library_diff(old_dir, old_dir)      # itself: no differences
+    else:
+        lib = library_diff(old_dir, new_dir)
 
     # The developer-community widget is tracked as a TRI-STATE, every run:
     # absent / empty / has discussions. A transition between those states is

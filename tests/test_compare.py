@@ -482,3 +482,51 @@ def test_feed_growth_does_not_count_as_page_growth():
 def test_summary_reads_no_change_when_nothing_moved():
     r = _cmp(["a"], ["a"])
     assert r["summary"] == "no change"
+
+
+# --- the structured read has a revision too ---------------------------------
+# Text, images and the screenshot all re-baseline silently when their method
+# changes. The library did not, so when rev 5 moved the price/stock block out
+# of the raw walk it was the ONE signal with nothing to suppress it: every page
+# came up with a section difference and nothing a human could see behind it.
+
+def _doc(name):
+    return {"title": name, "url": "https://x/%s.pdf" % name, "meta": "Datasheet"}
+
+
+def _sec_snap(tmp, name, docs, rev=None):
+    d = Path(tmp) / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "sections.json").write_text(
+        json.dumps({"documents": [_doc(n) for n in docs]}), encoding="utf-8")
+    meta = {"text_rev": 5, "shot_rev": 5, "img_rev": 4}
+    if rev is not None:
+        meta["sections_rev"] = rev
+    (d / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    return str(d)
+
+
+def test_a_sections_revision_change_re_baselines_silently():
+    tmp = tempfile.mkdtemp(prefix="ifxsec_")
+    old = _sec_snap(tmp, "old", ["a", "b"])                # unstamped -> rev 1
+    new = _sec_snap(tmp, "new", ["a", "b", "c"], rev=2)
+    r = cmp.compare_snapshots(old, new)
+    assert not r["library_changed"],         "a change of extraction method was reported as a change of content"
+    assert not r["any_changed"], r["summary"]
+
+
+def test_the_same_revision_still_reports_a_real_library_change():
+    tmp = tempfile.mkdtemp(prefix="ifxsec2_")
+    old = _sec_snap(tmp, "old", ["a", "b"], rev=2)
+    new = _sec_snap(tmp, "new", ["a", "b", "c"], rev=2)
+    r = cmp.compare_snapshots(old, new)
+    assert r["library_changed"], "a genuine library change went unreported"
+    assert r["any_changed"], r["summary"]
+
+
+def test_every_signal_carries_a_revision():
+    # the next person to change an extractor should not have to remember which
+    # of the four is the one without a stamp
+    import capture
+    for name in ("TEXT_REV", "SHOT_REV", "IMG_REV", "SECTIONS_REV"):
+        assert isinstance(getattr(capture, name, None), int), f"{name} is missing"
