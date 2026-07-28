@@ -381,3 +381,50 @@ def test_the_seed_reads_counters_that_already_exist():
     seed = src.index("RUN_STATE.update(running=True")
     assert "counters = {" in src[:seed], \
         "RUN_STATE.update reads counters before they are assigned"
+
+
+# --- carrying on after a restart -------------------------------------------
+# RUN_STATE is in memory, so a restart loses the thread while the run row and
+# its per-page state survive. Without this, every restart ended the check and
+# somebody had to notice and press Resume - which is what made shipping any
+# change at all cost a nine-hour run.
+
+def _run_row(con, finished=None, items=(("done", 5), ("queued", 7))):
+    con.execute("INSERT INTO runs(id, started, finished, kind, total)"
+                " VALUES(1, '2026-01-01 00:00:00', ?, 'full', 12)", (finished,))
+    uid = 1
+    for state, n in items:
+        for _ in range(n):
+            con.execute("INSERT INTO run_items(run_id, url_id, state)"
+                        " VALUES(1, ?, ?)", (uid, state))
+            uid += 1
+    con.commit()
+
+
+def test_an_interrupted_run_is_picked_up():
+    _fresh_db()
+    con = db.connect()
+    _run_row(con, finished=None)
+    got = runner._resumable_run(con)
+    con.close()
+    assert got is not None and got["id"] == 1, "a live run would not be resumed"
+
+
+def test_a_finished_run_is_left_alone():
+    _fresh_db()
+    con = db.connect()
+    _run_row(con, finished="2026-01-01 09:00:00")
+    got = runner._resumable_run(con)
+    con.close()
+    assert got is None, "a finished run would be started again on every boot"
+
+
+def test_a_run_with_nothing_left_is_not_resumed():
+    # "End check" leaves the remaining pages done-or-gone; there is nothing to
+    # carry on, and resuming would loop on every restart
+    _fresh_db()
+    con = db.connect()
+    _run_row(con, finished=None, items=(("done", 12),))
+    got = runner._resumable_run(con)
+    con.close()
+    assert got is None, "a run with no work left would restart forever"

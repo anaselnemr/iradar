@@ -3263,6 +3263,38 @@ def status():
     return jsonify(s)
 
 
+def _resume_on_boot():
+    """Carry on a check the last process was in the middle of.
+
+    RUN_STATE lives in memory, so a restart - a redeploy, a crash, the host
+    moving the container - loses the thread while the run row and its per-page
+    state survive. Until now that meant every restart ended the check and
+    somebody had to notice and press Resume; a check interrupted at 2am sat
+    dead until morning, and shipping any change at all cost the run.
+
+    Only a run that is genuinely unfinished is picked up. "End check" marks the
+    run finished, so a deliberate stop stays stopped.
+    """
+    time.sleep(25)                      # let the web server answer first
+    if runner.RUN_STATE.get("running"):
+        return
+    con = db.connect()
+    try:
+        r = runner._resumable_run(con)
+        left = con.execute(
+            "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
+            (r["id"],)).fetchone()[0] if r else 0
+    except Exception:
+        return
+    finally:
+        con.close()
+    if not r:
+        return
+    print(f"[boot] run {r['id']} was interrupted with {left} page(s) left -"
+          f" carrying on", flush=True)
+    runner.run_check_background(kind="resumed")
+
+
 def _stranded_run():
     """A run that is open in the database with nobody working on it.
 
@@ -6963,6 +6995,8 @@ if __name__ == "__main__":
     threading.Thread(target=_prewarm_docs, daemon=True).start()
     # auto-infer product/application levels after every run
     threading.Thread(target=_post_run_watcher, daemon=True).start()
+    # and pick up a check the last process was in the middle of
+    threading.Thread(target=_resume_on_boot, daemon=True).start()
     print()
     print("  iRadar is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")
