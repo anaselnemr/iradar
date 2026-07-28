@@ -132,6 +132,13 @@
         stays until you decide.</li>
     </ol>
 
+    <img class="shot" src="{{ url_for('static', filename='guide/dashboard.png') }}"
+         alt="The dashboard, showing the counts along the top and the list of
+              tracked pages below" loading="lazy">
+    <p class="cap">The Dashboard. The number under <b>Updated</b> is your queue —
+      click it to see only those. <b>File updates</b> beside it is the separate
+      queue for files that changed behind an unchanged link.</p>
+
     <h2 id="counts">What counts as a change</h2>
     <table>
       <tr><th>Signal</th><th>Raises a page when</th></tr>
@@ -183,6 +190,14 @@
     <p>Open one from the Dashboard. You see exactly what moved — the wording
       before and after, which documents came and went, and the two screenshots
       with the changed areas boxed.</p>
+
+    <img class="shot" src="{{ url_for('static', filename='guide/update.png') }}"
+         alt="An update, showing which signals fired and the before and after"
+         loading="lazy">
+    <p class="cap">An update. The badges at the top say which signals fired —
+      only what actually changed is shown, so a page raised on text alone does
+      not make you scroll past an unchanged screenshot.</p>
+
     <p>Then one of two buttons:</p>
     <table>
       <tr><th>Button</th><th>What it does</th><th>Use it when</th></tr>
@@ -212,6 +227,11 @@
       <li>See everything anyone has written under
         <a href="{{ url_for('notes_page') }}">Notes</a>, newest first</li>
     </ul>
+
+    <img class="shot" src="{{ url_for('static', filename='guide/notes.png') }}"
+         alt="The notes box at the bottom of a page" loading="lazy">
+    <p class="cap">The notes box, at the bottom of every page, document, board
+      and update. Ctrl + Enter posts.</p>
 
     <h2 id="around">Finding your way</h2>
     <table>
