@@ -116,3 +116,73 @@ def test_relevance_gate_word_boundaries_and_ambiguous_brands():
     assert sn._relevant({"title": "Calypso applet on a JavaCard", "body": ""}, "Calypso")
     # model-number suffixes still count as the word (psoc6, xmc4700)
     assert sn._relevant({"title": "psoc6 ble pairing", "body": ""}, "PSOC")
+
+
+def test_parse_github_issue():
+    payload = {"items": [{
+        "html_url": "https://github.com/x/y/issues/9",
+        "title": "AURIX TC375 lockstep trap",
+        "body": "We hit CPU1  lockstep\ntraps when writing DFLASH " + "x" * 500,
+        "user": {"login": "safetyeng"},
+        "created_at": "2026-07-23T15:20:11Z",
+        "state": "open", "comments": 5,
+        "repository_url": "https://api.github.com/repos/x/y"}]}
+    out = sn.parse_github(payload)
+    assert len(out) == 1
+    m = out[0]
+    assert m["url"].endswith("/issues/9")
+    assert m["author"] == "safetyeng"
+    assert m["posted"] == "2026-07-23T15:20:11"
+    assert "x/y" in m["extra"] and "5 comment(s)" in m["extra"]
+    assert len(m["body"]) <= 400 and "\n" not in m["body"]
+
+
+def test_parse_discourse_topic_with_blurb():
+    payload = {
+        "posts": [{"topic_id": 7, "blurb": "Took <b>ten</b> minutes to blink"}],
+        "topics": [{"id": 7, "slug": "boot-kit", "title": "XMC1100 Boot Kit",
+                    "created_at": "2026-07-24T18:40:00.351Z",
+                    "posts_count": 5}]}
+    out = sn.parse_discourse(payload, "forum.arduino.cc", "Arduino forum")
+    assert out[0]["url"] == "https://forum.arduino.cc/t/boot-kit/7"
+    assert out[0]["body"] == "Took ten minutes to blink"
+    assert out[0]["posted"] == "2026-07-24T18:40:00"
+    assert "4 repl(ies)" in out[0]["extra"]
+
+
+def test_parse_wordpress_post():
+    payload = [{"link": "https://hackaday.com/psoc/",
+                "title": {"rendered": "A PSoC harp &#8217;s strings"},
+                "excerpt": {"rendered": "<p>CapSense does the work&#8230;</p>"},
+                "date": "2026-07-20T12:00:39"}]
+    out = sn.parse_wordpress(payload, "Hackaday")
+    assert out[0]["title"] == "A PSoC harp 's strings"
+    assert out[0]["body"] == "CapSense does the work…"
+    assert out[0]["extra"] == "Hackaday"
+
+
+def test_new_parsers_survive_garbage():
+    assert sn.parse_github(None) == []
+    assert sn.parse_github({"items": [{}]}) == []
+    assert sn.parse_discourse(None, "h", "l") == []
+    assert sn.parse_wordpress(None, "l") == []
+    assert sn.parse_wordpress([{}], "l") == []
+
+
+def test_entity_for_prefers_distinctive_over_generic_lead():
+    """The bug this pins: entity '32-bit FM Arm...' matched any title
+    containing '32-bit', so AURIX pages filed under the FM family for as long
+    as the community collector existed."""
+    assert sn.entity_for("AURIX\u2122 TC3xx 32-bit | Infineon") == "AURIX"
+    assert sn.entity_for("PSOC\u2122 4 MCUs | Infineon") == "PSOC"
+    assert sn.entity_for("") == ""
+
+
+def test_registry_is_consistent():
+    keys = [s["key"] for s in sn.SOURCES]
+    assert len(keys) == len(set(keys)), "duplicate source key"
+    for s in sn.SOURCES:
+        assert s["scope"] in ("entity", "global")
+        assert s["label"] and callable(s["ready"])
+        if s["scope"] == "entity":
+            assert callable(s["collect"])

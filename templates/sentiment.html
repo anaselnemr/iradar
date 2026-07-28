@@ -1,88 +1,225 @@
 {% extends "base.html" %}
-{% block title %}Sentiment — iRadar{% endblock %}
+{% block title %}What people say — iRadar{% endblock %}
 {% block content %}
-<div class="card" style="max-width:1100px; margin-left:auto; margin-right:auto">
-  <h2 style="margin-top:0">What the world says</h2>
-  <p class="muted" style="max-width:78ch">
-    Mentions of the watched product families across StackExchange
-    (electronics + StackOverflow), Hacker News, Infineon's own developer
-    community (from the captured pages), plus Reddit and YouTube when their
-    keys are set. {{ total }} mention(s) stored{% if unscored %},
-    {{ unscored }} not yet scored{% endif %}.
-    {% if not has_llm_key %}<br>Scoring needs <code>ANTHROPIC_API_KEY</code>
-    in the environment — everything is collected and browsable without it.
-    Reddit needs <code>REDDIT_CLIENT_ID</code>+<code>REDDIT_SECRET</code>,
-    YouTube <code>YT_API_KEY</code>.{% endif %}
-  </p>
+{#- What the world says about the watched products, laid out the way the rest
+    of the app reads: figures first, then the families as cards you click,
+    then the mentions as a feed. The sources are whatever the registry in
+    sentiment.py says - nothing here names a source by hand. -#}
+<style>
+  .sn-wrap { max-width: 1000px; margin: 0 auto; }
 
-  {% if not enabled %}
-  <p style="border:1px dashed var(--line); border-radius:10px; padding:10px 14px; max-width:64ch">
-    <b>Switched off for now.</b> Nothing is collected or scored until the app
-    is started with <code>SENTIMENT=on</code> in the environment — the page
-    watch runs exactly as before, unaffected.
-  </p>
-  {% elif sstate.running %}
-  <p><b>Collecting…</b> {{ sstate.message }} ({{ sstate.done }}/{{ sstate.total }},
-     {{ sstate.found }} seen, {{ sstate.new }} new). Reload to update.</p>
-  {% else %}
-  <div style="display:flex; gap:10px; margin:10px 0">
-    <form method="post" action="{{ url_for('sentiment_collect') }}">
-      <button class="btn" type="submit">Collect mentions now</button>
-    </form>
-    <form method="post" action="{{ url_for('sentiment_score') }}">
-      <button class="btn btn-ghost" type="submit" {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY"{% endif %}>Score unscored</button>
-    </form>
+  /* the figures strip, same bones as Help's */
+  .sn-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+             background: var(--line); border: 1px solid var(--line);
+             border-radius: 12px; overflow: hidden; margin-top: 14px; }
+  @media (max-width: 620px) { .sn-figs { grid-template-columns: repeat(2, 1fr); } }
+  .sn-fig { background: var(--card); padding: 14px 16px; text-align: center; }
+  .sn-fig .n { font-size: 22px; font-weight: 700; letter-spacing: -.5px;
+               font-variant-numeric: tabular-nums; }
+  .sn-fig .l { font-size: 11.5px; color: var(--muted);
+               text-transform: uppercase; letter-spacing: .05em;
+               margin-top: 3px; }
+
+  /* one product family, as a card */
+  .fams { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+          margin-top: 4px; }
+  @media (max-width: 900px) { .fams { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .fams { grid-template-columns: 1fr; } }
+  .fam { display: block; border: 1px solid var(--line); border-radius: 12px;
+         padding: 12px 14px; background: var(--card); text-decoration: none;
+         color: var(--ink); }
+  .fam:hover { border-color: var(--accent); }
+  .fam.on { border-color: var(--accent); outline: 1px solid var(--accent); }
+  .fam-top { display: flex; align-items: baseline; gap: 8px; }
+  .fam-name { font-weight: 700; font-size: 14.5px; min-width: 0;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fam-n { margin-left: auto; color: var(--muted); font-size: 12.5px;
+           font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .fam-tone { font-size: 12px; margin-top: 3px; font-weight: 600; }
+  .tone-pos { color: var(--ok); }
+  .tone-neg { color: var(--err); }
+  .tone-mix, .tone-none { color: var(--muted); font-weight: 400; }
+  /* which corners of the internet it comes from */
+  .fam-srcs { display: flex; gap: 4px 9px; flex-wrap: wrap; margin-top: 8px;
+              font-size: 10.5px; color: var(--muted); }
+  .fam-srcs b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* the feed */
+  .sn-chips { display: flex; gap: 7px; flex-wrap: wrap; margin: 2px 0 14px; }
+  .mn { list-style: none; margin: 0; padding: 0; }
+  .mn > li { padding: 13px 0; border-top: 1px solid var(--line);
+             display: grid; grid-template-columns: minmax(0, 1fr) auto;
+             gap: 4px 14px; }
+  .mn > li:first-child { border-top: 0; padding-top: 2px; }
+  .mn-title { font-size: 14px; font-weight: 600; line-height: 1.45;
+              overflow-wrap: anywhere; }
+  .mn-title a { color: var(--ink); text-decoration: none; }
+  .mn-title a:hover { color: var(--accent); text-decoration: underline; }
+  .mn-body { font-size: 12.5px; color: var(--muted); line-height: 1.55;
+             max-width: 74ch; overflow-wrap: anywhere; }
+  .mn-meta { grid-column: 1; display: flex; gap: 8px; flex-wrap: wrap;
+             align-items: center; font-size: 11.5px; color: var(--muted);
+             margin-top: 2px; }
+  .mn-meta time { font-variant-numeric: tabular-nums; }
+  .mn-score { grid-column: 2; grid-row: 1 / span 3; align-self: start;
+              font-weight: 700; font-size: 13px;
+              font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) {
+    .mn > li { grid-template-columns: 1fr; }
+    .mn-score { grid-column: 1; grid-row: auto; }
+  }
+
+  /* a source wears one colour everywhere on this page */
+  .srct { display: inline-block; padding: 2px 8px; border-radius: 999px;
+          font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+          white-space: nowrap; }
+  .srct-stackexchange { background: rgba(244, 128, 36, .14); color: #d9730d; }
+  .srct-github       { background: rgba(124, 58, 237, .13); color: #8b5cf6; }
+  .srct-forum        { background: rgba(13, 148, 136, .13); color: #0d9488; }
+  .srct-blog         { background: rgba(219, 39, 119, .12); color: #db2777; }
+  .srct-hn           { background: rgba(255, 102, 0, .13); color: #f05e1c; }
+  .srct-reddit       { background: rgba(255, 69, 0, .12); color: #e73c00; }
+  .srct-youtube      { background: rgba(220, 38, 38, .12); color: #dc2626; }
+  .srct-community    { background: rgba(94, 106, 210, .14); color: var(--accent); }
+
+  .sn-actions { display: flex; gap: 10px; align-items: center;
+                flex-wrap: wrap; margin-top: 12px; }
+  .sn-note { font-size: 12.5px; color: var(--muted); }
+  .sn-empty { text-align: center; padding: 30px 16px; color: var(--muted); }
+  .sn-empty b { display: block; color: var(--ink); font-size: 15px;
+                margin-bottom: 5px; }
+</style>
+
+<div class="sn-wrap">
+  <div class="card">
+    <h2 style="margin:0 0 5px">What people say</h2>
+    <p class="muted" style="margin:0; max-width:74ch">Mentions of the watched
+      product families across the places engineers actually talk —
+      {%- for s in sources %}{% if s.key in ready_keys %} {{ s.label }}{{ "," if not loop.last }}{% endif %}{% endfor %}
+      — refreshed when you ask, never on its own.</p>
+
+    {% if sstate.running %}
+    <p style="margin:12px 0 0"><b>Collecting…</b> {{ sstate.message }}
+      ({{ sstate.done }}/{{ sstate.total }}, {{ sstate.found }} seen,
+      {{ sstate.new }} new). Reload to update.</p>
+    {% elif is_admin %}
+    <div class="sn-actions">
+      <form method="post" action="{{ url_for('sentiment_collect') }}">
+        <button type="submit">Collect mentions</button>
+      </form>
+      {% if total %}
+      <form method="post" action="{{ url_for('sentiment_score') }}">
+        <button type="submit" class="btn-ghost"
+                {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
+          Score the tone</button>
+      </form>
+      {% endif %}
+      {% set waiting = sources | rejectattr('key', 'in', ready_keys) | list %}
+      {% if waiting %}
+      <span class="sn-note">{% for s in waiting %}{{ s.label }} needs
+        <code>{{ s.needs }}</code>{{ "; " if not loop.last }}{% endfor %}.</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="sn-figs">
+      <div class="sn-fig"><div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
+        <div class="l">mentions</div></div>
+      <div class="sn-fig"><div class="n">{{ per_entity|length }}</div>
+        <div class="l">families</div></div>
+      <div class="sn-fig"><div class="n">{{ ready_keys|length }}</div>
+        <div class="l">sources live</div></div>
+      <div class="sn-fig">
+        {% if scored_n %}
+        <div class="n" style="color:{{ '#16a34a' if (avg_all or 0) > 0.15 else ('#dc2626' if (avg_all or 0) < -0.15 else 'var(--muted)') }}">
+          {{ '%+.2f'|format(avg_all or 0) }}</div>
+        <div class="l">tone of {{ '{:,}'.format(scored_n) }} scored</div>
+        {% else %}
+        <div class="n" style="color:var(--muted)">—</div>
+        <div class="l">not scored yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if per_entity %}
+  <div class="card">
+    <h3 style="margin:0 0 12px">By product family</h3>
+    <div class="fams">
+      {% for e in per_entity %}
+      <a class="fam {{ 'on' if e.entity == sel_entity }}"
+         href="{{ url_for('sentiment_page') if e.entity == sel_entity else url_for('sentiment_page', entity=e.entity) }}">
+        <div class="fam-top">
+          <span class="fam-name">{{ e.entity }}</span>
+          <span class="fam-n">{{ e.n }}</span>
+        </div>
+        {% if e.avg_score is not none %}
+          {% if e.avg_score > 0.15 %}<div class="fam-tone tone-pos">mostly positive</div>
+          {% elif e.avg_score < -0.15 %}<div class="fam-tone tone-neg">mostly negative</div>
+          {% else %}<div class="fam-tone tone-mix">mixed</div>{% endif %}
+        {% else %}<div class="fam-tone tone-none">not scored yet</div>{% endif %}
+        <div class="fam-srcs">
+          {% for s in sources %}{% set c = e['src_' + s.key] %}
+            {% if c %}<span><b>{{ c }}</b> {{ s.label }}</span>{% endif %}
+          {% endfor %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
 
-  {% if per_entity %}
-  <h3>By product family</h3>
-  <table class="tbl" style="width:100%">
-    <tr><th>Family</th><th>Mentions</th><th>StackExch.</th><th>Reddit</th>
-        <th>HN</th><th>Community</th><th>YouTube</th><th>Avg sentiment</th></tr>
-    {% for e in per_entity %}
-    <tr>
-      <td><a href="{{ url_for('sentiment_page', entity=e.entity) }}">{{ e.entity }}</a></td>
-      <td>{{ e.n }}</td><td>{{ e.se or '' }}</td><td>{{ e.rd or '' }}</td>
-      <td>{{ e.hn or '' }}</td><td>{{ e.cm or '' }}</td><td>{{ e.yt or '' }}</td>
-      <td>{% if e.avg_score is not none %}
-        <b style="color:{{ '#16a34a' if e.avg_score > 0.15 else ('#dc2626' if e.avg_score < -0.15 else 'var(--muted)') }}">
-          {{ '%+.2f'|format(e.avg_score) }}</b>
-      {% else %}<span class="muted">—</span>{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
+  <div class="card">
+    <h3 style="margin:0 0 12px">
+      Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}</h3>
+    <div class="sn-chips">
+      <a class="chip {{ 'chip-on' if not sel_source }}"
+         href="{{ url_for('sentiment_page', entity=sel_entity or none) }}">Everything</a>
+      {% for s in sources %}{% set c = src_totals.get(s.key) %}{% if c %}
+      <a class="chip {{ 'chip-on' if sel_source == s.key }}"
+         href="{{ url_for('sentiment_page', entity=sel_entity or none)
+                  if sel_source == s.key
+                  else url_for('sentiment_page', entity=sel_entity or none, source=s.key) }}">
+        {{ s.label }} <b>{{ c }}</b></a>
+      {% endif %}{% endfor %}
+    </div>
 
-  <h3 style="margin-top:20px">
-    Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}
-    {% if sel_source %} ({{ sel_source }}){% endif %}
-    {% if sel_entity or sel_source %} · <a href="{{ url_for('sentiment_page') }}" style="font-size:13px">show all</a>{% endif %}
-  </h3>
-  {% if rows %}
-  <table class="tbl" style="width:100%">
-    <tr><th>When</th><th>Source</th><th>Family</th><th>Mention</th><th>Sentiment</th></tr>
-    {% for m in rows %}
-    <tr>
-      <td style="white-space:nowrap">{{ (m.posted or m.fetched)[:10] }}</td>
-      <td><a href="{{ url_for('sentiment_page', entity=sel_entity, source=m.source) }}">{{ m.source }}</a></td>
-      <td style="font-size:13px">{{ m.entity }}</td>
-      <td style="max-width:520px">
-        <a href="{{ m.url }}" target="_blank">{{ m.title }}</a>
-        {% if m.body %}<div class="muted" style="font-size:12px">{{ m.body[:180] }}</div>{% endif %}
-        {% if m.reason and m.score is none %}<div class="muted" style="font-size:11px">{{ m.reason }}</div>{% endif %}
-      </td>
-      <td>{% if m.score is not none %}
-        <b style="color:{{ '#16a34a' if m.score > 0.15 else ('#dc2626' if m.score < -0.15 else 'var(--muted)') }}">{{ '%+.1f'|format(m.score) }}</b>
-        {% if m.topics %}<div class="muted" style="font-size:11px">{{ m.topics }}</div>{% endif %}
-        {% if m.reason %}<div class="muted" style="font-size:11px">{{ m.reason }}</div>{% endif %}
-      {% else %}<span class="muted">—</span>{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <p class="muted">No mentions yet — "Collect mentions now" fills this in a
-     few minutes.</p>
-  {% endif %}
+    {% if rows %}
+    <ol class="mn">
+      {% for m in rows %}
+      <li>
+        <div class="mn-title">
+          <span class="srct srct-{{ m.source }}">{{ (sources | selectattr('key', 'equalto', m.source) | map(attribute='label') | first) or m.source }}</span>
+          <a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>
+        </div>
+        {% if m.score is not none %}
+        <div class="mn-score" style="color:{{ '#16a34a' if m.score > 0.15 else ('#dc2626' if m.score < -0.15 else 'var(--muted)') }}">
+          {{ '%+.1f'|format(m.score) }}</div>
+        {% endif %}
+        {% if m.body %}<div class="mn-body">{{ m.body[:220] }}</div>{% endif %}
+        <div class="mn-meta">
+          {% if not sel_entity %}<a href="{{ url_for('sentiment_page', entity=m.entity) }}"
+             style="color:var(--muted); font-weight:600">{{ m.entity }}</a> ·{% endif %}
+          {% if m.author %}<span>{{ m.author }}</span> ·{% endif %}
+          {% if m.posted %}<time>{{ m.posted[:10] }}</time>{% endif %}
+          {% if m.reason and m.score is none %}<span>{{ m.reason }}</span>
+          {% elif m.topics %}<span>{{ m.topics }}</span>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="sn-empty">
+      {% if total %}
+        <b>Nothing under this filter</b>
+        Try another source, or clear the family.
+      {% else %}
+        <b>No mentions collected yet</b>
+        {% if is_admin %}“Collect mentions” above fills this in a few
+        minutes.{% else %}An admin can fill this from the button above.{% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

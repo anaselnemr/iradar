@@ -98,6 +98,46 @@ def _seed(con):
         "INSERT INTO runs(id, started, finished, kind, total, ok, changed,"
         " errors) VALUES(1, '2026-07-27T10:00:00', '2026-07-27T14:20:00',"
         " 'manual', 60, 59, 3, 1)")
+    mentions = [
+        ("XMC", "stackexchange", "https://electronics.stackexchange.com/q/1",
+         "XMC4700 CCU8 dead-time looks wrong after errata 2.1",
+         "Configured complementary PWM but the dead time doubles when...",
+         "j.doe", "2026-07-25T10:11:00", 0.1, "pwm,errata",
+         "electronics | score 12 | 3 answers"),
+        ("XMC", "github", "https://github.com/x/y/issues/12",
+         "XMC DAVE generated startup breaks with -O2",
+         "The generated SystemInit clobbers the clock tree when optimised.",
+         "embedddev", "2026-07-26T09:00:00", -0.6, "toolchain",
+         "x/y | open | 9 comment(s)"),
+        ("XMC", "forum", "https://forum.arduino.cc/t/xmc/1",
+         "XMC1100 Boot Kit works great with the Arduino core",
+         "Took ten minutes from unboxing to blink, impressed.",
+         "", "2026-07-24T18:40:00", 0.8, "onboarding",
+         "Arduino forum | 4 repl(ies)"),
+        ("PSOC", "hn", "https://news.ycombinator.com/item?id=2",
+         "PSoC 6 as a lower-power alternative for BLE sensors",
+         "", "hnuser", "2026-07-22T20:02:00", 0.5, "ble,power", "hn"),
+        ("PSOC", "blog", "https://hackaday.com/psoc-thing/",
+         "A capacitive harp built on a PSoC 4 dev board",
+         "The CapSense block does all the heavy lifting here...",
+         "", "2026-07-20T12:00:00", 0.7, "capsense", "Hackaday"),
+        ("PSOC", "community", "https://community.infineon.com/t/1",
+         "PSoC Creator vs ModusToolbox for new designs?",
+         "", "", "2026-07-19T08:30:00", None, "",
+         "developer community"),
+        ("AURIX", "github", "https://github.com/a/b/issues/3",
+         "AURIX TC375 lockstep trap after flash write",
+         "We hit CPU1 lockstep traps when writing DFLASH while...",
+         "safetyeng", "2026-07-23T15:20:00", -0.4, "safety,flash",
+         "a/b | open | 5 comment(s)"),
+    ]
+    for ent, src, url, title, body, author, posted, score, topics, extra in mentions:
+        con.execute(
+            "INSERT INTO mentions(entity, source, url, title, body, author,"
+            " posted, fetched, score, topics, reason)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (ent, src, url, title, body, author, posted,
+             "2026-07-27T00:00:00", score, topics, extra))
 
 
 def main():

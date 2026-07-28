@@ -470,6 +470,28 @@
 </div>
 {% endif %}
 
+{% if say_n %}
+<div class="card">
+  <h2 style="display:flex; align-items:baseline; gap:10px">What people say
+    <span class="muted" style="font-size:13px; font-weight:400">about
+      {{ say_entity }}</span></h2>
+  {#- three most recent, then the door to the rest. The mention feed styles
+      live on the sentiment page; this box keeps to plain rows so it costs
+      no shared CSS. -#}
+  {% for m in say_rows %}
+  <div style="padding:9px 0; {% if not loop.first %}border-top:1px solid var(--line);{% endif %}">
+    <a href="{{ m.url }}" target="_blank" rel="noopener"
+       style="font-weight:600; font-size:13.5px; color:var(--ink)">{{ m.title }}</a>
+    <div class="muted" style="font-size:11.5px; margin-top:2px">
+      {{ say_labels.get(m.source, m.source) }}{% if m.posted %} · {{ m.posted[:10] }}{% endif %}
+      {%- if m.score is not none %} · <b style="color:{{ '#16a34a' if m.score > 0.15 else ('#dc2626' if m.score < -0.15 else 'var(--muted)') }}">{{ '%+.1f'|format(m.score) }}</b>{% endif %}</div>
+  </div>
+  {% endfor %}
+  <p style="margin:10px 0 0"><a href="{{ url_for('sentiment_page', entity=say_entity) }}"
+     style="font-size:13px">All {{ say_n }} mention(s) →</a></p>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>Detected updates</h2>
   {% if not changes %}<p class="muted">No updates detected so far.</p>

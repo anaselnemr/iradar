@@ -200,9 +200,15 @@ def _relevant(m, query):
 
 # --- collectors -------------------------------------------------------------
 
+# Probed 2026-07-28 with a real family name: these four answer with relevant
+# hits. robotics and iot returned nothing for any Infineon term and are left
+# out rather than costing a request per family for zero results.
+SE_SITES = ("electronics", "stackoverflow", "arduino", "raspberrypi")
+
+
 def collect_stackexchange(query):
     out = []
-    for site in ("electronics", "stackoverflow"):
+    for site in SE_SITES:
         u = ("https://api.stackexchange.com/2.3/search/advanced?order=desc"
              "&sort=creation&pagesize=30&q=" + urllib.parse.quote(query)
              + "&site=" + site)
@@ -269,6 +275,169 @@ def collect_reddit(query):
     return [m for m in res if _relevant(m, query)]
 
 
+# --- GitHub -----------------------------------------------------------------
+# Where embedded people actually file their complaints: a search for one
+# family returned 420 issues. Unauthenticated search allows 10 requests a
+# minute, which is the whole reason this paces itself; GITHUB_TOKEN raises it
+# to 30 and the pause shortens to match. No token is required.
+
+def _github_pause():
+    return 2.2 if os.environ.get("GITHUB_TOKEN") else 6.5
+
+
+def parse_github(payload):
+    out = []
+    for it in (payload or {}).get("items", []):
+        body = re.sub(r"\s+", " ", (it.get("body") or ""))[:400]
+        repo = (it.get("repository_url") or "").rsplit("/", 2)[-2:]
+        out.append({
+            "url": it.get("html_url") or "",
+            "title": (it.get("title") or "").strip(),
+            "body": body,
+            "author": ((it.get("user") or {}).get("login") or ""),
+            "posted": (it.get("created_at") or "")[:19],
+            "extra": "%s | %s | %d comment(s)" % (
+                "/".join(repo) if len(repo) == 2 else "github",
+                it.get("state") or "", it.get("comments") or 0),
+        })
+    return [m for m in out if m["url"] and m["title"]]
+
+
+def collect_github(query):
+    """Issues and pull requests naming the product."""
+    head = {"Accept": "application/vnd.github+json"}
+    tok = os.environ.get("GITHUB_TOKEN")
+    if tok:
+        head["Authorization"] = "Bearer " + tok
+    u = ("https://api.github.com/search/issues?per_page=30&sort=created"
+         "&order=desc&q=" + urllib.parse.quote(query))
+    try:
+        req = urllib.request.Request(u, headers={"User-Agent": UA, **head})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            payload = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return []                      # 403 = rate limit; next pass gets it
+    finally:
+        time.sleep(_github_pause())
+    return [m for m in parse_github(payload) if _relevant(m, query)]
+
+
+# --- Discourse forums -------------------------------------------------------
+# One collector, many forums: Discourse exposes the same /search.json
+# everywhere, so adding a forum is one line here. Only hosts that answered an
+# unauthenticated probe are listed - Adafruit, Nordic and the Raspberry Pi
+# forum all return 403 to a robot and are deliberately absent.
+
+DISCOURSE_HOSTS = (("forum.arduino.cc", "Arduino forum"),
+                   ("community.platformio.org", "PlatformIO"))
+
+
+def parse_discourse(payload, host, label):
+    blurbs = {}
+    for post in (payload or {}).get("posts", []) or []:
+        tid = post.get("topic_id")
+        if tid and tid not in blurbs:
+            txt = re.sub(r"<[^>]+>", " ", post.get("blurb") or "")
+            blurbs[tid] = re.sub(r"\s+", " ", txt).strip()[:400]
+    out = []
+    for t in (payload or {}).get("topics", []) or []:
+        tid = t.get("id")
+        out.append({
+            "url": "https://%s/t/%s/%s" % (host, t.get("slug", ""), tid),
+            "title": (t.get("title") or "").strip(),
+            "body": blurbs.get(tid, ""),
+            "author": "",
+            "posted": (t.get("created_at") or "")[:19],
+            "extra": "%s | %s repl(ies)" % (label,
+                                            max(0, (t.get("posts_count") or 1) - 1)),
+        })
+    return [m for m in out if m["title"]]
+
+
+def collect_forum(query):
+    out = []
+    for host, label in DISCOURSE_HOSTS:
+        u = "https://%s/search.json?q=%s" % (host, urllib.parse.quote(query))
+        try:
+            out += parse_discourse(_get_json(u), host, label)
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return [m for m in out if _relevant(m, query)]
+
+
+# --- WordPress blogs --------------------------------------------------------
+# Same trick as Discourse: /wp-json/wp/v2/posts is uniform, so the two
+# embedded-news sites that matter cost one collector between them. The
+# /search endpoint carries no date or excerpt; /posts carries both.
+
+WP_HOSTS = (("hackaday.com", "Hackaday"),
+            ("www.cnx-software.com", "CNX Software"))
+
+
+def _untag(html):
+    txt = re.sub(r"<[^>]+>", " ", html or "")
+    txt = (txt.replace("&#8217;", "'").replace("&#8220;", '"')
+              .replace("&#8221;", '"').replace("&amp;", "&")
+              .replace("&#8230;", "…").replace("&nbsp;", " "))
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def parse_wordpress(payload, label):
+    out = []
+    for p in payload or []:
+        out.append({
+            "url": p.get("link") or "",
+            "title": _untag(((p.get("title") or {}).get("rendered") or ""))[:300],
+            "body": _untag(((p.get("excerpt") or {}).get("rendered") or ""))[:400],
+            "author": "",
+            "posted": (p.get("date") or "")[:19],
+            "extra": label,
+        })
+    return [m for m in out if m["url"] and m["title"]]
+
+
+def collect_blog(query):
+    out = []
+    for host, label in WP_HOSTS:
+        u = ("https://%s/wp-json/wp/v2/posts?per_page=15&search=%s"
+             % (host, urllib.parse.quote(query)))
+        try:
+            out += parse_wordpress(_get_json(u), label)
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return [m for m in out if _relevant(m, query)]
+
+
+# words that start many family names and identify none of them - matching on
+# these filed AURIX pages under "32-bit FM Arm..." for as long as the
+# community collector existed, because "32-bit" appears in both titles
+_GENERIC_LEAD = {"32-bit", "16-bit", "8-bit", "arm", "infineon",
+                 "automotive", "industrial", "smart", "high", "low"}
+
+
+def entity_for(title):
+    """Which product family a page title belongs to. A distinctive token
+    (PSOC, AURIX, XMC...) wins outright; else the first family whose leading
+    word appears in the title, provided that word actually identifies a
+    family. Returns '' when there is nothing to say."""
+    page = _clean_family(title or "")
+    if not page:
+        return ""
+    tok = next((d for d in _DISTINCTIVE
+                if re.search(r"\b" + re.escape(d), page, re.I)), None)
+    if tok:
+        return tok
+    for e in entities():
+        lead = e["entity"].split()[0]
+        if lead.lower() in _GENERIC_LEAD:
+            continue
+        if re.search(r"(?<!\w)" + re.escape(lead), page, re.I):
+            return e["entity"]
+    return page
+
+
 def collect_community():
     """Threads from Infineon's own developer community, as captured on each
     page (flags.developer_community.threads). Entity = the page's product
@@ -280,7 +449,6 @@ def collect_community():
         "       AND dir<>'' GROUP BY url_id) m ON s.id=m.mid"
         " JOIN urls u ON u.id=s.url_id WHERE u.active=1").fetchall()
     con.close()
-    ents = entities()
     out = []
     for r in rows:
         p = Path(r["dir"]) / "sections.json"
@@ -294,9 +462,7 @@ def collect_community():
                    or {}).get("threads") or []
         if not threads:
             continue
-        page = _clean_family(r["page_title"] or "")
-        ent = next((e["entity"] for e in ents
-                    if e["entity"].split()[0].lower() in page.lower()), page)
+        ent = entity_for(r["page_title"])
         for t in threads:
             out.append({
                 "entity": ent or "Infineon",
@@ -337,6 +503,53 @@ def collect_youtube(query):
 
 # --- storage ----------------------------------------------------------------
 
+# --- the source registry ----------------------------------------------------
+# ONE list. The collector loop, the page's filter chips, the per-family
+# source counts and the "which of these can run" note all read this - adding
+# a source is one entry here plus its collector, and nothing else changes.
+#
+# key      goes in mentions.source (stable, never renamed once data exists)
+# label    what people read
+# ready()  whether it can run right now (keys present); the UI says why not
+# scope    "entity" = searched once per product family; "global" = one pass
+
+SOURCES = [
+    {"key": "stackexchange", "label": "StackExchange",
+     "collect": collect_stackexchange, "scope": "entity",
+     "ready": lambda: True, "needs": ""},
+    {"key": "github", "label": "GitHub",
+     "collect": collect_github, "scope": "entity",
+     "ready": lambda: True, "needs": ""},
+    {"key": "forum", "label": "Forums",
+     "collect": collect_forum, "scope": "entity",
+     "ready": lambda: True, "needs": ""},
+    {"key": "blog", "label": "Blogs",
+     "collect": collect_blog, "scope": "entity",
+     "ready": lambda: True, "needs": ""},
+    {"key": "hn", "label": "Hacker News",
+     "collect": collect_hn, "scope": "entity",
+     "ready": lambda: True, "needs": ""},
+    {"key": "reddit", "label": "Reddit",
+     "collect": collect_reddit, "scope": "entity",
+     "ready": lambda: bool(os.environ.get("REDDIT_CLIENT_ID")
+                           and os.environ.get("REDDIT_SECRET")),
+     "needs": "REDDIT_CLIENT_ID + REDDIT_SECRET"},
+    {"key": "youtube", "label": "YouTube",
+     "collect": collect_youtube, "scope": "entity",
+     "ready": lambda: bool(os.environ.get("YT_API_KEY")),
+     "needs": "YT_API_KEY"},
+    {"key": "community", "label": "Infineon community",
+     "collect": None, "scope": "global",
+     "ready": lambda: True, "needs": ""},
+]
+
+SOURCE_LABELS = {s["key"]: s["label"] for s in SOURCES}
+
+
+def sources_ready():
+    return [s for s in SOURCES if s["ready"]()]
+
+
 def _store(con, entity, source, mentions, now):
     new = 0
     for m in mentions:
@@ -352,37 +565,37 @@ def _store(con, entity, source, mentions, now):
 
 
 def run_collect():
-    """One full collection pass over every entity and source."""
+    """One full collection pass: every product family through every source
+    that is ready, then the global ones. The registry is the only list."""
     con = db.connect()
     try:
         ents = entities()
+        live = sources_ready()
+        per_entity = [s for s in live if s["scope"] == "entity"]
+        glob = [s for s in live if s["scope"] == "global"]
         SENT_STATE.update(running=True, done=0, found=0, new=0,
-                          total=len(ents) * 3 + 2,
+                          total=len(ents) * len(per_entity) + len(glob),
                           message="collecting mentions…")
         now = db.now_iso()
         new = 0
         for e in ents:
-            for src, fn in (("stackexchange", collect_stackexchange),
-                            ("hn", collect_hn), ("reddit", collect_reddit)):
-                ms = fn(e["query"])
+            for src in per_entity:
+                ms = src["collect"](e["query"])
                 SENT_STATE["found"] += len(ms)
-                new += _store(con, e["entity"], src, ms, now)
+                new += _store(con, e["entity"], src["key"], ms, now)
                 SENT_STATE["done"] += 1
                 SENT_STATE["new"] = new
-                SENT_STATE["message"] = f"{e['entity'][:30]} — {src}"
+                SENT_STATE["message"] = f"{e['entity'][:30]} — {src['label']}"
             con.commit()
-        # community threads (keyless, local) + youtube (only with a key)
-        ms = collect_community()
-        SENT_STATE["found"] += len(ms)
-        for m in ms:
-            new += _store(con, m["entity"], "community", [m], now)
-        SENT_STATE["done"] += 1
-        if os.environ.get("YT_API_KEY"):
-            for e in ents:
-                ms = collect_youtube(e["query"])
-                SENT_STATE["found"] += len(ms)
-                new += _store(con, e["entity"], "youtube", ms, now)
-        SENT_STATE["done"] += 1
+        # the global pass: today that is the captured community threads,
+        # which carry their own entity and cost no network at all
+        for src in glob:
+            SENT_STATE["message"] = src["label"]
+            ms = collect_community()
+            SENT_STATE["found"] += len(ms)
+            for m in ms:
+                new += _store(con, m["entity"], src["key"], [m], now)
+            SENT_STATE["done"] += 1
         SENT_STATE["new"] = new
         con.commit()
         print(f"[sentiment] collected: {SENT_STATE['found']} mention(s) seen,"

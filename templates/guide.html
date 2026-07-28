@@ -783,7 +783,10 @@
         <span><a href="{{ url_for('hierarchy') }}">Hierarchy</a> — the site as a
           tree. <a href="{{ url_for('export_builder') }}">Export</a> — any of it
           as a spreadsheet. <a href="{{ url_for('history') }}">Run history</a> —
-          every check and what it found.</span></li>
+          every check and what it found.
+          <a href="{{ url_for('sentiment_page') }}">What people say</a> —
+          mentions of the product families across StackExchange, GitHub,
+          forums, blogs and Hacker News.</span></li>
       <li>Your avatar
         <span>Top right. Your profile, light or dark mode, sign
           out{% if is_admin %}, and the admin screens{% endif %}.</span></li>

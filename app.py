@@ -1540,10 +1540,9 @@ def index():
         asset_open = con3.execute(
             "SELECT COUNT(*) FROM asset_changes WHERE reviewed=0"
         ).fetchone()[0]
-        # the Mentions card only exists while the sentiment layer is ON
+        # the Mentions tile appears once anything has been collected
         mention_total = con3.execute(
-            "SELECT COUNT(*) FROM mentions").fetchone()[0] \
-            if _sentiment_on() else 0
+            "SELECT COUNT(*) FROM mentions").fetchone()[0]
     finally:
         con3.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
@@ -2705,6 +2704,28 @@ def url_detail(url_id):
         if (u[f] or "") and f not in _mfields:
             _mfields.append(f)
     notes, _n, n_open = _notes_for("page", url_id)
+    # what people say about this page's product family, when anything does
+    say_rows, say_n, say_entity, _say_labels = [], 0, "", {}
+    try:
+        import sentiment as sn
+        _say_labels = sn.SOURCE_LABELS
+        # latest is None when no capture has a dir on disk - the newest
+        # snapshot row still carries the page title
+        title = (u["title_override"] or (latest and latest["page_title"])
+                 or (snaps and snaps[0]["page_title"]) or "")
+        say_entity = sn.entity_for(title) if title else ""
+        if say_entity:
+            con = db.connect()
+            say_n = con.execute("SELECT COUNT(*) FROM mentions WHERE entity=?",
+                                (say_entity,)).fetchone()[0]
+            if say_n:
+                say_rows = con.execute(
+                    "SELECT * FROM mentions WHERE entity=? ORDER BY"
+                    " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC"
+                    " LIMIT 3", (say_entity,)).fetchall()
+            con.close()
+    except Exception:
+        pass
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
@@ -2713,6 +2734,8 @@ def url_detail(url_id):
                            meta_fields=_mfields, meta_labels=META_LABELS,
                            crumbs=crumbs, siblings=nav["siblings"],
                            children=nav["children"],
+                           say_rows=say_rows, say_n=say_n,
+                           say_entity=say_entity, say_labels=_say_labels,
                            notes=notes, notes_open=n_open, notes_kind="page",
                            notes_target=url_id, notes_label=u["url"])
 
@@ -2914,15 +2937,10 @@ def assets_run():
     return redirect(url_for("assets_page"))
 
 
-# ---- Sentiment (what the world says about the products) --------------------
-# PARKED for now on Anas's call (2026-07-21): the code stays, but collection
-# and scoring are hard-gated behind SENTIMENT=on in the environment so nothing
-# sentiment-related can run - even by accident - until it is wanted. The page
-# stays viewable (read-only) and says so.
-
-def _sentiment_on():
-    return os.environ.get("SENTIMENT", "").lower() in ("1", "on", "true", "yes")
-
+# ---- What people say (mentions of the watched products) --------------------
+# Parked 2026-07-21, brought back on Anas's request 2026-07-28. The one guard
+# that stays is the capture run: collection and a check share the network, so
+# collect waits its turn. Both POSTs are admin-only via the default-deny rule.
 
 @app.route("/sentiment")
 def sentiment_page():
@@ -2930,14 +2948,16 @@ def sentiment_page():
     ent = request.args.get("entity", "")
     src = request.args.get("source", "")
     con = db.connect()
+    # one SUM per registered source, so a new collector shows up here and in
+    # the template with no query edit - the registry is the only list
+    sums = ", ".join(
+        "SUM(CASE WHEN source='%s' THEN 1 ELSE 0 END) src_%s"
+        % (s["key"], s["key"]) for s in sn.SOURCES)
     per_entity = con.execute(
-        "SELECT entity, COUNT(*) n, AVG(score) avg_score,"
-        " SUM(CASE WHEN source='stackexchange' THEN 1 ELSE 0 END) se,"
-        " SUM(CASE WHEN source='reddit' THEN 1 ELSE 0 END) rd,"
-        " SUM(CASE WHEN source='hn' THEN 1 ELSE 0 END) hn,"
-        " SUM(CASE WHEN source='community' THEN 1 ELSE 0 END) cm,"
-        " SUM(CASE WHEN source='youtube' THEN 1 ELSE 0 END) yt"
-        " FROM mentions GROUP BY entity ORDER BY n DESC").fetchall()
+        "SELECT entity, COUNT(*) n, AVG(score) avg_score, "
+        + sums + " FROM mentions GROUP BY entity ORDER BY n DESC").fetchall()
+    src_totals = {r["source"]: r["n"] for r in con.execute(
+        "SELECT source, COUNT(*) n FROM mentions GROUP BY source")}
     where, args = [], []
     if ent:
         where.append("entity=?")
@@ -2948,32 +2968,33 @@ def sentiment_page():
     sql = "SELECT * FROM mentions"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY COALESCE(posted, fetched) DESC, id DESC LIMIT 200"
+    sql += " ORDER BY COALESCE(NULLIF(posted,''), fetched) DESC, id DESC"
+    sql += " LIMIT 200"
     rows = con.execute(sql, args).fetchall()
     total = con.execute("SELECT COUNT(*) FROM mentions").fetchone()[0]
-    unscored = con.execute(
-        "SELECT COUNT(*) FROM mentions WHERE score IS NULL").fetchone()[0]
+    scored = con.execute(
+        "SELECT COUNT(*) n, AVG(score) avg FROM mentions"
+        " WHERE score IS NOT NULL").fetchone()
     con.close()
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
-                           total=total, unscored=unscored, sel_entity=ent,
-                           sel_source=src, sstate=sn.SENT_STATE,
-                           enabled=_sentiment_on(),
-                           has_llm_key=bool(os.environ.get("ANTHROPIC_API_KEY")),
-                           has_yt_key=bool(os.environ.get("YT_API_KEY")))
+                           total=total, scored_n=scored["n"],
+                           avg_all=scored["avg"], src_totals=src_totals,
+                           sources=sn.SOURCES,
+                           ready_keys={s["key"] for s in sn.sources_ready()},
+                           sel_entity=ent, sel_source=src,
+                           sstate=sn.SENT_STATE,
+                           has_llm_key=bool(os.environ.get("ANTHROPIC_API_KEY")))
 
 
 @app.route("/sentiment/collect", methods=["POST"])
 def sentiment_collect():
     import sentiment as sn
-    if not _sentiment_on():
-        flash("Sentiment is switched off for now — start the app with "
-              "SENTIMENT=on to enable collecting.")
-    elif runner.RUN_STATE.get("running"):
+    if runner.RUN_STATE.get("running"):
         flash("A page check is running — collect mentions after it finishes "
               "(they share the network).")
     elif sn.run_collect_background():
-        flash("Collecting mentions from StackExchange, Hacker News, Reddit "
-              "and the captured community threads — a few minutes.")
+        live = ", ".join(s["label"] for s in sn.sources_ready())
+        flash("Collecting mentions from " + live + " — a few minutes.")
     else:
         flash("Collection is already running.")
     return redirect(url_for("sentiment_page"))
@@ -2982,10 +3003,6 @@ def sentiment_collect():
 @app.route("/sentiment/score", methods=["POST"])
 def sentiment_score():
     import sentiment as sn
-    if not _sentiment_on():
-        flash("Sentiment is switched off for now — start the app with "
-              "SENTIMENT=on to enable scoring.")
-        return redirect(url_for("sentiment_page"))
     n = sn.score_pending()
     if n < 0:
         flash("No ANTHROPIC_API_KEY configured — set it in the environment "
