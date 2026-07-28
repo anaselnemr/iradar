@@ -349,7 +349,16 @@ def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
     of = _osec.get("flags") or {}
     if not of and old_row is not None and "flags" in old_row.keys():
         of = _json(old_row["flags"], "{}")
-    nf = new_res.get("flags") or {}
+    # THE NEW SIDE GETS THE SAME COURTESY. new_res is whatever result object
+    # the caller had in hand - and in the verify path a suspect rebuilt from
+    # a resumed run whose re-capture failed arrives as a bare error stub with
+    # no flags and no components. Reading that stub as "the page now carries
+    # nothing" wrote 'Hero image removed - Products table removed - section
+    # X removed' six times over on change #6977 while the saved capture's own
+    # sections.json listed every one of them, present and correct. The disk
+    # is the record; the stub is a messenger that lost the envelope.
+    _nsec = _sections(new_dir)
+    nf = new_res.get("flags") or _nsec.get("flags") or {}
     for key, label in _DIFF_FLAGS:
         oe = bool((of.get(key) or {}).get("exists"))
         ne = bool((nf.get(key) or {}).get("exists"))
@@ -370,7 +379,7 @@ def component_changes(old_dir, new_dir, old_row, new_res, cmp_result):
     if not _ocomp and old_row is not None and "components" in old_row.keys():
         _ocomp = _json(old_row["components"], "[]")
     onav = _set(_ocomp)
-    nnav = _set(new_res.get("components") or [])
+    nnav = _set(new_res.get("components") or _nsec.get("components") or [])
     # a section whose ITEMS already reported a change is not also reported as
     # a nav add/remove - one real change, one line
     said = {o.split(" (")[0].strip().lower() for o in out}

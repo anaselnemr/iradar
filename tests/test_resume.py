@@ -566,3 +566,31 @@ def test_a_locked_database_is_a_wait_not_a_verdict():
         blocker2.rollback()
         blocker2.close()
         db.connect = real_connect
+
+
+def test_an_error_stub_does_not_erase_the_new_capture():
+    """Change #6977 said 'Hero image removed - Products table removed -
+    section X removed' six times over, while the saved capture's own
+    sections.json listed every one of them. The verify path handed
+    component_changes a bare error stub (a resumed suspect whose re-capture
+    failed), and the stub's empty flags read as 'the page now has nothing'.
+    The new side must fall back to the capture ON DISK, as the old side
+    always has."""
+    import json as _json
+    import runner as R
+
+    root = _fresh_db()
+    both = {"flags": {"hero_image": {"exists": True, "has_content": True},
+                      "product_table": {"exists": True, "has_content": True}},
+            "components": ["Overview", "Products", "Documents"]}
+    old_dir = root / "old"; old_dir.mkdir()
+    new_dir = root / "new"; new_dir.mkdir()
+    for d in (old_dir, new_dir):
+        (d / "sections.json").write_text(_json.dumps(both), encoding="utf-8")
+
+    stub = {"status": "error", "http_status": None}
+    out = R.component_changes(str(old_dir), str(new_dir), None, stub,
+                              {"text_changed": False, "images_changed": False,
+                               "visual_changed": False})
+    assert not any("removed" in o for o in out), out
+    assert not any("emptied" in o for o in out), out
