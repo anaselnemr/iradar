@@ -678,6 +678,35 @@ def _run_check_inner(kind, url_ids, baseline=False):
     # done0 is the same number kept aside: the ETA divides pages by elapsed
     # time, so it has to rate only what THIS session captured, or a resume
     # would look like it had done 163 pages in two seconds.
+    # counters BEFORE the state seed, which reads them: the seed used to
+    # come first and referenced a name that did not exist yet, so every
+    # run died on its first line with UnboundLocalError.
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    if is_resume:
+        # CARRY the finished run's tallies forward: a resume that started from
+        # zero overwrote run 127's real ok=4,038 with the ok=1 of its own short
+        # tail at the final UPDATE, and the run read as if it captured nothing.
+        prev_row = con.execute("SELECT ok, changed, errors FROM runs"
+                               " WHERE id=?", (run_id,)).fetchone()
+        if prev_row:
+            counters["ok"] = prev_row["ok"] or 0
+            counters["changed"] = prev_row["changed"] or 0
+            counters["errors"] = prev_row["errors"] or 0
+        # ...and "saved" with them. It has no column on runs, but it means
+        # "pages whose outcome is final", which is exactly what a done item is.
+        #
+        # Leaving it at zero did not just under-report: the dashboard draws
+        # "no update" as saved - updated - errors, so a resumed run subtracted
+        # CUMULATIVE updates and errors from a counter that had just restarted.
+        # A run 40 errors deep showed 39 pages checked out of hundreds, and the
+        # bar read as though almost nothing had been done.
+        try:
+            counters["saved"] = con.execute(
+                "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='done'",
+                (run_id,)).fetchone()[0] or 0
+        except Exception:
+            pass
+
     already = max(0, pages_total - len(urls))
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
                      total=pages_total, done=already, done0=already,
@@ -706,31 +735,6 @@ def _run_check_inner(kind, url_ids, baseline=False):
     # on this same thread (asyncio.run blocks it), so the one connection is
     # never touched concurrently, and an interruption loses only pages still
     # in flight - everything already captured is on disk and in the table.
-    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
-    if is_resume:
-        # CARRY the finished run's tallies forward: a resume that started from
-        # zero overwrote run 127's real ok=4,038 with the ok=1 of its own short
-        # tail at the final UPDATE, and the run read as if it captured nothing.
-        prev_row = con.execute("SELECT ok, changed, errors FROM runs"
-                               " WHERE id=?", (run_id,)).fetchone()
-        if prev_row:
-            counters["ok"] = prev_row["ok"] or 0
-            counters["changed"] = prev_row["changed"] or 0
-            counters["errors"] = prev_row["errors"] or 0
-        # ...and "saved" with them. It has no column on runs, but it means
-        # "pages whose outcome is final", which is exactly what a done item is.
-        #
-        # Leaving it at zero did not just under-report: the dashboard draws
-        # "no update" as saved - updated - errors, so a resumed run subtracted
-        # CUMULATIVE updates and errors from a counter that had just restarted.
-        # A run 40 errors deep showed 39 pages checked out of hundreds, and the
-        # bar read as though almost nothing had been done.
-        try:
-            counters["saved"] = con.execute(
-                "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='done'",
-                (run_id,)).fetchone()[0] or 0
-        except Exception:
-            pass
     # suspects is set up above (holds any rebuilt from a resumed run); the
     # capture loop appends newly-found ones to it.
     url_by_addr = {row["url"]: row for row in urls}

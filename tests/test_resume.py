@@ -332,3 +332,52 @@ def test_the_eta_rates_only_this_session():
     remaining = max(0, s["total"] - s["done"])
     eta = int(remaining / rate)
     assert eta > 30000, f"eta collapsed to {eta}s"
+
+
+def test_run_check_does_not_die_on_its_own_first_lines():
+    """The real function, not a copy of its arithmetic.
+
+    A previous test asserted the SEEDING MATHS by reimplementing it in this
+    file. The maths was right and the code still crashed on every run, because
+    the seed referenced `counters` before it was assigned - UnboundLocalError,
+    the moment any check started. A test that rebuilds the logic it is
+    checking cannot catch that, so this one drives the real thing.
+    """
+    import runner as R
+
+    root = _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype) "
+                "VALUES(1, 'https://example.invalid/a', 1, 'Part')")
+    con.commit()
+    con.close()
+
+    # no browser: capture_all returns nothing, so the run reaches the end
+    # without touching the network. What matters is that it gets THERE.
+    async def _nothing(*a, **k):          # capture_all is awaited
+        return []
+    real = R.capture.capture_all
+    R.capture.capture_all = _nothing
+    try:
+        R.run_check("test")
+    finally:
+        R.capture.capture_all = real
+
+    assert R.RUN_STATE.get("running") is False, "the run never finished"
+    for key in ("total", "done", "done0", "saved", "changed", "errors",
+                "phase_total", "phase_done", "pages_total"):
+        assert key in R.RUN_STATE, f"the state seed never ran: {key} missing"
+    con = db.connect()
+    finished = con.execute("SELECT finished FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    assert finished and finished["finished"], "the run row was left open"
+
+
+def test_the_seed_reads_counters_that_already_exist():
+    # a static guard: whatever the seed reads must be assigned above it
+    import inspect
+    import runner as R
+    src = inspect.getsource(R._run_check_inner)
+    seed = src.index("RUN_STATE.update(running=True")
+    assert "counters = {" in src[:seed], \
+        "RUN_STATE.update reads counters before they are assigned"
