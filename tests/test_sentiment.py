@@ -93,12 +93,14 @@ def test_relevance_gate_keeps_on_topic_and_drops_noise():
     # distinctive-token query: the token must appear in the stored text
     assert sn._relevant({"title": "PSOC 6 deep sleep current", "body": ""}, "PSOC")
     assert not sn._relevant({"title": "The J1 Forth CPU (2010)", "body": ""}, "PSOC")
-    # 'infineon X' query: 'infineon' OR the family phrase must appear -
-    # full-text APIs match discussion bodies we do not store, so a generic
-    # title with neither is noise for a sentiment average
+    # 'infineon X' query: the text must actually say infineon. The old rule
+    # accepted the family phrase alone - which filed "Reading a smart card
+    # with a PN532" (an NXP part!) under Infineon's sentiment, and let
+    # "my garden bias and control" pass for "infineon Bias".
     q = "infineon Smart card"
     assert sn._relevant({"title": "Infineon RSA key generation issue", "body": ""}, q)
-    assert sn._relevant({"title": "Reading a smart card with a PN532", "body": ""}, q)
+    assert not sn._relevant({"title": "Reading a smart card with a PN532", "body": ""}, q)
+    assert not sn._relevant({"title": "my garden bias and control", "body": ""}, "infineon Bias")
     assert not sn._relevant({"title": "Experiences building an OS in Rust", "body": ""}, q)
     # the body counts too (HN comments carry the substance)
     assert sn._relevant({"title": "Ask HN: MCU picks?",
@@ -237,3 +239,21 @@ def test_parse_innertube_finds_videos_wherever_they_sit():
     assert m["body"] == "CapSense walkthrough"
     assert sn.parse_innertube(None) == []
     assert sn.parse_innertube({"a": [{"videoRenderer": {}}]}) == []
+
+
+def test_aliases_and_query_repair():
+    """The retrieval-side SOTA pass: heritage names and part prefixes are
+    searched as their own queries, same-query families collapse to one, and
+    a two-word cut never ends on a joining word."""
+    # alias hits pass the gate under the query that found them
+    assert sn._relevant({"title": "CY8C4247 wont enter deep sleep",
+                         "body": ""}, "CY8C")
+    assert sn._relevant({"title": "Pi Pico W cyw43439 driver panic",
+                         "body": ""}, "CYW43")
+    assert sn._relevant({"title": "Moving from Cypress PSoC to ModusToolbox",
+                         "body": ""}, "Cypress PSoC")
+    # the alias table rides along in entities() output
+    assert "CY8C" in sn._ALIASES["PSOC"]
+    assert "CYW43" in sn._ALIASES["AIROC"]
+    # trailing joining words are cut, not searched
+    assert "and" in sn._QUERY_STOP and "for" in sn._QUERY_STOP

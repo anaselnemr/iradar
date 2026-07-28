@@ -48,6 +48,26 @@ _DISTINCTIVE = ("PSOC", "PSoC", "XMC", "AIROC", "OPTIGA", "AURIX", "TRAVEO",
                 "SECORA", "iMOTION", "EiceDRIVER", "OptiMOS", "StrongIRFET")
 
 
+# The other names the same silicon answers to. Infineon bought Cypress in
+# 2020 and the internet did not rename its bookmarks: people still write
+# "Cypress PSoC", part numbers ("CY8C...", the CYW43 in every Pi Pico W),
+# and tool names (ModusToolbox) far more often than the family name. An
+# alias is searched AS ITS OWN QUERY and stored under the family, and the
+# relevance gate judges each hit against the query that found it.
+_ALIASES = {
+    "PSOC": ["CY8C", "Cypress PSoC", "ModusToolbox"],
+    "AIROC": ["CYW43", "Cypress WICED"],
+    "AURIX": ["TriCore"],
+    "TRAVEO": ["Cypress Traveo"],
+    "OPTIGA": ["OPTIGA Trust M"],
+}
+
+# a two-word cut of a long family name must not end on a joining word -
+# "Bias and control" became the query "infineon Bias and", which finds
+# nothing and reads like a bug
+_QUERY_STOP = {"and", "for", "of", "the", "with", "to", "in"}
+
+
 def _clean_family(title):
     """'PSOC(tm) MCUs | Infineon Technologies' -> 'PSOC MCUs'."""
     t = title.split("|")[0]
@@ -85,13 +105,23 @@ def entities():
         else:
             # generic name: a compact query beats the full mouthful -
             # "infineon FM3" finds what "infineon FM3 32-bit Arm Cortex-M3
-            # microcontroller (MCU) families" never would
+            # microcontroller (MCU) families" never would. And the cut must
+            # not end on a joining word.
             entity = name
-            query = "infineon " + " ".join(name.split()[:2])
-        if entity.lower() in seen:
+            words = [w for w in name.split()[:2]]
+            if len(words) == 2 and words[1].lower() in _QUERY_STOP:
+                words = words[:1]
+            query = "infineon " + " ".join(words)
+        # dedup by QUERY as well as name: "Radar sensors for automotive",
+        # "... for IoT" and plain "Radar sensors" all searched the same
+        # string and stored every hit three times
+        k = (entity.lower(), query.lower())
+        if entity.lower() in seen or query.lower() in seen:
             continue
         seen.add(entity.lower())
-        out.append({"entity": entity, "query": query})
+        seen.add(query.lower())
+        out.append({"entity": entity, "query": query,
+                    "queries": [query] + _ALIASES.get(entity, [])})
     return out
 
 
@@ -185,8 +215,12 @@ def _relevant(m, query):
     text = (m.get("title", "") + " " + m.get("body", "")).lower()
     toks = query.lower().split()
     if "infineon" in toks:
-        rest = " ".join(t for t in toks if t != "infineon")
-        return "infineon" in text or (rest and rest in text)
+        # A generic family name ("Diodes", "Bias") is only attributable when
+        # the text actually says infineon - the phrase alone let "my garden
+        # bias and control" pass for "infineon Bias". Precision first: a
+        # generic-family thread that never names the maker is not evidence
+        # about the maker.
+        return "infineon" in text
     for t in toks:
         # left edge hard; right edge allows digits/symbols but not letters,
         # so 'psoc6' and 'xmc4700' match while 'calypsoinae' does not
@@ -695,11 +729,12 @@ def run_collect():
         new = 0
         for e in ents:
             for src in per_entity:
-                ms = src["collect"](e["query"])
-                SENT_STATE["found"] += len(ms)
-                new += _store(con, e["entity"], src["key"], ms, now)
+                for q in e.get("queries") or [e["query"]]:
+                    ms = src["collect"](q)
+                    SENT_STATE["found"] += len(ms)
+                    new += _store(con, e["entity"], src["key"], ms, now)
+                    SENT_STATE["new"] = new
                 SENT_STATE["done"] += 1
-                SENT_STATE["new"] = new
                 SENT_STATE["message"] = f"{e['entity'][:30]} — {src['label']}"
             con.commit()
         # the global pass: today that is the captured community threads,
@@ -749,14 +784,39 @@ def score_pending(limit=200):
         listing = "\n".join(
             f'{r["id"]}: [{r["entity"]}] {r["title"]} — {(r["body"] or "")[:160]}'
             for r in batch)
+        # Few-shot with an aspect-signed tag set: the 2025-26 evaluations
+        # of LLM sentiment all land on the same two findings - examples in
+        # the prompt beat any zero-shot wording, and a single number hides
+        # WHAT is bad. Tags carry their own sign (docs-, hardware+) so a
+        # mixed mention keeps both truths, and sarcasm scores as meant, not
+        # as worded.
         prompt = (
-            "These are forum/social mentions of semiconductor products. For"
-            " each line, judge the AUTHOR'S sentiment toward the product"
-            " (-1 very negative, 0 neutral/question, +1 very positive) and"
-            " give 1-3 topic tags from: docs, tooling, hardware-bug, price,"
-            " availability, performance, support, praise, question.\n"
-            "Answer ONLY a JSON array: [{\"id\": n, \"score\": x, \"topics\":"
-            " [\"...\"], \"why\": \"<8 words\"}]\n\n" + listing)
+            "These are forum/social mentions of semiconductor products."
+            " For each line judge the AUTHOR'S sentiment toward the product"
+            " itself, -1.0 (very negative) to +1.0 (very positive).\n"
+            "Rules:\n"
+            "- A neutral how-do-I question is 0. A question that reports a"
+            " defect ('why does X crash') leans negative.\n"
+            "- Sarcasm scores as MEANT: 'great, another silent errata' is"
+            " negative.\n"
+            "- Mixed mentions: score the overall lean, and tag each aspect"
+            " with its own sign.\n"
+            "- Tags: 1-3 from docs, tooling, hardware, price, availability,"
+            " performance, support, question, praise - each suffixed + or -"
+            " when it has a direction (docs-, performance+), bare when"
+            " neutral (question).\n"
+            "Examples of the judgement wanted:\n"
+            "  'Ten minutes from unboxing to blink, impressed' ->"
+            " {\"score\": 0.8, \"topics\": [\"tooling+\", \"praise\"]}\n"
+            "  'DAVE generated startup breaks with -O2' ->"
+            " {\"score\": -0.6, \"topics\": [\"tooling-\"]}\n"
+            "  'Love the chip, shame the datasheet is 400 pages of maybe' ->"
+            " {\"score\": -0.1, \"topics\": [\"hardware+\", \"docs-\"]}\n"
+            "  'How do I set up SPI DMA on this part?' ->"
+            " {\"score\": 0, \"topics\": [\"question\"]}\n"
+            "Answer ONLY a JSON array:"
+            " [{\"id\": n, \"score\": x, \"topics\": [\"...\"],"
+            " \"why\": \"<8 words\"}]\n\n" + listing)
         try:
             req = urllib.request.Request(
                 "https://api.anthropic.com/v1/messages",
