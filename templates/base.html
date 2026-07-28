@@ -82,16 +82,26 @@
                   display: flex; align-items: center; gap: 9px;
                   color: #b9beff; text-decoration: none; }
   header a.logo:hover { color: #d5d8ff; }
-  /* The wordmark wears the mark's gradient, so "iRadar" is the same thing in
-     the corner, on the sign-in screen and in Help. Painted through the text;
-     the plain colour under it is what shows if background-clip is unavailable,
-     so it degrades to something readable rather than to nothing. */
-  header a.logo b { color: #b9beff; }
+  /* THE WORDMARK, mirroring the mark beside it: the i in the ink colour, its
+     dot picking up the gradient, "Radar" in the violet.
+
+     A text "i" is one glyph - you cannot colour its dot on its own. So the i
+     is painted with a VERTICAL gradient whose coloured band sits across the
+     top ~30%, which is where the dot is and where the stem is not. The stem
+     comes out solid ink, the dot comes out gradient, and it survives any font
+     because it is keyed to the glyph's own height rather than to coordinates.
+
+     A plain colour sits under every one of these, so a browser that cannot
+     clip a background to text shows a readable wordmark instead of nothing. */
+  header a.logo .wm { font-weight: 800; letter-spacing: -.4px; }
+  header a.logo .wm .wm-i { color: #ffffff; }
+  header a.logo .wm .wm-r { color: #b18cf8; }
   @supports (background-clip: text) or (-webkit-background-clip: text) {
-    header a.logo b {
-      background: linear-gradient(120deg, #aab2ff 10%, #c9a6ff 90%);
+    header a.logo .wm .wm-i {
+      background: linear-gradient(to bottom,
+                  #c9a6ff 0%, #a78bfa 20%, #ffffff 33%, #ffffff 100%);
       -webkit-background-clip: text; background-clip: text;
-      -webkit-text-fill-color: transparent; color: transparent; }
+      -webkit-text-fill-color: transparent; }
   }
 
   header .logo img { width: 26px; height: 26px; border-radius: 7px;
@@ -104,17 +114,23 @@
   /* below this the wordmark is the first thing to go - the mark still says
      which app this is, and the width buys the nav its room back */
   @media (max-width: 560px) { header .logo b { display: none; } }
-  header nav { display: flex; gap: 2px; justify-self: center;
+  /* The nav wears the brand rather than plain greys on grey: resting text is
+     a cool near-white with a little of the accent's blue in it, hover warms
+     toward white, and the page you are on is filled with the mark's own
+     gradient. Greys went with the old pure-black theme; against a bar that is
+     dark in BOTH themes, one accent tells you where you are at a glance. */
+  header nav { display: flex; gap: 3px; justify-self: center;
                background: rgba(255,255,255,.05); padding: 3px;
-               border-radius: 11px; border: 1px solid rgba(255,255,255,.06); }
-  header nav a { color: #b9b8c6; text-decoration: none; font-size: 13.5px;
+               border-radius: 11px; border: 1px solid rgba(255,255,255,.07); }
+  header nav a { color: #c2c4dc; text-decoration: none; font-size: 13.5px;
                  padding: 6px 13px; border-radius: 8px; white-space: nowrap;
                  transition: background .14s, color .14s; }
-  header nav a:hover { color: #fff; background: rgba(255,255,255,.07); }
+  header nav a:hover { color: #fff; background: rgba(139,124,246,.20); }
   /* which page you are on, since the pages no longer say so themselves */
-  header nav a.on { color: #fff; background: rgba(255,255,255,.14);
-                    font-weight: 600;
-                    box-shadow: inset 0 0 0 1px rgba(255,255,255,.09); }
+  header nav a.on { color: #fff; font-weight: 600;
+                    background: linear-gradient(135deg, #6d78e0, #8b5cf6);
+                    box-shadow: 0 1px 8px rgba(109,120,224,.42); }
+  header nav a.on:hover { color: #fff; }
   header .hactions { justify-self: end; display: flex; gap: 8px;
                      align-items: center; }
   @media (max-width: 900px) {
@@ -622,8 +638,12 @@
   .lvlmenu-head { display: flex; justify-content: space-between; gap: 12px;
                   align-items: baseline; font-weight: 700; font-size: 13px;
                   padding: 7px 10px 6px; color: var(--ink); }
+  /* the title must not wrap while the note beside it has room to spare -
+     "Display name" was breaking across two lines against a one-line hint */
+  .lvlmenu-head { white-space: nowrap; }
   .lvlmenu-head span { font-weight: 400; font-size: 11.5px;
-                       color: var(--muted); }
+                       color: var(--muted); white-space: normal;
+                       text-align: right; min-width: 0; }
   .lvlmenu-sep { height: 1px; background: var(--line); margin: 5px 4px; }
   .lvlopt { display: flex; gap: 10px; align-items: center; width: 100%;
             background: none; border: 0; border-radius: 8px; cursor: pointer;
@@ -663,14 +683,16 @@
      three top-level items they cost a third of the bar and pushed the two
      screens people actually live in off centre. */
   .navdd { position: relative; }
-  .navdd > summary { list-style: none; cursor: pointer; color: #b9b8c6;
+  .navdd > summary { list-style: none; cursor: pointer; color: #c2c4dc;
                      font-size: 13.5px; padding: 7px 12px; border-radius: 8px;
                      white-space: nowrap; }
   .navdd > summary::-webkit-details-marker { display: none; }
   .navdd > summary::after { content: " ▾"; font-size: 10px; opacity: .7; }
-  .navdd > summary:hover { color: #fff; background: rgba(255,255,255,.07); }
+  .navdd > summary:hover { color: #fff; background: rgba(139,124,246,.20); }
   .navdd[open] > summary,
-  .navdd.on > summary { color: #fff; background: rgba(255,255,255,.14); }
+  .navdd.on > summary { color: #fff; font-weight: 600;
+                        background: linear-gradient(135deg, #6d78e0, #8b5cf6);
+                        box-shadow: 0 1px 8px rgba(109,120,224,.42); }
   .navdd .panel { position: absolute; z-index: 40; top: calc(100% + 6px);
                   left: 50%; transform: translateX(-50%); min-width: 246px;
                   padding: 6px; background: var(--panel);
@@ -955,7 +977,7 @@
   /* The nav too. Its items are a mix of <a> and a <summary> for the dropdown,
      and only the links were being repainted - so in dark mode "Reports" sat
      there in a different colour from everything beside it. */
-  [data-theme="dark"] header nav a { color: #b9b8c6; }
+  [data-theme="dark"] header nav a { color: #c2c4dc; }
   [data-theme="dark"] header nav a:hover,
   [data-theme="dark"] header nav a.on { color: #fff; }
   [data-theme="dark"] .pagecard-url { color: #a5b4fc; }
@@ -1009,7 +1031,7 @@
          alt="" width="26" height="26">
     <img class="m-dark" src="{{ url_for('static', filename='logo-dark.png') }}?v=3"
          alt="" width="26" height="26">
-    <b>iRadar</b>
+    <b class="wm"><span class="wm-i">i</span><span class="wm-r">Radar</span></b>
   </a>
   {#- the nav carries which page you are on, so the pages themselves no longer
       repeat their own name in a heading -#}

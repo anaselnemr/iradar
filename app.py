@@ -443,9 +443,38 @@ def _at_brightness(hue, sat, target):
     return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
 
 
+def _skip_olive(hue):
+    """Bend the wheel around the yellow-olive arc.
+
+    Solving for brightness makes every hue READABLE, which is not the same as
+    every hue being wanted: at the brightness white initials need, 45-95
+    degrees is olive, and olive on a person's face looks like a mistake rather
+    than a colour. The arc is not cut out - that would put a seam on the wheel
+    where two people either side of it come out nearly identical - it is
+    squeezed, so hues still land in order and still spread, just faster
+    through the part nobody wants to be.
+
+    Not to zero, though: a wheel with a hole in it has a SEAM, and the two
+    people either side of a seam get near-identical colours - which is the
+    thing this whole scheme exists to prevent. Crossing it in 1.5 degrees of
+    input leaves about one account in 240 landing there, and keeps everyone
+    else distinct.
+    """
+    lo, hi = 42.0, 96.0     # the arc to hurry through, in the OUTPUT
+    cross = 1.5             # how much of the input is spent crossing it
+    span = hi - lo
+    scale = (360.0 - span) / (360.0 - cross)
+    start = lo / scale      # the input hue that arrives at the arc
+    if hue < start:
+        return hue * scale
+    if hue < start + cross:
+        return lo + (hue - start) * span / cross
+    return hi + (hue - start - cross) * scale
+
+
 @lru_cache(maxsize=512)
 def _avatar_css(seed):
-    hue = (seed * _GOLDEN_ANGLE) % 360
+    hue = _skip_olive((seed * _GOLDEN_ANGLE) % 360)
     # 0.16 puts white text at 5:1 - past the 4.5 the guidelines ask for, on
     # every hue, with the darker end of the gradient better still
     return ("linear-gradient(135deg, %s, %s)"

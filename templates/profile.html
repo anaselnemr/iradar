@@ -41,26 +41,32 @@
       <div class="pf-who">
         <div class="pf-name">
           <h2>{{ me['name'] or me['email'].split('@')[0] }}</h2>
+          {#- the same pencil that edits a page's ownership or level: one way
+              to change a value in this app, not a form per screen -#}
+          <details class="lvledit">
+            <summary title="Change your display name"><span class="lvlpen">✎</span></summary>
+            <form method="post" action="{{ url_for('account_name') }}"
+                  class="lvlmenu" style="padding:12px; min-width:270px">
+              <div class="lvlmenu-head">Display name
+                <span>what people see on your notes</span>
+              </div>
+              <input type="text" name="name" maxlength="80" autocomplete="off"
+                     value="{{ me['name'] or '' }}"
+                     placeholder="{{ me['email'].split('@')[0] }}"
+                     style="width:100%; margin-top:8px">
+              <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px">
+                <button type="submit" class="linkbtn" style="font-weight:600">Save</button>
+              </div>
+            </form>
+          </details>
           <span class="pf-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
         </div>
         <div class="mail">{{ me['email'] }}</div>
       </div>
     </div>
-  </div>
-
-  <div class="card" style="margin-top:16px">
-    <h3 style="margin:0 0 14px">Display name</h3>
-    <form method="post" action="{{ url_for('account_name') }}" class="row">
-      <div>
-        <label for="dn">What people see</label>
-        <input id="dn" name="name" type="text" maxlength="80"
-               value="{{ me['name'] or '' }}"
-               placeholder="{{ me['email'].split('@')[0] }}">
-      </div>
-      <button type="submit">Save name</button>
-    </form>
-    <p class="hint">Shown in the corner, on your avatar, and on every note you
-      write — including ones you have already written.</p>
+    <p class="hint" style="margin:14px 0 0">Your name shows in the corner, on
+      your avatar, and on every note you write — including ones you have
+      already written.</p>
   </div>
 
   <div class="card" style="margin-top:16px">

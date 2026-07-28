@@ -160,14 +160,11 @@ def _letters(im, colour, fade_to, text_frac):
     return im
 
 
-# The same tile, a touch deeper, so dark mode is the same mark rather than a
-# different one - only the ink flips.
-#
-# Not much deeper, though: the ink that goes on it is BLACK, so darkening the
-# tile takes contrast away rather than adding it. At 0.72 the letters sat at
-# 2.8:1 and went soft at tab size; 0.88 keeps the tile clearly the deeper of
-# the two while the letters read.
-def _darker(c, k=0.88):
+# One tile, two inks. The tile does not change at all between the two - the
+# only difference is white letters or black ones - which is also what keeps
+# the black readable: the ink is dark, so dimming the tile behind it takes
+# contrast away rather than adding it.
+def _darker(c, k=1.0):
     return tuple(round(v * k) for v in c)
 
 

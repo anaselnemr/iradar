@@ -57,20 +57,31 @@
           gap: 13px; margin-bottom: 22px; }
   .gd-hero .mark { width: 46px; height: 46px; border-radius: 12px;
                    display: block; }
-  /* same gradient as the mark beside it, and as the corner of every page */
-  .idnt b { font-size: 30px; font-weight: 800; letter-spacing: -.7px;
-            color: var(--accent); }
-  @supports (background-clip: text) or (-webkit-background-clip: text) {
-    .idnt b { background: linear-gradient(120deg, #6d78e0 10%, #8b5cf6 90%);
-              -webkit-background-clip: text; background-clip: text;
-              -webkit-text-fill-color: transparent; color: transparent; }
-  }
-  [data-theme="dark"] .idnt b {
-    background: linear-gradient(120deg, #aab2ff 10%, #c9a6ff 90%); }
   .gd-hero .m-dark { display: none; }
   [data-theme="dark"] .gd-hero .m-light { display: none; }
   [data-theme="dark"] .gd-hero .m-dark { display: block; }
-  .gd-hero .say b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  /* THE WORDMARK, mirroring the mark beside it: the i in the ink colour, its
+     dot picking up the gradient, "Radar" in the violet.
+
+     A text "i" is one glyph - you cannot colour its dot on its own. So the i
+     is painted with a VERTICAL gradient whose coloured band sits across the
+     top ~30%, which is where the dot is and where the stem is not. The stem
+     comes out solid ink, the dot comes out gradient, and it survives any font
+     because it is keyed to the glyph's own height rather than to coordinates.
+
+     A plain colour sits under every one of these, so a browser that cannot
+     clip a background to text shows a readable wordmark instead of nothing. */
+  .idnt .wm { font-size: 30px; font-weight: 800; letter-spacing: -.7px; }
+  .wm .wm-i { color: var(--ink); }
+  .wm .wm-r { color: #8b5cf6; }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .wm .wm-i {
+      background: linear-gradient(to bottom,
+                  #8b5cf6 0%, #7c6bf0 20%, var(--ink) 33%, var(--ink) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; }
+  }
+
   .figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
           background: var(--line); border: 1px solid var(--line);
           border-radius: 12px; overflow: hidden; }
@@ -219,7 +230,7 @@
            src="{{ url_for('static', filename='logo.png') }}?v=3">
       <img class="mark m-dark" alt=""
            src="{{ url_for('static', filename='logo-dark.png') }}?v=3">
-      <b>iRadar</b>
+      <b class="wm"><span class="wm-i">i</span><span class="wm-r">Radar</span></b>
     </div>
     <div class="figs">
       <a class="fig" href="{{ url_for('index') }}">

@@ -295,3 +295,25 @@ def test_the_dashboard_hands_the_page_a_real_rate():
     assert m, "the dashboard no longer passes a measured rate to the page"
     assert 7.5 < float(m.group(1)) < 8.5, m.group(1)
     assert "* 90 / 3600" not in html, "the hardcoded 90s guess is back"
+
+
+def test_almost_nobody_is_handed_an_olive_avatar():
+    # Solving for brightness makes every hue readable, which is not the same
+    # as every hue being wanted: at that brightness 42-96 degrees is olive,
+    # and olive on a person's face reads as a mistake rather than a colour.
+    #
+    # Not zero, because a wheel with a hole has a seam, and the two people
+    # either side of a seam get near-identical colours. A handful in a few
+    # hundred is the trade.
+    n = 400
+    band = [uid for uid in range(1, n + 1)
+            if 42 <= app._skip_olive((uid * app._GOLDEN_ANGLE) % 360) < 96]
+    assert len(band) / n < 0.01,         f"{len(band)} of {n} landed in the olive arc: {band[:8]}"
+
+
+def test_bending_the_wheel_keeps_it_a_wheel():
+    # monotonic and onto, or two people either side of the bend collide
+    xs = [i * 0.5 for i in range(720)]
+    ys = [app._skip_olive(x) for x in xs]
+    assert all(a <= b + 1e-9 for a, b in zip(ys, ys[1:])), "the remap folds back"
+    assert ys[0] < 1 and ys[-1] > 358, f"it no longer covers the wheel: {ys[0]}..{ys[-1]}"
