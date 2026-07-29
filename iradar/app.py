@@ -3116,9 +3116,13 @@ def sentiment_terms():
 
 @app.route("/sentiment/status")
 def sentiment_status():
-    """The collection's live numbers, for the page's progress bar."""
+    """The collection's live numbers - plus whether a page check is running,
+    because the bar's idle label says what it is waiting for and must keep
+    saying the truth as states change under an open page."""
     import sentiment as sn
-    return jsonify(dict(sn.SENT_STATE))
+    out = dict(sn.SENT_STATE)
+    out["capture_running"] = bool(runner.RUN_STATE.get("running"))
+    return jsonify(out)
 
 
 @app.route("/sentiment/collect", methods=["POST"])
