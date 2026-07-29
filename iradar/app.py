@@ -4441,6 +4441,14 @@ def _cached_by_db(name, build):
     return val
 
 
+# Rows in `items` that are page TEXT stored for the diff - about, overview,
+# features... - not assets anyone can browse. Every count shown to a person
+# excludes them with this one expression, so Help and Content can never
+# disagree by fourteen thousand again.
+_NON_ASSET_SQL = ("('about','overview','subheadline','features','benefits',"
+                  "'applications')")
+
+
 def _library_counts(con, cat=""):
     """Per-tile counts for the content library, cached until the db changes.
 
@@ -4455,9 +4463,8 @@ def _library_counts(con, cat=""):
         # 'about' is tracked for text comparison only - never surfaced.
         # 'overview' is a page's own text, not an asset type.
         out = {"all": con.execute(
-            "SELECT COUNT(*) FROM items WHERE category NOT IN"
-            "('about','overview','subheadline','features','benefits',"
-            "'applications')").fetchone()[0]}
+            "SELECT COUNT(*) FROM items WHERE category NOT IN "
+            + _NON_ASSET_SQL).fetchone()[0]}
         # the pages tile says Live Pages, so it counts LIVE pages: a 404 or a
         # page that never answered has no library to browse
         out["pages"] = con.execute(
@@ -6817,7 +6824,8 @@ def guide_page():
                       " WHERE category='documents'"),
             # NOT "items": in a template f.items resolves to dict.items, the
             # built-in method, and formatting it throws
-            "tracked": q("SELECT COUNT(*) FROM items"),
+            "tracked": q("SELECT COUNT(*) FROM items WHERE category"
+                         " NOT IN " + _NON_ASSET_SQL),
             "open": q("SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0"),
             # updates and PAGES are different numbers - one page can carry
             # more than one. The tile links to the page list, so it has to
