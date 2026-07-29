@@ -311,6 +311,11 @@ _STOCK_SEL = ('[class*="multipleopn" i], [class*="stock-qty" i], '
               '[class*="add-to-cart" i], [class*="addtocart" i], '
               '[class*="cart-btn" i], [class*="cart-buttons" i]')
 
+# VOLATILE_SEL feeds FOUR collectors: the text walk (TEXT_REV), the image
+# inventory (IMG_REV), the section read (SECTIONS_REV) and the screenshot's
+# recorded mask boxes (SHOT_REV, via FEED_RECTS_JS). Grow it and ALL FOUR revs
+# bump together - the one that gets missed invents differences. Rev 7 below is
+# what missing one looks like.
 VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
                 ".documents_ifx, .ifx_documents_products, .partner-ul-box, "
                 + _STOCK_SEL + ", " + PRICE_SEL)
@@ -334,7 +339,19 @@ VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
 #       both sides scale identically, so an unchanged page still diffs to 0% -
 #       but a rev boundary is still a rev boundary, so it re-baselines silently
 #       rather than reporting every page as visually changed once.
-SHOT_REV = 6
+#   6 - the shot waits for web fonts to finish loading (FONTS_SETTLE_MS):
+#       pages photographed mid-font-swap diffed against pages photographed
+#       after it, every glyph a changed pixel.
+#   7 - VOLATILE_SEL grew to cover the stock/cart chrome (the TEXT_REV-6
+#       change), and FEED_RECTS_JS records boxes from that same selector - so
+#       new captures started recording every in-stock chip (24px) and the
+#       header cart icon (40px) as masked regions while every baseline lacked
+#       them. The height judgement subtracts each side's recorded boxes from
+#       equal-height pictures, and the one-sided inventory read as the page
+#       shrinking by 40+24n px: 65 phantom height-only suspects in run 7,
+#       quantized 88/112/160. TEXT, IMG and SECTIONS revs were all bumped for
+#       that change; the screenshot rev was the one missed.
+SHOT_REV = 7
 
 # How the screenshot is STORED, not how the page is rendered - the browser still
 # lays out at full width, so nothing about the capture changes, only the file
