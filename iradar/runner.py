@@ -1292,6 +1292,30 @@ def _smells_like_half_render(result, row):
         return False
 
 
+def _diff_fingerprint(prev_dir, new_dir, settings):
+    """WHAT changed, as a comparable value: the multiset of added and removed
+    text lines plus the image url sets. Two captures of the same real edit
+    produce the same fingerprint; a hydration flap or a half-render produces
+    a different one, which is the whole point."""
+    ig = ((settings or {}).get("ignore_patterns") or "").splitlines()
+    _c, _a, _r, hunks = cmp.text_diff(prev_dir, new_dir, ig)
+    added, removed = [], []
+    for h in hunks:
+        for tag, line in h["lines"]:
+            if tag == "+":
+                added.append(line)
+            elif tag == "-":
+                removed.append(line)
+    igi = ((settings or {}).get("ignore_image_patterns") or "").splitlines()
+    _c2, img_a, img_r = cmp.images_diff(prev_dir, new_dir, igi)
+    return (Counter(added), Counter(removed),
+            frozenset(img_a), frozenset(img_r))
+
+
+def _fingerprints_agree(f1, f2):
+    return f1 == f2
+
+
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                      recapture=True, phase="verify"):
     """Re-capture every suspected change once and flag only those that persist.
@@ -1378,6 +1402,69 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                 print(f"[verify] {row['url']}: pure loss on both captures -"
                       " kept the baseline, retrying next run", flush=True)
                 continue
+            # THE SAME DIFFERENCE, NOT JUST A DIFFERENCE. The old test was
+            # "does the verify capture differ from the baseline at all?" -
+            # which a flap passes as easily as an edit, as long as it flaps
+            # twice. Now the two captures must agree on WHAT changed; when
+            # they disagree, a third capture breaks the tie, best two of
+            # three. A real edit prints the same diff every time it is
+            # photographed; noise does not.
+            if confirmed and (recheck.get("text_changed")
+                              or recheck.get("images_changed")):
+                f1 = _diff_fingerprint(prev["dir"], s["new1_dir"],
+                                       settings_now)
+                f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
+                if not _fingerprints_agree(f1, f2):
+                    ts3 = ts_label + "-verify3"
+                    dir3 = str(_snapshot_dir(url_id, ts3))
+                    print(f"[verify] {row['url']}: the two captures disagree"
+                          " on WHAT changed - taking a third look", flush=True)
+                    try:
+                        r3 = asyncio.run(capture.capture_all(
+                            [(row["url"], dir3)], concurrency=1))
+                        res3 = r3[0] if r3 else None
+                    except Exception:
+                        res3 = None
+                    f3 = None
+                    if res3 and res3.get("status") == "ok":
+                        f3 = _diff_fingerprint(prev["dir"], dir3, settings_now)
+                    if f3 is not None and (_fingerprints_agree(f3, f2)
+                                           or _fingerprints_agree(f3, f1)):
+                        # two of three agree: the third capture carries the
+                        # agreed state and is the newest - it becomes the
+                        # capture of record
+                        con.execute("DELETE FROM snapshots WHERE id=?",
+                                    (vsnap_id,))
+                        shutil.rmtree(vdir, ignore_errors=True)
+                        cur = con.execute(
+                            "INSERT INTO snapshots(url_id, ts, dir, status,"
+                            " error, page_title, text_lines, image_count,"
+                            " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (url_id, now, dir3, "ok", "",
+                             res3.get("title", ""),
+                             res3.get("text_lines", 0),
+                             res3.get("image_count", 0),
+                             res3.get("http_status")))
+                        vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
+                    else:
+                        # three captures, no two alike - nothing here is
+                        # steady enough to put in front of a person
+                        shutil.rmtree(dir3, ignore_errors=True)
+                        con.execute("UPDATE urls SET last_checked=?,"
+                                    " last_status='error' WHERE id=?",
+                                    (now, url_id))
+                        _restore_page_meta(con, url_id, prev)
+                        shutil.rmtree(vdir, ignore_errors=True)
+                        con.execute("DELETE FROM snapshots WHERE id=?",
+                                    (vsnap_id,))
+                        counters["errors"] += 1
+                        counters["saved"] += 1
+                        _mark_item(con, run_id, url_id, "done")
+                        con.commit()
+                        print(f"[verify] {row['url']}: three captures, no two"
+                              " alike - kept the baseline, retrying next run",
+                              flush=True)
+                        continue
             # the first suspect capture is superseded either way
             shutil.rmtree(s["new1_dir"], ignore_errors=True)
             con.execute("DELETE FROM snapshots WHERE id=?", (s["new1_id"],))

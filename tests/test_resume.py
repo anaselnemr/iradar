@@ -615,3 +615,36 @@ def test_pure_loss_smells_like_a_half_render_until_it_repeats():
     assert not R._smells_like_half_render(small, fresh), "small cuts are edits"
     assert not R._smells_like_half_render(loss, worn), \
         "the second sighting is the truth"
+
+
+def test_the_double_check_demands_the_same_difference():
+    """Anas's rule: a suspected change is only confirmed when both captures
+    agree on WHAT changed, not merely that something did. The fingerprint is
+    the multiset of added/removed lines plus the image sets - order-blind,
+    count-aware - so a real edit matches itself and a flap does not."""
+    import json as _json
+    import runner as R
+
+    root = _fresh_db()
+
+    def snap(name, lines, imgs=()):
+        d = root / name
+        d.mkdir()
+        (d / "text.txt").write_text("\n".join(lines), encoding="utf-8")
+        (d / "images.json").write_text(_json.dumps(list(imgs)),
+                                       encoding="utf-8")
+        return str(d)
+
+    base = snap("base", ["alpha", "beta", "gamma"], ["a.png"])
+    edit1 = snap("edit1", ["alpha", "beta", "delta"], ["a.png"])
+    edit2 = snap("edit2", ["alpha", "beta", "delta"], ["a.png"])
+    flap = snap("flap", ["alpha", "gamma"], ["a.png"])
+
+    st = {"ignore_patterns": "", "ignore_image_patterns": ""}
+    f_edit1 = R._diff_fingerprint(base, edit1, st)
+    f_edit2 = R._diff_fingerprint(base, edit2, st)
+    f_flap = R._diff_fingerprint(base, flap, st)
+    assert R._fingerprints_agree(f_edit1, f_edit2), \
+        "the same edit must match itself across captures"
+    assert not R._fingerprints_agree(f_edit1, f_flap), \
+        "a different difference must not pass for the same one"
