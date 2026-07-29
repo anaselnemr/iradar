@@ -304,7 +304,12 @@ PRICE_SEL = ('[class*="price-container" i], [class*="buyingoption" i], '
 # new wrapper - a stock-qty span can never be page content.
 _STOCK_SEL = ('[class*="multipleopn" i], [class*="stock-qty" i], '
               '[class*="stock-message" i], '
-              '[class*="container-stock-update" i]')
+              '[class*="container-stock-update" i], '
+              # the React cart widget hydrates on SOME captures - "Add to
+              # Cart" lines blinking in and out read as edits (#6898). A
+              # buy button is commerce chrome, never page content.
+              '[class*="add-to-cart" i], [class*="addtocart" i], '
+              '[class*="cart-btn" i], [class*="cart-buttons" i]')
 
 VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
                 ".documents_ifx, .ifx_documents_products, .partner-ul-box, "

@@ -594,3 +594,24 @@ def test_an_error_stub_does_not_erase_the_new_capture():
                                "visual_changed": False})
     assert not any("removed" in o for o in out), out
     assert not any("emptied" in o for o in out), out
+
+
+def test_pure_loss_smells_like_a_half_render_until_it_repeats():
+    """#7118: two stressed captures both silently skipped the price box,
+    documents and design resources - 74 lines gone, zero added, no apology
+    text for the apology guard - and the double-check 'confirmed' a page
+    that was fine. A pure-loss diff is an error and a retry, unless the
+    page ALREADY wears that error, in which case the loss is real gutting
+    and flags one run late."""
+    import runner as R
+
+    fresh = {"last_status": "unchanged"}
+    worn = {"last_status": "error"}
+    loss = {"text_changed": True, "lines_added": 0, "lines_removed": 74}
+    edit = {"text_changed": True, "lines_added": 3, "lines_removed": 74}
+    small = {"text_changed": True, "lines_added": 0, "lines_removed": 4}
+    assert R._smells_like_half_render(loss, fresh)
+    assert not R._smells_like_half_render(edit, fresh), "real edits add lines"
+    assert not R._smells_like_half_render(small, fresh), "small cuts are edits"
+    assert not R._smells_like_half_render(loss, worn), \
+        "the second sighting is the truth"

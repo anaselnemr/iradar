@@ -1275,6 +1275,23 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         counters["saved"] += 1
 
 
+def _smells_like_half_render(result, row):
+    """A diff that ONLY removes - twenty-plus lines gone, nothing arriving -
+    is the shape of a render that silently skipped sections, not the shape
+    of an edit (#7118: price box, documents and design resources absent from
+    two stressed captures while the live page had all of it; no apology text
+    for the apology guard to catch). Once, it is an error and a retry next
+    run. The same loss showing again on a page ALREADY wearing that error is
+    a real gutting and flags normally - one run late, never never."""
+    try:
+        pure_loss = (result.get("text_changed")
+                     and (result.get("lines_added") or 0) == 0
+                     and (result.get("lines_removed") or 0) >= 20)
+        return bool(pure_loss) and (row["last_status"] or "") != "error"
+    except Exception:
+        return False
+
+
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                      recapture=True, phase="verify"):
     """Re-capture every suspected change once and flag only those that persist.
@@ -1345,6 +1362,22 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
             recheck = cmp.compare_snapshots(prev["dir"], vdir, change_dir=None,
                                             settings=settings_now)
             confirmed = recheck["any_changed"]
+            if confirmed and _smells_like_half_render(recheck, row):
+                # both captures losing whole sections with nothing added is
+                # a server having a bad hour, until a page already wearing
+                # the error shows the same loss next run
+                con.execute("UPDATE urls SET last_checked=?,"
+                            " last_status='error' WHERE id=?", (now, url_id))
+                _restore_page_meta(con, url_id, prev)
+                shutil.rmtree(vdir, ignore_errors=True)
+                con.execute("DELETE FROM snapshots WHERE id=?", (vsnap_id,))
+                counters["errors"] += 1
+                counters["saved"] += 1
+                _mark_item(con, run_id, url_id, "done")
+                con.commit()
+                print(f"[verify] {row['url']}: pure loss on both captures -"
+                      " kept the baseline, retrying next run", flush=True)
+                continue
             # the first suspect capture is superseded either way
             shutil.rmtree(s["new1_dir"], ignore_errors=True)
             con.execute("DELETE FROM snapshots WHERE id=?", (s["new1_id"],))
