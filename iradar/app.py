@@ -535,8 +535,11 @@ except Exception:                       # no tzdata installed - fall back
 
 
 def to_local(s):
-    """A stored UTC timestamp as a datetime in the display zone."""
-    dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    """A stored UTC timestamp as a datetime in the display zone. Accepts the
+    T-separated ISO shape too - mention timestamps from the source APIs carry
+    it, and "2026-07-27T00:00:00" shown raw reads like a malfunction."""
+    dt = datetime.strptime(s.replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S")
+    dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(_DISPLAY_ZONE) if _DISPLAY_ZONE else dt.astimezone()
 
 
@@ -3108,6 +3111,13 @@ def sentiment_terms():
     db.set_setting("sn_custom", json.dumps(custom))
     sn._ENT_CACHE["val"] = None
     return redirect(url_for("sentiment_page"))
+
+
+@app.route("/sentiment/status")
+def sentiment_status():
+    """The collection's live numbers, for the page's progress bar."""
+    import sentiment as sn
+    return jsonify(dict(sn.SENT_STATE))
 
 
 @app.route("/sentiment/collect", methods=["POST"])

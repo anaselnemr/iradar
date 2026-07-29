@@ -113,6 +113,12 @@
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
   .sn-search { display: flex; gap: 8px; margin: 0 0 12px; }
+  .sn-note { font-size: 12.5px; color: var(--muted); }
+  .snp-track { height: 8px; border-radius: 999px; background: var(--hover);
+               border: 1px solid var(--line); overflow: hidden; }
+  .snp-fill { height: 100%; border-radius: 999px; width: 0;
+              background: linear-gradient(90deg, #6d78e0, #8b5cf6);
+              transition: width .6s ease; }
   .terms > summary { list-style: none; cursor: pointer; }
   .terms > summary::-webkit-details-marker { display: none; }
   .terms > summary::after { content: " \25BE"; color: var(--muted);
@@ -148,12 +154,19 @@
       button.{% if last_collected %} Last collected
       {{ last_collected|localtime }}.{% endif %}</p>
 
-    {% if sstate.running %}
-    <p style="margin:12px 0 0"><b>Collecting…</b> {{ sstate.message }}
-      ({{ sstate.done }}/{{ sstate.total }}, {{ sstate.found }} seen,
-      {{ sstate.new }} new). Reload to update.</p>
-    {% elif is_admin %}
-    <div class="sn-actions">
+    <div id="snprog" {% if not sstate.running %}hidden{% endif %}
+         style="margin:12px 0 0">
+      {#- the same bar the capture run wears, in miniature: a track, a
+          gradient fill, and the numbers underneath - fed live by a poll,
+          not by asking a person to press reload -#}
+      <div class="snp-track"><div class="snp-fill" id="snpfill"
+           style="width:{{ (sstate.done * 100 / sstate.total)|round|int if sstate.total else 0 }}%"></div></div>
+      <p class="muted" style="margin:6px 0 0; font-size:12.5px"
+         id="snptext"><b>Collecting</b> — {{ sstate.message or 'starting…' }}
+        · {{ sstate.done }}/{{ sstate.total }} · {{ sstate.new }} new</p>
+    </div>
+    {% if not sstate.running and is_admin %}
+    <div class="sn-actions" id="snactions">
       <form method="post" action="{{ url_for('sentiment_collect') }}">
         <button type="submit">Collect mentions</button>
       </form>
@@ -164,6 +177,8 @@
           Score the tone</button>
       </form>
       {% endif %}
+      <span class="sn-note">Runs by itself after every page check — the
+        button is for whenever you want it sooner.</span>
     </div>
     {% endif %}
 
@@ -335,6 +350,26 @@
 </div>
 
 <script>
+(function () {
+  // while a collection runs, the bar feeds itself - and when the run ends,
+  // one reload shows the fresh families and counts
+  var prog = document.getElementById('snprog');
+  if (prog && !prog.hidden) {
+    var poll = setInterval(function () {
+      fetch('{{ url_for("sentiment_status") }}')
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          if (!s.running) { clearInterval(poll); location.reload(); return; }
+          var pct = s.total ? Math.round(s.done * 100 / s.total) : 0;
+          document.getElementById('snpfill').style.width = pct + '%';
+          document.getElementById('snptext').innerHTML =
+            '<b>Collecting</b> — ' + (s.message || '…') + ' · ' + s.done +
+            '/' + s.total + ' · ' + s.new + ' new';
+        })
+        .catch(function () {});
+    }, 2500);
+  }
+})();
 (function () {
   // a family card opens into its own scrollable list, fetched once
   document.querySelectorAll('.fam').forEach(function (f) {
