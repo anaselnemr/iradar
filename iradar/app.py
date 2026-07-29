@@ -5080,6 +5080,7 @@ def search_items():
     con.close()
     has_more = browse and pageno * per_page < browse_total
     return render_template("search.html", q=q, cat=cat,
+                           run_state=dict(runner.RUN_STATE),
                            pills=[(k, l) for k, l, _f in SEARCH_PILLS],
                            pill_labels=PILL_LABELS, page_hits=page_hits,
                            text_hits=text_hits,

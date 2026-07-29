@@ -119,6 +119,8 @@
   .snp-fill { height: 100%; border-radius: 999px; width: 0;
               background: linear-gradient(90deg, #6d78e0, #8b5cf6);
               transition: width .6s ease; }
+  /* idle: the track stays, the colour goes */
+  #snprog:not(.snp-live) .snp-track { opacity: .55; }
   .terms > summary { list-style: none; cursor: pointer; }
   .terms > summary::-webkit-details-marker { display: none; }
   .terms > summary::after { content: " \25BE"; color: var(--muted);
@@ -159,16 +161,22 @@
       {%- if capture_running %} — one is running now, collection starts when
       it finishes{% endif %}.</p>
 
-    <div id="snprog" {% if not sstate.running %}hidden{% endif %}
+    {#- the bar is FURNITURE, not an event: always here, grey and empty
+        when nothing collects, filling live when something does. An empty
+        track says "this is where you will see it" better than a blank. -#}
+    <div id="snprog" class="{{ 'snp-live' if sstate.running }}"
          style="margin:12px 0 0">
-      {#- the same bar the capture run wears, in miniature: a track, a
-          gradient fill, and the numbers underneath - fed live by a poll,
-          not by asking a person to press reload -#}
       <div class="snp-track"><div class="snp-fill" id="snpfill"
-           style="width:{{ (sstate.done * 100 / sstate.total)|round|int if sstate.total else 0 }}%"></div></div>
-      <p class="muted" style="margin:6px 0 0; font-size:12.5px"
-         id="snptext"><b>Collecting</b> — {{ sstate.message or 'starting…' }}
-        · {{ sstate.done }}/{{ sstate.total }} · {{ sstate.new }} new</p>
+           style="width:{{ (sstate.done * 100 / sstate.total)|round|int if sstate.running and sstate.total else 0 }}%"></div></div>
+      <p class="muted" style="margin:6px 0 0; font-size:12.5px" id="snptext">
+        {%- if sstate.running -%}
+        <b>Collecting</b> — {{ sstate.message or 'starting…' }}
+        · {{ sstate.done }}/{{ sstate.total }} · {{ sstate.new }} new
+        {%- elif capture_running -%}
+        idle — a page check is running; collection starts when it finishes
+        {%- else -%}
+        idle — fills while a collection runs
+        {%- endif -%}</p>
     </div>
     {% if not sstate.running and is_admin %}
     <div class="sn-actions" id="snactions">
@@ -357,12 +365,19 @@
   // while a collection runs, the bar feeds itself - and when the run ends,
   // one reload shows the fresh families and counts
   var prog = document.getElementById('snprog');
-  if (prog && !prog.hidden) {
-    var poll = setInterval(function () {
+  if (prog) {
+    var wasRunning = prog.classList.contains('snp-live');
+    setInterval(function () {
       fetch('{{ url_for("sentiment_status") }}')
         .then(function (r) { return r.json(); })
         .then(function (s) {
-          if (!s.running) { clearInterval(poll); location.reload(); return; }
+          if (!s.running) {
+            // a pass that just ENDED deserves one reload for fresh counts
+            if (wasRunning) { location.reload(); }
+            return;
+          }
+          wasRunning = true;
+          prog.classList.add('snp-live');
           var pct = s.total ? Math.round(s.done * 100 / s.total) : 0;
           document.getElementById('snpfill').style.width = pct + '%';
           document.getElementById('snptext').innerHTML =
@@ -370,7 +385,7 @@
             '/' + s.total + ' · ' + s.new + ' new';
         })
         .catch(function () {});
-    }, 2500);
+    }, 3500);
   }
 })();
 (function () {

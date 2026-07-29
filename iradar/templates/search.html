@@ -250,7 +250,32 @@
             cursor: pointer; text-decoration: underline; vertical-align: middle; }
 </style>
 
+<style>
+  .cnp-track { height: 8px; border-radius: 999px; background: var(--hover);
+               border: 1px solid var(--line); overflow: hidden; }
+  .cnp-fill { height: 100%; border-radius: 999px; width: 0;
+              background: linear-gradient(90deg, #6d78e0, #8b5cf6);
+              transition: width .6s ease; }
+  #cnprog:not(.cnp-live) .cnp-track { opacity: .55; }
+</style>
 <div class="hero">
+  {#- the capture run's bar as furniture: the library grows while a check
+      runs, so the page that shows the library shows the run - grey and
+      empty when nothing is running -#}
+  {% set _running = run_state.get('running') %}
+  <div id="cnprog" class="{{ 'cnp-live' if _running }}"
+       style="margin:0 0 12px">
+    <div class="cnp-track"><div class="cnp-fill" id="cnpfill"
+         style="width:{{ (run_state.get('done', 0) * 100 / run_state.get('total', 1))|round|int if _running and run_state.get('total') else 0 }}%"></div></div>
+    <p class="muted" style="margin:5px 0 0; font-size:12.5px" id="cnptext">
+      {%- if _running -%}
+      <b>Page check running</b> — {{ run_state.get('done', 0) }}/{{ run_state.get('total', 0) }}
+      · new captures land here as they are read
+      {%- else -%}
+      idle — fills while a page check runs
+      {%- endif -%}</p>
+  </div>
+
   <p class="muted" style="margin:0">Everything we captured, in one library —
     <b>{{ '{:,}'.format(indexed) }}</b> assets{% if ccounts.get('pages') %} across
     <b>{{ '{:,}'.format(ccounts['pages']) }}</b> live pages{% endif %}.
@@ -778,5 +803,35 @@ document.querySelectorAll('.famall').forEach(function (b) {
   box.addEventListener('toggle', label, true);
   label();
 });
+</script>
+<script>
+(function () {
+  var prog = document.getElementById('cnprog');
+  if (!prog) return;
+  var wasRunning = prog.classList.contains('cnp-live');
+  setInterval(function () {
+    fetch('{{ url_for("status") }}')
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (!s.running) {
+          if (wasRunning) {
+            wasRunning = false;
+            prog.classList.remove('cnp-live');
+            document.getElementById('cnptext').textContent =
+              'idle — fills while a page check runs';
+          }
+          return;
+        }
+        wasRunning = true;
+        prog.classList.add('cnp-live');
+        var pct = s.total ? Math.round(s.done * 100 / s.total) : 0;
+        document.getElementById('cnpfill').style.width = pct + '%';
+        document.getElementById('cnptext').innerHTML =
+          '<b>Page check running</b> — ' + s.done + '/' + s.total +
+          ' · new captures land here as they are read';
+      })
+      .catch(function () {});
+  }, 4000);
+})();
 </script>
 {% endblock %}
