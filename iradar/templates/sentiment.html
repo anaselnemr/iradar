@@ -181,8 +181,6 @@
         {%- if sstate.running -%}
         <b>Collecting</b> — {{ sstate.message or 'starting…' }}
         · {{ sstate.done }}/{{ sstate.total }} · {{ sstate.new }} new
-        {%- elif capture_running -%}
-        waiting — a page check is running, collection follows it
         {%- else -%}
         idle — fills while a collection runs
         {%- endif -%}</p>
@@ -400,9 +398,7 @@
           prog.classList.remove('snp-live');
           fill.style.width = '0%';
           pctEl.textContent = '0%';
-          textEl.textContent = s.capture_running
-            ? 'waiting — a page check is running, collection follows it'
-            : 'idle — fills while a collection runs';
+          textEl.textContent = 'idle — fills while a collection runs';
         })
         .catch(function () {});
     }, 3500);

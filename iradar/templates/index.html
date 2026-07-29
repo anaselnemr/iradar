@@ -93,6 +93,18 @@
     </div>
   </div>
 
+  {#- the run box's seat is never empty: a grey track holds the spot when
+      nothing runs, so the bar is furniture rather than an event. The poll
+      swaps the two the moment a check starts or ends. -#}
+  <div id="runidle" style="display:{{ 'none' if state.running else 'block' }}; margin:2px 0 14px">
+    <div style="display:flex; align-items:center; gap:10px">
+      <div style="flex:1 1 auto; height:10px; border-radius:999px; background:var(--hover); border:1px solid var(--line)"></div>
+      <span style="flex:0 0 auto; min-width:3.2ch; text-align:right; font-size:12px; font-weight:700; color:var(--muted); font-variant-numeric:tabular-nums">0%</span>
+    </div>
+    <p class="muted" style="margin:5px 0 0; font-size:12.5px">idle — fills
+      while a page check runs</p>
+  </div>
+
   <div id="runbox" style="display:{{ 'block' if state.running else 'none' }}">
     <style>
       /* ---- run pipeline: stepper + one page-bucket bar --------------------
@@ -825,6 +837,8 @@ async function poll() {
   try {
     const r = await fetch('/status'); const s = await r.json();
     const box = document.getElementById('runbox');
+    const idle = document.getElementById('runidle');
+    if (idle) idle.style.display = s.running ? 'none' : 'block';
     if (s.running) {
       sawRunning = true;
       isPaused = !!s.paused;
