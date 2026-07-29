@@ -108,6 +108,12 @@
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
   .sn-search { display: flex; gap: 8px; margin: 0 0 12px; }
+  .sspin { position: absolute; right: 40px; top: 50%; width: 15px; height: 15px;
+           margin-top: -7.5px; border: 2px solid var(--line);
+           border-top-color: var(--accent); border-radius: 50%; opacity: 0;
+           transition: opacity .15s; pointer-events: none; }
+  .sspin.on { opacity: 1; animation: snspin .7s linear infinite; }
+  @keyframes snspin { to { transform: rotate(360deg); } }
   .sn-note { font-size: 12.5px; color: var(--muted); }
   .snp-row { display: flex; align-items: center; gap: 10px; }
   .snp-track { flex: 1 1 auto; height: 10px; border-radius: 999px;
@@ -204,24 +210,24 @@
         {%- if sstate.running -%}
         <b>Collecting</b> — {{ sstate.message or 'starting…' }}
         · {{ sstate.done }}/{{ sstate.total }} · {{ sstate.new }} new
-        {%- else -%}
-        idle — fills while a collection runs
         {%- endif -%}</p>
     </div>
 
-    <form method="get" class="sn-search" autocomplete="off" style="margin-top:14px">
+    <form method="get" class="sn-search" autocomplete="off" id="snform"
+          style="margin-top:14px">
       <span class="sbar sbar-lg grow">
         <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
         <input type="text" name="q" value="{{ q }}" id="snq"
                placeholder="Search mentions — a part, a tool, an author…">
+        <span class="sspin" id="snspin" aria-hidden="true"></span>
         <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"
-                onclick="var i=document.getElementById('snq'); i.value=''; i.form.submit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+                onclick="var i=document.getElementById('snq'); i.value=''; i.form.requestSubmit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </span>
       {% if sel_entity %}<input type="hidden" name="entity" value="{{ sel_entity }}">{% endif %}
       {% if sel_source %}<input type="hidden" name="source" value="{{ sel_source }}">{% endif %}
-      <button type="submit">Search</button>
+      <button type="submit" id="snbtn">Search</button>
     </form>
   </div>
 
@@ -318,7 +324,7 @@
   </div>
   {% endif %}
 
-  <div class="card">
+  <div class="card" id="snresults">
     <h3 style="margin:0 0 12px">
       Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}
       <span class="muted" style="font-weight:400; font-size:12.5px">—
@@ -386,7 +392,7 @@
           prog.classList.remove('snp-live');
           fill.style.width = '0%';
           pctEl.textContent = '0%';
-          textEl.textContent = 'idle — fills while a collection runs';
+          textEl.textContent = '';
         })
         .catch(function () {});
     }, 3500);
@@ -448,11 +454,53 @@
       }
     });
   });
-  // Esc clears the search, same as Content
-  var sq = document.getElementById('snq');
-  if (sq) sq.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { sq.value = ''; sq.form.submit(); }
-  });
+  // Content's own live search, pointed at this page: debounced fetch of
+  // the same URL, swap the results card in place, keep the address bar
+  // honest. One definition of a result - the server's - either way in.
+  var input = document.getElementById('snq');
+  var form = document.getElementById('snform');
+  var btn = document.getElementById('snbtn');
+  var spin = document.getElementById('snspin');
+  if (input && form && window.fetch && window.DOMParser) {
+    var timer = null, seq = 0, lastSent = null;
+    var run = function (q) {
+      var p = new URLSearchParams(location.search);
+      if (q) { p.set('q', q); } else { p.delete('q'); }
+      var url = location.pathname + (p.toString() ? '?' + p.toString() : '');
+      if (url === lastSent) return;
+      lastSent = url;
+      var mine = ++seq;
+      if (spin) spin.classList.add('on');
+      fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          if (mine !== seq) return;   // an older answer never wins
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var fresh = doc.getElementById('snresults');
+          var here = document.getElementById('snresults');
+          if (fresh && here) here.replaceWith(fresh);
+          history.replaceState(null, '', url);
+        })
+        .catch(function () {})
+        .then(function () {
+          if (mine === seq && spin) spin.classList.remove('on');
+        });
+    };
+    input.addEventListener('input', function () {
+      clearTimeout(timer);
+      var q = input.value.trim();
+      timer = setTimeout(function () { run(q); }, 220);
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearTimeout(timer);
+      run(input.value.trim());
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { input.value = ''; run(''); }
+    });
+    if (btn) btn.style.display = 'none';   // nothing left for it to do
+  }
 })();
 </script>
 {% endblock %}
