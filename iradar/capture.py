@@ -274,7 +274,7 @@ CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
 #       flagged +3/-3 on 4387 -> 4382 with nothing else touched. The price is
 #       still watched structurally, where "N in stock" is stripped before
 #       comparing and a real price move still counts.
-TEXT_REV = 5
+TEXT_REV = 6
 
 # The volatile-but-structured sections, excluded from every RAW signal (text,
 # image inventory, screenshot judgement) and left to the structured library,
@@ -295,9 +295,20 @@ PRICE_SEL = ('[class*="price-container" i], [class*="buyingoption" i], '
              '[class*="buying-option" i], [class*="product-price" i], '
              '[class*="unitprice" i]')
 
+# The ORDERING-OPTIONS table (OPN rows) is the stock counter's third home:
+# eval-board pages render the quantity again inside a hidden tab pane
+# ('multipleopn'), OUTSIDE every price-named container, which is how "533"
+# flagged change #7097 the day boards started selling. The same table
+# carries "Infineon stock last updated: <date>", which would have flapped
+# every page weekly. The spans are named too, in case the table ever gets a
+# new wrapper - a stock-qty span can never be page content.
+_STOCK_SEL = ('[class*="multipleopn" i], [class*="stock-qty" i], '
+              '[class*="stock-message" i], '
+              '[class*="container-stock-update" i]')
+
 VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
                 ".documents_ifx, .ifx_documents_products, .partner-ul-box, "
-                + PRICE_SEL)
+                + _STOCK_SEL + ", " + PRICE_SEL)
 
 # Revision of what the SCREENSHOT shows, stamped alongside text_rev and gated
 # the same way by compare: across a shot_rev change the pixel/height signal is
@@ -373,7 +384,7 @@ FEED_RECTS_JS = r"""
 #       captures. Their per-item imgs are watched by the library instead.
 #   4 - VOLATILE_SEL grew to cover the price/stock block, so anything pictured
 #       inside it (a distributor mark) leaves the inventory with it.
-IMG_REV = 4
+IMG_REV = 5
 
 # Revision of the STRUCTURED read - the library, the sections, the price -
 # stamped like the other three and gated the same way by compare.
