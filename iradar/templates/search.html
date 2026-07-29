@@ -385,7 +385,8 @@
     <div class="viewhead">Per page</div>
     <div class="viewrow">
       {% for nper in per_choices %}
-      <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ burl(n=nper, page=1) }}">{{ nper }}</a>
+      <a class="sortopt {{ 'on' if per_page == nper }}" data-per="{{ nper }}"
+         href="{{ burl(n=nper, page=1) }}">{{ nper }}</a>
       {% endfor %}
     </div>
     <div class="viewhead">Size</div>

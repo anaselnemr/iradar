@@ -19,7 +19,8 @@
     <div class="viewhead">Per page</div>
     <div class="viewrow">
       {% for nper in per_choices %}
-      <a class="sortopt {{ 'on' if per_page == nper }}" href="{{ perurl(nper) }}">{{ nper }}</a>
+      <a class="sortopt {{ 'on' if per_page == nper }}" data-per="{{ nper }}"
+         href="{{ perurl(nper) }}">{{ nper }}</a>
       {% endfor %}
     </div>
   </div>

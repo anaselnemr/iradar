@@ -1423,5 +1423,28 @@ document.addEventListener('keydown', function (ev) {
   if (s) s.focus();
 });
 </script>
+<script>
+(function () {
+  // ROWS-PER-PAGE, STICKY PER BROWSER. Picking 100 on the Dashboard should
+  // still mean 100 tomorrow. The choice is remembered per screen in this
+  // browser; arriving WITHOUT ?per= in the address replays it by following
+  // the same link the picker offers - so every other filter survives, and a
+  // URL that explicitly names a per-page always wins over the memory.
+  var KEY = 'iradar-per:' + location.pathname;
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('a[data-per]');
+    if (a) { try { localStorage.setItem(KEY, a.dataset.per); } catch (_) {} }
+  });
+  try {
+    if (new URLSearchParams(location.search).has('per')) return;
+    var want = localStorage.getItem(KEY);
+    if (!want) return;
+    var now = document.querySelector('.viewnow');
+    if (!now || now.textContent.trim() === want) return;
+    var a = document.querySelector('a[data-per="' + want + '"]');
+    if (a) location.replace(a.href);
+  } catch (_) {}
+})();
+</script>
 </body>
 </html>
