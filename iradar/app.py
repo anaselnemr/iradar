@@ -3041,6 +3041,7 @@ def sentiment_page():
                            avg_all=scored["avg"], src_totals=src_totals,
                            filtered_total=filtered_total,
                            last_collected=last_collected,
+                           capture_running=bool(runner.RUN_STATE.get("running")),
                            terms=terms, removed_terms=removed_terms,
                            mention_counts=mention_counts,
                            sources=sn.SOURCES,

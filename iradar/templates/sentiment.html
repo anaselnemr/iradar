@@ -148,11 +148,16 @@
 <div class="sn-wrap">
   <div class="card">
     <h2 style="margin:0 0 5px">Sentiment analysis</h2>
-    <p class="muted" style="margin:0; max-width:74ch">Mentions of the watched
-      product families across the places engineers actually talk — refreshed
-      on its own after every check, or whenever an admin presses the
-      button.{% if last_collected %} Last collected
-      {{ last_collected|localtime }}.{% endif %}</p>
+    {#- one line of what, one quiet line of when. The old lede said four
+        things in three ragged lines and read as a paragraph nobody asked
+        for. -#}
+    <p class="muted" style="margin:0">What the world says about the watched
+      product families.</p>
+    <p class="muted" style="margin:4px 0 0; font-size:12.5px">
+      {%- if last_collected %}Last collected {{ last_collected|localtime }}
+      · {% endif %}runs by itself after every page check
+      {%- if capture_running %} — one is running now, collection starts when
+      it finishes{% endif %}.</p>
 
     <div id="snprog" {% if not sstate.running %}hidden{% endif %}
          style="margin:12px 0 0">
@@ -177,8 +182,6 @@
           Score the tone</button>
       </form>
       {% endif %}
-      <span class="sn-note">Runs by itself after every page check — the
-        button is for whenever you want it sooner.</span>
     </div>
     {% endif %}
 
