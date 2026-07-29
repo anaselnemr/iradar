@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0.."
 REM ============================================================
 REM  iRadar - launch + temporary public link.
 REM  Starts the app AND creates a temporary internet URL so you
@@ -21,7 +22,7 @@ if not exist .venv\Scripts\activate.bat (
   exit /b 1
 )
 call .venv\Scripts\activate.bat
-start "iRadar server" cmd /k python app.py
+start "iRadar server" cmd /k python iradarpp.py
 timeout /t 4 /nobreak >nul
 start "" https://loca.lt/mytunnelpassword
 echo Your stable link: https://infineonwatch-anas.loca.lt

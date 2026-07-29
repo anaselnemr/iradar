@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "iradar"))
 """Command-line helper (optional - everything can also be done in the web UI).
 
   python cli.py add <url> [<url> ...]     add URLs

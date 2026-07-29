@@ -16,7 +16,7 @@ os.environ.pop("DASH_USER", None)
 os.environ.pop("DASH_PASS", None)
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "iradar"))
 import db                                          # noqa: E402
 from run_tests import Skip                         # noqa: E402
 

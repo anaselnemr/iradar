@@ -4,7 +4,12 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+# data/ lives at the REPO root - one level above this package - because
+# that is where the server's volume mounts (/app/data) and where every
+# existing installation already keeps it. Deriving it from this file's own
+# folder after the move into iradar/ would have pointed production at an
+# empty /app/iradar/data while the real database sat right there.
+BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 SNAP_DIR = DATA_DIR / "snapshots"
 CHANGE_DIR = DATA_DIR / "changes"

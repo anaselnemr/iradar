@@ -8,11 +8,11 @@ pixel-by-pixel). Everything runs locally on your PC — no accounts, no cloud.
 
 1. Install Python 3.10+ from https://www.python.org/downloads/
    — during install, **tick "Add Python to PATH"**.
-2. Double-click **`SETUP.bat`** and wait for "Setup finished".
+2. Double-click **`local\SETUP.bat`** and wait for "Setup finished".
 
 ## Daily use
 
-1. Double-click **`START.bat`**. A browser tab opens at http://127.0.0.1:5000.
+1. Double-click **`local\START.bat`**. A browser tab opens at http://127.0.0.1:5000.
 2. Add URLs: paste them into the box (one per line, or any messy text —
    URLs are auto-extracted), or upload an Excel/CSV/TXT file.
 3. Click **▶ Run check now**. The first run saves a *baseline* for each page.
@@ -38,7 +38,7 @@ have none) — an empty list means the live page really has none.
 
 ## Opening the dashboard from another device
 
-- Same Wi-Fi/network: run START.bat, then open `http://<this-PC's-IP>:5000`
+- Same Wi-Fi/network: run local\START.bat, then open `http://<this-PC's-IP>:5000`
   on the other device (find the IP with `ipconfig`, IPv4 Address).
 - From anywhere: run **START_SHARE.bat** — it prints a temporary
   `https://….loca.lt` link and opens the one-time tunnel password
@@ -113,7 +113,7 @@ minutes it is in front of the team.
 ```
 git checkout dev          # work here
 ...edit, commit...
-python preview.py         # look at it, on your machine
+python scripts/preview.py         # look at it, on your machine
 git push origin dev       # saved to GitHub, still not live
 
 # when it is ready to be live:
@@ -129,9 +129,9 @@ never costs a run.
 ## Looking at a change before it is live
 
 ```
-python preview.py                     demo data, made up on the spot
-python preview.py data/watch.db       a copy of a real database
-python preview.py iradar-backup.gz    a backup straight from Settings
+python scripts/preview.py                     demo data, made up on the spot
+python scripts/preview.py data/watch.db       a copy of a real database
+python scripts/preview.py iradar-backup.gz    a backup straight from Settings
 ```
 
 Opens the whole app on http://127.0.0.1:5055, running whatever branch you
@@ -149,17 +149,17 @@ Advanced → The database** and point `preview.py` at the `.gz` it gives you.
 
 ## Where things live
 
-- `app.py`, `runner.py`, `capture.py`, `compare.py`, `db.py`, `auth.py`,
-  `comments.py`, `sentiment.py`, `asset_watch.py` — the app itself, flat at
-  the root so the imports stay simple.
-- `templates/`, `static/` — the pages and their assets.
+- `iradar/` — the app: its nine modules plus `templates/` and `static/`.
 - `tests/` — `python tests/run_tests.py` runs everything.
-- `preview.py` — run this branch on a throwaway copy: `python preview.py`.
-- `cli.py` — optional command line: `python cli.py add-file urls.txt`, `python cli.py run`.
-- `scripts/` — one-off and occasional tools: the logo generator, disk
-  cleanup, the laptop-to-server migration, the old tunnel launchers.
+- `scripts/` — tools you run by hand: `preview.py` (this branch on a
+  throwaway copy), `cli.py`, the logo generator, disk cleanup, the
+  laptop-to-server migration, the old tunnel launchers.
+- `local/` — the double-click launchers for running on a Windows machine:
+  SETUP.bat once, then START.bat.
 - `docs/` — the deploy notes, the Confluence page and its images, the
-  future-ideas list.
-- `data/watch.db` — the database (URLs, results). Back this up if you care.
-- `data/snapshots/` — stored page captures.
-- `data/changes/` — visual-diff images for flagged changes.
+  future-ideas list, the original URL seed.
+- `data/` — the database (`watch.db` — back this up if you care), stored
+  page captures, and visual-diff images. Lives at the root because that is
+  where the server's volume mounts.
+- Root keeps only what build tools demand: Dockerfile, railway.json,
+  requirements.txt, this file.

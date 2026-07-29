@@ -23,7 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-sys.path.insert(0, str(ROOT))     # so tests can `import compare, db, app, runner`
+sys.path.insert(0, str(ROOT / "iradar"))     # so tests can `import compare, db, app, runner`
 
 
 class Skip(Exception):

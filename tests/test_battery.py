@@ -18,7 +18,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "iradar"))
 import compare as cmp      # noqa: E402
 
 # --- one synthetic but realistic snapshot -----------------------------------

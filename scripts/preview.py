@@ -28,8 +28,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "iradar"))
 
 PORT = 5055
 DEMO_EMAIL = "you@preview.local"

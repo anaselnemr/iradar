@@ -7,7 +7,7 @@ at capture, so a mistyped page self-heals), plus the URL-normalising helpers.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "iradar"))
 import db  # noqa: E402
 
 

@@ -55,4 +55,4 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
 # app.py serves on waitress and starts the scheduler, the capture runner and
 # the housekeeping threads in this same process - it is the whole application,
 # not just a web server, so it is the entrypoint.
-CMD ["python", "app.py"]
+CMD ["python", "iradar/app.py"]

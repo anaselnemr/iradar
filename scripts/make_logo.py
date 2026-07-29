@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-OUT = Path(__file__).parent / "static"
+OUT = Path(__file__).resolve().parent.parent / "iradar" / "static"
 SS = 6                       # supersample factor
 
 # the app's own accent pair, so the mark is the same colour as the interface

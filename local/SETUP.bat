@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0.."
 REM ============================================================
 REM  iRadar - one-time setup. Run this ONCE.
 REM  Needs Python 3.10+ installed (python.org, "Add to PATH" ticked).
@@ -23,7 +24,7 @@ echo [3/4] Downloading the browser engine (~150 MB, one time)...
 python -m playwright install chromium
 echo.
 echo [4/4] Preparing the database...
-python -c "import db; db.init_db(); print('Database ready.')"
+python -c "import sys; sys.path.insert(0, 'iradar'); import db; db.init_db(); print('Database ready.')"
 echo.
 echo ============================================================
 echo  Setup finished! Double-click START.bat to launch the tool.
