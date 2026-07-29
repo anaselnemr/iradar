@@ -75,9 +75,9 @@ have none) — an empty list means the live page really has none.
 ## Scheduling
 
 Settings → choose **daily / every 2 days / weekly**, plus day and hour.
-The scheduled check fires as long as the START.bat window is open.
-Tip: if the PC was asleep at the scheduled time, just press "Run check now",
-or leave the window running on an always-on machine.
+The live site (https://iradar.net) runs on a server, so scheduled checks
+fire on their own — nothing needs to stay open anywhere. (Running locally
+instead, the check fires as long as the START.bat window is open.)
 
 ## How change detection works (3 layers)
 
@@ -147,10 +147,19 @@ The most useful mode is the middle one: your changes, against real data, at
 real scale, with nothing at risk. Download a backup from **Settings →
 Advanced → The database** and point `preview.py` at the `.gz` it gives you.
 
-## Files
+## Where things live
 
+- `app.py`, `runner.py`, `capture.py`, `compare.py`, `db.py`, `auth.py`,
+  `comments.py`, `sentiment.py`, `asset_watch.py` — the app itself, flat at
+  the root so the imports stay simple.
+- `templates/`, `static/` — the pages and their assets.
+- `tests/` — `python tests/run_tests.py` runs everything.
+- `preview.py` — run this branch on a throwaway copy: `python preview.py`.
+- `cli.py` — optional command line: `python cli.py add-file urls.txt`, `python cli.py run`.
+- `scripts/` — one-off and occasional tools: the logo generator, disk
+  cleanup, the laptop-to-server migration, the old tunnel launchers.
+- `docs/` — the deploy notes, the Confluence page and its images, the
+  future-ideas list.
 - `data/watch.db` — the database (URLs, results). Back this up if you care.
 - `data/snapshots/` — stored page captures.
 - `data/changes/` — visual-diff images for flagged changes.
-- `preview.py` — run this branch on a throwaway copy: `python preview.py`.
-- `cli.py` — optional command line: `python cli.py add-file urls.txt`, `python cli.py run`.

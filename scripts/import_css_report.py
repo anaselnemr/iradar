@@ -1,6 +1,7 @@
 import sys, re, json, os
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0,'.'); import db
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); import db
 from openpyxl import load_workbook
 
 # the workbook to read. Overridable so the app can re-apply it automatically

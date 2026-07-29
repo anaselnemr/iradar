@@ -25,4 +25,4 @@ start "iRadar server" cmd /k python app.py
 timeout /t 4 /nobreak >nul
 start "" https://loca.lt/mytunnelpassword
 echo Your stable link: https://infineonwatch-anas.loca.lt
-call tunnel_keepalive.cmd
+call scripts\tunnel_keepalive.cmd

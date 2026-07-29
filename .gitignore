@@ -25,3 +25,4 @@ iradar-*.tar.gz
 
 # regenerable screenshots for the wiki page; the text itself IS tracked
 confluence/images/
+.claude/
