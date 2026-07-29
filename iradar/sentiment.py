@@ -249,6 +249,18 @@ def parse_reddit(payload):
 # mezzanine standard (VITA 42), Calypso an orchid genus / music / a transit
 # standard, TriCore generic-sounding. A bare word-match is not enough for
 # these - the text must also carry one of the family's context words.
+# The same letters meaning something else entirely: "PSOC" in a health
+# forum is a typo of PCOS (polycystic ovary syndrome) and has nothing to do
+# with microcontrollers. No model needed - the give-away words are always
+# in the text, so a token can carry NEGATIVE context: any of these present
+# and the mention is rejected no matter what else matches.
+_NEGATIVE_CTX = {
+    "psoc": ("pcos", "ovar", "hormon", "fertilit", "cyst", "insulin",
+             "metformin", "menstru", "period", "spironolactone", "diagnos"),
+    "calypso": ("orchid", "song", "album", "band", "music", "beach"),
+    "merus": ("winery", "wine", "cabernet"),
+}
+
 _AMBIGUOUS_CTX = {
     "xmc": ("infineon", "microcontroller", "mcu", "xmc1", "xmc4", "dave"),
     "calypso": ("infineon", "smart card", "smartcard", "javacard", "nfc",
@@ -275,10 +287,17 @@ def _relevant(m, query):
         # generic-family thread that never names the maker is not evidence
         # about the maker.
         return "infineon" in text
+    hay = text + " " + (m.get("url") or "").lower()
     for t in toks:
         # left edge hard; right edge allows digits/symbols but not letters,
         # so 'psoc6' and 'xmc4700' match while 'calypsoinae' does not
         if not re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z])", text):
+            continue
+        # the letters can belong to a different world entirely - "psoc" in
+        # an r/PCOS thread is a typo for a syndrome, not a microcontroller.
+        # The URL counts as evidence too: the subreddit is right there in it.
+        neg = _NEGATIVE_CTX.get(t)
+        if neg and any(n in hay for n in neg):
             continue
         ctx = _AMBIGUOUS_CTX.get(t)
         if not ctx or any(c in text for c in ctx):
@@ -297,7 +316,7 @@ SE_SITES = ("electronics", "stackoverflow", "arduino", "raspberrypi")
 def collect_stackexchange(query):
     out = []
     for site in SE_SITES:
-        for page in (1, 2):
+        for page in (1, 2, 3, 4):
             u = ("https://api.stackexchange.com/2.3/search/advanced?order=desc"
                  "&sort=creation&pagesize=100&page=%d&q=" % page
                  + urllib.parse.quote(query) + "&site=" + site)
@@ -314,7 +333,7 @@ def collect_stackexchange(query):
 
 def collect_hn(query):
     out = []
-    for page in (0, 1):
+    for page in (0, 1, 2, 3):
         u = ("https://hn.algolia.com/api/v1/search?hitsPerPage=100&page=%d"
              "&query=" % page + urllib.parse.quote(query))
         try:
@@ -459,7 +478,7 @@ def collect_github(query):
     if tok:
         head["Authorization"] = "Bearer " + tok
     out = []
-    for page in (1, 2, 3):
+    for page in (1, 2, 3, 4, 5):
         u = ("https://api.github.com/search/issues?per_page=30&page=%d"
              "&sort=created&order=desc&q=" % page + urllib.parse.quote(query))
         try:
@@ -512,7 +531,7 @@ def parse_discourse(payload, host, label):
 def collect_forum(query):
     out = []
     for host, label in DISCOURSE_HOSTS:
-        for page in (1, 2, 3):
+        for page in (1, 2, 3, 4, 5):
             u = ("https://%s/search.json?page=%d&q=%s"
                  % (host, page, urllib.parse.quote(query)))
             try:

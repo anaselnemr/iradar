@@ -394,3 +394,17 @@ def test_no_page_prints_a_raw_timestamp():
             if re.search(r"\[:16\]|\[:19\]", line) and "localtime" not in line:
                 bad.append(f"{tpl.name}:{n}")
     assert not bad, f"raw timestamps still on screen: {bad}"
+
+
+def test_mark_filter_bolds_safely():
+    """The tracked word lights up inside a mention - after escaping, so a
+    hostile title stays inert."""
+    if not _READY:
+        return
+    out = str(app.mark_filter("PSoC 6 vs psoc4 <script>alert(1)</script>",
+                              "PSOC"))
+    assert "<b>PSoC</b>" in out
+    assert "<b>psoc4</b>" in out or "<b>psoc</b>4" in out
+    assert "<script>" not in out and "&lt;script&gt;" in out
+    out2 = str(app.mark_filter("Infineon CY8C4247 kit", "PSOC"))
+    assert "<b>Infineon</b>" in out2 and "<b>CY8C4247</b>" in out2 or "<b>CY8C</b>4247" in out2

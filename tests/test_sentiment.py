@@ -257,3 +257,22 @@ def test_aliases_and_query_repair():
     assert "CYW43" in sn._ALIASES["AIROC"]
     # trailing joining words are cut, not searched
     assert "and" in sn._QUERY_STOP and "for" in sn._QUERY_STOP
+
+
+def test_negative_context_rejects_the_other_psoc():
+    """'PSOC' in a health thread is a typo of PCOS, not a microcontroller.
+    The give-away words are always right there, so the gate carries negative
+    context per token - and the URL counts as evidence, because the
+    subreddit is in it."""
+    assert not sn._relevant({"title": "My PSOC diagnosis journey",
+                             "body": "metformin and hormones",
+                             "url": "https://reddit.com/r/PCOS/x"}, "PSOC")
+    assert not sn._relevant({"title": "psoc flare and insulin resistance",
+                             "body": "", "url": ""}, "PSOC")
+    # the URL alone is enough
+    assert not sn._relevant({"title": "psoc rant", "body": "",
+                             "url": "https://www.reddit.com/r/PCOSloseit/1"},
+                            "PSOC")
+    # and the real thing still passes clean
+    assert sn._relevant({"title": "PSoC 6 CapSense tuning", "body": "",
+                         "url": "https://community.infineon.com/x"}, "PSOC")

@@ -2940,6 +2940,34 @@ def assets_run():
 # that stays is the capture run: collection and a check share the network, so
 # collect waits its turn. Both POSTs are admin-only via the default-deny rule.
 
+_MARK_CACHE = {}
+
+
+@app.template_filter("mark")
+def mark_filter(text, entity):
+    """Bold the tracked words inside a mention, safely.
+
+    The text is ESCAPED FIRST and the tags are added after, so a title that
+    contains markup stays inert. The pattern per family - its name, its
+    aliases, and "infineon" itself - is compiled once and cached; the same
+    word-edges as the relevance gate, so what got a mention kept is exactly
+    what lights up."""
+    import re as _re
+
+    import markupsafe
+    import sentiment as sn
+    rx = _MARK_CACHE.get(entity)
+    if rx is None:
+        terms = {entity, "infineon"} | set(sn._ALIASES.get(entity, ()))
+        terms |= {w for w in entity.split() if len(w) > 3}
+        pat = "|".join(sorted((_re.escape(t) for t in terms if t),
+                              key=len, reverse=True))
+        rx = _re.compile("(?<![A-Za-z0-9])(" + pat + ")(?![A-Za-z])", _re.I)
+        _MARK_CACHE[entity] = rx
+    escaped = str(markupsafe.escape(text or ""))
+    return markupsafe.Markup(rx.sub(r"<b>\1</b>", escaped))
+
+
 @app.route("/sentiment")
 def sentiment_page():
     import sentiment as sn

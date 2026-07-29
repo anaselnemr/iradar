@@ -8,13 +8,13 @@
     <div class="mn-title">
       <span class="sic sic-{{ m.source }}"
             title="{{ (sources | selectattr('key', 'equalto', m.source) | map(attribute='label') | first) or m.source }}">{{ si.icon(m.source) }}</span>
-      <a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>
+      <a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title|mark(m.entity) }}</a>
     </div>
     {% if m.score is not none %}
     <div class="mn-score" style="color:{{ '#16a34a' if m.score > 0.15 else ('#dc2626' if m.score < -0.15 else 'var(--muted)') }}">
       {{ '%+.1f'|format(m.score) }}</div>
     {% endif %}
-    {% if m.body %}<div class="mn-body">{{ m.body[:220] }}</div>{% endif %}
+    {% if m.body %}<div class="mn-body">{{ m.body[:220]|mark(m.entity) }}</div>{% endif %}
     <div class="mn-meta">
       {% if not sel_entity %}<a href="{{ url_for('sentiment_page', entity=m.entity) }}"
          style="color:var(--muted); font-weight:600">{{ m.entity }}</a> ·{% endif %}
