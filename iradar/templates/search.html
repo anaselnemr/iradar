@@ -252,10 +252,6 @@
 
 <div class="hero">
 
-  <p class="muted" style="margin:0">Everything we captured, in one library —
-    <b>{{ '{:,}'.format(indexed) }}</b> assets{% if ccounts.get('pages') %} across
-    <b>{{ '{:,}'.format(ccounts['pages']) }}</b> live pages{% endif %}.
-    Browse it all, filter by type, search before or after.</p>
   <form method="get" class="bigsearch" id="sform" autocomplete="off">
     {#- type=text, not type=search: every input rule on the site is written
         against input[type=text], so a search input silently loses all of them
