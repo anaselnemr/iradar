@@ -11,7 +11,7 @@ proxy. The five MX records survived, so email forwarding still works.
 
 ## 1. Create the service
 
-Railway → **New Project** → **Deploy from GitHub repo** → `anaselnemr/InfineonWatch`.
+Railway → **New Project** → **Deploy from GitHub repo** → `anaselnemr/iradar`.
 
 `railway.json` tells Railway to build the Dockerfile rather than guess. Do not
 let it pick a Python buildpack: the buildpack installs Python but not the sixty

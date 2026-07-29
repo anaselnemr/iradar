@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Zero-dependency test runner for InfineonWatch.
+"""Zero-dependency test runner for iRadar.
 
 No pytest, no install: just `python tests/run_tests.py` (or `.venv/Scripts/
 python.exe tests/run_tests.py`). It imports every tests/test_*.py, runs every
