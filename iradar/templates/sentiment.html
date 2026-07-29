@@ -9,17 +9,12 @@
 <style>
   .sn-wrap { max-width: 1000px; margin: 0 auto; }
 
-  /* the figures strip, same bones as Help's */
-  .sn-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-             gap: 1px; background: var(--line); border: 1px solid var(--line);
-             border-radius: 12px; overflow: hidden; margin-top: 14px; }
-  @media (max-width: 620px) { .sn-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .sn-fig { background: var(--card); padding: 14px 16px; text-align: center; }
-  .sn-fig .n { font-size: 22px; font-weight: 700; letter-spacing: -.5px;
-               font-variant-numeric: tabular-nums; }
-  .sn-fig .l { font-size: 11.5px; color: var(--muted);
-               text-transform: uppercase; letter-spacing: .05em;
-               margin-top: 3px; }
+  /* the phone shrink the Dashboard's stat row wears, mirrored */
+  @media (max-width: 640px) {
+    .stat { padding: 4px 8px; }
+    .stat .n { font-size: 21px; }
+    .stat .l { font-size: 11px; }
+  }
 
   /* a source's logo, coloured like the brand, sized like the text beside it */
   .sic { display: inline-flex; width: 15px; height: 15px; flex: 0 0 auto;
@@ -153,24 +148,52 @@
 
 <div class="sn-wrap">
   <div class="card">
-    <h2 style="margin:0 0 5px">Sentiment analysis</h2>
-    {#- one line of what, one quiet line of when. The old lede said four
-        things in three ragged lines and read as a paragraph nobody asked
-        for. -#}
-    <p class="muted" style="margin:0">What the world says about the watched
-      product families.</p>
-    <p class="muted" style="margin:4px 0 0; font-size:12.5px">
-      {%- if last_collected %}Last collected {{ last_collected|localtime }}
-      · {% endif %}runs by itself after every page check.</p>
+    {#- the Dashboard's own top structure: one row of figures with the
+        action at its right end, the progress underneath. Same .stat
+        classes from base.html, so the two screens are one design. No
+        heading - the nav already says where you are. -#}
+    <div class="statrow">
+      <div class="stat"><div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
+        <div class="l">Mentions</div></div>
+      <div class="stat"><div class="n">{{ per_entity|length }}</div>
+        <div class="l">Families</div></div>
+      <div class="stat"><div class="n">{{ ready_keys|length }}</div>
+        <div class="l">Sources</div></div>
+      <div class="stat">
+        {% if scored_n %}
+        <div class="n" style="color:{{ '#16a34a' if (avg_all or 0) > 0.15 else ('#dc2626' if (avg_all or 0) < -0.15 else 'var(--muted)') }}">
+          {{ '%+.2f'|format(avg_all or 0) }}</div>
+        <div class="l">Tone ({{ '{:,}'.format(scored_n) }} scored)</div>
+        {% else %}
+        <div class="n" style="color:var(--muted)">—</div>
+        <div class="l">Not scored yet</div>
+        {% endif %}
+      </div>
+      <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">
+          {{ last_collected|localtime if last_collected else '—' }}</div>
+        <div class="l">Last collected (auto after checks)</div></div>
+      {% if is_admin %}
+      <div class="stat" style="padding-top:8px; text-align:right">
+        <form method="post" action="{{ url_for('sentiment_collect') }}"
+              style="display:inline">
+          <button type="submit">&#9654; Collect mentions</button>
+        </form>
+        {% if total %}
+        <div style="margin-top:6px">
+          <form method="post" action="{{ url_for('sentiment_score') }}"
+                style="display:inline">
+            <button type="submit" class="linkbtn"
+                    {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
+              Score the tone</button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
 
-    {#- the bar is FURNITURE, not an event: always here, grey and empty
-        when nothing collects, filling live when something does. An empty
-        track says "this is where you will see it" better than a blank. -#}
     <div id="snprog" class="{{ 'snp-live' if sstate.running }}"
-         style="margin:12px 0 0">
-      {#- a track WITH a percent readout: nothing says progress bar like a
-          number waiting to move. The label under it is owned by the poller,
-          so it keeps telling the truth as states change under the page. -#}
+         style="margin:14px 0 0">
       {% set _pct = (sstate.done * 100 / sstate.total)|round|int if sstate.running and sstate.total else 0 %}
       <div class="snp-row">
         <div class="snp-track"><div class="snp-fill" id="snpfill"
@@ -185,23 +208,7 @@
         idle — fills while a collection runs
         {%- endif -%}</p>
     </div>
-    {% if not sstate.running and is_admin %}
-    <div class="sn-actions" id="snactions">
-      <form method="post" action="{{ url_for('sentiment_collect') }}">
-        <button type="submit">Collect mentions</button>
-      </form>
-      {% if total %}
-      <form method="post" action="{{ url_for('sentiment_score') }}">
-        <button type="submit" class="btn-ghost"
-                {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
-          Score the tone</button>
-      </form>
-      {% endif %}
-    </div>
-    {% endif %}
 
-    {#- the search lives up top where Content keeps its own, not halfway
-        down the page inside a card nobody scrolled to yet -#}
     <form method="get" class="sn-search" autocomplete="off" style="margin-top:14px">
       <span class="sbar sbar-lg grow">
         <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -216,25 +223,6 @@
       {% if sel_source %}<input type="hidden" name="source" value="{{ sel_source }}">{% endif %}
       <button type="submit">Search</button>
     </form>
-
-    <div class="sn-figs">
-      <div class="sn-fig"><div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
-        <div class="l">mentions</div></div>
-      <div class="sn-fig"><div class="n">{{ per_entity|length }}</div>
-        <div class="l">families</div></div>
-      <div class="sn-fig"><div class="n">{{ ready_keys|length }}</div>
-        <div class="l">sources live</div></div>
-      <div class="sn-fig">
-        {% if scored_n %}
-        <div class="n" style="color:{{ '#16a34a' if (avg_all or 0) > 0.15 else ('#dc2626' if (avg_all or 0) < -0.15 else 'var(--muted)') }}">
-          {{ '%+.2f'|format(avg_all or 0) }}</div>
-        <div class="l">tone of {{ '{:,}'.format(scored_n) }} scored</div>
-        {% else %}
-        <div class="n" style="color:var(--muted)">—</div>
-        <div class="l">not scored yet</div>
-        {% endif %}
-      </div>
-    </div>
   </div>
 
   {% if per_entity %}
