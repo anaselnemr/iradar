@@ -1446,6 +1446,38 @@ def _fingerprints_agree(f1, f2):
     return f1 == f2
 
 
+def _loss_survived_three_looks(f1, f2, f3):
+    """Whether a pure-loss diff has earned publication on the spot.
+
+    The bar is unanimity, not a majority: all three captures must print the
+    same loss, line for line. An ordinary suspected update only needs two of
+    three, because something ARRIVING is evidence a person edited the page - a
+    stalled widget cannot invent content. A loss has no such tell, so it is
+    held to the stricter test. f3 is None when the third capture never
+    happened or failed, which is not agreement either."""
+    return (f3 is not None and _fingerprints_agree(f1, f2)
+            and _fingerprints_agree(f2, f3))
+
+
+def _third_look(row, url_id, ts_label, prev_dir, settings, why):
+    """Capture the page once more and fingerprint it against the baseline.
+
+    Returns (res3, dir3, f3); f3 is None when the extra capture itself failed,
+    which is its own answer - nothing to compare, so nothing to publish."""
+    dir3 = str(_snapshot_dir(url_id, ts_label + "-verify3"))
+    print(f"[verify] {row['url']}: {why} - taking a third look", flush=True)
+    try:
+        r3 = asyncio.run(capture.capture_all([(row["url"], dir3)],
+                                             concurrency=1))
+        res3 = r3[0] if r3 else None
+    except Exception:
+        res3 = None
+    f3 = None
+    if res3 and res3.get("status") == "ok":
+        f3 = _diff_fingerprint(prev_dir, dir3, settings)
+    return res3, dir3, f3
+
+
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                      recapture=True, phase="verify"):
     """Re-capture every suspected change once and flag only those that persist.
@@ -1535,21 +1567,61 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                       flush=True)
                 continue
             if confirmed and _smells_like_half_render(recheck, row):
-                # both captures losing whole sections with nothing added is
-                # a server having a bad hour, until a page already wearing
-                # the error shows the same loss next run
-                con.execute("UPDATE urls SET last_checked=?,"
-                            " last_status='error' WHERE id=?", (now, url_id))
-                _restore_page_meta(con, url_id, prev)
-                shutil.rmtree(vdir, ignore_errors=True)
-                con.execute("DELETE FROM snapshots WHERE id=?", (vsnap_id,))
-                counters["errors"] += 1
-                counters["saved"] += 1
-                _mark_item(con, run_id, url_id, "done")
-                con.commit()
-                print(f"[verify] {row['url']}: pure loss on both captures -"
-                      " kept the baseline, retrying next run", flush=True)
-                continue
+                # A loss this shape is either a render that skipped whole
+                # sections or a page that really was stripped, and the two
+                # cases deserve different answers. So ASK A THIRD CAPTURE:
+                # three of them printing the same loss line for line is as
+                # certain as this gets - a stalled widget does not reproduce
+                # itself exactly three times - and that publishes now instead
+                # of a run later (Anas: "if all three show the identical loss,
+                # publish it right then"). Unanimous or nothing: two captures
+                # that already disagree cannot become unanimous, so they skip
+                # the extra capture and keep the baseline as before.
+                f1 = _diff_fingerprint(prev["dir"], s["new1_dir"], settings_now)
+                f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
+                res3, dir3, f3 = (None, None, None)
+                if _fingerprints_agree(f1, f2):
+                    res3, dir3, f3 = _third_look(
+                        row, url_id, ts_label, prev["dir"], settings_now,
+                        "both captures lost the same lines and nothing arrived")
+                if _loss_survived_three_looks(f1, f2, f3):
+                    # unanimous: the page really did lose it. The third
+                    # capture is the newest and carries the agreed state, so
+                    # it becomes the capture of record and the rest of this
+                    # loop publishes it like any confirmed update.
+                    con.execute("DELETE FROM snapshots WHERE id=?",
+                                (vsnap_id,))
+                    shutil.rmtree(vdir, ignore_errors=True)
+                    cur = con.execute(
+                        "INSERT INTO snapshots(url_id, ts, dir, status,"
+                        " error, page_title, text_lines, image_count,"
+                        " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (url_id, now, dir3, "ok", "", res3.get("title", ""),
+                         res3.get("text_lines", 0),
+                         res3.get("image_count", 0),
+                         res3.get("http_status")))
+                    vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
+                    print(f"[verify] {row['url']}: three captures agree on the"
+                          " loss - the page really was stripped, flagging now",
+                          flush=True)
+                else:
+                    if dir3:
+                        shutil.rmtree(dir3, ignore_errors=True)
+                    con.execute("UPDATE urls SET last_checked=?,"
+                                " last_status='error' WHERE id=?",
+                                (now, url_id))
+                    _restore_page_meta(con, url_id, prev)
+                    shutil.rmtree(vdir, ignore_errors=True)
+                    con.execute("DELETE FROM snapshots WHERE id=?",
+                                (vsnap_id,))
+                    counters["errors"] += 1
+                    counters["saved"] += 1
+                    _mark_item(con, run_id, url_id, "done")
+                    con.commit()
+                    print(f"[verify] {row['url']}: pure loss did not survive a"
+                          " third capture - kept the baseline, retrying next"
+                          " run", flush=True)
+                    continue
             # THE SAME DIFFERENCE, NOT JUST A DIFFERENCE. The old test was
             # "does the verify capture differ from the baseline at all?" -
             # which a flap passes as easily as an edit, as long as it flaps
@@ -1563,19 +1635,9 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                                        settings_now)
                 f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
                 if not _fingerprints_agree(f1, f2):
-                    ts3 = ts_label + "-verify3"
-                    dir3 = str(_snapshot_dir(url_id, ts3))
-                    print(f"[verify] {row['url']}: the two captures disagree"
-                          " on WHAT changed - taking a third look", flush=True)
-                    try:
-                        r3 = asyncio.run(capture.capture_all(
-                            [(row["url"], dir3)], concurrency=1))
-                        res3 = r3[0] if r3 else None
-                    except Exception:
-                        res3 = None
-                    f3 = None
-                    if res3 and res3.get("status") == "ok":
-                        f3 = _diff_fingerprint(prev["dir"], dir3, settings_now)
+                    res3, dir3, f3 = _third_look(
+                        row, url_id, ts_label, prev["dir"], settings_now,
+                        "the two captures disagree on WHAT changed")
                     if f3 is not None and (_fingerprints_agree(f3, f2)
                                            or _fingerprints_agree(f3, f1)):
                         # two of three agree: the third capture carries the

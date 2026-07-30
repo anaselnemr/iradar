@@ -742,3 +742,59 @@ def test_the_retry_pause_is_a_pause_and_never_the_same_twice():
 
     R._nap(120, stop_now)
     assert ticks["n"] == 1, "End check must not wait out a two-minute pause"
+
+
+def test_a_pure_loss_is_published_only_when_three_captures_agree():
+    """Anas's rule: a big loss with nothing added no longer waits a whole run
+    to be believed. It goes to a third capture, and if all three print the
+    identical loss it is published on the spot. Unanimity, not a majority - an
+    ordinary update can confirm on two of three because arriving content is
+    proof a person edited the page, and a loss has no such tell."""
+    import json as _json
+    import runner as R
+
+    root = _fresh_db()
+
+    def snap(name, lines):
+        d = root / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "text.txt").write_text("\n".join(lines), encoding="utf-8")
+        (d / "images.json").write_text("[]", encoding="utf-8")
+        return str(d)
+
+    full = [f"line {i}" for i in range(40)]
+    base = snap("base", full)
+    # the same 25 lines gone from all three captures, nothing added
+    thin1 = snap("thin1", full[:15])
+    thin2 = snap("thin2", full[:15])
+    thin3 = snap("thin3", full[:15])
+    # a different loss
+    other = snap("other", full[:20])
+
+    st = {"ignore_patterns": "", "ignore_image_patterns": ""}
+    f1 = R._diff_fingerprint(base, thin1, st)
+    f2 = R._diff_fingerprint(base, thin2, st)
+    f3 = R._diff_fingerprint(base, thin3, st)
+    f_other = R._diff_fingerprint(base, other, st)
+
+    assert R._loss_survived_three_looks(f1, f2, f3), \
+        "three captures printing the same loss is real - flag it now"
+    assert not R._loss_survived_three_looks(f1, f2, None), \
+        "no third capture is not agreement"
+    assert not R._loss_survived_three_looks(f1, f2, f_other), \
+        "a third capture that loses something else breaks the tie the other way"
+    assert not R._loss_survived_three_looks(f1, f_other, f1), \
+        "two captures that already disagree can never be unanimous"
+
+
+def test_there_is_one_third_capture_path():
+    """The tie-break and the pure-loss check take the same extra capture the
+    same way - one helper, so they cannot drift apart."""
+    import inspect
+    import runner as R
+
+    src = inspect.getsource(R._verify_suspects)
+    assert "capture.capture_all([(row[\"url\"], dir3)]" not in src, \
+        "the extra capture belongs in _third_look, not inline"
+    assert src.count("_third_look(") == 2, \
+        "both the tie-break and the pure-loss check must use the helper"
