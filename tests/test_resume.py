@@ -746,10 +746,11 @@ def test_the_retry_pause_is_a_pause_and_never_the_same_twice():
 
 def test_a_pure_loss_is_published_only_when_three_captures_agree():
     """Anas's rule: a big loss with nothing added no longer waits a whole run
-    to be believed. It goes to a third capture, and if all three print the
-    identical loss it is published on the spot. Unanimity, not a majority - an
-    ordinary update can confirm on two of three because arriving content is
-    proof a person edited the page, and a loss has no such tell."""
+    to be believed. It goes to a third capture, and the bar depends on what
+    the first two said. Agreeing already? The third must agree too - two of
+    three would be satisfied by that pair alone, and a pair of broken renders
+    agreeing is what published #7118. Disagreeing? Then the third is a real
+    vote and any two matching exactly carries it."""
     import json as _json
     import runner as R
 
@@ -782,9 +783,14 @@ def test_a_pure_loss_is_published_only_when_three_captures_agree():
     assert not R._loss_survived_three_looks(f1, f2, None), \
         "no third capture is not agreement"
     assert not R._loss_survived_three_looks(f1, f2, f_other), \
-        "a third capture that loses something else breaks the tie the other way"
-    assert not R._loss_survived_three_looks(f1, f_other, f1), \
-        "two captures that already disagree can never be unanimous"
+        "with the first two agreed, a dissenting third keeps the baseline"
+    assert R._loss_survived_three_looks(f1, f_other, f1), \
+        "when the two losses differ, a third matching either one carries it"
+    assert R._loss_survived_three_looks(f_other, f1, f1), \
+        "and it does not matter WHICH of the two the third agrees with"
+    assert not R._loss_survived_three_looks(
+        f1, f_other, R._diff_fingerprint(base, snap("thin4", full[:5]), st)), \
+        "three different losses is nothing steady enough to publish"
 
 
 def test_there_is_one_third_capture_path():
@@ -844,6 +850,8 @@ def test_empty_sections_are_published_only_when_three_captures_agree():
         "no third capture is not agreement"
     assert not R._loss_survived_three_looks(c1, c2, c_other), \
         "a third capture emptying a different set keeps the baseline"
+    assert R._loss_survived_three_looks(c_other, c1, c1), \
+        "two captures emptying different sets get the ordinary tie-break"
     assert R._collapse_fingerprint(base, str(root / "missing")) is None, \
         "an unreadable capture is not evidence"
     assert not R._loss_survived_three_looks(None, None, c3), \
