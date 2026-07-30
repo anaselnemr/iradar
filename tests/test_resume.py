@@ -788,13 +788,63 @@ def test_a_pure_loss_is_published_only_when_three_captures_agree():
 
 
 def test_there_is_one_third_capture_path():
-    """The tie-break and the pure-loss check take the same extra capture the
-    same way - one helper, so they cannot drift apart."""
+    """All three reasons to look again - a tie to break, a text loss to
+    confirm, sections to confirm - take the same extra capture the same way,
+    so they cannot drift apart."""
     import inspect
     import runner as R
 
     src = inspect.getsource(R._verify_suspects)
     assert "capture.capture_all([(row[\"url\"], dir3)]" not in src, \
         "the extra capture belongs in _third_look, not inline"
-    assert src.count("_third_look(") == 2, \
-        "both the tie-break and the pure-loss check must use the helper"
+    assert src.count("_third_look(") == 3, \
+        "the tie-break and both loss checks must use the helper"
+
+
+def test_empty_sections_are_published_only_when_three_captures_agree():
+    """The widget-collapse guard gets the same third look as a pure loss: a
+    page CAN really drop a section, so three captures emptying the SAME
+    sections publishes now instead of a run later. Widgets that fail to mount
+    fail a different set each time, and that still keeps the baseline."""
+    import json as _json
+    import runner as R
+
+    root = _fresh_db()
+
+    def sections(name, **counts):
+        d = root / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "sections.json").write_text(_json.dumps(
+            {k: [{"title": f"{k}-{i}", "url": f"/{k}/{i}"} for i in range(n)]
+             for k, n in counts.items()}), encoding="utf-8")
+        return str(d)
+
+    base = sections("wb", documents=6, design_resources=16, partners=2,
+                    features=4)
+    # the same two sections empty in all three captures
+    gone1 = sections("w1", documents=0, design_resources=0, partners=2,
+                     features=4)
+    gone2 = sections("w2", documents=0, design_resources=0, partners=2,
+                     features=4)
+    gone3 = sections("w3", documents=0, design_resources=0, partners=2,
+                     features=4)
+    # a capture that stalled on a DIFFERENT set
+    other = sections("wo", documents=0, design_resources=16, partners=0,
+                     features=4)
+
+    c1 = R._collapse_fingerprint(base, gone1)
+    c2 = R._collapse_fingerprint(base, gone2)
+    c3 = R._collapse_fingerprint(base, gone3)
+    c_other = R._collapse_fingerprint(base, other)
+
+    assert c1 == frozenset({"documents", "design_resources"}), c1
+    assert R._loss_survived_three_looks(c1, c2, c3), \
+        "the same sections empty three times means the page dropped them"
+    assert not R._loss_survived_three_looks(c1, c2, None), \
+        "no third capture is not agreement"
+    assert not R._loss_survived_three_looks(c1, c2, c_other), \
+        "a third capture emptying a different set keeps the baseline"
+    assert R._collapse_fingerprint(base, str(root / "missing")) is None, \
+        "an unreadable capture is not evidence"
+    assert not R._loss_survived_three_looks(None, None, c3), \
+        "unreadable sections can never pass for agreement"

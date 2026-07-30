@@ -1381,6 +1381,20 @@ def _section_counts(snap_dir):
     return out
 
 
+def _collapse_fingerprint(prev_dir, new_dir):
+    """WHICH sections came back empty, as a comparable value.
+
+    The counterpart of _diff_fingerprint for a collapse: a page that really
+    dropped its documents empties the same section every time it is
+    photographed, while widgets that fail to mount fail a different set each
+    time. None when either capture's sections cannot be read - not evidence of
+    anything, and never equal to a real answer."""
+    a, b = _section_counts(prev_dir), _section_counts(new_dir)
+    if not a or not b:
+        return None
+    return frozenset(k for k, n in a.items() if n > 0 and b.get(k, 0) == 0)
+
+
 def _smells_like_lost_widgets(prev_dir, new_dir, row):
     """Several populated sections empty at once with nothing gained anywhere:
     the page's late-mounting widgets never arrived, which is a broken capture
@@ -1447,11 +1461,12 @@ def _fingerprints_agree(f1, f2):
 
 
 def _loss_survived_three_looks(f1, f2, f3):
-    """Whether a pure-loss diff has earned publication on the spot.
+    """Whether a LOSS has earned publication on the spot - lines gone from the
+    text, or whole sections come back empty. Both kinds pass through here.
 
-    The bar is unanimity, not a majority: all three captures must print the
-    same loss, line for line. An ordinary suspected update only needs two of
-    three, because something ARRIVING is evidence a person edited the page - a
+    The bar is unanimity, not a majority: all three captures must describe the
+    same loss exactly. An ordinary suspected update only needs two of three,
+    because something ARRIVING is evidence a person edited the page - a
     stalled widget cannot invent content. A loss has no such tell, so it is
     held to the stricter test. f3 is None when the third capture never
     happened or failed, which is not agreement either."""
@@ -1459,11 +1474,12 @@ def _loss_survived_three_looks(f1, f2, f3):
             and _fingerprints_agree(f2, f3))
 
 
-def _third_look(row, url_id, ts_label, prev_dir, settings, why):
-    """Capture the page once more and fingerprint it against the baseline.
+def _third_look(row, url_id, ts_label, why):
+    """Capture the page once more, for a tie to break or a loss to confirm.
 
-    Returns (res3, dir3, f3); f3 is None when the extra capture itself failed,
-    which is its own answer - nothing to compare, so nothing to publish."""
+    Returns (res3, dir3). Comparing is the caller's job: a tie is settled on
+    what the diff says, a collapse on which sections emptied, and one capture
+    path serves both."""
     dir3 = str(_snapshot_dir(url_id, ts_label + "-verify3"))
     print(f"[verify] {row['url']}: {why} - taking a third look", flush=True)
     try:
@@ -1472,10 +1488,12 @@ def _third_look(row, url_id, ts_label, prev_dir, settings, why):
         res3 = r3[0] if r3 else None
     except Exception:
         res3 = None
-    f3 = None
-    if res3 and res3.get("status") == "ok":
-        f3 = _diff_fingerprint(prev_dir, dir3, settings)
-    return res3, dir3, f3
+    return res3, dir3
+
+
+def _took(res3):
+    """Did the extra capture actually come back with a page?"""
+    return bool(res3) and res3.get("status") == "ok"
 
 
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
@@ -1548,25 +1566,65 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
             recheck = cmp.compare_snapshots(prev["dir"], vdir, change_dir=None,
                                             settings=settings_now)
             confirmed = recheck["any_changed"]
-            # the second capture lost its widgets too. Two broken renders in a
+            # Set when three captures have already agreed on a loss. That is a
+            # higher bar than either check below applies, so they stand down
+            # rather than re-litigate it (or spend a fourth capture on it).
+            unanimous_loss = False
+            # The second capture lost its widgets too. Two broken renders in a
             # row is a bad hour at their end, not an edit - #7481 got this far
             # and was published as 'sections removed' while the live page was
-            # whole. Keep the baseline and try again next run.
+            # whole. But a page CAN really drop a section, so the same bargain
+            # as a pure loss: ask a third capture instead of costing a run.
+            # Three captures emptying the SAME sections is a page that was
+            # stripped; widgets that fail to mount fail a different set each
+            # time.
             if confirmed and _smells_like_lost_widgets(prev["dir"], vdir, row):
-                con.execute("UPDATE urls SET last_checked=?,"
-                            " last_status='error' WHERE id=?", (now, url_id))
-                _restore_page_meta(con, url_id, prev)
-                shutil.rmtree(vdir, ignore_errors=True)
-                con.execute("DELETE FROM snapshots WHERE id=?", (vsnap_id,))
-                counters["errors"] += 1
-                counters["saved"] += 1
-                _mark_item(con, run_id, url_id, "done")
-                con.commit()
-                print(f"[verify] {row['url']}: sections empty on both"
-                      " captures - kept the baseline, retrying next run",
-                      flush=True)
-                continue
-            if confirmed and _smells_like_half_render(recheck, row):
+                c1 = _collapse_fingerprint(prev["dir"], s["new1_dir"])
+                c2 = _collapse_fingerprint(prev["dir"], vdir)
+                res3, dir3, c3 = None, None, None
+                if _fingerprints_agree(c1, c2):
+                    res3, dir3 = _third_look(
+                        row, url_id, ts_label,
+                        "the same sections came back empty twice")
+                    if _took(res3):
+                        c3 = _collapse_fingerprint(prev["dir"], dir3)
+                if _loss_survived_three_looks(c1, c2, c3):
+                    con.execute("DELETE FROM snapshots WHERE id=?",
+                                (vsnap_id,))
+                    shutil.rmtree(vdir, ignore_errors=True)
+                    cur = con.execute(
+                        "INSERT INTO snapshots(url_id, ts, dir, status,"
+                        " error, page_title, text_lines, image_count,"
+                        " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (url_id, now, dir3, "ok", "", res3.get("title", ""),
+                         res3.get("text_lines", 0),
+                         res3.get("image_count", 0),
+                         res3.get("http_status")))
+                    vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
+                    unanimous_loss = True
+                    print(f"[verify] {row['url']}: three captures empty the"
+                          " same sections - the page really dropped them,"
+                          " flagging now", flush=True)
+                else:
+                    if dir3:
+                        shutil.rmtree(dir3, ignore_errors=True)
+                    con.execute("UPDATE urls SET last_checked=?,"
+                                " last_status='error' WHERE id=?",
+                                (now, url_id))
+                    _restore_page_meta(con, url_id, prev)
+                    shutil.rmtree(vdir, ignore_errors=True)
+                    con.execute("DELETE FROM snapshots WHERE id=?",
+                                (vsnap_id,))
+                    counters["errors"] += 1
+                    counters["saved"] += 1
+                    _mark_item(con, run_id, url_id, "done")
+                    con.commit()
+                    print(f"[verify] {row['url']}: empty sections did not"
+                          " survive a third capture - kept the baseline,"
+                          " retrying next run", flush=True)
+                    continue
+            if confirmed and not unanimous_loss \
+                    and _smells_like_half_render(recheck, row):
                 # A loss this shape is either a render that skipped whole
                 # sections or a page that really was stripped, and the two
                 # cases deserve different answers. So ASK A THIRD CAPTURE:
@@ -1581,9 +1639,11 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                 f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
                 res3, dir3, f3 = (None, None, None)
                 if _fingerprints_agree(f1, f2):
-                    res3, dir3, f3 = _third_look(
-                        row, url_id, ts_label, prev["dir"], settings_now,
+                    res3, dir3 = _third_look(
+                        row, url_id, ts_label,
                         "both captures lost the same lines and nothing arrived")
+                    if _took(res3):
+                        f3 = _diff_fingerprint(prev["dir"], dir3, settings_now)
                 if _loss_survived_three_looks(f1, f2, f3):
                     # unanimous: the page really did lose it. The third
                     # capture is the newest and carries the agreed state, so
@@ -1629,15 +1689,18 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
             # they disagree, a third capture breaks the tie, best two of
             # three. A real edit prints the same diff every time it is
             # photographed; noise does not.
-            if confirmed and (recheck.get("text_changed")
-                              or recheck.get("images_changed")):
+            if confirmed and not unanimous_loss \
+                    and (recheck.get("text_changed")
+                         or recheck.get("images_changed")):
                 f1 = _diff_fingerprint(prev["dir"], s["new1_dir"],
                                        settings_now)
                 f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
                 if not _fingerprints_agree(f1, f2):
-                    res3, dir3, f3 = _third_look(
-                        row, url_id, ts_label, prev["dir"], settings_now,
+                    res3, dir3 = _third_look(
+                        row, url_id, ts_label,
                         "the two captures disagree on WHAT changed")
+                    f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now)
+                          if _took(res3) else None)
                     if f3 is not None and (_fingerprints_agree(f3, f2)
                                            or _fingerprints_agree(f3, f1)):
                         # two of three agree: the third capture carries the
