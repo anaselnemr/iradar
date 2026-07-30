@@ -268,7 +268,17 @@ def visual_diff(old_dir, new_dir, change_dir=None):
     # pixels on the settings screen. Convert, or a half-size image quietly
     # doubles the threshold and a page that grew 80px reads as 40.
     scale = min(_shot_scale(old_dir), _shot_scale(new_dir))
-    height_delta = abs((a.height - fh_a) - (b.height - fh_b)) / (scale or 1.0)
+    # Taking the feeds out may only ever SHRINK the difference, never create
+    # one. The masked list is an inventory of what was on screen, and it flaps
+    # on its own: #7534 recorded the price block once at 24px in one capture
+    # and three times at 28px in the next, so subtracting each side's total
+    # from two pictures of IDENTICAL height manufactured a 120px growth on a
+    # page that had not moved a pixel. What the page actually did is the raw
+    # difference between the two heights; discounting feeds can explain some
+    # of that away, and nothing more.
+    raw = abs(a.height - b.height)
+    discounted = abs((a.height - fh_a) - (b.height - fh_b))
+    height_delta = min(raw, discounted) / (scale or 1.0)
     w = min(a.width, b.width)
     h = min(a.height, b.height)
     if w == 0 or h == 0:

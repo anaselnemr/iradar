@@ -290,3 +290,41 @@ def test_every_mutant_settles_clean_against_itself():
 def test_identical_copies_are_clean():
     old, new = _mutant(lambda d: None)
     assert not _cmp(old, new)["any_changed"]
+
+
+def test_masking_the_feeds_never_invents_height():
+    """#7534: two pictures of the SAME height, zero pixels different, reported
+    as 120px taller. The masked list is an inventory of what was on screen and
+    it flaps by itself - the price block was recorded once at 24px in one
+    capture and three times at 28px in the next - so subtracting each side's
+    total from equal heights manufactured growth on a page that had not moved.
+    Discounting feeds may shrink the difference, never create one."""
+    import json as _json
+
+    def with_boxes(d, boxes, height=900):
+        m = _json.loads((Path(d) / "meta.json").read_text(encoding="utf-8"))
+        m["shot_ignore"] = boxes
+        m["shot_scale"] = 0.5
+        (Path(d) / "meta.json").write_text(_json.dumps(m), encoding="utf-8")
+        _shot(Path(d) / "shot.png", height=height)
+        return str(d)
+
+    box = lambda y, h: {"x": 48, "y": y, "w": 624, "h": h}
+
+    # same page height, a flapping inventory (one box vs three)
+    old = with_boxes(_base(), [box(130, 24)])
+    new = with_boxes(_base(), [box(130, 28), box(130, 28), box(130, 28)])
+    ratio, dh, _n = cmp.visual_diff(old, new)
+    assert dh == 0, f"identical heights can never be a height change (got {dh})"
+
+    # a page that really did grow still reports it, feeds discounted
+    old2 = with_boxes(_base(), [box(130, 100)], height=900)
+    new2 = with_boxes(_base(), [box(130, 100)], height=1000)
+    _r2, dh2, _n2 = cmp.visual_diff(old2, new2)
+    assert dh2 == 200, f"100 stored px at half scale is 200 real px (got {dh2})"
+
+    # growth that is ENTIRELY the feed getting taller is still discounted away
+    old3 = with_boxes(_base(), [box(130, 100)], height=900)
+    new3 = with_boxes(_base(), [box(130, 200)], height=1000)
+    _r3, dh3, _n3 = cmp.visual_diff(old3, new3)
+    assert dh3 == 0, f"the feed grew, the page did not (got {dh3})"
