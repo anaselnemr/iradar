@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import os
+import random
 import re
 import shutil
 import threading
@@ -815,7 +816,7 @@ def _run_check_inner(kind, url_ids, baseline=False):
         RUN_STATE["phase_done"] = RUN_STATE.get("phase_done", 0) + 1
         RUN_STATE["message"] = res["url"]
         row = url_by_addr.get(res["url"]) or url_by_key.get(_key(res.get("url")))
-        if row is not None and _transient_failure(res):
+        if row is not None and _transient_failure(res, row):
             transient.append(row)
         if row is None:
             # Never silent again. A page we cannot file is a page we did not
@@ -913,8 +914,18 @@ def _run_check_inner(kind, url_ids, baseline=False):
                                 f"round {rnd} of 2…")
         print(f"[retry] round {rnd}: {len(retry_urls)} transient failure(s)",
               flush=True)
-        if rnd == 2:
-            time.sleep(60)          # let the CDN's block lift before the last try
+        # A blocked page needs TIME more than it needs another attempt, and
+        # every page in this round was refused within the same few minutes -
+        # so returning together just rebuilds the wave that got blocked. Wait
+        # before each round, and wait a different amount every time, so the
+        # queue comes back spread out instead of in formation.
+        lo, hi = RETRY_PAUSE_S[min(rnd, len(RETRY_PAUSE_S)) - 1]
+        nap = random.randint(lo, hi)
+        RUN_STATE["message"] = (f"waiting {nap}s for the block to lift, then"
+                                f" retrying {len(retry_urls)} page(s)…")
+        print(f"[retry] round {rnd}: pausing {nap}s before trying again",
+              flush=True)
+        _nap(nap, stopping)
         retry_by_addr = {row["url"]: row for row in retry_urls}
         retry_by_key = {_key(row["url"]): row for row in retry_urls}
         retry_suspects = []
@@ -927,7 +938,7 @@ def _run_check_inner(kind, url_ids, baseline=False):
                    or retry_by_key.get(_key(res.get("url"))))
             if row is None:
                 return
-            if _transient_failure(res):
+            if _transient_failure(res, row):
                 transient.append(row)      # next round, or the final state
                 return
             before = dict(counters)
@@ -1036,16 +1047,49 @@ _LOAD_FAIL_RE = re.compile(
     r"content could not be loaded|unable to load the content", re.I)
 
 
-def _transient_failure(res):
+# How long to wait before each retry round, as (low, high) seconds - the
+# actual pause is drawn from the range so no two rounds (and no two runs) come
+# back on the same beat. Round 2 waits longer: whatever refused us is still
+# refusing, and the last try is the one that has to count.
+RETRY_PAUSE_S = ((20, 45), (60, 120))
+
+
+def _nap(seconds, stop_check=None):
+    """Sleep, but stay reachable: 'End check' must not have to wait out a
+    two-minute pause before the run notices it was asked to stop."""
+    for _ in range(int(seconds)):
+        if stop_check is not None and stop_check():
+            return
+        time.sleep(1)
+
+
+def _transient_failure(res, row=None):
     """A failure worth retrying inside the SAME run: the capture errored for a
     reason that usually lifts within minutes (CDN block, timeout, loading
-    hiccup). NOT retried, because they are final classifications, not flakes:
-    a successful capture (404s included - 'gone' is a state, recorded as not
-    live) and a blank render (the server answered with an empty page; blank
-    is its own verdict and the next scheduled run re-checks it anyway)."""
+    hiccup). A successful capture is not retried (404s included - 'gone' is a
+    state, recorded as not live).
+
+    A BLANK render is judged against what the page was doing before. A page
+    that rendered fine yesterday and answers empty today is far likelier to be
+    a bad render than a site that deleted its own body, so it gets the same
+    retries as a timeout, and only lands as an error if it answers empty every
+    time. A page that was ALREADY blank is a steady state: retrying it every
+    run buys nothing, so that one is final and stays 'serves blank page'."""
     if (res or {}).get("status") == "ok":
         return False
-    return capture.BLANK_RENDER not in ((res or {}).get("error") or "")
+    if capture.BLANK_RENDER in ((res or {}).get("error") or ""):
+        return not _was_blank(row)
+    return True
+
+
+def _was_blank(row):
+    """Was this page already serving a blank body before this capture?"""
+    if row is None:
+        return False
+    try:
+        return (row["last_status"] or "") == "blank"
+    except Exception:
+        return False
 
 
 def _load_failure_added(prev_dir, new_dir, settings=None):
@@ -1080,18 +1124,25 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
     new_snap_id = cur.lastrowid
 
     if res["status"] != "ok":
-        counters["errors"] += 1
         counters["saved"] += 1
         # "Infineon served an empty page" and "our capture broke" are different
         # facts and only one is the site owner's to fix. A blank render answers
         # with a 2xx and an empty <body>, so the HTTP code is real.
         blank = capture.BLANK_RENDER in (res.get("error") or "")
+        # A page that was blank before and is blank again has not failed - it
+        # is a page in a known state, like a dead one, and counting it as an
+        # error every run makes a steady site look broken. A page that went
+        # blank for the FIRST time is a suspected bad render and takes the
+        # normal error path (retries first, error only if it sticks).
+        still_blank = blank and _was_blank(row)
+        if not still_blank:
+            counters["errors"] += 1
         # A TRANSIENT failure mid-run is not a verdict - the retry rounds at
         # the end of the run get the last word. Until then the page KEEPS its
         # previous status ("unchanged" stays "unchanged"); only a failure that
         # survives every retry is written as an error (the run's tail does
-        # that). Blank is a final classification and is written immediately.
-        if blank or not _transient_failure(res):
+        # that).
+        if still_blank or not _transient_failure(res, row):
             con.execute(
                 "UPDATE urls SET last_checked=?, last_status=?, last_http=?"
                 " WHERE id=?",
@@ -1249,6 +1300,25 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
               " baseline kept", flush=True)
         return
 
+    # Sections that were full and came back EMPTY: the widgets never mounted.
+    # Same treatment as a CDN block - the capture is thrown away, the baseline
+    # stands, and the page goes back in the queue for another try this run.
+    if result["any_changed"] and not dead \
+            and _smells_like_lost_widgets(prev["dir"], snap_dir, row):
+        con.execute("UPDATE urls SET last_checked=?, last_status='error'"
+                    " WHERE id=?", (now, url_id))
+        if retry_queue is not None:
+            retry_queue.append(row)
+        _restore_page_meta(con, url_id, prev)
+        shutil.rmtree(snap_dir, ignore_errors=True)
+        con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
+        counters["errors"] += 1
+        counters["saved"] += 1
+        print(f"[guard] {row['url']}: sections came back empty with nothing"
+              " added anywhere; widgets never mounted, baseline kept",
+              flush=True)
+        return
+
     if result["any_changed"]:
         # Don't flag yet: late-loading widgets can make a page LOOK different
         # once. Re-capture at the end and flag only if the change persists
@@ -1292,6 +1362,66 @@ def _smells_like_half_render(result, row):
         return False
 
 
+# How many populated sections have to come back EMPTY before a capture is
+# read as a failed render rather than an edit. Two is enough: a page does not
+# lose its breadcrumb AND its documents in one edit, and #7481 lost six.
+_COLLAPSE_MIN_SECTIONS = 2
+
+
+def _section_counts(snap_dir):
+    """Items per captured section, or None if the file is unreadable."""
+    try:
+        j = json.loads((Path(snap_dir) / "sections.json")
+                       .read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    out = {}
+    for k, v in (j or {}).items():
+        out[k] = len(v) if isinstance(v, list) else (1 if v else 0)
+    return out
+
+
+def _smells_like_lost_widgets(prev_dir, new_dir, row):
+    """Several populated sections empty at once with nothing gained anywhere:
+    the page's late-mounting widgets never arrived, which is a broken capture
+    and not an edit.
+
+    #7481 and #7459 are the case this exists for. Both came back with the
+    breadcrumb, documents, design resources, partners and components at ZERO
+    and were recorded as 'sections removed'; a capture of each live page taken
+    straight afterwards had every item the baseline had. Neither page had
+    changed at all.
+
+    The other guards were blind to it. The text signal was silently
+    re-baselined (those baselines predate the current text method), so the
+    122-line loss the half-render guard looks for was never presented to it,
+    and the library-collapse guard counts rows in the items table, which these
+    pages do not use. This one reads sections.json, which its own revision
+    governs - so it means the same thing on both sides of a text/image method
+    change, exactly when the others go quiet.
+
+    Once is a failed render: keep the baseline, report an error, capture again.
+    The same collapse on a page ALREADY wearing that error is real and flags
+    normally - one run late, never never (the rule _smells_like_half_render
+    follows)."""
+    a, b = _section_counts(prev_dir), _section_counts(new_dir)
+    if not a or not b:
+        return False
+    emptied = sum(1 for k, n in a.items() if n > 0 and b.get(k, 0) == 0)
+    if emptied < _COLLAPSE_MIN_SECTIONS:
+        return False
+    # anything GROWING says the page really was re-rendered with new content,
+    # which a stalled widget cannot do - that is an edit, not a broken capture
+    grew = any(b.get(k, 0) > n for k, n in a.items()) \
+        or any(n > 0 for k, n in b.items() if k not in a)
+    if grew:
+        return False
+    try:
+        return (row["last_status"] or "") != "error"
+    except Exception:
+        return True
+
+
 def _diff_fingerprint(prev_dir, new_dir, settings):
     """WHAT changed, as a comparable value: the multiset of added and removed
     text lines plus the image url sets. Two captures of the same real edit
@@ -1323,8 +1453,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
     for the dashboard ('verify' for the main double-check; the retry rounds
     pass 'retry' so the stepper stays on their step)."""
     RUN_STATE["message"] = (
-        f"double-checking {len(suspects)} suspected change(s)…" if recapture
-        else f"saving {len(suspects)} suspected change(s) before stopping…")
+        f"reconfirming {len(suspects)} suspected update(s)…" if recapture
+        else f"saving {len(suspects)} suspected update(s) before stopping…")
     if recapture:
         RUN_STATE["total"] += len(suspects)
     RUN_STATE["suspects"] = 0     # the debt is folded into total now
@@ -1386,6 +1516,24 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
             recheck = cmp.compare_snapshots(prev["dir"], vdir, change_dir=None,
                                             settings=settings_now)
             confirmed = recheck["any_changed"]
+            # the second capture lost its widgets too. Two broken renders in a
+            # row is a bad hour at their end, not an edit - #7481 got this far
+            # and was published as 'sections removed' while the live page was
+            # whole. Keep the baseline and try again next run.
+            if confirmed and _smells_like_lost_widgets(prev["dir"], vdir, row):
+                con.execute("UPDATE urls SET last_checked=?,"
+                            " last_status='error' WHERE id=?", (now, url_id))
+                _restore_page_meta(con, url_id, prev)
+                shutil.rmtree(vdir, ignore_errors=True)
+                con.execute("DELETE FROM snapshots WHERE id=?", (vsnap_id,))
+                counters["errors"] += 1
+                counters["saved"] += 1
+                _mark_item(con, run_id, url_id, "done")
+                con.commit()
+                print(f"[verify] {row['url']}: sections empty on both"
+                      " captures - kept the baseline, retrying next run",
+                      flush=True)
+                continue
             if confirmed and _smells_like_half_render(recheck, row):
                 # both captures losing whole sections with nothing added is
                 # a server having a bad hour, until a page already wearing

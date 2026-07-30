@@ -338,19 +338,19 @@
         whole bar.</li>
       <li><span class="sw" style="background:#ea580c"></span><b>Updated</b> —
         confirmed. It survived the second capture and is in your queue.</li>
-      <li><span class="sw" style="background:#7c3aed"></span><b>Double-checking</b>
-        — the page looked different and is being held for a second capture.
-        <b>Not an update yet.</b> These are only settled at the very end of the
-        check, so this number climbs all the way through and then empties in one
-        go — most of it into <i>no update</i>.</li>
-      <li><span class="sw" style="background:#dc2626"></span><b>Failed (will
-        retry)</b> — did not load this time. Every one gets two more tries at
-        the end. Only what fails all three is written down as an error, so this
-        number usually falls near the end rather than rising.</li>
+      <li><span class="sw" style="background:#7c3aed"></span><b>Reconfirming
+        updates</b> — the page looked different and is being held for a second
+        capture. <b>Not an update yet.</b> These are only settled at the very
+        end of the check, so this number climbs all the way through and then
+        empties in one go — most of it into <i>no update</i>.</li>
+      <li><span class="sw" style="background:#dc2626"></span><b>Blocked, will
+        retry</b> — did not load this time. Every one gets two more tries at
+        the end, after a pause. Only what fails all three is written down as an
+        error, so this number usually falls near the end rather than rising.</li>
       <li><span class="sw" style="background:var(--muted)"></span><b>Waiting</b>
         — not reached yet.</li>
     </ul>
-    <div class="note"><p>A big <b>double-checking</b> number part way through is
+    <div class="note"><p>A big <b>reconfirming updates</b> number part way through is
       normal and is not 173 updates waiting for you. It is the holding pen, and
       the second capture is what empties it.</p></div>
 

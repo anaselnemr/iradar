@@ -69,9 +69,15 @@ def test_transient_failure_classification():
     # ok captures are never retried - 404s included ('gone' is a recorded state)
     assert runner._transient_failure({"status": "ok", "error": ""}) is False
     assert runner._transient_failure({"status": "ok", "http_status": 404}) is False
-    # blank render is a final classification, not a flake to retry
-    assert runner._transient_failure(
-        {"status": "error", "error": capture.BLANK_RENDER + ": empty body"}) is False
+    # blank is judged against what the page was doing before: one that JUST
+    # went blank is a suspected bad render and takes the retries, one that was
+    # already blank is a steady state and stays it
+    blank_res = {"status": "error",
+                 "error": capture.BLANK_RENDER + ": empty body"}
+    assert runner._transient_failure(blank_res,
+                                     {"last_status": "unchanged"}) is True
+    assert runner._transient_failure(blank_res,
+                                     {"last_status": "blank"}) is False
     # CDN blocks, timeouts, loading hiccups - the liftable failures - retry
     assert runner._transient_failure(
         {"status": "error", "error": capture.BLOCKED_TRANSIENT + ": HTTP 403"}) is True

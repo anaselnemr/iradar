@@ -108,8 +108,8 @@
     <style>
       /* ---- run pipeline: stepper + one page-bucket bar --------------------
          Every page of the run sits in exactly ONE segment at any moment:
-         no update / updated / held for double-check / error / waiting.
-         Retries visibly heal the red segment; the double-check drains the
+         no update / updated / held for reconfirming / error / waiting.
+         Retries visibly heal the red segment; reconfirming drains the
          violet one. The stepper above names where the run is. */
       .rp-steps { display:flex; align-items:center; gap:6px; margin:10px 0 8px;
                   font-size:12px; flex-wrap:wrap }
@@ -144,7 +144,7 @@
     <div class="rp-steps">
       <span class="rp-step" id="step-capture"><span class="dot"></span>Capture</span>
       <span class="rp-arrow">→</span>
-      <span class="rp-step" id="step-verify" title="Pages that looked updated are captured a second time; only an update that shows again is confirmed"><span class="dot"></span>Double-check</span>
+      <span class="rp-step" id="step-verify" title="Pages that looked updated are captured a second time; only the same update showing again is confirmed"><span class="dot"></span>Reconfirming updates</span>
       <span class="rp-arrow">→</span>
       <span class="rp-step" id="step-retry" title="Pages the CDN blocked or that failed to load get two more tries before counting as errors"><span class="dot"></span>Retry blocked</span>
       <span id="run-paused" style="display:none; color:#ea580c; font-weight:600">⏸ paused</span>
@@ -157,21 +157,21 @@
     <div class="muted" style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px">
       <span style="font-size:13.5px; color:var(--fg)"><b id="run-verb">Capturing pages</b></span>
       <span id="run-phase-count" style="font-variant-numeric:tabular-nums"></span>
-      <span id="run-pct" class="runpct" title="Of all the work this run owes, double-check and retries included"></span>
+      <span id="run-pct" class="runpct" title="Of all the work this run owes, reconfirming and retries included"></span>
       <span id="run-rate" style="margin-left:auto; opacity:.85"></span>
       <b id="run-eta" style="color:var(--accent)"></b>
     </div>
     <div class="rp-bar" id="rp-bar" title="Each page of this run sits in exactly one colour">
       <div id="seg-ok"   title="No update — captured, compared, done"></div>
       <div id="seg-upd"  title="Confirmed updates (shown twice in a row)"></div>
-      <div id="seg-held" title="Held — waiting for the second capture (double-check)"></div>
-      <div id="seg-err"  title="Failed so far — retried twice before it counts"></div>
+      <div id="seg-held" title="Held — waiting for the second capture (reconfirming)"></div>
+      <div id="seg-err"  title="Blocked or failed to load — retried twice before it counts"></div>
     </div>
     <div class="rp-chips">
       <span class="c"><span class="sw" style="background:#16a34a"></span><b id="chip-ok">0</b> no update</span>
       <span class="c"><span class="sw" style="background:#ea580c"></span><b id="chip-upd">0</b> updated</span>
-      <span class="c"><span class="sw" style="background:#7c3aed"></span><b id="chip-held">0</b> double-checking</span>
-      <span class="c" title="Failed so far — each gets up to two more tries at the end of the run; only what fails all of them is recorded as an error on the page"><span class="sw" style="background:#dc2626"></span><b id="chip-err">0</b> failed (will retry)</span>
+      <span class="c"><span class="sw" style="background:#7c3aed"></span><b id="chip-held">0</b> reconfirming updates</span>
+      <span class="c" title="Blocked or failed to load so far — each gets up to two more tries at the end of the run; only what fails all of them is recorded as an error on the page"><span class="sw" style="background:#dc2626"></span><b id="chip-err">0</b> blocked, will retry</span>
       <span class="c" style="opacity:.75"><span class="sw" style="background:var(--line)"></span><b id="chip-wait">0</b> waiting</span>
     </div>
     <div class="muted" style="margin-top:5px"><span id="run-msg" style="font-size:12px"></span></div>
@@ -825,7 +825,7 @@ function phaseOf(s) {
   if (s.phase) return s.phase;                 // the runner's word (current)
   // one-poll fallback for a run started under the previous server build
   if (/retry|round/i.test(s.message || '')) return 'retry';
-  if ((s.changed || 0) > 0 || /double-check/i.test(s.message || '')) return 'verify';
+  if ((s.changed || 0) > 0 || /reconfirm/i.test(s.message || '')) return 'verify';
   return 'capture';
 }
 function setStep(id, cls) {
@@ -903,7 +903,7 @@ async function poll() {
         document.getElementById('run-msg').textContent =
           'Finishing the pages already in progress, then it holds. Press Resume to continue.';
       } else {
-        verb.textContent = phase === 'verify' ? 'Double-checking the updates'
+        verb.textContent = phase === 'verify' ? 'Reconfirming the updates'
           : phase === 'retry' ? ('Retrying blocked pages — round ' + (s.round || 1) + ' of 2')
           : 'Capturing pages';
         rateHist.push({t: Date.now(), done: s.done});

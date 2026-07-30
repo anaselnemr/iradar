@@ -16,6 +16,7 @@ site header/nav), then extracts.
 """
 import asyncio
 import json
+import random
 import re
 import time
 import traceback
@@ -47,6 +48,18 @@ BLANK_RENDER = "blank render"
 # retries with backoff and otherwise fails as an error (retried next run).
 BLOCKED_TRANSIENT = "blocked/transient"
 TRANSIENT_HTTP = {403, 408, 425, 429, 500, 502, 503, 504}
+# Waits before re-navigating a blocked page. Jittered per page, because every
+# tab that hit the guard hit it within the same second: a fixed 10s means all
+# of them come back in the same second too, and a synchronised second wave is
+# indistinguishable from the first one. Spreading the return is most of what
+# makes a retry work at all.
+BLOCK_BACKOFF_MS = (10_000, 25_000)
+BLOCK_JITTER = 0.45
+
+
+def _jittered(ms, spread=BLOCK_JITTER):
+    """A wait near ms, never the same twice (10s -> 5.5s..14.5s)."""
+    return random.randint(int(ms * (1 - spread)), int(ms * (1 + spread)))
 
 
 # Many Infineon cards are React components whose anchors carry NO href at all
@@ -2100,12 +2113,13 @@ async def capture_one(browser, url, out_dir):
         # state: 65 healthy evaluation boards were once branded "not live" by a
         # single 403 burst. Back off and renavigate - blocks lift in seconds.
         # Only 404/410 pass through: "gone" is a real page state to record.
-        for backoff_ms in (10_000, 25_000):
+        for backoff_ms in BLOCK_BACKOFF_MS:
             if resp is None or resp.status not in TRANSIENT_HTTP:
                 break
+            wait_ms = _jittered(backoff_ms)
             print(f"  [blocked] HTTP {resp.status} on {url[:60]} - "
-                  f"retrying in {backoff_ms // 1000}s", flush=True)
-            await page.wait_for_timeout(backoff_ms)
+                  f"retrying in {wait_ms / 1000:.0f}s", flush=True)
+            await page.wait_for_timeout(wait_ms)
             try:
                 resp = await page.goto(url, wait_until="load",
                                        timeout=NAV_TIMEOUT_MS) or resp

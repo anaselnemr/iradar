@@ -648,3 +648,97 @@ def test_the_double_check_demands_the_same_difference():
         "the same edit must match itself across captures"
     assert not R._fingerprints_agree(f_edit1, f_flap), \
         "a different difference must not pass for the same one"
+
+
+def test_sections_coming_back_empty_is_a_broken_capture_not_an_edit():
+    """#7481 / #7459: both pages were published as 'sections removed' while a
+    capture of the live page taken minutes later held every item the baseline
+    had. The breadcrumb, documents, design resources, partners and components
+    all read ZERO at once and nothing grew anywhere - the widgets never
+    mounted. The text signal could not catch it (those baselines predate the
+    current text method, so it was silently re-baselined) and the items-table
+    guard could not either (these pages keep no items rows)."""
+    import json as _json
+    import runner as R
+
+    root = _fresh_db()
+
+    def sections(name, **counts):
+        d = root / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "sections.json").write_text(_json.dumps(
+            {k: [{"title": f"{k}-{i}", "url": f"/{k}/{i}"} for i in range(n)]
+             for k, n in counts.items()}), encoding="utf-8")
+        return str(d)
+
+    fresh = {"last_status": "unchanged"}
+    worn = {"last_status": "error"}
+    # the real numbers from #7481
+    base = sections("b", breadcrumb=6, documents=6, design_resources=16,
+                    partners=2, components=5, features=0)
+    gutted = sections("g", breadcrumb=0, documents=0, design_resources=0,
+                      partners=0, components=0, features=0)
+    one_gone = sections("o", breadcrumb=6, documents=0, design_resources=16,
+                        partners=2, components=5, features=0)
+    real_edit = sections("e", breadcrumb=6, documents=0, design_resources=17,
+                         partners=2, components=5, features=0)
+
+    assert R._smells_like_lost_widgets(base, gutted, fresh), \
+        "five sections emptied at once with nothing gained is a failed render"
+    assert not R._smells_like_lost_widgets(base, one_gone, fresh), \
+        "a single section emptying can be a real removal"
+    assert not R._smells_like_lost_widgets(base, real_edit, fresh), \
+        "something GROWING means the page really re-rendered - that is an edit"
+    assert not R._smells_like_lost_widgets(base, gutted, worn), \
+        "the second sighting is the truth, same rule as the half-render guard"
+    assert not R._smells_like_lost_widgets(base, str(root / "nope"), fresh), \
+        "an unreadable capture is not evidence of anything"
+
+
+def test_a_page_that_just_went_blank_is_retried_but_a_blank_page_is_not():
+    """Anas's rule: blank is judged against what the page was doing before. A
+    page that rendered yesterday and answers empty today is a suspected bad
+    render and takes the retries; a page that was ALREADY blank is a steady
+    state and stays that way instead of erroring every run."""
+    import capture as C
+    import runner as R
+
+    blank = {"status": "error", "error": f"{C.BLANK_RENDER}: empty body"}
+    timeout = {"status": "error", "error": "Timeout 90000ms exceeded"}
+    good = {"status": "ok", "error": ""}
+
+    assert R._transient_failure(blank, {"last_status": "unchanged"}), \
+        "a page that just went blank gets the same retries as a timeout"
+    assert not R._transient_failure(blank, {"last_status": "blank"}), \
+        "a page that was already blank is a state, not a fresh failure"
+    assert R._transient_failure(timeout, {"last_status": "blank"}), \
+        "a timeout is transient whatever the page was doing before"
+    assert not R._transient_failure(good, {"last_status": "error"}), \
+        "a capture that worked is never retried"
+    assert R._transient_failure(blank, None), \
+        "with no row to compare against, retry rather than write a verdict"
+
+
+def test_the_retry_pause_is_a_pause_and_never_the_same_twice():
+    """Every page in a retry round was refused inside the same few minutes, so
+    coming back together just rebuilds the wave that got blocked. Each round
+    waits, and waits a different amount."""
+    import capture as C
+    import runner as R
+
+    lo1, hi1 = R.RETRY_PAUSE_S[0]
+    lo2, hi2 = R.RETRY_PAUSE_S[1]
+    assert lo1 > 0 and hi2 > hi1, "round 2 waits longer than round 1"
+    waits = {C._jittered(10_000) for _ in range(40)}
+    assert len(waits) > 5, "the backoff must not be one fixed number"
+    assert all(5_500 <= w <= 14_500 for w in waits), sorted(waits)[:3]
+
+    # a pause must not outlive the request to stop
+    ticks = {"n": 0}
+
+    def stop_now():
+        ticks["n"] += 1
+        return True
+
+    R._nap(120, stop_now)
+    assert ticks["n"] == 1, "End check must not wait out a two-minute pause"
