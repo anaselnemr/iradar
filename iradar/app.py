@@ -29,6 +29,7 @@ import auth
 import comments
 import compare as cmp
 import db
+import highlights as hl
 import runner
 
 app = Flask(__name__)
@@ -76,6 +77,9 @@ EDITOR_MAY_POST = {
     # inside the comments module, not by role alone: your own words are yours,
     # and an admin can remove anyone's.
     "comment_add", "comment_edit", "comment_delete", "comment_resolve",
+    # Marking the evidence IS the reviewing, same as writing the note about it.
+    # Whose highlight may be removed is decided per highlight, not by role.
+    "highlight_add", "highlight_delete",
     "account_name",          # your own display name is yours
 }
 # Pages an editor cannot even look at (they configure the system).
@@ -2798,13 +2802,73 @@ def change_view(change_id):
         except Exception:
             lib_diff = {}
     notes, _n, n_open = _notes_for("change", change_id)
+    con = db.connect()
+    marks = hl.as_json(hl.for_change(change_id, con=con))
+    queue = _review_queue_spot(con, c)
+    con.close()
     return render_template("change_view.html", c=c, u=u,
                            old_snap=old_snap, new_snap=new_snap, hunks=hunks,
                            img_added=img_added, img_removed=img_removed,
                            art=art, lib_diff=lib_diff, renorm=renorm,
+                           marks=marks, queue=queue,
                            notes=notes, notes_open=n_open, notes_kind="change",
                            notes_target=change_id,
                            notes_label=(u["url"] if u else ""))
+
+
+def _review_queue_spot(con, c):
+    """Where this update sits in the pile still waiting to be reviewed.
+
+    Counted, never listed: the queue has been four thousand rows before and
+    loading it to find one position would make opening an update slower the
+    busier the day. Position is only meaningful while the update is still
+    waiting - once it is decided it has left the queue, so the strip switches
+    to pointing at what is next instead of pretending you are still on it."""
+    waiting = con.execute(
+        "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
+    done = con.execute(
+        "SELECT COUNT(*) FROM changes WHERE reviewed=1").fetchone()[0]
+    spot = None
+    if not c["reviewed"]:
+        spot = con.execute("SELECT COUNT(*) FROM changes WHERE reviewed=0"
+                           " AND id <= ?", (c["id"],)).fetchone()[0]
+    nxt = con.execute("SELECT MIN(id) FROM changes WHERE reviewed=0 AND id > ?",
+                      (c["id"],)).fetchone()[0]
+    if nxt is None:      # wrap to the oldest still waiting that is not this one
+        nxt = con.execute("SELECT MIN(id) FROM changes WHERE reviewed=0"
+                          " AND id <> ?", (c["id"],)).fetchone()[0]
+    prv = con.execute("SELECT MAX(id) FROM changes WHERE reviewed=0 AND id < ?",
+                      (c["id"],)).fetchone()[0]
+    return {"waiting": waiting, "done": done, "spot": spot,
+            "next": nxt, "prev": prv}
+
+
+@app.route("/change/<int:change_id>/highlight", methods=["POST"])
+def highlight_add(change_id):
+    """Mark something on an update. Answers JSON: the page adds the mark
+    without reloading, because a reload would throw away the reader's place -
+    and losing your place is exactly what highlighting is meant to prevent."""
+    data = request.get_json(silent=True) or {}
+    con = db.connect()
+    exists = con.execute("SELECT id FROM changes WHERE id=?",
+                         (change_id,)).fetchone()
+    con.close()
+    if not exists:
+        return jsonify({"ok": False, "error": "That update is gone."}), 404
+    row, err = hl.add(change_id, data.get("kind", ""), data.get("anchor"),
+                      current_user(), label=data.get("label", ""),
+                      note=data.get("note", ""), color=data.get("color", "y"))
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True, "highlight": hl.as_json([row])[0]})
+
+
+@app.route("/highlight/<int:hl_id>/delete", methods=["POST"])
+def highlight_delete(hl_id):
+    err = hl.remove(hl_id, current_user(), is_admin=is_admin())
+    if err:
+        return jsonify({"ok": False, "error": err}), 403
+    return jsonify({"ok": True})
 
 
 ART_NAME_RE = re.compile(r"^[a-z0-9_]+\.png$")

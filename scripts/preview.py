@@ -84,11 +84,77 @@ def _seed(con):
         "images_added": [], "images_removed": [],
         "lib": {"added": [], "removed": [], "changed": []},
     }), encoding="utf-8")
+
+    # Two REAL captures on disk, so the update opens with a real text diff and
+    # real screenshots - which is what the reviewing screen is: highlighting,
+    # the rail, the queue. A change row pointing at empty dirs renders none of
+    # it, and a screen nobody can look at is a screen nobody can check.
+    before = ["XMC1000 series microcontroller", "Arm Cortex-M0 core at 32 MHz",
+              "Operating temperature -40 to 105 C", "RoHS compliant",
+              "The line that was taken away.", "Ordering code XMC1007-T016",
+              "Package PG-TSSOP-16", "Documents", "Data sheet v1.4",
+              "Errata sheet v1.1"]
+    after = ["XMC1000 series microcontroller", "Arm Cortex-M0 core at 48 MHz",
+             "Operating temperature -40 to 105 C", "RoHS compliant",
+             "A new paragraph about the gate driver family.",
+             "A second line that appeared.", "Ordering code XMC1007-T016",
+             "Package PG-TSSOP-16", "Documents", "Data sheet v1.5",
+             "Errata sheet v1.1"]
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        Image = None
+    con.execute(
+        "INSERT INTO snapshots(id, url_id, ts, dir, status, page_title)"
+        " VALUES(101, 7, '2026-07-27T11:00:00', '', 'ok',"
+        " 'XMC1007 32-bit industrial microcontroller Arm Cortex-M0')")
+    for snap_id, lines, mark in ((7, before, None),
+                                 (101, after, (60, 300, 300, 360))):
+        d = db.SNAP_DIR / "0007" / ("cap%d" % snap_id)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "text.txt").write_text("\n".join(lines), encoding="utf-8")
+        (d / "images.json").write_text(json.dumps(
+            ["https://www.infineon.com/img/hero.png",
+             "https://www.infineon.com/img/pinout.png"]), encoding="utf-8")
+        (d / "sections.json").write_text(json.dumps({
+            "documents": [{"title": "Data sheet", "url": "/d/ds.pdf",
+                           "meta": "PDF | EN | v1.%d" % (4 if snap_id == 7 else 5)}],
+            "design_resources": [], "videos": [], "news": [],
+        }), encoding="utf-8")
+        (d / "meta.json").write_text(json.dumps(
+            {"text_rev": 6, "img_rev": 5, "shot_rev": 7, "sections_rev": 2,
+             "shot_scale": 1.0, "shot_ignore": []}), encoding="utf-8")
+        if Image is not None:
+            im = Image.new("RGB", (600, 800), (252, 252, 254))
+            dr = ImageDraw.Draw(im)
+            for y in range(40, 760, 90):
+                dr.rectangle([40, y, 560, y + 54], fill=(226, 232, 240))
+            if mark:
+                dr.rectangle(list(mark), fill=(191, 219, 254))
+            im.save(d / "shot.png")
+        con.execute("UPDATE snapshots SET dir=? WHERE id=?", (str(d), snap_id))
     con.execute(
         "INSERT INTO changes(id, url_id, ts, old_snapshot_id, new_snapshot_id,"
-        " text_changed, lines_added, lines_removed, summary, dir, reviewed)"
-        " VALUES(1, 7, '2026-07-27T11:00:00', 7, 7, 1, 2, 1,"
-        " 'text: +2 -1', ?, 0)", (str(cd),))
+        " text_changed, lines_added, lines_removed, summary, dir, reviewed,"
+        " components)"
+        " VALUES(1, 7, '2026-07-27T11:00:00', 7, 101, 1, 2, 1,"
+        " 'page text (+2/-1 lines)', ?, 0, ?)",
+        (str(cd), json.dumps(["page text (+2/-1 lines)",
+                              "Documents (~1)"])))
+    # a few more waiting, so the queue strip has a real position to show
+    for cid, uid in ((2, 14), (3, 21), (4, 28)):
+        con.execute(
+            "INSERT INTO changes(id, url_id, ts, old_snapshot_id,"
+            " new_snapshot_id, text_changed, lines_added, lines_removed,"
+            " summary, dir, reviewed) VALUES(?, ?, '2026-07-27T11:%02d:00',"
+            " 7, 101, 1, 1, 0, 'page text (+1/-0 lines)', '', 0)"
+            % (cid * 7), (cid, uid))
+    for cid, uid in ((5, 35), (6, 42)):
+        con.execute(
+            "INSERT INTO changes(id, url_id, ts, old_snapshot_id,"
+            " new_snapshot_id, text_changed, summary, dir, reviewed,"
+            " resolution) VALUES(?, ?, '2026-07-26T09:00:00', 7, 101, 1,"
+            " 'page text (+3/-2 lines)', '', 1, 'approve')", (cid, uid))
     con.execute(
         "INSERT INTO asset_changes(url, kind, ts, old_etag, new_etag,"
         " old_length, new_length) VALUES("

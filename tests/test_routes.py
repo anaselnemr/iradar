@@ -408,3 +408,129 @@ def test_mark_filter_bolds_safely():
     assert "<script>" not in out and "&lt;script&gt;" in out
     out2 = str(app.mark_filter("Infineon CY8C4247 kit", "PSOC"))
     assert "<b>Infineon</b>" in out2 and "<b>CY8C4247</b>" in out2 or "<b>CY8C</b>4247" in out2
+
+
+# --- highlights: what a reviewer marked while reading -----------------------
+
+def _csrf_headers():
+    """The token the app stamps into every form - a JSON POST has to
+    carry it in the header, which is what the real page does."""
+    import re as _re
+    m = _re.search(r'name="_csrf" value="([^"]+)"',
+                   _client.get("/").data.decode("utf-8", "replace"))
+    return {"X-CSRF-Token": m.group(1)} if m else {}
+
+
+# Highlight fixtures live on their OWN page. They leave updates unreviewed on
+# purpose - that is what a queue is - and the accept/reject tests above assert
+# that a page goes quiet once its last update is decided. Sharing page 1 would
+# have made those tests fail for a reason that has nothing to do with them.
+HL_URL_ID = 900
+
+
+def _marked_change():
+    """A change row with two real captures behind it, so the page renders the
+    diff a reviewer would be highlighting."""
+    import json as _json
+    con = db.connect()
+    con.execute("INSERT OR IGNORE INTO urls(id, url, active, ptype,"
+                " last_status) VALUES(?, 'https://www.infineon.com/part/HL',"
+                " 1, 'Part', 'unchanged')", (HL_URL_ID,))
+    d1 = db.SNAP_DIR / "hl" / "a"
+    d2 = db.SNAP_DIR / "hl" / "b"
+    for d, lines in ((d1, ["alpha", "beta"]), (d2, ["alpha", "gamma"])):
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "text.txt").write_text("\n".join(lines), encoding="utf-8")
+        (d / "images.json").write_text("[]", encoding="utf-8")
+        (d / "meta.json").write_text(_json.dumps({"text_rev": 6}),
+                                     encoding="utf-8")
+    a = con.execute("INSERT INTO snapshots(url_id, ts, dir, status)"
+                    " VALUES(?, 't1', ?, 'ok')", (HL_URL_ID, str(d1))).lastrowid
+    b = con.execute("INSERT INTO snapshots(url_id, ts, dir, status)"
+                    " VALUES(?, 't2', ?, 'ok')", (HL_URL_ID, str(d2))).lastrowid
+    cid = con.execute(
+        "INSERT INTO changes(url_id, ts, old_snapshot_id, new_snapshot_id,"
+        " text_changed, lines_added, lines_removed, summary, dir, reviewed)"
+        " VALUES(?, 't2', ?, ?, 1, 1, 1, 'page text (+1/-1 lines)', '', 0)",
+        (HL_URL_ID, a, b)).lastrowid
+    con.commit()
+    con.close()
+    return cid
+
+
+def test_marking_text_survives_a_reload():
+    """The whole point: a mark made while reading is still there when the page
+    is opened again - by whoever opens it next."""
+    cid = _marked_change()
+    r = _client.post("/change/%d/highlight" % cid, headers=_csrf_headers(), json={
+        "kind": "text", "color": "g", "label": "gamma",
+        "anchor": {"block": "t0.1", "start": 0, "end": 5}})
+    assert r.status_code == 200, r.data
+    body = r.get_json()
+    assert body["ok"] and body["highlight"]["label"] == "gamma"
+    page = _client.get("/change/%d" % cid).data.decode("utf-8", "replace")
+    assert "t0.1" in page, "the anchor must reach the page that replays it"
+    assert "gamma" in page
+
+
+def test_a_box_is_stored_as_fractions_of_the_picture():
+    """Pixels would be wrong the moment the same screenshot renders at another
+    width - in the side-by-side, on a phone, opened full size."""
+    cid = _marked_change()
+    r = _client.post("/change/%d/highlight" % cid, headers=_csrf_headers(), json={
+        "kind": "box", "anchor": {"img": "new_boxed.png", "x": 0.2, "y": 0.3,
+                                  "w": 0.4, "h": 0.2}})
+    assert r.status_code == 200, r.data
+    a = r.get_json()["highlight"]["anchor"]
+    assert (a["x"], a["y"], a["w"], a["h"]) == (0.2, 0.3, 0.4, 0.2)
+    # out-of-range values are clamped, never stored to be replayed off-screen
+    r2 = _client.post("/change/%d/highlight" % cid, headers=_csrf_headers(), json={
+        "kind": "box", "anchor": {"img": "x.png", "x": -3, "y": 9,
+                                  "w": 0.5, "h": 0.5}})
+    a2 = r2.get_json()["highlight"]["anchor"]
+    assert a2["x"] == 0.0 and a2["y"] == 1.0
+
+
+def test_a_highlight_that_pins_down_nothing_is_refused():
+    cid = _marked_change()
+    for bad in ({"kind": "text", "anchor": {"block": "", "start": 0, "end": 5}},
+                {"kind": "text", "anchor": {"block": "t0.0", "start": 5,
+                                            "end": 5}},
+                {"kind": "box", "anchor": {"img": "a.png", "x": 0, "y": 0,
+                                           "w": 0, "h": 0.5}},
+                {"kind": "scribble", "anchor": {}}):
+        r = _client.post("/change/%d/highlight" % cid,
+                         headers=_csrf_headers(), json=bad)
+        assert r.status_code == 400, (bad, r.status_code)
+
+
+def test_the_review_queue_knows_where_you_are():
+    """The strip has to count the pile, not list it - and a decided update has
+    left the pile, so it stops claiming a position in it."""
+    import app as _app
+    cid = _marked_change()
+    con = db.connect()
+    c = con.execute("SELECT * FROM changes WHERE id=?", (cid,)).fetchone()
+    q = _app._review_queue_spot(con, c)
+    assert q["spot"] is not None and q["spot"] >= 1
+    assert q["waiting"] >= 1 and q["spot"] <= q["waiting"]
+    con.execute("UPDATE changes SET reviewed=1 WHERE id=?", (cid,))
+    con.commit()
+    c2 = con.execute("SELECT * FROM changes WHERE id=?", (cid,)).fetchone()
+    q2 = _app._review_queue_spot(con, c2)
+    con.close()
+    assert q2["spot"] is None, "a reviewed update is not standing in the queue"
+
+
+def test_someone_elses_highlight_is_not_yours_to_delete():
+    cid = _marked_change()
+    r = _client.post("/change/%d/highlight" % cid, headers=_csrf_headers(), json={
+        "kind": "text", "anchor": {"block": "t0.0", "start": 0, "end": 3}})
+    hid = r.get_json()["highlight"]["id"]
+    con = db.connect()
+    con.execute("UPDATE highlights SET user_id=99999 WHERE id=?", (hid,))
+    con.commit()
+    con.close()
+    # the signed-in account here is an admin, who may remove anyone's
+    assert _client.post("/highlight/%d/delete" % hid,
+                        headers=_csrf_headers()).status_code == 200

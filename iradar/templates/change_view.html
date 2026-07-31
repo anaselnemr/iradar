@@ -1,8 +1,90 @@
 {% extends "base.html" %}
 {% block title %}Update #{{ c.id }} — iRadar{% endblock %}
 {% block content %}
+<style>
+  /* ---- reviewing layout: the update, and a rail that follows you ----------
+     The rail carries where you are in the queue and everything you have
+     marked. It is sticky on a desktop because both facts are only useful
+     while you are still reading; on a phone it sits at the top, where the
+     progress is worth a line and the marks fold away. */
+  .revlayout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .revmain { min-width: 0; }
+  @media (min-width: 1080px) {
+    .revlayout { grid-template-columns: minmax(0, 1fr) 264px; align-items: start; }
+    .revrail { position: sticky; top: 78px; max-height: calc(100vh - 100px);
+               overflow: auto; }
+  }
+  @media (max-width: 1079px) { .revrail { order: -1; } }
+  .revrail { border: 1px solid var(--line); border-radius: 10px;
+             background: var(--bg); padding: 12px 13px; font-size: 13px; }
+  .rr-h { font-weight: 600; font-size: 12px; letter-spacing: .04em;
+          text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+  .rr-count { font-variant-numeric: tabular-nums; font-size: 13.5px;
+              color: var(--fg); }
+  .rr-bar { height: 8px; border-radius: 999px; background: var(--hover);
+            border: 1px solid var(--line); overflow: hidden; margin: 7px 0 4px; }
+  .rr-bar > i { display: block; height: 100%; background: var(--accent);
+                width: 0; transition: width .5s ease; }
+  .rr-nav { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+  .rr-nav a { font-size: 12.5px; }
+  .rr-sep { border: 0; border-top: 1px solid var(--line); margin: 13px 0 11px; }
+  .rr-empty { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .rr-list { list-style: none; margin: 0; padding: 0; }
+  .rr-item { display: flex; gap: 7px; align-items: flex-start; padding: 5px 0;
+             border-bottom: 1px dotted var(--line); }
+  .rr-item:last-child { border-bottom: 0; }
+  .rr-go { flex: 1; min-width: 0; text-align: left; background: none;
+           border: 0; padding: 0; cursor: pointer; color: var(--fg);
+           font: inherit; line-height: 1.35; overflow-wrap: anywhere; }
+  .rr-go:hover { text-decoration: underline; }
+  .rr-go small { display: block; color: var(--muted); font-size: 11px; }
+  .rr-dot { width: 10px; height: 10px; border-radius: 3px; margin-top: 3px;
+            flex: 0 0 auto; border: 1px solid rgba(0,0,0,.18); }
+  .rr-x { background: none; border: 0; color: var(--muted); cursor: pointer;
+          font-size: 14px; line-height: 1; padding: 2px 3px; }
+  .rr-x:hover { color: #dc2626; }
+
+  /* the pens */
+  .hl-y { background: #fde68a; } .hl-g { background: #bbf7d0; }
+  .hl-b { background: #bfdbfe; } .hl-p { background: #e9d5ff; }
+  mark.hlmark { border-radius: 2px; padding: 0 1px; color: inherit; }
+  mark.hlmark.flash, .hlbox.flash { animation: hlflash 1.5s ease; }
+  @keyframes hlflash { 0%, 55% { box-shadow: 0 0 0 3px var(--accent); } }
+  [data-hl] { scroll-margin-top: 84px; }
+
+  /* the floating pen that appears over a selection */
+  #hlpen { position: absolute; z-index: 60; display: none; gap: 4px;
+           padding: 5px 6px; background: var(--bg); border: 1px solid var(--line);
+           border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.16); }
+  #hlpen button { width: 20px; height: 20px; border-radius: 5px; cursor: pointer;
+                  border: 1px solid rgba(0,0,0,.2); padding: 0; }
+
+  /* marking an area on a picture */
+  /* The overlay is positioned against this wrapper, so the wrapper has to be
+     exactly the picture and nothing else - an inline image leaves a few pixels
+     of line-height under it, and every box drawn would sit that far off. */
+  .shotwrap { position: relative; display: block; width: fit-content;
+              max-width: 100%; }
+  .shotwrap img { display: block; max-width: 100%; height: auto; }
+  .hloverlay { position: absolute; inset: 0; }
+  .hloverlay.armed { cursor: crosshair; background: rgba(37,99,235,.05); }
+  .hlbox { position: absolute; border: 2px solid #f59e0b; border-radius: 2px;
+           background: rgba(245,158,11,.16); pointer-events: none;
+           scroll-margin-top: 90px; }
+  .hlbox.g { border-color: #16a34a; background: rgba(22,163,74,.16); }
+  .hlbox.b { border-color: #2563eb; background: rgba(37,99,235,.16); }
+  .hlbox.p { border-color: #7c3aed; background: rgba(124,58,237,.16); }
+  .markbtn { font-size: 12px; padding: 2px 8px; border-radius: 999px;
+             border: 1px solid var(--line); background: var(--bg);
+             cursor: pointer; color: var(--muted); }
+  .markbtn.on { border-color: var(--accent); color: var(--fg); font-weight: 600; }
+</style>
+
 <p><a href="{{ url_for('index') }}">← Dashboard</a> ·
    <a href="{{ url_for('url_detail', url_id=u.id) }}">URL history</a></p>
+
+<div class="revlayout">
+<div class="revmain">
 
 <div class="card">
   <h1 style="font-size:17px; overflow-wrap:anywhere">
@@ -14,7 +96,7 @@
   <div class="whatchanged">
     <div class="wc-head">{{ parts|length }} thing{{ 's' if parts|length != 1 }} updated on this page</div>
     <ul class="wc-list">
-      {% for p in parts %}<li>{{ p }}</li>{% endfor %}
+      {% for p in parts %}<li data-hl="wc{{ loop.index0 }}">{{ p }}</li>{% endfor %}
     </ul>
   </div>
   <style>
@@ -31,18 +113,19 @@
     {% if c.visual_changed %}<span class="badge b-changed">VISUAL: {{ '%.2f' % c.pixel_ratio }}% pixels, height {{ c.height_delta }}px</span>{% endif %}
   </div>
   {% if not c.reviewed %}
+  {% set after = url_for('change_view', change_id=queue.next) if queue and queue.next else url_for('index') %}
   <div class="verdict">
     <form class="inline" method="post" action="{{ url_for('change_resolve', change_id=c.id) }}">
-      <input type="hidden" name="next" value="{{ url_for('index') }}">
+      <input type="hidden" name="next" value="{{ after }}">
       <input type="hidden" name="resolution" value="approve">
       <button title="The new version is correct: it becomes the baseline for future checks">✔ Approve — new version is correct</button>
     </form>
     <form class="inline" method="post" action="{{ url_for('change_resolve', change_id=c.id) }}">
-      <input type="hidden" name="next" value="{{ url_for('index') }}">
+      <input type="hidden" name="next" value="{{ after }}">
       <input type="hidden" name="resolution" value="reject">
       <button class="btn-reject" title="The old version was correct: keep it as the baseline — the page stays flagged on future checks until the website matches it again">✖ Reject — old version was correct</button>
     </form>
-    <span class="muted">Approve = the new text/images become the baseline. Reject = the old snapshot stays the baseline and this page will be flagged again until the website is fixed.</span>
+    <span class="muted">Approve = the new text/images become the baseline. Reject = the old snapshot stays the baseline and this page will be flagged again until the website is fixed.{% if queue and queue.next %} Either one takes you to the next update waiting.{% endif %}</span>
   </div>
   {% elif c.resolution == 'reject' %}
   <div class="verdict"><span class="badge b-error">✖ rejected — old version kept as baseline</span></div>
@@ -77,12 +160,14 @@
 
 {% if hunks %}
 <div class="card">
-  <h2>Text updates <span class="muted">(red = removed, green = added)</span></h2>
+  <h2>Text updates <span class="muted">(red = removed, green = added — select any of it to highlight)</span></h2>
   {% for h in hunks %}
+  {% set hi = loop.index0 %}
   <div class="diff">
     <div class="h">around line {{ h.old_start }}</div>
     {% for tag, line in h.lines %}
-      <div class="l {{ 'add' if tag == '+' else 'del' if tag == '-' else '' }}">{{ line }}</div>
+      <div class="l {{ 'add' if tag == '+' else 'del' if tag == '-' else '' }}"
+           data-hl="t{{ hi }}.{{ loop.index0 }}">{{ line }}</div>
     {% endfor %}
   </div>
   {% endfor %}
@@ -93,21 +178,22 @@
 <div class="card">
   <h2>Library updates <span class="muted">(documents / resources / videos / news)</span></h2>
   {% for label, d in lib_diff.items() %}
+    {% set si = loop.index0 %}
     <h3 style="font-size:14.5px; margin:14px 0 4px">{{ label }}</h3>
     {% if d.added %}
     <ul class="liblist">
-      {% for it in d.added %}<li style="color:#166534">＋ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
+      {% for it in d.added %}<li style="color:#166534" data-hl="l{{ si }}a{{ loop.index0 }}">＋ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
     </ul>
     {% endif %}
     {% if d.removed %}
     <ul class="liblist">
-      {% for it in d.removed %}<li style="color:#991b1b">－ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
+      {% for it in d.removed %}<li style="color:#991b1b" data-hl="l{{ si }}r{{ loop.index0 }}">－ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}{% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}</li>{% endfor %}
     </ul>
     {% endif %}
     {% if d.changed %}
     <ul class="liblist">
       {% for it in d.changed %}
-      <li style="color:#9a5b00">～ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}
+      <li style="color:#9a5b00" data-hl="l{{ si }}c{{ loop.index0 }}">～ {% if it.url %}<a href="{{ it.url }}" target="_blank">{{ it.title or it.url }}</a>{% else %}{{ it.title }}{% endif %}
         <span class="muted">— changed in place:</span>
         <ul style="margin:2px 0 6px; padding-left:18px; font-size:12.5px">
           {% for f, oldv, newv in it.fields %}
@@ -128,42 +214,61 @@
   <h2>Image updates</h2>
   {% if img_added %}
     <h3 style="font-size:14px; color:#166534">Added ({{ img_added|length }})</h3>
-    <ul>{% for i in img_added %}<li style="word-break:break-all"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
+    <ul>{% for i in img_added %}<li style="word-break:break-all" data-hl="ia{{ loop.index0 }}"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
   {% endif %}
   {% if img_removed %}
     <h3 style="font-size:14px; color:#991b1b">Removed ({{ img_removed|length }})</h3>
-    <ul>{% for i in img_removed %}<li style="word-break:break-all"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
+    <ul>{% for i in img_removed %}<li style="word-break:break-all" data-hl="ir{{ loop.index0 }}"><a href="{{ i }}" target="_blank">{{ i }}</a></li>{% endfor %}</ul>
   {% endif %}
 </div>
 {% endif %}
 
 {% if art.regions %}
 <div class="card">
-  <h2>Updated areas up close <span class="muted">({{ art.regions|length }} area(s) — click to open full size)</span></h2>
+  <h2>Updated areas up close <span class="muted">({{ art.regions|length }} area(s))</span></h2>
   <p class="muted">Each strip shows the same spot on the page: left = before, right = after.</p>
   {% for r in art.regions %}
-  <a href="{{ url_for('change_art', change_id=c.id, name=r) }}" target="_blank" title="Open full size" class="regionstrip">
-    <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=r) }}" alt="Updated area {{ loop.index }}">
-  </a>
+  <figure class="shotfig" style="margin:0 0 14px">
+    <figcaption class="muted" style="display:flex; align-items:center; gap:10px; margin-bottom:4px">
+      Area {{ loop.index }}
+      <button type="button" class="markbtn" data-arm="{{ r }}">🖍 Mark an area</button>
+      <a href="{{ url_for('change_art', change_id=c.id, name=r) }}" target="_blank">open full size</a>
+    </figcaption>
+    <div class="shotwrap">
+      <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=r) }}" alt="Updated area {{ loop.index }}">
+      <div class="hloverlay" data-img="{{ r }}"></div>
+    </div>
+  </figure>
   {% endfor %}
 </div>
 {% endif %}
 
 <div class="card">
-  <h2>Full-page screenshots <span class="muted">(updated areas boxed in red — click to open full size)</span></h2>
+  <h2>Full-page screenshots <span class="muted">(updated areas boxed in red)</span></h2>
   <div class="shots shots2">
-    <figure>
-      <figcaption>BEFORE ({{ old_snap.ts|localtime if old_snap else '' }})</figcaption>
-      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name='old_boxed.png') }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name='old_boxed.png') }}"></a>
-      {% elif old_snap and old_snap.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=old_snap.id) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=old_snap.id) }}"></a>
+    {% set shots = [('old', 'BEFORE', old_snap, 'old_boxed.png'), ('new', 'AFTER', new_snap, 'new_boxed.png')] %}
+    {% for side, cap, snap, boxed in shots %}
+    <figure class="shotfig">
+      <figcaption>{{ cap }} ({{ snap.ts|localtime if snap else '' }})
+        {% if (art.boxed) or (snap and snap.dir) %}
+        <button type="button" class="markbtn" data-arm="{{ boxed if art.boxed else 'snap:' ~ side }}">🖍 Mark an area</button>
+        {% endif %}
+      </figcaption>
+      {% if art.boxed %}
+      <div class="shotwrap">
+        <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=boxed) }}">
+        <div class="hloverlay" data-img="{{ boxed }}"></div>
+      </div>
+      <div><a href="{{ url_for('change_art', change_id=c.id, name=boxed) }}" target="_blank" class="muted" style="font-size:12px">open full size</a></div>
+      {% elif snap and snap.dir %}
+      <div class="shotwrap">
+        <img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=snap.id) }}">
+        <div class="hloverlay" data-img="snap:{{ side }}"></div>
+      </div>
+      <div><a href="{{ url_for('snapshot_screenshot', snap_id=snap.id) }}" target="_blank" class="muted" style="font-size:12px">open full size</a></div>
       {% else %}<p class="muted">not available</p>{% endif %}
     </figure>
-    <figure>
-      <figcaption>AFTER ({{ new_snap.ts|localtime if new_snap else '' }})</figcaption>
-      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name='new_boxed.png') }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name='new_boxed.png') }}"></a>
-      {% elif new_snap and new_snap.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=new_snap.id) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=new_snap.id) }}"></a>
-      {% else %}<p class="muted">not available</p>{% endif %}
-    </figure>
+    {% endfor %}
   </div>
   {% if art.legacy and not art.boxed %}
   <figure style="margin-top:14px">
@@ -178,4 +283,254 @@
 </div>
 
 {% include "_notes.html" %}
+</div>{# /revmain #}
+
+<aside class="revrail" id="revrail">
+  <div class="rr-h">Reviewing</div>
+  {% if queue and queue.spot %}
+    <div class="rr-count"><b>{{ queue.spot }}</b> of {{ queue.waiting }} waiting</div>
+    <div class="rr-bar"><i style="width: {{ (100 * queue.spot / queue.waiting)|round(1) }}%"></i></div>
+  {% elif queue %}
+    <div class="rr-count">{{ queue.waiting }} still waiting</div>
+    <div class="rr-bar"><i style="width:100%"></i></div>
+  {% endif %}
+  {% if queue %}
+  <div class="muted" style="font-size:12px">{{ queue.done }} reviewed so far</div>
+  <div class="rr-nav">
+    {% if queue.prev %}<a href="{{ url_for('change_view', change_id=queue.prev) }}">← previous</a>{% endif %}
+    {% if queue.next %}<a href="{{ url_for('change_view', change_id=queue.next) }}">next waiting →</a>{% endif %}
+  </div>
+  {% endif %}
+
+  <hr class="rr-sep">
+  <div class="rr-h">Highlights <span id="hlcount"></span></div>
+  <ul class="rr-list" id="hllist"></ul>
+  <p class="rr-empty" id="hlempty">Select any text to mark it, or press
+    <b>🖍 Mark an area</b> under a screenshot and drag a box. What you mark
+    stays here for whoever opens this next.</p>
+</aside>
+</div>{# /revlayout #}
+
+<div id="hlpen">
+  <button type="button" data-c="y" class="hl-y" title="Yellow"></button>
+  <button type="button" data-c="g" class="hl-g" title="Green"></button>
+  <button type="button" data-c="b" class="hl-b" title="Blue"></button>
+  <button type="button" data-c="p" class="hl-p" title="Purple"></button>
+</div>
+
+<script>
+(function () {
+  const CHANGE_ID = {{ c.id }};
+  let marks = {{ marks|tojson }};
+
+  const $ = (s, r) => (r || document).querySelector(s);
+  const listEl = $('#hllist'), emptyEl = $('#hlempty'), countEl = $('#hlcount');
+  const pen = $('#hlpen');
+  let pending = null;               // the selection waiting for a colour
+
+  // ---- offsets inside a block, counted over its text only -----------------
+  // The stored anchor is "characters into this block", not "node 3, offset 7":
+  // node structure is a rendering detail that a template edit can change,
+  // while the words are the thing the reviewer actually marked.
+  function walk(block) {
+    return document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  }
+  function offsetOf(block, node, off) {
+    const w = walk(block); let n, total = 0;
+    while ((n = w.nextNode())) {
+      if (n === node) return total + off;
+      total += n.nodeValue.length;
+    }
+    return null;
+  }
+  function rangeFor(block, start, end) {
+    const w = walk(block); let n, total = 0, r = document.createRange(), set = false;
+    while ((n = w.nextNode())) {
+      const len = n.nodeValue.length;
+      if (!set && total + len >= start) { r.setStart(n, start - total); set = true; }
+      if (set && total + len >= end) { r.setEnd(n, end - total); return r; }
+      total += len;
+    }
+    return set ? null : null;
+  }
+  function paint(m) {
+    if (m.kind === 'box') return paintBox(m);
+    const block = document.querySelector('[data-hl="' + CSS.escape(m.anchor.block) + '"]');
+    if (!block) return;
+    const r = rangeFor(block, m.anchor.start, m.anchor.end);
+    if (!r) return;
+    const mark = document.createElement('mark');
+    mark.className = 'hlmark hl-' + (m.color || 'y');
+    mark.id = 'hl' + m.id;
+    try { mark.appendChild(r.extractContents()); r.insertNode(mark); }
+    catch (e) { /* a selection that crossed markup - the rail still points at it */ }
+  }
+  function paintBox(m) {
+    const ov = document.querySelector('.hloverlay[data-img="' + CSS.escape(m.anchor.img) + '"]');
+    if (!ov) return;
+    const b = document.createElement('div');
+    b.className = 'hlbox ' + (m.color || 'y');
+    b.id = 'hl' + m.id;
+    b.style.left = (m.anchor.x * 100) + '%';
+    b.style.top = (m.anchor.y * 100) + '%';
+    b.style.width = (m.anchor.w * 100) + '%';
+    b.style.height = (m.anchor.h * 100) + '%';
+    ov.appendChild(b);
+  }
+
+  // ---- the rail -----------------------------------------------------------
+  function label(m) {
+    if (m.kind === 'box') return 'area on ' + prettyImg(m.anchor.img);
+    return m.label || '(marked text)';
+  }
+  function prettyImg(n) {
+    if (n === 'old_boxed.png' || n === 'snap:old') return 'the BEFORE shot';
+    if (n === 'new_boxed.png' || n === 'snap:new') return 'the AFTER shot';
+    const m = /region_(\d+)/.exec(n);
+    return m ? ('close-up ' + (parseInt(m[1], 10) + 1)) : n;
+  }
+  function drawRail() {
+    listEl.innerHTML = '';
+    countEl.textContent = marks.length ? '(' + marks.length + ')' : '';
+    emptyEl.style.display = marks.length ? 'none' : '';
+    marks.forEach(m => {
+      const li = document.createElement('li');
+      li.className = 'rr-item';
+      const dot = document.createElement('span');
+      dot.className = 'rr-dot hl-' + (m.color || 'y');
+      const go = document.createElement('button');
+      go.className = 'rr-go';
+      go.type = 'button';
+      go.textContent = label(m).slice(0, 90);
+      const who = document.createElement('small');
+      who.textContent = m.author || 'someone';
+      go.appendChild(who);
+      go.onclick = () => jump(m);
+      const x = document.createElement('button');
+      x.className = 'rr-x'; x.type = 'button'; x.title = 'Remove this highlight';
+      x.textContent = '✕';
+      x.onclick = () => drop(m);
+      li.append(dot, go, x);
+      listEl.appendChild(li);
+    });
+  }
+  function jump(m) {
+    const el = document.getElementById('hl' + m.id);
+    if (!el) return;
+    el.scrollIntoView({behavior: 'smooth', block: 'center'});
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+  async function drop(m) {
+    const r = await fetch('/highlight/' + m.id + '/delete', {method: 'POST'});
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) { alert(j.error || 'Could not remove that highlight.'); return; }
+    const el = document.getElementById('hl' + m.id);
+    if (el && m.kind === 'box') el.remove();
+    else if (el) { const p = el.parentNode; while (el.firstChild) p.insertBefore(el.firstChild, el); el.remove(); p.normalize(); }
+    marks = marks.filter(x => x.id !== m.id);
+    drawRail();
+  }
+  async function save(payload) {
+    const r = await fetch('/change/' + CHANGE_ID + '/highlight', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)});
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) { alert(j.error || 'Could not save that highlight.'); return null; }
+    marks.push(j.highlight);
+    paint(j.highlight);
+    drawRail();
+    return j.highlight;
+  }
+
+  // ---- marking text -------------------------------------------------------
+  document.addEventListener('mouseup', ev => {
+    if (pen.contains(ev.target)) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { pen.style.display = 'none'; return; }
+    const r = sel.getRangeAt(0);
+    let node = r.commonAncestorContainer;
+    if (node.nodeType === 3) node = node.parentElement;
+    const block = node && node.closest ? node.closest('[data-hl]') : null;
+    if (!block) { pen.style.display = 'none'; return; }
+    const start = offsetOf(block, r.startContainer, r.startOffset);
+    const end = offsetOf(block, r.endContainer, r.endOffset);
+    if (start === null || end === null || end <= start) { pen.style.display = 'none'; return; }
+    pending = {block: block.dataset.hl, start: start, end: end,
+               label: sel.toString().trim().slice(0, 200)};
+    const box = r.getBoundingClientRect();
+    pen.style.display = 'flex';
+    pen.style.left = (window.scrollX + box.left) + 'px';
+    pen.style.top = (window.scrollY + box.top - 34) + 'px';
+  });
+  pen.querySelectorAll('button').forEach(b => {
+    b.onclick = async () => {
+      if (!pending) return;
+      const p = pending; pending = null;
+      pen.style.display = 'none';
+      window.getSelection().removeAllRanges();
+      await save({kind: 'text', color: b.dataset.c, label: p.label,
+                  anchor: {block: p.block, start: p.start, end: p.end}});
+    };
+  });
+
+  // ---- marking an area on a picture --------------------------------------
+  // Off by default: these pictures are links to the full-size version, and a
+  // reviewer who drags across one expecting to select should not have it open
+  // in a new tab. Arming the button is the whole opt-in.
+  let armed = null;
+  document.querySelectorAll('.markbtn').forEach(btn => {
+    btn.onclick = () => {
+      const name = btn.dataset.arm;
+      const ov = document.querySelector('.hloverlay[data-img="' + CSS.escape(name) + '"]');
+      document.querySelectorAll('.markbtn').forEach(b => b.classList.remove('on'));
+      document.querySelectorAll('.hloverlay').forEach(o => o.classList.remove('armed'));
+      if (armed === name) { armed = null; return; }
+      armed = name;
+      btn.classList.add('on');
+      if (ov) ov.classList.add('armed');
+    };
+  });
+  document.querySelectorAll('.hloverlay').forEach(ov => {
+    let drag = null, ghost = null;
+    ov.addEventListener('mousedown', ev => {
+      if (!ov.classList.contains('armed')) return;
+      ev.preventDefault();
+      const b = ov.getBoundingClientRect();
+      // A picture still loading has no size yet, and a fraction of nothing is
+      // a box in the wrong place on every later view.
+      if (b.width < 20 || b.height < 20) return;
+      drag = {x: (ev.clientX - b.left) / b.width, y: (ev.clientY - b.top) / b.height};
+      ghost = document.createElement('div');
+      ghost.className = 'hlbox';
+      ov.appendChild(ghost);
+    });
+    ov.addEventListener('mousemove', ev => {
+      if (!drag || !ghost) return;
+      const b = ov.getBoundingClientRect();
+      const x2 = (ev.clientX - b.left) / b.width, y2 = (ev.clientY - b.top) / b.height;
+      ghost.style.left = (Math.min(drag.x, x2) * 100) + '%';
+      ghost.style.top = (Math.min(drag.y, y2) * 100) + '%';
+      ghost.style.width = (Math.abs(x2 - drag.x) * 100) + '%';
+      ghost.style.height = (Math.abs(y2 - drag.y) * 100) + '%';
+    });
+    ov.addEventListener('mouseup', async ev => {
+      if (!drag || !ghost) return;
+      const b = ov.getBoundingClientRect();
+      const x2 = (ev.clientX - b.left) / b.width, y2 = (ev.clientY - b.top) / b.height;
+      const box = {x: Math.min(drag.x, x2), y: Math.min(drag.y, y2),
+                   w: Math.abs(x2 - drag.x), h: Math.abs(y2 - drag.y)};
+      ghost.remove(); ghost = null; drag = null;
+      if (box.w < 0.005 || box.h < 0.005) return;   // a click, not a box
+      box.img = ov.dataset.img;
+      await save({kind: 'box', color: 'y', anchor: box,
+                  label: 'area on ' + prettyImg(box.img)});
+    });
+  });
+
+  marks.forEach(paint);
+  drawRail();
+})();
+</script>
 {% endblock %}

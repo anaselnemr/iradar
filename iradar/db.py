@@ -219,6 +219,34 @@ def init_db():
     );
     CREATE INDEX IF NOT EXISTS idx_comments_target
         ON comments(target_kind, target_id, id);
+    -- What a reviewer MARKED while reading an update. A note says what you
+    -- decided; a highlight says where you were looking when you decided it -
+    -- the two lines that mattered out of eighty, the corner of the screenshot
+    -- nobody else would have noticed. It survives the session so the next
+    -- person opens the page already pointed at the evidence.
+    --
+    -- anchor is JSON and its shape depends on kind:
+    --   text {"block": <stable key of the element>, "start": n, "end": n}
+    --   box  {"img": <artifact name>, "x": f, "y": f, "w": f, "h": f}
+    -- The box is stored as FRACTIONS of the picture, never pixels: the same
+    -- screenshot renders at a different width on a phone, in the side-by-side,
+    -- and opened full size, and a mark that only lands on one of them is worse
+    -- than no mark. label keeps the marked words even if a future render moves
+    -- the anchor, so a highlight can always still say what it was about.
+    CREATE TABLE IF NOT EXISTS highlights(
+        id        INTEGER PRIMARY KEY,
+        change_id INTEGER NOT NULL,
+        kind      TEXT NOT NULL,              -- 'text' | 'box'
+        anchor    TEXT NOT NULL DEFAULT '{}',
+        label     TEXT NOT NULL DEFAULT '',
+        note      TEXT NOT NULL DEFAULT '',
+        color     TEXT NOT NULL DEFAULT 'y',
+        user_id   INTEGER,
+        author    TEXT NOT NULL DEFAULT '',
+        created   TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_highlights_change
+        ON highlights(change_id, id);
     CREATE TABLE IF NOT EXISTS users(
         id INTEGER PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,          -- always stored lowercased
