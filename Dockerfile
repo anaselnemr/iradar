@@ -30,7 +30,17 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m pip install --no-cache-dir --upgrade pip \
  && python -m pip install --no-cache-dir -r requirements.txt \
- && python -c "import flask, waitress, playwright, PIL, openpyxl, rapidfuzz, apscheduler; print('deps import cleanly')"
+ && python -c "import flask, waitress, playwright, PIL, openpyxl, rapidfuzz, apscheduler; print('deps import cleanly')" \
+ # ...and then ACTUALLY START THE BROWSER. Importing playwright proves nothing:
+ # the browser is not a python package, it is baked into the base image above,
+ # and the two can disagree. When they did - a rebuild pulled a newer playwright
+ # than the image carried - every import still succeeded, the container went
+ # live, and it accepted runs that captured nothing at all until somebody
+ # noticed a day later. Two seconds here turns that into a failed build.
+ && python -c "from playwright.sync_api import sync_playwright; \
+p = sync_playwright().start(); \
+b = p.chromium.launch(headless=True, args=['--disable-dev-shm-usage']); \
+b.close(); p.stop(); print('chromium launches')"
 
 COPY . .
 

@@ -2,7 +2,15 @@ flask>=3.0
 # real WSGI server: werkzeug's is a DEV server and says so. waitress is pure
 # python and runs on Windows, where gunicorn does not.
 waitress>=3.0
-playwright>=1.45
+# PINNED EXACTLY, and it must stay that way. The browser itself does not come
+# from pip - it is baked into the Dockerfile's base image - so this version and
+# that image tag are two halves of one decision. A range let a rebuild install
+# 1.62.0 into the 1.61.0 image on 2 August; the package then looked for a
+# browser build the image does not carry, chromium.launch() failed on every
+# attempt, and the site sat there accepting runs that captured nothing for a
+# day before anyone noticed. Change this and the FROM line together, never one
+# alone.
+playwright==1.61.0
 apscheduler>=3.10
 pillow>=10.0
 # renders page 1 of a PDF for the document/design-resource thumbnails. It was
