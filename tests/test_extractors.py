@@ -310,3 +310,22 @@ def test_no_line_is_duplicated_absurdly():
             raise AssertionError(
                 f"{name}: line repeated {worst[0][1]}x — {worst[0][0][:50]!r} "
                 f"(duplication regressed?)")
+
+
+# --- the product submenu flyout ---------------------------------------------
+
+def test_the_nav_submenu_is_chrome_and_stays_out_of_every_raw_signal():
+    """The per-product submenu flyout published hundreds of one-word 'updates'
+    on 2026-08-03 - bare 'Software' / 'Datasheet' caption lines leaving and
+    returning as its hidden panels hydrated or did not. The state sticks for
+    hours, so the same-run double-check agreed with the flap both times. A
+    menu is navigation, never page content; it lives in VOLATILE_SEL so all
+    four collectors treat it alike, and all four revision stamps moved with
+    it (the rule the file states at VOLATILE_SEL)."""
+    assert C._NAV_SUBMENU_SEL in C.VOLATILE_SEL, \
+        "the submenu flyout is back in the raw signals"
+    for sel in ("productsubmenu", "designresourcesubmenu"):
+        assert sel in C._NAV_SUBMENU_SEL, f"{sel} dropped out of the exclusion"
+    # the four stamps that must have moved together with this exclusion
+    assert (C.TEXT_REV, C.IMG_REV, C.SHOT_REV, C.SECTIONS_REV) >= (7, 6, 8, 3), \
+        "VOLATILE_SEL grew but a revision stamp stayed behind"

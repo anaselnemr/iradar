@@ -287,7 +287,16 @@ CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
 #       flagged +3/-3 on 4387 -> 4382 with nothing else touched. The price is
 #       still watched structurally, where "N in stock" is stripped before
 #       comparing and a real price move still counts.
-TEXT_REV = 6
+#   6 - the ordering-options table and cart chrome (_STOCK_SEL) leave the walk:
+#       the stock counter's third home (#7097) and the sometimes-hydrating
+#       Add to Cart widget (#6898).
+#   7 - the per-product submenu flyout (_NAV_SUBMENU_SEL) leaves the walk. Its
+#       hidden panels hydrate unreliably and the state sticks for hours, so
+#       the same-run double-check agreed with the flap: hundreds of one-word
+#       "updates" ("Software" / "Datasheet" captions leaving) published on
+#       2026-08-03 and began reversing themselves the next day. A menu is
+#       chrome, never content - same reasoning as the mega-menu at rev 3.
+TEXT_REV = 7
 
 # The volatile-but-structured sections, excluded from every RAW signal (text,
 # image inventory, screenshot judgement) and left to the structured library,
@@ -324,6 +333,18 @@ _STOCK_SEL = ('[class*="multipleopn" i], [class*="stock-qty" i], '
               '[class*="add-to-cart" i], [class*="addtocart" i], '
               '[class*="cart-btn" i], [class*="cart-buttons" i]')
 
+# The per-product submenu flyout ("Design support" and friends): navigation
+# chrome, sibling of the mega-menu excluded at TEXT rev 3, but with its own
+# class names so that exclusion never covered it. Its panels are hidden DOM
+# that hydrates UNRELIABLY - and the state is sticky for hours, so a first
+# capture and its same-run verify capture see the same broken state and agree.
+# On 2026-08-03/04 that published hundreds of one-word "updates" (bare
+# "Software" / "Datasheet" caption lines leaving and returning) that reversed
+# themselves the next day: run 1's queue and run 2's reverse wave. A menu is
+# never page content; nothing real leaves with it.
+_NAV_SUBMENU_SEL = ('[class*="productsubmenu" i], '
+                    '[class*="designresourcesubmenu" i]')
+
 # VOLATILE_SEL feeds FOUR collectors: the text walk (TEXT_REV), the image
 # inventory (IMG_REV), the section read (SECTIONS_REV) and the screenshot's
 # recorded mask boxes (SHOT_REV, via FEED_RECTS_JS). Grow it and ALL FOUR revs
@@ -331,6 +352,7 @@ _STOCK_SEL = ('[class*="multipleopn" i], [class*="stock-qty" i], '
 # what missing one looks like.
 VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
                 ".documents_ifx, .ifx_documents_products, .partner-ul-box, "
+                + _NAV_SUBMENU_SEL + ", "
                 + _STOCK_SEL + ", " + PRICE_SEL)
 
 # Revision of what the SCREENSHOT shows, stamped alongside text_rev and gated
@@ -364,7 +386,12 @@ VOLATILE_SEL = (".designresource-component, div#design-resources, #documents, "
 #       shrinking by 40+24n px: 65 phantom height-only suspects in run 7,
 #       quantized 88/112/160. TEXT, IMG and SECTIONS revs were all bumped for
 #       that change; the screenshot rev was the one missed.
-SHOT_REV = 7
+#   8 - VOLATILE_SEL grew to cover the per-product submenu flyout
+#       (_NAV_SUBMENU_SEL, the 2026-08-03 caption-flap wave). Its panels are
+#       hidden and normally paint nothing, but the recorded mask inventory
+#       changes definition with the selector, and rev 7 above is what happens
+#       when that is ignored. All four revs move together, as the rule says.
+SHOT_REV = 8
 
 # How the screenshot is STORED, not how the page is rendered - the browser still
 # lays out at full width, so nothing about the capture changes, only the file
@@ -419,7 +446,12 @@ FEED_RECTS_JS = r"""
 #       captures. Their per-item imgs are watched by the library instead.
 #   4 - VOLATILE_SEL grew to cover the price/stock block, so anything pictured
 #       inside it (a distributor mark) leaves the inventory with it.
-IMG_REV = 5
+#   5 - VOLATILE_SEL grew to cover the ordering table and cart chrome
+#       (_STOCK_SEL); their imgs leave with them.
+#   6 - VOLATILE_SEL grew to cover the per-product submenu flyout
+#       (_NAV_SUBMENU_SEL): its category icons hydrate with the menu and
+#       flapped the inventory exactly as its captions flapped the text.
+IMG_REV = 6
 
 # Revision of the STRUCTURED read - the library, the sections, the price -
 # stamped like the other three and gated the same way by compare.
@@ -433,7 +465,11 @@ IMG_REV = 5
 #   1 - everything before this stamp existed (implicit)
 #   2 - VOLATILE_SEL grew to cover the price/stock block, so what SECTIONS_JS
 #       reads into `price` and what it leaves out of the sections moved with it
-SECTIONS_REV = 2
+#   3 - VOLATILE_SEL grew to cover the per-product submenu flyout
+#       (_NAV_SUBMENU_SEL, the 2026-08-03 caption-flap wave). SECTIONS_JS
+#       walks inside VOLATILE_SEL containers on purpose, but what counts as
+#       "outside them" moved, so the read is stamped anew like the other three.
+SECTIONS_REV = 3
 
 TEXT_JS = r"""
 () => {
