@@ -915,3 +915,42 @@ def test_the_loss_guards_read_the_streak_not_just_the_badge():
     assert not R._smells_like_half_render(loss, badged)
     assert R._wearing_error(struck) and R._wearing_error(badged)
     assert not R._wearing_error(fresh)
+
+
+def test_a_half_walked_library_is_dropped_not_stored():
+    """#7481's surviving sibling: a pagination walk that dies at page 3 of 14
+    used to store the fraction it had as groundtruth, and the next healthy
+    run read the missing documents as 'removed'. A capture carrying
+    walk_errors is a failed render: baseline kept, snapshot dropped, page
+    queued for the retry rounds - and when none are left, the streak (not a
+    first stumble) decides what is shown."""
+    import runner as R
+
+    root = _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, last_status)"
+                " VALUES(5, 'https://www.infineon.com/part/W', 1, 'unchanged')")
+    snap = root / "w1"
+    snap.mkdir()
+    con.commit()
+    row = con.execute("SELECT * FROM urls WHERE id=5").fetchone()
+    res = {"status": "ok", "error": "", "title": "W", "text_lines": 200,
+           "image_count": 4, "http_status": 200,
+           "walk_errors": [("documents", "Exception('detached')")]}
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    retry_q = []
+    R._snapshot_dir = lambda uid, ts: snap          # the dir the gate drops
+    try:
+        R._handle_result(con, res, row, "t1", counters, [], retry_queue=retry_q)
+    finally:
+        del R._snapshot_dir  # restore the module's real helper
+        import importlib
+        importlib.reload(R)
+    r2 = con.execute("SELECT * FROM urls WHERE id=5").fetchone()
+    assert r2["last_status"] == "unchanged", "a dead walk must not paint status"
+    assert counters["ok"] == 0 and counters["errors"] == 1
+    assert [x["id"] for x in retry_q] == [5], "the page goes back in the queue"
+    assert not snap.exists(), "the partial capture's files are dropped"
+    sdir = con.execute("SELECT dir FROM snapshots WHERE url_id=5").fetchone()
+    assert sdir["dir"] == "", "the snapshot row must not point at evidence"
+    con.close()

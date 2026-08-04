@@ -2282,8 +2282,19 @@ async def capture_one(browser, url, out_dir):
                 await nxt.evaluate("el => el.click()")
                 await page.wait_for_timeout(400)
                 await _settle_quiet(page, 700)
-            # return the table to page 1 so the text layer and screenshot
-            # always reflect the same (first-page) state on every run
+        except Exception as exc:
+            # A walk that died at page 3 of 14 leaves docs_acc holding a
+            # FRACTION of the documents, and the merge below would store it
+            # as groundtruth - the next healthy run then reads dozens of
+            # documents "removed". Same doctrine as SECTIONS_JS one screen
+            # down: never store a lie. The runner treats any walk_errors
+            # capture as a failed render - baseline kept, retried.
+            result.setdefault("walk_errors", []).append(
+                ("documents", repr(exc)))
+        # return the table to page 1 so the text layer and screenshot always
+        # reflect the same (first-page) state on every run - cosmetic, so a
+        # failure here is nobody's evidence of anything
+        try:
             first_pg = await page.query_selector(
                 "#documents .pagination .page-numbers, "
                 ".documents_ifx .pagination .page-numbers")
@@ -2366,8 +2377,12 @@ async def capture_one(browser, url, out_dir):
                 if len(chunks) > 1:
                     # page 1 is already in the body text - store the rest
                     table_text = "\n".join(chunks[1:])
-        except Exception:
+        except Exception as exc:
+            # an emptied table_text against a baseline that HAS the block is
+            # a thousands-of-lines false text loss - flag it, do not store it
             table_text = ""
+            result.setdefault("walk_errors", []).append(
+                ("products_table", repr(exc)))
 
         # Design-resources panes paginate too (e.g. 11 dev tools shown 5 per
         # page): activate each tab and walk its pages, merging the items.
@@ -2388,7 +2403,12 @@ async def capture_one(browser, url, out_dir):
                     await tb.evaluate("el => el.click()")
                     await page.wait_for_timeout(300)
                     await _settle_quiet(page, 700)
-                except Exception:
+                except Exception as exc:
+                    # a tab that never activated is a whole pane's cards
+                    # missing from the merge - the same partial-library
+                    # poison as a dead walk, one tab at a time
+                    result.setdefault("walk_errors", []).append(
+                        ("design_resources_tab", repr(exc)))
                     continue
                 # Rewind to page 1 before walking - defensive only. Switching
                 # tab does reset the pager, so this normally takes zero steps:
@@ -2430,8 +2450,9 @@ async def capture_one(browser, url, out_dir):
                         break
                     await nxt.evaluate("el => el.click()")
                     await page.wait_for_timeout(700)
-        except Exception:
-            pass
+        except Exception as exc:
+            result.setdefault("walk_errors", []).append(
+                ("design_resources", repr(exc)))
 
         if INJECT_JS:                              # self-test tampering hook
             try:

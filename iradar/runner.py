@@ -1198,6 +1198,29 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
         return
 
+    # A capture whose pagination walks died mid-way answered "ok" while
+    # carrying a FRACTION of the library (or none of the products table).
+    # Storing it makes the next healthy run read the missing items as
+    # "removed" - #7481's surviving sibling. Failed render: baseline kept,
+    # this capture dropped, the page tries again (same run when the retry
+    # rounds are still ahead, next run otherwise - where the streak, not a
+    # first stumble, decides what the team is shown).
+    if res.get("walk_errors"):
+        names = ", ".join(sorted({w[0] for w in res["walk_errors"]}))
+        counters["errors"] += 1
+        counters["saved"] += 1
+        if retry_queue is not None:
+            retry_queue.append(row)
+            con.execute("UPDATE urls SET last_checked=? WHERE id=?",
+                        (now, url_id))
+        else:
+            _fail_page(con, row, now)
+        shutil.rmtree(snap_dir, ignore_errors=True)
+        con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
+        print(f"[guard] {row['url']}: walk(s) died mid-pagination ({names});"
+              " partial library dropped, baseline kept", flush=True)
+        return
+
     counters["ok"] += 1
     # A page the site itself serves as gone (404/410) is not "captured fine":
     # it still gets a snapshot (so a revival shows up as a change) but reads as
@@ -1600,6 +1623,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
         now = db.now_iso()
 
         if not recapture or vres["status"] != "ok" \
+                or vres.get("walk_errors") \
                 or _load_failure_added(prev["dir"], vdir, settings_now):
             # Verification capture failed - or rendered a section as the
             # "could not be loaded" apology, which is the same failure wearing
