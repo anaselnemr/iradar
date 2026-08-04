@@ -856,3 +856,62 @@ def test_empty_sections_are_published_only_when_three_captures_agree():
         "an unreadable capture is not evidence"
     assert not R._loss_survived_three_looks(None, None, c3), \
         "unreadable sections can never pass for agreement"
+
+
+def test_a_capture_error_is_a_two_run_verdict():
+    """Anas's rule: the red badge is for extreme cases. A page gets three
+    attempts every run; failing ALL of them counts one strike, and only a
+    second straight run of strikes - six failed attempts - is shown as a
+    Capture error. Until then the page keeps its previous status, and one
+    good capture wipes the slate."""
+    import runner as R
+
+    _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, last_status)"
+                " VALUES(9, 'https://www.infineon.com/part/X', 1, 'unchanged')")
+    con.commit()
+
+    def row():
+        return con.execute("SELECT * FROM urls WHERE id=9").fetchone()
+
+    # strike one: the status is withheld, the streak remembers
+    R._fail_page(con, row(), "t1")
+    r = row()
+    assert r["last_status"] == "unchanged", \
+        "one bad run must not paint the page red"
+    assert r["error_streak"] == 1
+
+    # strike two: now it is an error, honestly
+    R._fail_page(con, row(), "t2")
+    r = row()
+    assert r["last_status"] == "error" and r["error_streak"] == 2
+
+    # one good capture forgives everything
+    R._set_checked(con, 9, "t3", "unchanged")
+    r = row()
+    assert r["error_streak"] == 0
+    # (status stays 'error'->'unchanged' via _set_checked's normal rules)
+
+    # and the streak survives rows that never heard of it (old fixtures)
+    assert R._streak_of({"last_status": "unchanged"}) == 0
+    con.close()
+
+
+def test_the_loss_guards_read_the_streak_not_just_the_badge():
+    """The second-sighting rule ('once is a bad render, twice is the truth')
+    keys on the page already wearing a failure. With the badge withheld for
+    a run, the STREAK is the wearing - otherwise a real loss would need four
+    runs to publish instead of two."""
+    import runner as R
+
+    fresh = {"last_status": "unchanged"}
+    struck = {"last_status": "unchanged", "error_streak": 1}
+    badged = {"last_status": "error"}
+    loss = {"text_changed": True, "lines_added": 0, "lines_removed": 74}
+    assert R._smells_like_half_render(loss, fresh), "first sighting defers"
+    assert not R._smells_like_half_render(loss, struck), \
+        "a struck page's second sighting is the truth"
+    assert not R._smells_like_half_render(loss, badged)
+    assert R._wearing_error(struck) and R._wearing_error(badged)
+    assert not R._wearing_error(fresh)

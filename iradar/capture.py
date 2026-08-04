@@ -2011,6 +2011,18 @@ def _base_url(u):
     return (p.scheme, p.netloc, p.path)
 
 
+def _assert_still_on(page, expected_url, stage):
+    """The page under the camera must be the page on the watch list.
+
+    Compared against where the enrichment STARTED (after any JS redirect
+    settled), never against the request URL - a page that legitimately
+    redirects on load would otherwise error on every healthy capture.
+    Query and fragment are ignored: our own tab clicks append fragments."""
+    if _base_url(page.url) != _base_url(expected_url):
+        raise Exception(f"wandered off the page during {stage}: "
+                        f"on {page.url}, expected {expected_url}")
+
+
 async def _ensure_on(page, start_url):
     """If a click hard-navigated to a different page, go straight back to the
     original URL. Never uses go_back() - going 'back' through same-document
@@ -2222,6 +2234,11 @@ async def capture_one(browser, url, out_dir):
         except Exception:
             await page.wait_for_timeout(500)
             await page.evaluate(AUTO_SCROLL_JS)
+        # The address the enrichment STARTS from - after any JS redirect has
+        # settled, before any of our own clicking. Everything photographed and
+        # extracted below must still be this page; _assert_still_on holds the
+        # line at the two points of no return.
+        expected_url = page.url
         await _expand_interactive(page)            # tabs / accordions / load-more
         await page.wait_for_timeout(1000)
         # "Fully loaded" stack for dynamic pages (no single event exists):
@@ -2500,6 +2517,15 @@ async def capture_one(browser, url, out_dir):
             if INJECT_JS:
                 print(f"  [fonts] wait skipped: {exc}")
 
+        # POINT OF NO RETURN #1: nothing below this line may run on a page a
+        # stray click navigated to. _expand_interactive clicks ~100 controls
+        # and _ensure_on's recovery goto can itself fail (45s timeout, CDN
+        # block) - its `except: pass` then left execution on the FOREIGN page,
+        # and every downstream read captured the wrong page under status ok:
+        # the maximal false update. Raising routes the page into the runner's
+        # transient retries; the baseline stays.
+        _assert_still_on(page, expected_url, "expansion")
+
         # Record WHERE the live feeds sit (layout is final after the unstick):
         # the screenshot keeps them - the whole page, community included, is
         # the evidence a reviewer sees - and the compare masks exactly these
@@ -2569,6 +2595,10 @@ async def capture_one(browser, url, out_dir):
                 f"document.querySelectorAll('{BANNER_SELECTORS}').forEach(e => e.remove())")
         except Exception:
             pass
+
+        # POINT OF NO RETURN #2: the pagination walks above click too, and
+        # what is extracted here becomes the page's text of record.
+        _assert_still_on(page, expected_url, "the walks")
 
         text = await page.evaluate(TEXT_JS)
         if table_text:

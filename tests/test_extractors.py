@@ -378,3 +378,37 @@ def test_hide_chrome_survives_the_pages_own_errors():
     except Exception as exc:
         assert C.BLOCKED_TRANSIENT in str(exc), \
             "the failure must be transient so the retry rounds get it"
+
+
+# --- the page under the camera must be the page on the watch list ------------
+
+def test_a_wandered_page_is_an_error_and_our_own_clicks_are_not():
+    """_expand_interactive clicks ~100 controls; one that hard-navigates used
+    to leave every downstream read photographing the WRONG page under status
+    ok - the maximal false update. The assertion holds the line at the two
+    points of no return, ignores our own fragment/query churn, and fails as
+    a transient so the runner retries with the baseline kept."""
+
+    class Page:
+        def __init__(self, url):
+            self.url = url
+
+    start = "https://www.infineon.com/part/XMC1100#news-highlights"
+    # our own clicking appends fragments and queries - never an error
+    C._assert_still_on(Page(start), start, "expansion")
+    C._assert_still_on(Page("https://www.infineon.com/part/XMC1100#docs"),
+                       start, "expansion")
+    C._assert_still_on(Page("https://www.infineon.com/part/XMC1100?tab=2"),
+                       start, "expansion")
+    # a hard navigation to another page is the failure this exists for
+    try:
+        C._assert_still_on(Page("https://www.infineon.com/part/OTHER-PART"),
+                           start, "expansion")
+        assert False, "a foreign page must fail the capture"
+    except Exception as exc:
+        assert "wandered off" in str(exc)
+        # and the runner must RETRY it (baseline kept), not record a verdict
+        import runner as R
+        res = {"status": "error", "error": str(exc)}
+        assert R._transient_failure(res, {"last_status": "unchanged"}), \
+            "a wander must land in the retry rounds, not as a final state"

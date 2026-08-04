@@ -456,6 +456,51 @@ def _write_page_meta(con, url_id, page_url, res, dead):
          url_id))
 
 
+# How many runs in a row a page must fail EVERYTHING before the red badge.
+# Every run already gives a failing page three attempts (first try + two
+# retry rounds), so 2 here means SIX failed attempts across two separate
+# checks before anyone is shown "Capture error" - Anas: the error state is
+# for extreme cases, not for a page the CDN refused during one bad hour.
+# Until the streak fills, the page keeps its previous status and simply
+# gets tried again next run; one success resets the count to zero.
+ERROR_RUNS = 2
+
+
+def _streak_of(row):
+    """The page's failed-run count so far, tolerant of rows without the
+    column (old fixtures, plain dicts in tests)."""
+    try:
+        return row["error_streak"] or 0
+    except Exception:
+        return 0
+
+
+def _wearing_error(row):
+    """Is this page already carrying a capture failure from before? The loss
+    guards key their second-sighting rule on this - and the streak counts
+    even while the visible status is still being withheld, or a failure
+    would need FOUR runs to publish instead of two."""
+    try:
+        if (row["last_status"] or "") == "error":
+            return True
+    except Exception:
+        pass
+    return _streak_of(row) > 0
+
+
+def _fail_page(con, row, now):
+    """One more failed run for this page. The streak decides whether the
+    failure is finally SHOWN as an error, or the page quietly keeps its old
+    status and the next run gets another go."""
+    streak = _streak_of(row) + 1
+    if streak >= ERROR_RUNS:
+        con.execute("UPDATE urls SET last_checked=?, last_status='error',"
+                    " error_streak=? WHERE id=?", (now, streak, row["id"]))
+    else:
+        con.execute("UPDATE urls SET last_checked=?, error_streak=?"
+                    " WHERE id=?", (now, streak, row["id"]))
+
+
 def _set_checked(con, url_id, now, status):
     """Record a check result WITHOUT hiding pending review work.
 
@@ -466,7 +511,8 @@ def _set_checked(con, url_id, now, status):
     Changed filter while still counting in the review queue. A death
     (notlive) always shows - a page going 404 outranks review bookkeeping.
     """
-    con.execute("UPDATE urls SET last_checked=? WHERE id=?", (now, url_id))
+    con.execute("UPDATE urls SET last_checked=?, error_streak=0 WHERE id=?",
+                (now, url_id))
     if status == "unchanged":
         con.execute(
             "UPDATE urls SET last_status='unchanged' WHERE id=? AND NOT EXISTS"
@@ -989,14 +1035,13 @@ def _run_check_inner(kind, url_ids, baseline=False):
         now_fin = db.now_iso()
         for row in transient:
             try:
-                con.execute(
-                    "UPDATE urls SET last_checked=?, last_status='error'"
-                    " WHERE id=?", (now_fin, row["id"]))
+                _fail_page(con, row, now_fin)
             except Exception:
                 pass
         con.commit()
         print(f"[retry] {len(transient)} page(s) still failing after the"
-              " extra rounds - kept as errors, next run tries again", flush=True)
+              " extra rounds - streak advanced, next run tries again",
+              flush=True)
 
     ok, changed = counters["ok"], counters["changed"]
     # The record gets FINAL page states, not attempt tallies. The event
@@ -1144,8 +1189,8 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         # that).
         if still_blank or not _transient_failure(res, row):
             con.execute(
-                "UPDATE urls SET last_checked=?, last_status=?, last_http=?"
-                " WHERE id=?",
+                "UPDATE urls SET last_checked=?, last_status=?, last_http=?,"
+                " error_streak=0 WHERE id=?",
                 (now, "blank" if blank else "error",
                  res.get("http_status"), url_id))
         # keep the previous good snapshot; drop the failed one's files
@@ -1260,8 +1305,8 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         # page); text-unchanged with less than half the items left means the
         # extractor stopped seeing them. -1 = unreadable, never triggers.
         if prev_n >= 5 and 0 <= new_n < prev_n * 0.5:
-            con.execute("UPDATE urls SET last_checked=?, last_status='error'"
-                        " WHERE id=?", (now, url_id))
+            con.execute("UPDATE urls SET last_checked=? WHERE id=?",
+                        (now, url_id))  # status untouched: the run tail decides
             # ...and try again before the run ends. A library that collapsed
             # to under half is a broken RENDER, which is exactly what a retry
             # is for - this used to be written as a final error on the first
@@ -1284,8 +1329,8 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
     # good baseline, report an error so it is loud, retry next run.
     if result["any_changed"] and not dead \
             and _load_failure_added(prev["dir"], snap_dir, db.get_settings()):
-        con.execute("UPDATE urls SET last_checked=?, last_status='error'"
-                    " WHERE id=?", (now, url_id))
+        con.execute("UPDATE urls SET last_checked=? WHERE id=?",
+                    (now, url_id))   # status untouched: the run tail decides
         # a section that said "could not be loaded" is a transient render
         # failure by definition - give it the same two tries as a timeout
         if retry_queue is not None:
@@ -1305,8 +1350,8 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
     # stands, and the page goes back in the queue for another try this run.
     if result["any_changed"] and not dead \
             and _smells_like_lost_widgets(prev["dir"], snap_dir, row):
-        con.execute("UPDATE urls SET last_checked=?, last_status='error'"
-                    " WHERE id=?", (now, url_id))
+        con.execute("UPDATE urls SET last_checked=? WHERE id=?",
+                    (now, url_id))   # status untouched: the run tail decides
         if retry_queue is not None:
             retry_queue.append(row)
         _restore_page_meta(con, url_id, prev)
@@ -1357,7 +1402,7 @@ def _smells_like_half_render(result, row):
         pure_loss = (result.get("text_changed")
                      and (result.get("lines_added") or 0) == 0
                      and (result.get("lines_removed") or 0) >= 20)
-        return bool(pure_loss) and (row["last_status"] or "") != "error"
+        return bool(pure_loss) and not _wearing_error(row)
     except Exception:
         return False
 
@@ -1431,7 +1476,7 @@ def _smells_like_lost_widgets(prev_dir, new_dir, row):
     if grew:
         return False
     try:
-        return (row["last_status"] or "") != "error"
+        return not _wearing_error(row)
     except Exception:
         return True
 
@@ -1620,9 +1665,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                           " flagging now", flush=True)
                 else:
                     shutil.rmtree(dir3, ignore_errors=True)
-                    con.execute("UPDATE urls SET last_checked=?,"
-                                " last_status='error' WHERE id=?",
-                                (now, url_id))
+                    _fail_page(con, row, now)
                     _restore_page_meta(con, url_id, prev)
                     shutil.rmtree(vdir, ignore_errors=True)
                     con.execute("DELETE FROM snapshots WHERE id=?",
@@ -1678,9 +1721,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                           flush=True)
                 else:
                     shutil.rmtree(dir3, ignore_errors=True)
-                    con.execute("UPDATE urls SET last_checked=?,"
-                                " last_status='error' WHERE id=?",
-                                (now, url_id))
+                    _fail_page(con, row, now)
                     _restore_page_meta(con, url_id, prev)
                     shutil.rmtree(vdir, ignore_errors=True)
                     con.execute("DELETE FROM snapshots WHERE id=?",
@@ -1734,9 +1775,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                         # three captures, no two alike - nothing here is
                         # steady enough to put in front of a person
                         shutil.rmtree(dir3, ignore_errors=True)
-                        con.execute("UPDATE urls SET last_checked=?,"
-                                    " last_status='error' WHERE id=?",
-                                    (now, url_id))
+                        _fail_page(con, row, now)
                         _restore_page_meta(con, url_id, prev)
                         shutil.rmtree(vdir, ignore_errors=True)
                         con.execute("DELETE FROM snapshots WHERE id=?",
@@ -1787,8 +1826,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                  result["lines_removed"], result["images_added"],
                  result["images_removed"], summary,
                  str(change_dir), json.dumps(parts, ensure_ascii=False)))
-            con.execute("UPDATE urls SET last_checked=?, last_status=?"
-                        " WHERE id=?", (now, "changed", url_id))
+            con.execute("UPDATE urls SET last_checked=?, last_status=?,"
+                        " error_streak=0 WHERE id=?", (now, "changed", url_id))
             index_items(con, url_id, confirm_dir, dead_now)
         else:
             _set_checked(con, url_id, now,

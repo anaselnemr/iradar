@@ -345,8 +345,10 @@
         empties in one go — most of it into <i>no update</i>.</li>
       <li><span class="sw" style="background:#dc2626"></span><b>Blocked, will
         retry</b> — did not load this time. Every one gets two more tries at
-        the end, after a pause. Only what fails all three is written down as an
-        error, so this number usually falls near the end rather than rising.</li>
+        the end, after a pause — and even failing all three only counts a
+        strike. A page is written down as a <b>Capture error</b> only after it
+        has failed every attempt in two checks in a row (six tries in all), so
+        this number usually falls near the end rather than rising.</li>
       <li><span class="sw" style="background:var(--muted)"></span><b>Waiting</b>
         — not reached yet.</li>
     </ul>
@@ -382,8 +384,10 @@
       <li><b>Updated</b> — something changed and it is waiting for you.</li>
       <li><b>Blank page</b> — the address answered but there was nothing on it.
         Usually Infineon serving an empty shell; it is retried next check.</li>
-      <li><b>Capture error</b> — it failed all three attempts. Almost always the
-        site being slow or refusing us, not the page being broken.</li>
+      <li><b>Capture error</b> — it failed every attempt in two checks in a
+        row: six tries in all. One bad hour on Infineon's side never shows
+        here — a page keeps its previous status until the second check agrees.
+        Almost always the site refusing us, not the page being broken.</li>
       <li><b>Not live</b> — the address answers 4xx. The page is gone, or was
         never published. It stays in the list so you can see it went.</li>
       <li><b>Not captured</b> — added but never successfully read yet, so there
