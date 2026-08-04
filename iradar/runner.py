@@ -552,15 +552,24 @@ def _mark_item(con, run_id, url_id, state, prev_snap_id=None, snap_id=None):
         pass
 
 
-def _resumable_run(con):
+def _resumable_run(con, include_stopped=True):
     """The most recent run that died mid-flight - unfinished, with items still
     to do - or None. Only a FULL run is auto-resumed; a partial (specific-ids)
-    run is cheap to just re-issue, and telling them apart keeps resume simple."""
+    run is cheap to just re-issue, and telling them apart keeps resume simple.
+
+    include_stopped=False is the boot-resume's promise: a run a person
+    deliberately stopped stays stopped through any number of restarts, and
+    only a person starting the next check picks its parked suspects up."""
     r = con.execute(
         "SELECT * FROM runs WHERE finished IS NULL ORDER BY id DESC LIMIT 1"
     ).fetchone()
     if not r:
         return None
+    try:
+        if not include_stopped and (r["stopped"] or ""):
+            return None
+    except Exception:
+        pass
     left = con.execute(
         "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
         (r["id"],)).fetchone()[0]
@@ -935,11 +944,20 @@ def _run_check_inner(kind, url_ids, baseline=False):
     # A suspect is NOT saved yet: its snapshot sits in limbo, last_checked is
     # untouched and no change row exists. Skipping this pass on stop therefore
     # threw the whole queue away - a run could capture 2,438 pages, be stopped,
-    # and leave 152 saved with 0 changes. Stopping now still resolves the
-    # queue; it just does not get to re-capture first.
+    # and leave 152 saved with 0 changes. Stopping used to "resolve" the
+    # queue by publishing every held suspect UNVERIFIED - the polite button
+    # was strictly worse than pulling the plug, whose crash-resume finishes
+    # the double-check properly. A stop now does what the crash does, on
+    # purpose: the suspects stay parked in the ledger (state='suspect',
+    # snapshots 'pending'), the run is stamped `stopped` rather than
+    # finished, and the next check picks them up and verifies them for real.
+    # Nothing is published at first-look quality, and nothing is thrown away.
     if suspects:
-        _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
-                         recapture=not stopping())
+        if stopping():
+            _park_suspects(suspects)
+        else:
+            _verify_suspects(con, suspects, ts_label, concurrency, counters,
+                             run_id, recapture=True)
 
     # RETRY ROUNDS for the transient failures: run the whole recapture queue
     # once, then once more for whatever still fails, then accept the state.
@@ -1025,9 +1043,12 @@ def _run_check_inner(kind, url_ids, baseline=False):
                                         progress=rprogress, pause_check=paused,
                                         stop_check=stopping))
         if retry_suspects:
-            _verify_suspects(con, retry_suspects, retry_label, concurrency,
-                             counters, run_id, recapture=not stopping(),
-                             phase="retry")
+            if stopping():
+                _park_suspects(retry_suspects)
+            else:
+                _verify_suspects(con, retry_suspects, retry_label, concurrency,
+                                 counters, run_id, recapture=True,
+                                 phase="retry")
     if transient:
         # THE FINAL VERDICT: these pages failed every try this run (or the run
         # was stopped before their retries). Only now does 'error' land on the
@@ -1054,8 +1075,23 @@ def _run_check_inner(kind, url_ids, baseline=False):
         "SELECT COUNT(*) FROM run_items ri JOIN urls u ON u.id=ri.url_id"
         " WHERE ri.run_id=? AND u.last_status='error'", (run_id,)).fetchone()[0]
     stopped = stopping()
-    con.execute("UPDATE runs SET finished=?, ok=?, changed=?, errors=? WHERE id=?",
-                (db.now_iso(), ok, changed, errors, run_id))
+    parked = con.execute(
+        "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='suspect'",
+        (run_id,)).fetchone()[0]
+    if stopped and parked:
+        # deliberately NOT finished: _resumable_run must still see this run,
+        # or the parked suspects' evidence is never judged. The `stopped`
+        # stamp is what keeps the boot-resume's promise - a deliberate stop
+        # stays stopped until a PERSON starts the next check.
+        con.execute("UPDATE runs SET stopped=?, ok=?, changed=?, errors=?"
+                    " WHERE id=?",
+                    (db.now_iso(), ok, changed, errors, run_id))
+        print(f"[stop] run {run_id} stopped with {parked} suspect(s) parked -"
+              " the next check finishes their double-check", flush=True)
+    else:
+        con.execute("UPDATE runs SET finished=?, ok=?, changed=?, errors=?"
+                    " WHERE id=?",
+                    (db.now_iso(), ok, changed, errors, run_id))
     con.commit()
     con.close()
 
@@ -1575,6 +1611,25 @@ def _third_look(row, url_id, ts_label, why):
 def _took(res3):
     """Did the extra capture actually come back with a page?"""
     return bool(res3) and res3.get("status") == "ok"
+
+
+def _park_suspects(suspects):
+    """A stop leaves held suspects exactly as an interruption would: parked.
+
+    Their run_items rows already say state='suspect' with both snapshot ids
+    (written the moment each was held), and their first captures already sit
+    in 'pending' - the same shape _rebuild_suspects reads after a crash. So
+    parking is nothing but NOT publishing: the next check resumes the run,
+    re-captures each suspect and demands the same difference twice, exactly
+    as if the stop had never happened. One residual is accepted and named: a
+    resumed suspect whose verify capture ALSO fails still publishes via the
+    keep-detection path, because holding it forever would pin the run open.
+    """
+    RUN_STATE["message"] = (f"stopped - {len(suspects)} suspected update(s)"
+                            " park for the next check; nothing is published"
+                            " unverified")
+    print(f"[stop] {len(suspects)} suspect(s) parked for the next check -"
+          " they keep their captures and verify properly then", flush=True)
 
 
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,

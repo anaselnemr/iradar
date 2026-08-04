@@ -314,6 +314,10 @@ def init_db():
     # how many runs in a row this page has failed EVERY capture attempt -
     # the visible 'error' state waits for runner.ERROR_RUNS of these
     _ensure_column(con, "urls", "error_streak", "INTEGER DEFAULT 0")
+    # set (with finished still NULL) when a person pressed End check while
+    # suspects were held: the run is over for THEM, but its parked suspects
+    # wait for the next check to finish their double-check
+    _ensure_column(con, "runs", "stopped", "TEXT DEFAULT ''")
     _ensure_column(con, "snapshots", "http_status", "INTEGER")
     # rejected=1: reviewer said the OLD version was correct - this snapshot is
     # kept for the record but never used as a comparison baseline.

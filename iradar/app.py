@@ -3459,7 +3459,7 @@ def _resume_on_boot():
         return
     con = db.connect()
     try:
-        r = runner._resumable_run(con)
+        r = runner._resumable_run(con, include_stopped=False)
         left = con.execute(
             "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
             (r["id"],)).fetchone()[0] if r else 0

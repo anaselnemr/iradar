@@ -954,3 +954,32 @@ def test_a_half_walked_library_is_dropped_not_stored():
     sdir = con.execute("SELECT dir FROM snapshots WHERE url_id=5").fetchone()
     assert sdir["dir"] == "", "the snapshot row must not point at evidence"
     con.close()
+
+
+def test_a_deliberate_stop_parks_suspects_and_survives_reboots():
+    """End check used to publish every held suspect unverified - the polite
+    button was strictly worse than pulling the plug. A stop now leaves the
+    suspects parked exactly as a crash would (ledger rows + pending
+    snapshots), stamps the run `stopped` with finished still NULL, and the
+    split is: a BOOT never resumes a deliberate stop, a PERSON's next check
+    does - where the parked suspects finally get their real double-check."""
+    import runner as R
+
+    _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO runs(id, started, stopped) VALUES(4, 't1', 't2')")
+    con.execute("INSERT INTO run_items(run_id, url_id, state, prev_snap_id,"
+                " snap_id) VALUES(4, 1, 'suspect', 10, 11)")
+    con.commit()
+
+    boot = R._resumable_run(con, include_stopped=False)
+    assert boot is None, "a reboot must never resume what a person stopped"
+    person = R._resumable_run(con)
+    assert person is not None and person["id"] == 4, \
+        "the next check a person starts must pick the parked suspects up"
+
+    # a run that simply crashed (no stopped stamp) is resumed by both
+    con.execute("UPDATE runs SET stopped='' WHERE id=4")
+    con.commit()
+    assert R._resumable_run(con, include_stopped=False) is not None
+    con.close()
