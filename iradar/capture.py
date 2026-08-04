@@ -244,6 +244,37 @@ BANNER_SELECTORS = ("#onetrust-consent-sdk, #usercentrics-root, #usercentrics-cm
                     "div[id^=\"QSI\"], div[class^=\"QSI\"], "
                     "iframe[src*=\"qualtrics\"], iframe[src*=\"siteintercept\"]")
 
+
+async def _hide_chrome(page):
+    """Inject HIDE_CSS without letting the page's own tantrums kill the run.
+
+    add_style_tag is the first call in flight after navigation, which made it
+    the landing pad for errors that have nothing to do with styling: OneTrust
+    phones home to a host Infineon's own security policy forbids, the browser
+    reports the violation, and Playwright surfaced it as OUR exception - 219
+    captures per run died hiding a cookie banner (#7481-era error columns).
+
+    First the normal call; if the page throws through it, plant the <style>
+    element directly - and if even that fails, fail the CAPTURE loudly rather
+    than proceed: a capture without HIDE_CSS shows the consent overlay, and a
+    screenshot with a banner across it diffs against every baseline without
+    one. The runner treats the error as transient and retries, which is the
+    correct price for an un-maskable page."""
+    try:
+        await page.add_style_tag(content=HIDE_CSS)
+        return
+    except Exception:
+        pass
+    try:
+        await page.evaluate(
+            """css => { const s = document.createElement('style');
+                        s.textContent = css;
+                        document.documentElement.appendChild(s); }""",
+            HIDE_CSS)
+    except Exception as exc:
+        raise Exception(f"{BLOCKED_TRANSIENT}: could not inject HIDE_CSS"
+                        f" ({exc}) - capture would show the consent overlay")
+
 # Extracts ALL text nodes (textContent walk), so text inside hidden tab
 # panels and collapsed sections is captured too.
 # A rotating carousel advances on a JS timer and physically moves its first
@@ -2176,13 +2207,21 @@ async def capture_one(browser, url, out_dir):
         # page we wandered onto. Only a server redirect may move the list.
         result["final_url"] = (resp.url if resp else url).split("#")[0]
 
-        await page.add_style_tag(content=HIDE_CSS)
+        await _hide_chrome(page)
         try:                                       # all images/scripts finished
             await page.wait_for_load_state("load", timeout=20_000)
         except Exception:
             pass
         await page.wait_for_timeout(2500)          # let JS widgets settle
-        await page.evaluate(AUTO_SCROLL_JS)        # trigger lazy loading
+        # The page's own errors can surface ON whatever call is in flight (the
+        # OneTrust CSP violation killed 219 captures through add_style_tag
+        # before _hide_chrome guarded it). The scroll gets one clean retry for
+        # the same reason; failing twice is a page problem worth an error.
+        try:
+            await page.evaluate(AUTO_SCROLL_JS)    # trigger lazy loading
+        except Exception:
+            await page.wait_for_timeout(500)
+            await page.evaluate(AUTO_SCROLL_JS)
         await _expand_interactive(page)            # tabs / accordions / load-more
         await page.wait_for_timeout(1000)
         # "Fully loaded" stack for dynamic pages (no single event exists):
@@ -2383,10 +2422,7 @@ async def capture_one(browser, url, out_dir):
                 print(f"  [inject] {url[:60]}... -> {tampered}")
             except Exception as exc:
                 print(f"  [inject] FAILED on {url[:60]}: {exc}")
-        try:
-            await page.add_style_tag(content=HIDE_CSS)  # re-apply in case of DOM swap
-        except Exception:
-            pass
+        await _hide_chrome(page)      # re-apply in case of DOM swap
 
         # Put every widget back to its opening state so the screenshot is the
         # same on every run (otherwise the documents table is frozen on

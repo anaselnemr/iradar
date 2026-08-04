@@ -329,3 +329,52 @@ def test_the_nav_submenu_is_chrome_and_stays_out_of_every_raw_signal():
     # the four stamps that must have moved together with this exclusion
     assert (C.TEXT_REV, C.IMG_REV, C.SHOT_REV, C.SECTIONS_REV) >= (7, 6, 8, 3), \
         "VOLATILE_SEL grew but a revision stamp stayed behind"
+
+
+# --- hiding the cookie banner must never kill the capture --------------------
+
+def test_hide_chrome_survives_the_pages_own_errors():
+    """The OneTrust CSP violation surfaced through add_style_tag - the first
+    call in flight after navigation - and killed 219 captures per run over a
+    cookie banner. The guard tries the normal call, falls back to planting the
+    <style> element itself, and only if BOTH fail does it fail the capture -
+    loudly and as a transient, because a capture without HIDE_CSS would show
+    the consent overlay and diff against every baseline without one."""
+    import asyncio
+
+    class Page:
+        def __init__(self, style_fails=False, eval_fails=False):
+            self.styled = self.evaled = None
+            self.style_fails, self.eval_fails = style_fails, eval_fails
+
+        async def add_style_tag(self, content=""):
+            if self.style_fails:
+                raise Exception("Page.add_style_tag: Connecting to "
+                                "'https://cookies-data.onetrust.io' violates "
+                                "the following Content Security Policy")
+            self.styled = content
+
+        async def evaluate(self, js, arg=None):
+            if self.eval_fails:
+                raise Exception("Execution context was destroyed")
+            self.evaled = arg
+
+    # the normal path: one call, no fallback
+    p = Page()
+    asyncio.run(C._hide_chrome(p))
+    assert p.styled == C.HIDE_CSS and p.evaled is None
+
+    # the CSP tantrum: fallback plants the style element with the same CSS
+    p = Page(style_fails=True)
+    asyncio.run(C._hide_chrome(p))
+    assert p.evaled == C.HIDE_CSS, "the fallback must inject the same CSS"
+
+    # both dead: the capture fails as TRANSIENT (the runner retries it),
+    # never proceeds to photograph a page wearing the consent overlay
+    p = Page(style_fails=True, eval_fails=True)
+    try:
+        asyncio.run(C._hide_chrome(p))
+        assert False, "an un-maskable page must fail the capture"
+    except Exception as exc:
+        assert C.BLOCKED_TRANSIENT in str(exc), \
+            "the failure must be transient so the retry rounds get it"
