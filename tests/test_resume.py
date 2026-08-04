@@ -983,3 +983,64 @@ def test_a_deliberate_stop_parks_suspects_and_survives_reboots():
     con.commit()
     assert R._resumable_run(con, include_stopped=False) is not None
     con.close()
+
+
+def test_library_and_community_suspects_demand_the_same_difference():
+    """The last unfingerprinted signals get theirs. A library-only suspect
+    used to confirm because the verify capture differed AT ALL - two walks
+    that died at different pages confirmed each other. Now the two captures
+    must name the SAME items, and a community transition must agree on the
+    same from/to pair; and a signal that did not fire contributes nothing,
+    so noise on one channel cannot hold another hostage."""
+    import json as _json
+    import runner as R
+
+    root = _fresh_db()
+
+    def snap(name, docs, community=None, lines=("alpha", "beta")):
+        d = root / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "text.txt").write_text("\n".join(lines), encoding="utf-8")
+        (d / "images.json").write_text("[]", encoding="utf-8")
+        sec = {"documents": [{"title": t, "url": "/d/%s.pdf" % t, "meta": "PDF"}
+                             for t in docs]}
+        if community is not None:
+            sec["flags"] = {"developer_community": community}
+        (d / "sections.json").write_text(_json.dumps(sec), encoding="utf-8")
+        (d / "meta.json").write_text(_json.dumps({"sections_rev": 3}),
+                                     encoding="utf-8")
+        return str(d)
+
+    st = {"ignore_patterns": "", "ignore_image_patterns": ""}
+    lib_fired = {"library_changed": True}
+
+    base = snap("fb", ["ds", "an", "errata"])
+    walk_died_p2 = snap("f1", ["ds"])              # lost an + errata
+    walk_died_p3 = snap("f2", ["ds", "an"])        # lost only errata
+    same_loss = snap("f3", ["ds"])                 # the SAME loss as f1
+
+    f1 = R._diff_fingerprint(base, walk_died_p2, st, signals=lib_fired)
+    f2 = R._diff_fingerprint(base, walk_died_p3, st, signals=lib_fired)
+    f3 = R._diff_fingerprint(base, same_loss, st, signals=lib_fired)
+    assert not R._fingerprints_agree(f1, f2), \
+        "walks that died at different pages must not confirm each other"
+    assert R._fingerprints_agree(f1, f3), \
+        "the same real removal must still match itself"
+
+    # a community transition carries its from/to pair
+    com_fired = {"community_changed": True}
+    cb = snap("cb", ["ds"], community={"exists": True, "threads": ["t1"]})
+    c_absent = snap("c1", ["ds"], community={"exists": False})
+    c_empty = snap("c2", ["ds"], community={"exists": True, "threads": []})
+    g1 = R._diff_fingerprint(cb, c_absent, st, signals=com_fired)
+    g2 = R._diff_fingerprint(cb, c_empty, st, signals=com_fired)
+    g3 = R._diff_fingerprint(cb, c_absent, st, signals=com_fired)
+    assert not R._fingerprints_agree(g1, g2), \
+        "absent and empty are different transitions"
+    assert R._fingerprints_agree(g1, g3)
+
+    # an unfired signal contributes nothing: same text, noisy library ignored
+    quiet = R._diff_fingerprint(base, walk_died_p2, st, signals={})
+    quiet2 = R._diff_fingerprint(base, walk_died_p3, st, signals={})
+    assert R._fingerprints_agree(quiet, quiet2), \
+        "a signal that did not fire must not block agreement"

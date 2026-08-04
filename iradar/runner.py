@@ -1540,11 +1540,45 @@ def _smells_like_lost_widgets(prev_dir, new_dir, row):
         return True
 
 
-def _diff_fingerprint(prev_dir, new_dir, settings):
-    """WHAT changed, as a comparable value: the multiset of added and removed
-    text lines plus the image url sets. Two captures of the same real edit
-    produce the same fingerprint; a hydration flap or a half-render produces
-    a different one, which is the whole point."""
+def _library_fingerprint(prev_dir, new_dir):
+    """WHICH library items moved, as a comparable value: (section, kind,
+    title, url) per touched item, changed-in-place ones carrying the set of
+    fields that moved. A real edit reprints the same set on every capture; a
+    walk that died at a different page, or panes that hydrated differently,
+    name different items - which is the whole point. Across a sections-rev
+    boundary there is nothing comparable, mirroring the detector."""
+    try:
+        if cmp._sections_rev(prev_dir) != cmp._sections_rev(new_dir):
+            return frozenset()
+        det = cmp.library_diff_detail(prev_dir, new_dir)
+    except Exception:
+        return frozenset()
+    parts = set()
+    for label, d in (det or {}).items():
+        for it in d.get("added", []):
+            parts.add((label, "add", it.get("title", ""), it.get("url", "")))
+        for it in d.get("removed", []):
+            parts.add((label, "rem", it.get("title", ""), it.get("url", "")))
+        for it in d.get("changed", []):
+            flds = tuple(sorted(str(f) for f, _o, _n in it.get("fields", [])))
+            parts.add((label, "chg", it.get("title", ""), it.get("url", ""),
+                       flds))
+    return frozenset(parts)
+
+
+def _diff_fingerprint(prev_dir, new_dir, settings, signals=None):
+    """WHAT changed, as a comparable value, per signal that FIRED.
+
+    Text and images: the multiset of added and removed lines plus the image
+    url sets. With `signals` (the recheck result), the fingerprint also
+    covers a fired library signal (which items, by identity) and a fired
+    community transition (the from/to pair) - the two that used to confirm
+    on "differs twice" with no agreement demanded on WHAT differed. Each
+    component is included ONLY when its signal fired, so a page with
+    perpetual sub-threshold noise on one channel cannot hold a clean edit
+    on another channel hostage. Two captures of the same real edit produce
+    the same fingerprint; a hydration flap or a half-render produces a
+    different one, which is the whole point."""
     ig = ((settings or {}).get("ignore_patterns") or "").splitlines()
     _c, _a, _r, hunks = cmp.text_diff(prev_dir, new_dir, ig)
     added, removed = [], []
@@ -1556,8 +1590,18 @@ def _diff_fingerprint(prev_dir, new_dir, settings):
                 removed.append(line)
     igi = ((settings or {}).get("ignore_image_patterns") or "").splitlines()
     _c2, img_a, img_r = cmp.images_diff(prev_dir, new_dir, igi)
-    return (Counter(added), Counter(removed),
-            frozenset(img_a), frozenset(img_r))
+    fp = [Counter(added), Counter(removed),
+          frozenset(img_a), frozenset(img_r)]
+    if signals:
+        if signals.get("library_changed"):
+            fp.append(("library", _library_fingerprint(prev_dir, new_dir)))
+        if signals.get("community_changed"):
+            try:
+                fp.append(("community", cmp._community_state(prev_dir),
+                           cmp._community_state(new_dir)))
+            except Exception:
+                fp.append(("community", "?", "?"))
+    return tuple(fp)
 
 
 def _fingerprints_agree(f1, f2):
@@ -1820,17 +1864,20 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
             # they disagree, a third capture breaks the tie, best two of
             # three. A real edit prints the same diff every time it is
             # photographed; noise does not.
-            if confirmed and not unanimous_loss \
-                    and (recheck.get("text_changed")
-                         or recheck.get("images_changed")):
+            fp_signals = any(recheck.get(k) for k in
+                             ("text_changed", "images_changed",
+                              "library_changed", "community_changed"))
+            if confirmed and not unanimous_loss and fp_signals:
                 f1 = _diff_fingerprint(prev["dir"], s["new1_dir"],
-                                       settings_now)
-                f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
+                                       settings_now, signals=recheck)
+                f2 = _diff_fingerprint(prev["dir"], vdir, settings_now,
+                                       signals=recheck)
                 if not _fingerprints_agree(f1, f2):
                     res3, dir3 = _third_look(
                         row, url_id, ts_label,
                         "the two captures disagree on WHAT changed")
-                    f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now)
+                    f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now,
+                                            signals=recheck)
                           if _took(res3) else None)
                     if f3 is not None and (_fingerprints_agree(f3, f2)
                                            or _fingerprints_agree(f3, f1)):
