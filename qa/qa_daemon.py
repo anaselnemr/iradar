@@ -25,13 +25,15 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, r"C:\Users\anasn\Desktop\InfineonWatch")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "iradar"))
 import db  # noqa: E402
 from PIL import Image  # noqa: E402
 
 SP = Path(__file__).parent
 LOG = SP / "qa_log.jsonl"
-PY = r"C:\Users\anasn\Desktop\InfineonWatch\.venv\Scripts\python.exe"
+# The interpreter that runs the probe: this one, so the daemon and its
+# children always agree about which environment they are in.
+PY = sys.executable
 
 # Sampling ladder: start strict, relax one rung per clean streak, never
 # looser than 1 per 100. Any WARN/FAIL drops straight back to the strictest.

@@ -23,6 +23,5 @@ tunnel.log
 iradar-*.tar.gz
 
 
-# regenerable screenshots for the wiki page; the text itself IS tracked
-confluence/images/
+# local tooling config (editor / agent), never product code
 .claude/

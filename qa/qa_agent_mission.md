@@ -13,7 +13,8 @@ correct. You are the authority — the mechanical checker is often wrong.
 
 ## Procedure
 1. Photograph the live page yourself:
-   `C:\Users\anasn\Desktop\InfineonWatch\.venv\Scripts\python.exe C:\Users\anasn\AppData\Local\Temp\claude\C--Users-anasn-Desktop-InfineonWatch\1dea52dc-b242-4778-bd23-7f25b9940f3d\scratchpad\qa_shots.py "<PAGE_URL>" "<QA_DIR>"`
+   `python qa/qa_shots.py "<PAGE_URL>" "<QA_DIR>"`  (from the repo root, in
+   the project's virtual environment)
    (shoots: page top, every documents-table page, every design-resources tab
    and each of its pages, the news section, the full page)
 2. Read sections.json + images.json from SNAP_DIR.
@@ -117,7 +118,8 @@ FINDINGS:
 IMAGES: <what you verified>
 GAPS: <sections with no category, or "none">
 Also append one JSON line {"url":..., "verdict":..., "findings":[...]} to
-C:\Users\anasn\AppData\Local\Temp\claude\C--Users-anasn-Desktop-InfineonWatch\1dea52dc-b242-4778-bd23-7f25b9940f3d\scratchpad\ai_qa_log.jsonl
+the log named in your spawn prompt (qa/ai_qa_log.jsonl by default; the qa/
+*.jsonl files are gitignored).
 
 Rules: never modify project files; never start/stop servers or runs; a big
 capture run is in progress — your read-only page loads are fine.

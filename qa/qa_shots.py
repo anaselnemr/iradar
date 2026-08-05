@@ -9,7 +9,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"C:\Users\anasn\Desktop\InfineonWatch")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "iradar"))
 import capture  # noqa: E402
 from playwright.async_api import async_playwright  # noqa: E402
 

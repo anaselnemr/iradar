@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, r"C:\Users\anasn\Desktop\InfineonWatch")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "iradar"))
 import db  # noqa: E402
 
 LOG = Path(__file__).parent / "phases_log.jsonl"

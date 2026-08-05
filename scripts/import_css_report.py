@@ -6,7 +6,9 @@ from openpyxl import load_workbook
 
 # the workbook to read. Overridable so the app can re-apply it automatically
 # without this path being buried in a script somebody has to remember to run.
-PATH=os.environ.get("CSS_REPORT_XLSX") or r"C:\Users\anasn\Downloads\CSS_Pages_Report_v15_SW.xlsx"
+PATH=os.environ.get("CSS_REPORT_XLSX") or (sys.argv[1] if len(sys.argv)>1 else "")
+if not PATH:
+    sys.exit("set CSS_REPORT_XLSX, or pass the .xlsx as the first argument")
 
 def norm(u):
     u=(u or "").split("#")[0].split("?")[0].rstrip("/").lower()

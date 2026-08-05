@@ -7,11 +7,13 @@
 
 Safe to run mid-run; the numbers just sharpen as coverage grows.
 """
+import os
 import sys
 from collections import Counter, defaultdict
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0, r"C:\Users\anasn\Desktop\InfineonWatch")
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "iradar"))
 import app as A  # noqa: E402
 import db  # noqa: E402
 

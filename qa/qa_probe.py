@@ -4,9 +4,11 @@ extractor's selectors, so it can disagree).
 Usage: python qa_probe.py <url>"""
 import asyncio
 import json
+import os
 import sys
 
-sys.path.insert(0, r"C:\Users\anasn\Desktop\InfineonWatch")
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "iradar"))
 import capture  # noqa: E402
 from playwright.async_api import async_playwright  # noqa: E402
 

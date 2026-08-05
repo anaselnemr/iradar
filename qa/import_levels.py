@@ -9,16 +9,22 @@ The PTP sheet has no Page Type column - every row in it IS a part type page.
 
 Run after importing the URLs; safe to re-run.
 """
+import os
 import sys
 from collections import Counter
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.path.insert(0, r"C:\Users\anasn\Desktop\InfineonWatch")
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "iradar"))
 import db  # noqa: E402
 import openpyxl  # noqa: E402
 
-XLSX = sys.argv[1] if len(sys.argv) > 1 \
-    else r"C:\Users\anasn\Downloads\CSS_Pages_Report_v12.xlsx"
+# the source report, as an argument or in CSS_REPORT_XLSX. No default: the
+# sheet lives wherever whoever runs this keeps it.
+XLSX = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("CSS_REPORT_XLSX")
+if not XLSX:
+    sys.exit("usage: python import_levels.py <CSS_Pages_Report.xlsx>"
+             "   (or set CSS_REPORT_XLSX)")
 
 wb = openpyxl.load_workbook(XLSX, read_only=True)
 levels = {}                      # normalized url -> level
