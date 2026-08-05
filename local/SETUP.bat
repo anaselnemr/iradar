@@ -4,7 +4,6 @@ REM ============================================================
 REM  iRadar - one-time setup. Run this ONCE.
 REM  Needs Python 3.10+ installed (python.org, "Add to PATH" ticked).
 REM ============================================================
-cd /d "%~dp0"
 echo.
 echo [1/4] Creating isolated Python environment...
 python -m venv .venv

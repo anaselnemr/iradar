@@ -15,15 +15,15 @@ REM  The link changes every time you run this. Anyone who has BOTH
 REM  the link and the password can view/change your dashboard while
 REM  this window is open - share carefully, close when done.
 REM ============================================================
-cd /d "%~dp0"
 if not exist .venv\Scripts\activate.bat (
   echo Please run SETUP.bat first.
   pause
   exit /b 1
 )
 call .venv\Scripts\activate.bat
-start "iRadar server" cmd /k python iradarpp.py
+start "iRadar server" cmd /k python iradar\app.py
 timeout /t 4 /nobreak >nul
 start "" https://loca.lt/mytunnelpassword
-echo Your stable link: https://infineonwatch-anas.loca.lt
+if "%IRADAR_TUNNEL_SUBDOMAIN%"=="" set IRADAR_TUNNEL_SUBDOMAIN=iradar-local
+echo Your stable link: https://%IRADAR_TUNNEL_SUBDOMAIN%.loca.lt
 call scripts\tunnel_keepalive.cmd
