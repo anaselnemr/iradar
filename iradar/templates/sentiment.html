@@ -206,10 +206,18 @@
              style="width:{{ _pct }}%"></div></div>
         <span class="snp-pct" id="snppct">{{ _pct ~ '%' if sstate.running else '0%' }}</span>
       </div>
-      <p class="muted" style="margin:6px 0 0; font-size:12.5px" id="snptext">
+      {#- Idle, this line used to be blank, so the bar sat there saying nothing
+          about when any of this last happened. The Dashboard prints its last
+          run under its own bar; this is the same sentence in the same place,
+          and the JS restores it from data-idle when a collection ends. -#}
+      {%- set _idle %}{% if last_collected %}Last collected {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} mentions from {{ ready_keys|length }} source{{ '' if ready_keys|length == 1 else 's' }}{% else %}Nothing collected yet — the next check will gather the first mentions.{% endif %}{% endset -%}
+      <p class="muted" style="margin:6px 0 0; font-size:12.5px" id="snptext"
+         data-idle="{{ _idle }}">
         {%- if sstate.running -%}
         <b>Collecting</b> — {{ sstate.message or 'starting…' }}
         · {{ sstate.done }}/{{ sstate.total }} · {{ sstate.new }} new
+        {%- else -%}
+        {{ _idle }}
         {%- endif -%}</p>
     </div>
 
@@ -392,7 +400,9 @@
           prog.classList.remove('snp-live');
           fill.style.width = '0%';
           pctEl.textContent = '0%';
-          textEl.textContent = '';
+          // back to the idle sentence, not to nothing: blanking it left the
+          // bar with no answer to "when did this last happen"
+          textEl.textContent = textEl.dataset.idle || '';
         })
         .catch(function () {});
     }, 3500);

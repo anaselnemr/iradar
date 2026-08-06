@@ -35,14 +35,15 @@ it said last month. At the time of writing it watches **4,267 pages** and
 3. [What it notices, and what it lets pass](#what-it-notices-and-what-it-lets-pass)
 4. [Reviewing an update](#reviewing-an-update)
 5. [Content, and file updates](#content-every-document-and-where-it-is-used)
-6. [Leaving a note](#leaving-a-note)
-7. [Export](#export-getting-it-out-as-a-spreadsheet)
-8. [The component matrix](#which-components-a-page-type-should-have)
-9. [Changing the schedule](#changing-when-it-runs)
-10. [Where things are](#where-things-are)
-11. [Accounts and roles](#accounts-and-roles)
-12. [Worth knowing](#worth-knowing)
-13. [What it does not do](#what-it-does-not-do)
+6. [Market analysis](#market-analysis-what-the-world-says-back)
+7. [Leaving a note](#leaving-a-note)
+8. [Export](#export-getting-it-out-as-a-spreadsheet)
+9. [The component matrix](#which-components-a-page-type-should-have)
+10. [Changing the schedule](#changing-when-it-runs)
+11. [Where things are](#where-things-are)
+12. [Accounts and roles](#accounts-and-roles)
+13. [Worth knowing](#worth-knowing)
+14. [What it does not do](#what-it-does-not-do)
 
 ---
 
@@ -144,7 +145,16 @@ tell you nothing; a run that reports none, once, tells you it worked.
 While a check is going, the Dashboard shows one bar with every page in it. Each
 page sits in exactly one colour, and the five always add up to the total.
 
-[IMAGE: 10-the-bar.png]
+[IMAGE: 11-the-bar-live.png]
+
+*A real check, three quarters through.* Read left to right: **2,887** pages
+settled with no update, **41** confirmed as real updates, **263** still held for
+their second capture, **18** blocked so far and owed their retries, and **1,057**
+not yet reached. That is 4,266 — the whole list, every page in exactly one band.
+
+The row of pills above it is the run's shape: **Capture** first, then
+**Reconfirming updates** once every page has been read, then **Retry blocked**
+last. The striped band is the holding pen being worked through.
 
 | | |
 |---|---|
@@ -294,6 +304,67 @@ instead.
   genuinely changing.
 
 [IMAGE: 06-content.png]
+
+---
+
+## Market analysis: what the world says back
+
+The page watch answers *what changed on infineon.com*. This answers the other
+half — **how engineers reacted to it**, in public, in their own words.
+
+It is grouped by **product family** (PSOC™ MCUs, AURIX™, OPTIGA™ …), taken from
+the Product-family pages already being watched. Not by part number: individual
+OPNs have almost no public chatter, families have plenty.
+
+### Where it looks
+
+Eight public sources, polled directly. Nothing is scraped from behind a login
+and nothing is bought.
+
+| Source | What it is |
+|---|---|
+| **Infineon community** | Infineon's own developer-community threads, read from what each capture already stores |
+| **YouTube** | Videos and talks mentioning a family |
+| **GitHub** | Issues and discussions in real projects |
+| **Forums** | Independent electronics forums |
+| **Reddit** | Engineering and embedded subreddits |
+| **Hacker News** | Stories and comments |
+| **Blogs** | Posts on independent blogs |
+| **StackExchange** | electronics.stackexchange and Stack Overflow |
+
+### When it runs
+
+**Automatically, after every check** — nobody has to remember a button. Three
+rules keep it out of the way:
+
+- **Never while a check is running.** They share the same bandwidth and the same
+  bot-guards, so collection waits its turn.
+- **Not after a token run.** A three-page manual poke does not earn a
+  forty-minute collection pass; the run has to be a real one.
+- **It paces itself** per site, deliberately politely.
+
+There is a **Collect mentions** button for admins if you want it sooner, and the
+bar underneath tells you when it last happened.
+
+### What it has today
+
+**5,961 mentions across 381 families**, from all eight sources — the Infineon
+community and YouTube are the two loudest by a distance:
+
+| | | | |
+|---|---|---|---|
+| Infineon community 1,836 | YouTube 1,700 | GitHub 970 | Forums 504 |
+| Reddit 379 | Hacker News 350 | Blogs 141 | StackExchange 81 |
+
+**Tone scoring is switched off.** Collecting mentions is pure pattern-matching
+and needs no AI at all — but rating each one from negative to positive, with
+topic tags, calls a language model, and that needs an API key which is not
+configured. So the **Tone** figure reads "not scored yet" and will keep reading
+that until somebody sets one.
+
+*Nothing is lost in the meantime.* Every mention is collected, searchable and
+browsable exactly as it is; scoring is a layer on top that can be switched on
+later and applied to everything already gathered.
 
 ---
 
