@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% import "_help_diagrams.html" as dia %}
 {% block title %}Help — iRadar{% endblock %}
 {% block content %}
+{{ dia.style() }}
 {#- Every figure here is READ LIVE. A number typed into help text is wrong the
     day someone changes the setting and nobody notices for months.
 
@@ -290,12 +292,14 @@
       <li><b>It is compared with last time</b>
         <p>Five signals, below. Any one of them is enough to raise the page.</p></li>
 
-      <li><b>Anything raised is captured again, immediately</b>
-        <p>Before the run ends. If the difference does not show up the second
-          time, it was the website being inconsistent rather than an edit, and
-          it is dropped.</p>
-        <span class="aside">This one step removes most false alarms before
-          anybody sees them.</span></li>
+      <li><b>Anything raised goes to a vote</b>
+        <p>Before the run ends, the page is captured again — and the two
+          captures must agree on <b>what</b> changed, not merely that something
+          did. Agree, and it is published. Disagree, and a third capture breaks
+          the tie. Show nothing the second time, and it is dropped silently.</p>
+        <span class="aside">A page that LOST content is judged harder: unanimous
+          when the first two agree, because a half-loaded page looks exactly
+          like a page that lost half its content.</span></li>
 
       <li><b>Pages that fail get two more tries</b>
         <p>Retried at the end of the run. Only something that fails every
@@ -306,6 +310,9 @@
           <b>Updated</b>. Nothing is altered or deleted; the previous version
           stays until you decide.</p></li>
     </ol>
+
+    {{ dia.flow() }}
+    {{ dia.vote() }}
 
     <figure>
       <img class="m-light" loading="lazy"

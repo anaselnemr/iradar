@@ -28,6 +28,10 @@ it said last month. At the time of writing it watches **4,267 pages** and
 
 1. [Getting in](#getting-in)
 2. [What happens on a check](#what-happens-on-a-check)
+   - [Three kinds of check](#three-kinds-of-check)
+   - [The bar you watch while it runs](#the-bar-you-watch-while-it-runs)
+   - [If a check stops half way](#if-a-check-stops-half-way)
+   - [Page states you will see](#page-states-you-will-see)
 3. [What it notices, and what it lets pass](#what-it-notices-and-what-it-lets-pass)
 4. [Reviewing an update](#reviewing-an-update)
 5. [Content, and file updates](#content-every-document-and-where-it-is-used)
@@ -63,6 +67,8 @@ screen is in **your local time**, not the server's.
 Every **Monday at 23:00**, on its own. Nobody starts it. It takes about nine
 hours and is finished long before Monday morning.
 
+[IMAGE: 09-page-through-a-check.png]
+
 **1. Every page is opened in a real browser.**
 Not downloaded as code — genuinely rendered, the way you would see it. It
 scrolls to the bottom so anything that loads late appears, opens tabs and
@@ -79,9 +85,25 @@ design resources, partners — the price, and a full-page screenshot.
 **3. It is compared with last time.**
 Five signals, listed below. Any one of them is enough to raise the page.
 
-**4. Anything raised is captured again, immediately.**
-Before the run ends. If the difference does not show up the second time, it was
-the website being inconsistent rather than an edit, and it is dropped.
+**4. Anything raised goes to a vote.**
+Before the run ends, the page is captured again — and the two captures must
+agree on **what** changed, not merely that something did. This is stricter than
+it sounds, and it is where most false alarms die.
+
+[IMAGE: 08-the-vote.png]
+
+| What happens | Outcome |
+|---|---|
+| The first two captures agree | Published to your queue. |
+| They disagree about what moved | A third capture breaks the tie — two of three wins. |
+| The second capture shows nothing | The site was being inconsistent. Dropped silently, and you never see it. |
+
+**Something disappearing is judged harder than something appearing.** A page
+that LOST content — a datasheet gone, a section emptied — has to be **unanimous**
+when the first two captures agree, and still two-of-three when they do not. The
+reason is that a half-loaded page looks exactly like a page that lost half its
+content, so losses carry the higher bar. The asymmetry is deliberate: a false
+"it vanished" costs more than a missed edit.
 
 *This one step removes most false alarms before anybody sees them.*
 
@@ -99,10 +121,30 @@ previous version stays until you decide.
 **File updates** beside it is a separate queue, for files that changed behind a
 link that did not.*
 
+### Three kinds of check
+
+Most weeks you only ever see the first one.
+
+| | What it covers | When |
+|---|---|---|
+| **Full check** | Every page that is not paused. This is what the Monday schedule runs, and what **Check all pages** does. | Weekly, on its own. |
+| **Partial check** | A slice, from the **Partial runs** menu beside the button: *just the pending ones* (never captured, or failed last time) or *just the not-yet-captured*. Also what you get by ticking pages and choosing Check. | When you want an answer now without waiting nine hours. |
+| **Baseline check** | Reads every page and deliberately reports **nothing**. Each capture simply becomes the new reference. | After the way pages are read has been changed. |
+
+**Why a baseline check reports nothing on purpose.** When the capture method
+itself changes — a new part of the page starts being read, or a screenshot is
+taken at a different size — every page would differ from its old reference, and
+all of it would be the method rather than the site. A baseline run throws the
+comparison away for one pass and re-references everything, so the *next* normal
+check goes back to finding real edits. A run that reported 4,000 updates would
+tell you nothing; a run that reports none, once, tells you it worked.
+
 ### The bar you watch while it runs
 
 While a check is going, the Dashboard shows one bar with every page in it. Each
 page sits in exactly one colour, and the five always add up to the total.
+
+[IMAGE: 10-the-bar.png]
 
 | | |
 |---|---|
@@ -130,6 +172,14 @@ starting the whole thing again.
   is lost.
 - **The Dashboard says so** — a check left open with nobody working on it shows
   how far it got and offers a button to carry on.
+
+**Interrupted and stopped are not the same thing.** A check that was cut off —
+the server redeployed, the machine restarted — picks itself back up
+automatically the moment it is running again. A check that a *person* stopped
+stays stopped, through any number of restarts. It is not forgotten: the pages it
+was holding are parked, and the next check somebody starts collects them. The
+distinction exists so that pressing stop actually means stop, rather than
+meaning "pause until the next deploy".
 
 ### Page states you will see
 

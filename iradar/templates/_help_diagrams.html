@@ -1,0 +1,160 @@
+{#- The Help page's diagrams, and the source the Confluence PNGs are shot from.
+
+    One copy, two outputs: guide.html imports these macros, and
+    scripts/make_help_diagrams.py renders the same macros to PNG for the wiki.
+    Kept as macros rather than a partial because the three land in different
+    sections of the page.
+
+    Colours come from CSS variables so a diagram follows the app's own theme
+    instead of being two PNGs that have to be redrawn whenever the palette
+    moves - which is what happened to every screenshot on this page. -#}
+
+{% macro style() %}
+<style>
+  .ir-dia { --ink:#1f2330; --mut:#6b7280; --line:#c9cede; --bg:#fff;
+            --ok:#15803d; --okbg:#dcfce7; --hold:#b45309; --holdbg:#fef3c7;
+            --up:#4f46e5; --upbg:#e0e7ff; --err:#b91c1c; --errbg:#fee2e2;
+            --wait:#64748b; --waitbg:#eef1f6;
+            display:block; width:100%; height:auto; margin:18px 0;
+            font-family:inherit; }
+  [data-theme="dark"] .ir-dia {
+            --ink:#e6e8ee; --mut:#9aa3b2; --line:#3a4252; --bg:#171b24;
+            --ok:#4ade80; --okbg:#0f2e1c; --hold:#fbbf24; --holdbg:#33270a;
+            --up:#a5b4fc; --upbg:#1e1b4b; --err:#fca5a5; --errbg:#3b1416;
+            --wait:#94a3b8; --waitbg:#1e2530; }
+  .ir-dia text { fill: var(--ink); font-size: 13px; }
+  .ir-dia .t-sm { font-size: 11.5px; fill: var(--mut); }
+  .ir-dia .t-hd { font-size: 13.5px; font-weight: 600; }
+  .ir-dia .box { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+  .ir-dia .flow { stroke: var(--line); stroke-width: 1.6; fill: none; }
+  .ir-dia .arw { fill: var(--line); }
+</style>
+{% endmacro %}
+
+
+{% macro flow() %}
+<svg class="ir-dia" id="d1" viewBox="0 0 940 300" role="img"
+     aria-label="How one page moves through a check: opened in a browser, recorded, compared; if it is the same it is no update, if it is different it is held for the vote.">
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7"
+            markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arw"/>
+    </marker>
+  </defs>
+  <text x="0" y="16" class="t-hd">How one page moves through a check</text>
+
+  <rect class="box" x="0" y="38" width="150" height="62" rx="9"/>
+  <text x="14" y="62" class="t-hd">1 &#183; Open</text>
+  <text x="14" y="80" class="t-sm">In a real browser.</text>
+  <text x="14" y="94" class="t-sm">Scroll, tabs, fonts.</text>
+  <path class="flow" d="M150,69 H186" marker-end="url(#a1)"/>
+
+  <rect class="box" x="186" y="38" width="150" height="62" rx="9"/>
+  <text x="200" y="62" class="t-hd">2 &#183; Record</text>
+  <text x="200" y="80" class="t-sm">Text, images, library,</text>
+  <text x="200" y="94" class="t-sm">price, screenshot.</text>
+  <path class="flow" d="M336,69 H372" marker-end="url(#a1)"/>
+
+  <rect class="box" x="372" y="38" width="150" height="62" rx="9"/>
+  <text x="386" y="62" class="t-hd">3 &#183; Compare</text>
+  <text x="386" y="80" class="t-sm">Against last time,</text>
+  <text x="386" y="94" class="t-sm">on five signals.</text>
+
+  <path class="flow" d="M522,60 H552 a8,8 0 0 0 8,-8 V26 a8,8 0 0 1 8,-8 H596"
+        marker-end="url(#a1)"/>
+  <text x="528" y="52" class="t-sm">same</text>
+  <rect x="596" y="0" width="344" height="46" rx="9"
+        fill="var(--okbg)" stroke="var(--ok)" stroke-width="1.5"/>
+  <text x="614" y="21" class="t-hd" fill="var(--ok)">No update</text>
+  <text x="614" y="38" class="t-sm">Nearly the whole list, every week.</text>
+
+  <path class="flow" d="M522,80 H552 a8,8 0 0 1 8,8 V112 a8,8 0 0 0 8,8 H596"
+        marker-end="url(#a1)"/>
+  <text x="528" y="104" class="t-sm">different</text>
+  <rect x="596" y="96" width="344" height="48" rx="9"
+        fill="var(--holdbg)" stroke="var(--hold)" stroke-width="1.5"/>
+  <text x="614" y="118" class="t-hd" fill="var(--hold)">Held &#8212; not an update yet</text>
+  <text x="614" y="135" class="t-sm">It goes to the vote, before this run ends.</text>
+
+  <path class="flow" d="M768,144 V176" marker-end="url(#a1)"/>
+  <rect class="box" x="596" y="176" width="344" height="70" rx="9"/>
+  <text x="614" y="199" class="t-hd">4 &#183; The vote</text>
+  <text x="614" y="217" class="t-sm">Captured a second time. The two must agree on</text>
+  <text x="614" y="232" class="t-sm">WHAT changed &#8212; see below.</text>
+
+  <text x="0" y="200" class="t-sm">Nothing is altered or deleted at</text>
+  <text x="0" y="216" class="t-sm">any point. The previous version</text>
+  <text x="0" y="232" class="t-sm">stays until a person decides.</text>
+
+  <text x="0" y="278" class="t-sm">Most pages end at &#8220;No update&#8221;. Only what survives the vote reaches anybody&#8217;s queue.</text>
+</svg>
+{% endmacro %}
+
+
+{% macro vote() %}
+<svg class="ir-dia" id="d2" viewBox="0 0 940 320" role="img"
+     aria-label="The vote: if the first two captures agree the update is published; if they disagree a third breaks the tie; if the second shows nothing it is dropped. Losses need unanimity.">
+  <text x="0" y="16" class="t-hd">The vote &#8212; why a difference is not yet an update</text>
+  <text x="0" y="36" class="t-sm">A held page is captured a second time. The two captures must agree on WHAT changed, not merely that something did.</text>
+
+  <rect class="box" x="0" y="56" width="300" height="104" rx="9"/>
+  <text x="16" y="80" class="t-hd">The first two agree</text>
+  <text x="16" y="102" class="t-sm">Same change, seen twice.</text>
+  <rect x="16" y="114" width="268" height="32" rx="7"
+        fill="var(--upbg)" stroke="var(--up)" stroke-width="1.5"/>
+  <text x="30" y="135" class="t-hd" fill="var(--up)">Published to your queue</text>
+
+  <rect class="box" x="320" y="56" width="300" height="104" rx="9"/>
+  <text x="336" y="80" class="t-hd">They disagree</text>
+  <text x="336" y="102" class="t-sm">A third capture breaks the tie.</text>
+  <rect x="336" y="114" width="268" height="32" rx="7"
+        fill="var(--waitbg)" stroke="var(--wait)" stroke-width="1.5"/>
+  <text x="350" y="135" class="t-hd" fill="var(--wait)">Two of three wins</text>
+
+  <rect class="box" x="640" y="56" width="300" height="104" rx="9"/>
+  <text x="656" y="80" class="t-hd">Nothing the second time</text>
+  <text x="656" y="102" class="t-sm">The site was inconsistent.</text>
+  <rect x="656" y="114" width="268" height="32" rx="7"
+        fill="var(--okbg)" stroke="var(--ok)" stroke-width="1.5"/>
+  <text x="670" y="135" class="t-hd" fill="var(--ok)">Dropped, silently</text>
+
+  <rect x="0" y="188" width="940" height="90" rx="9"
+        fill="var(--errbg)" stroke="var(--err)" stroke-width="1.5"/>
+  <text x="20" y="214" class="t-hd" fill="var(--err)">Something disappearing is judged harder than something appearing</text>
+  <text x="20" y="238" class="t-sm">A page that LOST content &#8212; a datasheet gone, a section emptied &#8212; has to be unanimous when the first two captures agree,</text>
+  <text x="20" y="256" class="t-sm">and still two-of-three when they do not. A half-loaded page looks exactly like a page that lost half its content, so losses</text>
+  <text x="20" y="270" class="t-sm">carry the higher bar. That asymmetry is deliberate: a false &#8220;it vanished&#8221; costs more than a missed edit.</text>
+
+  <text x="0" y="306" class="t-sm">This single step removes most false alarms before anyone sees them.</text>
+</svg>
+{% endmacro %}
+
+
+{% macro bar() %}
+<svg class="ir-dia" id="d3" viewBox="0 0 940 260" role="img"
+     aria-label="The outcome bar while a check runs: no update, updated, double-checking, failed and waiting always add up to the total.">
+  <text x="0" y="16" class="t-hd">The bar while a check runs &#8212; every page sits in exactly one band</text>
+
+  <rect x="0" y="36" width="360" height="34" rx="6" fill="var(--okbg)" stroke="var(--ok)"/>
+  <rect x="360" y="36" width="70" height="34" fill="var(--upbg)" stroke="var(--up)"/>
+  <rect x="430" y="36" width="150" height="34" fill="var(--holdbg)" stroke="var(--hold)"/>
+  <rect x="580" y="36" width="80" height="34" fill="var(--errbg)" stroke="var(--err)"/>
+  <rect x="660" y="36" width="280" height="34" rx="6" fill="var(--waitbg)" stroke="var(--wait)"/>
+
+  <text x="14" y="58" class="t-hd" fill="var(--ok)">No update</text>
+  <text x="368" y="58" class="t-hd" fill="var(--up)">Updated</text>
+  <text x="438" y="58" class="t-hd" fill="var(--hold)">Double-checking</text>
+  <text x="588" y="58" class="t-hd" fill="var(--err)">Failed</text>
+  <text x="674" y="58" class="t-hd" fill="var(--wait)">Waiting</text>
+
+  <text x="0" y="108" class="t-hd" fill="var(--hold)">Double-checking climbs all run, then empties at once</text>
+  <text x="0" y="128" class="t-sm">It is the holding pen, not a queue of work for you. It is settled at the very end, and most of it moves into &#8220;no update&#8221;.</text>
+  <text x="0" y="142" class="t-sm">A big number here part way through is normal and means almost nothing about how much you will have to review.</text>
+
+  <text x="0" y="180" class="t-hd" fill="var(--err)">Failed usually falls near the end, rather than rising</text>
+  <text x="0" y="200" class="t-sm">Every failure is owed two more tries at the end of the run. Only a page that fails all three attempts is recorded as an error,</text>
+  <text x="0" y="214" class="t-sm">so this band tends to shrink as the run finishes. One bad moment is never a verdict.</text>
+
+  <text x="0" y="248" class="t-sm">The five bands always add up to the total. A page is never counted in two of them.</text>
+</svg>
+{% endmacro %}
