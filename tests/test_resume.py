@@ -142,19 +142,15 @@ def _run_with_history(done, suspect, queued, ok, changed, errors):
     return con
 
 
-def _counters_on_resume(con, run_id=1):
-    """What a resume seeds its counters with - the block runner._go runs."""
-    c = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+def _counters_on_resume(con, run_id=1, requeue=(), owed=()):
+    """What a resume seeds its counters with - the real function the run uses,
+    not a copy of it, so a change to the carry-forward is covered here."""
     row = con.execute("SELECT ok, changed, errors FROM runs WHERE id=?",
                       (run_id,)).fetchone()
-    if row:
-        c["ok"] = row["ok"] or 0
-        c["changed"] = row["changed"] or 0
-        c["errors"] = row["errors"] or 0
-    c["saved"] = con.execute(
+    done_count = con.execute(
         "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='done'",
         (run_id,)).fetchone()[0] or 0
-    return c
+    return runner._resume_counters(row, done_count, requeue, owed)
 
 
 def test_saved_survives_a_restart_like_the_others():
@@ -174,6 +170,50 @@ def test_no_update_is_not_driven_negative_by_carried_errors():
     con.close()
     no_update = c["saved"] - c["changed"] - c["errors"]
     assert no_update == 578, f"the bar would show {no_update} pages with no update"
+
+
+def test_a_requeued_suspect_is_not_counted_ok_twice():
+    """Anas's rule: a run cannot report more pages than it ran. A suspect is
+    counted ok at capture and held afterwards, so a resume that re-captures it
+    (its pending snapshot is gone) would count the same page a second time.
+    Live run 6 finished "3,574 ok of 3,560" that way."""
+    con = _run_with_history(done=3500, suspect=14, queued=46,
+                            ok=3514, changed=0, errors=0)
+    c = _counters_on_resume(con, requeue=[1, 2, 3, 4, 5, 6, 7,
+                                          8, 9, 10, 11, 12, 13, 14])
+    con.close()
+    assert c["ok"] == 3500, \
+        f"carried {c['ok']} ok forward; the 14 re-captured suspects are owed" \
+        " their count when they land, not before"
+
+
+def test_a_requeued_owed_page_is_not_counted_error_twice():
+    """A page written as an error before it earned its retries goes back in the
+    queue on resume. Its error came with it, and the recapture writes another."""
+    con = _run_with_history(done=600, suspect=0, queued=100,
+                            ok=560, changed=0, errors=40)
+    c = _counters_on_resume(con, owed=list(range(40)))
+    con.close()
+    assert c["errors"] == 0, \
+        f"carried {c['errors']} errors for pages about to be re-judged"
+
+
+def test_withdrawing_a_carried_tally_never_goes_negative():
+    con = _run_with_history(done=5, suspect=0, queued=0,
+                            ok=1, changed=0, errors=1)
+    c = _counters_on_resume(con, requeue=[1, 2, 3], owed=[4, 5, 6])
+    con.close()
+    assert c["ok"] == 0 and c["errors"] == 0, \
+        f"a bad ledger must floor at zero, not report {c}"
+
+
+def test_a_fresh_resume_with_nothing_requeued_carries_everything():
+    con = _run_with_history(done=618, suspect=54, queued=2763,
+                            ok=578, changed=3, errors=40)
+    c = _counters_on_resume(con)
+    con.close()
+    assert (c["ok"], c["changed"], c["errors"], c["saved"]) == (578, 3, 40, 618), \
+        f"nothing was re-queued, so nothing should be withdrawn: {c}"
 
 
 def test_every_page_lands_in_exactly_one_bucket():

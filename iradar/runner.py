@@ -603,6 +603,44 @@ def _rebuild_suspects(con, run_id):
     return suspects, requeue
 
 
+def _resume_counters(prev_row, done_count, requeue, owed):
+    """The tallies a resumed run starts from.
+
+    CARRY the interrupted run's numbers forward: a resume that started from
+    zero overwrote run 127's real ok=4,038 with the ok=1 of its own short tail
+    at the final UPDATE, and the run read as if it captured nothing.
+
+    "saved" carries too. It has no column on runs, but it means "pages whose
+    outcome is final", which is exactly what a done item is. Leaving it at zero
+    did not just under-report: the dashboard draws "no update" as
+    saved - updated - errors, so a resumed run subtracted CUMULATIVE updates
+    and errors from a counter that had just restarted. A run 40 errors deep
+    showed 39 pages checked out of hundreds, and the bar read as though almost
+    nothing had been done.
+
+    Then WITHDRAW every page this resume just put back in the queue. Both
+    re-queues rewind a page that was ALREADY counted, and the carried tally has
+    to be rewound with it or that page is counted twice - once for the outcome
+    it had before the crash, once for the outcome it earns now:
+
+      requeue  a suspect held for the double-check passed through the ok tally
+               on its way into the hold (the count happens at capture, the hold
+               is decided after). Re-captured, it counts ok a second time.
+      owed     a page whose error was never given its retries was written as an
+               error when it failed. Re-captured, it counts again.
+
+    Left in, a resumed run reports more pages than it ran: 3,574 ok of 3,560.
+    """
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": done_count or 0}
+    if prev_row:
+        counters["ok"] = prev_row["ok"] or 0
+        counters["changed"] = prev_row["changed"] or 0
+        counters["errors"] = prev_row["errors"] or 0
+    counters["ok"] = max(0, counters["ok"] - len(requeue or ()))
+    counters["errors"] = max(0, counters["errors"] - len(owed or ()))
+    return counters
+
+
 def run_check(kind="manual", url_ids=None, baseline=False):
     """Run a full check. Returns run summary dict, or None if already running.
 
@@ -672,6 +710,9 @@ def _run_check_inner(kind, url_ids, baseline=False):
     suspects = []
     is_resume = False
     keep_pending = set()
+    # the two re-queues a resume can make; empty on a fresh run, and read by
+    # _resume_counters to withdraw the tally of every page they rewind
+    requeue, owed = [], []
 
     # RESUME: if the last run died mid-flight, continue it instead of redoing
     # its captured work. Only a full run (no explicit id list) is auto-resumed;
@@ -786,29 +827,18 @@ def _run_check_inner(kind, url_ids, baseline=False):
     # run died on its first line with UnboundLocalError.
     counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
     if is_resume:
-        # CARRY the finished run's tallies forward: a resume that started from
-        # zero overwrote run 127's real ok=4,038 with the ok=1 of its own short
-        # tail at the final UPDATE, and the run read as if it captured nothing.
+        # Carried forward from the interrupted run, minus the pages this resume
+        # just re-queued - see _resume_counters for what each of those is and
+        # why leaving them in reports more pages than the run has.
         prev_row = con.execute("SELECT ok, changed, errors FROM runs"
                                " WHERE id=?", (run_id,)).fetchone()
-        if prev_row:
-            counters["ok"] = prev_row["ok"] or 0
-            counters["changed"] = prev_row["changed"] or 0
-            counters["errors"] = prev_row["errors"] or 0
-        # ...and "saved" with them. It has no column on runs, but it means
-        # "pages whose outcome is final", which is exactly what a done item is.
-        #
-        # Leaving it at zero did not just under-report: the dashboard draws
-        # "no update" as saved - updated - errors, so a resumed run subtracted
-        # CUMULATIVE updates and errors from a counter that had just restarted.
-        # A run 40 errors deep showed 39 pages checked out of hundreds, and the
-        # bar read as though almost nothing had been done.
         try:
-            counters["saved"] = con.execute(
+            done_count = con.execute(
                 "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state='done'",
                 (run_id,)).fetchone()[0] or 0
         except Exception:
-            pass
+            done_count = 0
+        counters = _resume_counters(prev_row, done_count, requeue, owed)
 
     already = max(0, pages_total - len(urls))
     RUN_STATE.update(running=True, paused=False, stopping=False, kind=kind,
