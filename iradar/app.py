@@ -4003,26 +4003,44 @@ def _post_run_watcher():
         time.sleep(30)
         running = runner.RUN_STATE.get("running", False)
         if prev and not running:
+            # ONE try around all four made the last of them optional. They are
+            # independent jobs sharing only a moment, and _housekeeping is the
+            # one that rebuilds the substring search index - so a throw in the
+            # structure pass above it took the index rebuild with it, silently,
+            # and every library search fell back to scanning 199,820 rows until
+            # somebody restarted the app. The bare `except Exception: pass`
+            # meant no log line said so either. Each job now stands alone and
+            # says when it fails.
+            #
+            # structure first (deterministic, from the site's own walk),
+            # inference after for what structure cannot place (apps/parts)
             try:
-                # structure first (deterministic, from the site's own walk),
-                # inference after for what structure cannot place (apps/parts)
                 chg, fill, _kept = _rebuild_structure()
                 if chg or fill:
                     print(f"[post-run] structure: {len(chg)} corrected,"
                           f" {len(fill)} filled", flush=True)
+            except Exception as e:
+                print(f"[post-run] structure failed: {e}", flush=True)
+            try:
                 done, _ = _infer_missing_levels()
                 if done:
                     print(f"[post-run] inferred {len(done)} level(s)", flush=True)
+            except Exception as e:
+                print(f"[post-run] level inference failed: {e}", flush=True)
+            try:
                 joined = _matrix_autojoin()
                 if joined:
                     print(f"[post-run] matrix learned {len(joined)} new"
                           f" component slot(s): {', '.join(joined[:6])}"
                           + ("…" if len(joined) > 6 else ""), flush=True)
+            except Exception as e:
+                print(f"[post-run] matrix autojoin failed: {e}", flush=True)
+            try:
                 # a run is what CREATES the mess these clean up, so this is
                 # where they belong - not only at the next restart
                 _housekeeping("after run")
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[post-run] housekeeping failed: {e}", flush=True)
             _collect_mentions_after_run()
         prev = running
 
