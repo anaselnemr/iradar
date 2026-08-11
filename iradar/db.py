@@ -67,6 +67,30 @@ def connect():
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
+    # A CONNECTION PER REQUEST, on stock settings, against a 396 MB database.
+    # Every request opened one and closed it, so nothing here survived long
+    # enough to matter until it was measured: dashboard 359 -> 241 ms, export
+    # counts 213 -> 106, the facet pass 170 -> 106. That was on a laptop SSD
+    # with the OS caching the whole file; the server keeps this database on a
+    # mounted volume, where the reads these save are the expensive kind.
+    #
+    # cache_size  2 MB of pages is nothing against 200k items, and the
+    #             GROUP BY / COUNT(DISTINCT) passes the dashboard and the
+    #             library tiles run re-read the same pages all the way through.
+    # temp_store  those passes sort. In MEMORY rather than into a file on the
+    #             volume, which is the slowest disk this app touches.
+    # mmap_size   read pages straight out of the mapping instead of copying
+    #             each one through a read() call.
+    # synchronous NORMAL is the setting WAL is designed around: a commit still
+    #             goes to the WAL, it just stops fsync-ing on every one. The
+    #             documented loss is the last commits on a power cut, never a
+    #             corrupt file - and the whole archive is rebuildable by a
+    #             re-capture anyway. FULL costs an fsync per page, and a run
+    #             commits once per page, 4,188 times a night.
+    con.execute("PRAGMA cache_size=-65536")        # 64 MB, not 2
+    con.execute("PRAGMA temp_store=MEMORY")
+    con.execute("PRAGMA mmap_size=268435456")      # 256 MB
+    con.execute("PRAGMA synchronous=NORMAL")
     return con
 
 
