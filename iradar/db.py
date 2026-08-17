@@ -67,29 +67,51 @@ def connect():
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
-    # A CONNECTION PER REQUEST, on stock settings, against a 396 MB database.
-    # Every request opened one and closed it, so nothing here survived long
-    # enough to matter until it was measured: dashboard 359 -> 241 ms, export
-    # counts 213 -> 106, the facet pass 170 -> 106. That was on a laptop SSD
-    # with the OS caching the whole file; the server keeps this database on a
-    # mounted volume, where the reads these save are the expensive kind.
+    # A CONNECTION PER REQUEST, against a 396 MB database. Every request opens
+    # one and closes it, so on stock settings nothing cached here ever survived
+    # long enough to help - which is why these are set at all. The numbers
+    # below were taken on a laptop SSD with the OS holding the whole file in
+    # memory; the server keeps this database on a mounted volume, where the
+    # reads they save are the expensive kind, so it should do better there.
+    #
+    # SIZED FOR A MEMORY BILL, not for the best number on a benchmark. The
+    # host charges by gigabyte-minute, and the app sits idle about 158 hours
+    # of every 168 - so the resting size of this process costs more over a
+    # month than the weekly capture run does (62% against 38%). A cache that
+    # buys 50 ms and carries a hundred megabytes all week is a bad trade here.
+    #
+    # Measured on a copy of the real database, peak RSS against page time:
+    #
+    #   settings                 RSS     dashboard   hierarchy   export counts
+    #   stock                    77 MB     402 ms      397 ms       229 ms
+    #   64 MB cache + 256 MB mmap 109 MB    242 ms      286 ms       105 ms
+    #   16 MB cache, no mmap      82 MB     295 ms      298 ms       143 ms
+    #   8 MB cache, no mmap       77 MB     441 ms      435 ms       226 ms
+    #
+    # 16 MB keeps most of the win for a sixth of the memory; 8 MB falls off a
+    # cliff back to stock, so the useful working set for these queries sits
+    # between the two. That is one connection - the web server runs eight
+    # threads and each request opens its own, so the figure that matters is
+    # this one multiplied, which is the whole reason 64 MB was the wrong call.
     #
     # cache_size  2 MB of pages is nothing against 200k items, and the
     #             GROUP BY / COUNT(DISTINCT) passes the dashboard and the
     #             library tiles run re-read the same pages all the way through.
     # temp_store  those passes sort. In MEMORY rather than into a file on the
-    #             volume, which is the slowest disk this app touches.
-    # mmap_size   read pages straight out of the mapping instead of copying
-    #             each one through a read() call.
+    #             volume, which is the slowest disk this app touches. Costs
+    #             nothing at rest: it is only held during a sort.
+    # mmap_size   dropped. It made reads cheaper by mapping the database into
+    #             the process, but a mapped page is a charged page - the host
+    #             counts the file cache in the container's memory - so it was
+    #             billing for up to 256 MB to save a few milliseconds.
     # synchronous NORMAL is the setting WAL is designed around: a commit still
     #             goes to the WAL, it just stops fsync-ing on every one. The
     #             documented loss is the last commits on a power cut, never a
     #             corrupt file - and the whole archive is rebuildable by a
     #             re-capture anyway. FULL costs an fsync per page, and a run
-    #             commits once per page, 4,188 times a night.
-    con.execute("PRAGMA cache_size=-65536")        # 64 MB, not 2
+    #             commits once per page, 4,266 times a night. Free in memory.
+    con.execute("PRAGMA cache_size=-16384")        # 16 MB per connection
     con.execute("PRAGMA temp_store=MEMORY")
-    con.execute("PRAGMA mmap_size=268435456")      # 256 MB
     con.execute("PRAGMA synchronous=NORMAL")
     return con
 
