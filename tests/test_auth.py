@@ -564,3 +564,99 @@ def test_signing_in_sets_both():
     assert not err, err
     row = auth.by_email(ADMIN)
     assert row["last_login"] and row["last_seen"], dict(row)
+
+
+# --- the shared read-only link ---------------------------------------------
+# GUEST_KEY is read from the environment at import, so these set the module
+# attribute directly and always put it back: a leaked key would switch the
+# sign-in wall off for every test that runs after.
+
+def _with_guest_key(key, fn):
+    old = appmod.GUEST_KEY
+    appmod.GUEST_KEY = key
+    try:
+        return fn()
+    finally:
+        appmod.GUEST_KEY = old
+
+
+def test_no_guest_key_means_no_way_in():
+    """The default. An unset key is not a key that matches the empty string."""
+    _reset()
+    c = _client()
+    def go():
+        r = c.get("/?key=", follow_redirects=False)
+        assert r.status_code == 302 and "/login" in r.headers["Location"], \
+            "an empty key let someone in"
+        r = c.get("/?key=anything", follow_redirects=False)
+        assert r.status_code == 302 and "/login" in r.headers["Location"]
+    _with_guest_key("", go)
+
+
+def test_the_right_key_opens_it_and_the_wrong_one_does_not():
+    _reset()
+    def go():
+        c = _client()
+        assert c.get("/?key=s3cret-and-long").status_code == 200
+        c2 = _client()
+        r = c2.get("/?key=s3cret-and-wrong", follow_redirects=False)
+        assert r.status_code == 302 and "/login" in r.headers["Location"]
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_the_key_is_needed_once_not_on_every_link():
+    """It is answered with the session cookie, so the next click is a plain URL."""
+    _reset()
+    def go():
+        c = _client()
+        assert c.get("/?key=s3cret-and-long").status_code == 200
+        assert c.get("/").status_code == 200, "the guest was dropped"
+        assert c.get("/search").status_code == 200
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_guest_may_look_and_may_not_touch():
+    _reset()
+    def go():
+        c = _client()
+        c.get("/?key=s3cret-and-long")
+        for path in ("/run-now", "/pause", "/urls/bulk", "/comment/add"):
+            r = c.post(path, data={})
+            assert r.status_code in (302, 400, 403), \
+                "%s accepted a write from a guest (%s)" % (path, r.status_code)
+            assert r.status_code != 200
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_guest_cannot_reach_settings_people_or_the_backup():
+    """The backup is the whole database, password hashes included."""
+    _reset()
+    def go():
+        c = _client()
+        c.get("/?key=s3cret-and-long")
+        for path in ("/settings", "/users", "/settings/components",
+                     "/settings/backup.db"):
+            r = c.get(path, follow_redirects=False)
+            assert r.status_code in (403, 404), \
+                "%s was reachable by a guest (%s)" % (path, r.status_code)
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_turning_the_key_off_ends_the_guest_sessions_it_opened():
+    _reset()
+    c = _client()
+    _with_guest_key("s3cret-and-long", lambda: c.get("/?key=s3cret-and-long"))
+    r = c.get("/", follow_redirects=False)        # key now unset again
+    assert r.status_code == 302 and "/login" in r.headers["Location"], \
+        "a guest session outlived the key that opened it"
+
+
+def test_accounts_still_work_while_the_link_is_open():
+    """The link is an addition, not a replacement - nobody loses their sign-in."""
+    _reset()
+    def go():
+        c = _client()
+        assert _signin(c, ADMIN, NEWPW).status_code in (302, 200)
+        r = c.get("/settings")
+        assert r.status_code == 200, "an admin lost their own access"
+    _with_guest_key("s3cret-and-long", go)

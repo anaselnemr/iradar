@@ -84,6 +84,51 @@ ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page",
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static"}
 
+# --- the shared read-only link ---------------------------------------------
+# UNSET, WHICH IS THE DEFAULT AND WHAT EVERY EXISTING INSTALL HAS, means none
+# of this exists and the app is sign-in only exactly as before. Set GUEST_KEY
+# to any long random string and `?key=<that string>` opens the app without an
+# account. The key is checked once and answered with the ordinary session
+# cookie, so only the first link carries it and nothing has to be pasted onto
+# every URL afterwards.
+#
+# READ-ONLY, and not as a courtesy. A key in a URL is a weak secret: it goes
+# into browser history, into the Referer header of every outbound link, into
+# proxy logs, and into whatever a person pastes it into. That is fine for
+# letting somebody look, and not fine for letting them accept updates, change
+# the schedule, manage accounts or download the database - so a guest is held
+# to GET, and the admin views (settings, people, and the backup, which carries
+# every password hash) stay shut to them regardless.
+#
+# It is switched off by removing the variable. Accounts are untouched either
+# way: signing in still works, and everyone who has an account keeps theirs.
+GUEST_KEY = os.environ.get("GUEST_KEY", "").strip()
+
+# What templates render in place of a signed-in account. Item access only,
+# because that is all the templates use of `me`.
+GUEST_ME = {"id": 0, "name": "Guest", "email": "", "role": "viewer",
+            "active": 1, "must_change_pw": 0}
+
+
+def guest_active():
+    """Is this request riding the shared link rather than an account?
+
+    Cached per request like current_user(). The key is accepted from the query
+    string once and remembered in the session, so a guest who follows a link
+    inside the app is not bounced the moment the `?key` falls off the URL.
+    """
+    if not hasattr(request, "_guest"):
+        ok = False
+        if GUEST_KEY:
+            sent = request.args.get("key", "")
+            if sent and secrets.compare_digest(str(sent), GUEST_KEY):
+                session["guest"] = True
+                ok = True
+            else:
+                ok = bool(session.get("guest"))
+        request._guest = ok
+    return request._guest
+
 
 def csrf_token():
     """This session's form token, minted on first use.
@@ -179,6 +224,13 @@ def _require_login():
     if ep in PUBLIC_ENDPOINTS:
         return
     u = current_user()
+    if u is None and guest_active():
+        # Look, do not touch. Anything that writes, configures, or hands over
+        # the database is refused outright rather than hidden in the template -
+        # a guest who guesses a URL gets a 403, not a form that half works.
+        if request.method not in ("GET", "HEAD") or ep in ADMIN_ONLY_VIEWS:
+            abort(403)
+        return
     if u is None:
         session.clear()
         if request.accept_mimetypes.best == "application/json" or \
@@ -208,8 +260,10 @@ def _require_login():
 @app.context_processor
 def _inject_user():
     """Every template can ask who is signed in and whether they are an admin."""
-    return {"me": current_user(), "is_admin": is_admin(),
-            "csrf_token": csrf_token}
+    me = current_user()
+    if me is None and guest_active():
+        me = GUEST_ME
+    return {"me": me, "is_admin": is_admin(), "csrf_token": csrf_token}
 
 
 # <form ... method="post" ...> - the tag only, so nothing inside a string or a
