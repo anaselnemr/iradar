@@ -660,3 +660,29 @@ def test_accounts_still_work_while_the_link_is_open():
         r = c.get("/settings")
         assert r.status_code == 200, "an admin lost their own access"
     _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_guest_gets_a_refusal_not_a_crash_on_the_account_pages():
+    """"My profile" reads the signed-in person off the session. A guest is not
+    one, so the view subscripted None and answered 500 - on a link the avatar
+    menu drew for them. Refused now, and not drawn."""
+    _reset()
+    def go():
+        c = _client()
+        body = c.get("/?key=s3cret-and-long").data.decode("utf-8", "replace")
+        assert "My profile" not in body, "a guest was offered a profile link"
+        r = c.get("/account/password", follow_redirects=False)
+        msg = "/account/password answered %s for a guest" % r.status_code
+        assert r.status_code == 403, msg
+        # POST-only, so a GET is 405 before the gate is reached; what
+        # matters is that a guest cannot rename an account not theirs.
+        assert c.post("/account/name", data={}).status_code != 200
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_signed_in_person_still_has_their_profile():
+    _reset()
+    c = _client()
+    _signin(c, ADMIN, NEWPW)
+    assert c.get("/account/password").status_code == 200
+    assert "My profile" in c.get("/").data.decode("utf-8", "replace")

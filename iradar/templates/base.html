@@ -1176,11 +1176,14 @@
           <span class="themelabel-dark">Light mode</span>
         </button>
 
+        {#- A guest has no account, so there is no profile to open. -#}
+        {% if not is_guest %}
         <a class="acct-item" href="{{ url_for('account_password') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           My profile
         </a>
+        {% endif %}
 
         {#- Configuration lives with the person, not in the work navigation.
             Both are admin-only, so this is also the difference between an

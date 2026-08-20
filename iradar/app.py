@@ -81,6 +81,12 @@ EDITOR_MAY_POST = {
 # Pages an editor cannot even look at (they configure the system).
 ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page",
                     "settings_backup"}
+# Endpoints that are ABOUT an account, so there is nothing for a guest to see:
+# they read the signed-in person off the session and a guest is not one. Left
+# reachable, "My profile" answered a guest with a 500 rather than a refusal -
+# current_user() is None and the view subscripts it. A guest gets 403 here and
+# the link is not drawn for them either.
+ACCOUNT_ONLY_VIEWS = {"account_password", "account_name"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static"}
 
@@ -228,7 +234,8 @@ def _require_login():
         # Look, do not touch. Anything that writes, configures, or hands over
         # the database is refused outright rather than hidden in the template -
         # a guest who guesses a URL gets a 403, not a form that half works.
-        if request.method not in ("GET", "HEAD") or ep in ADMIN_ONLY_VIEWS:
+        if (request.method not in ("GET", "HEAD")
+                or ep in ADMIN_ONLY_VIEWS or ep in ACCOUNT_ONLY_VIEWS):
             abort(403)
         return
     if u is None:
@@ -261,9 +268,11 @@ def _require_login():
 def _inject_user():
     """Every template can ask who is signed in and whether they are an admin."""
     me = current_user()
-    if me is None and guest_active():
+    guest = me is None and guest_active()
+    if guest:
         me = GUEST_ME
-    return {"me": me, "is_admin": is_admin(), "csrf_token": csrf_token}
+    return {"me": me, "is_admin": is_admin(), "is_guest": guest,
+            "csrf_token": csrf_token}
 
 
 # <form ... method="post" ...> - the tag only, so nothing inside a string or a
