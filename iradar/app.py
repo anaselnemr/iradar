@@ -116,6 +116,33 @@ GUEST_ME = {"id": 0, "name": "Guest", "email": "", "role": "viewer",
             "active": 1, "must_change_pw": 0}
 
 
+# How stale the guest stamp may get before it is written again. Same reasoning
+# as auth.SEEN_EVERY: a write per page view, for a number read once a day, is a
+# write per page view. Five minutes answers "has anybody opened the link" for
+# one write per five minutes of somebody actually using it.
+GUEST_SEEN_EVERY = 300
+_guest_seen_at = [0.0]          # monotonic, in this process only
+
+
+def _touch_guest_seen():
+    """Record that the shared link was opened, throttled.
+
+    Deliberately a timestamp and nothing else. Guests have no account to
+    attribute anything to, and the question this answers is the only one that
+    was actually asked: has anyone opened it. No address is stored, no path,
+    no count of people - none of which would be true anyway behind one shared
+    link.
+    """
+    now = time.monotonic()
+    if now - _guest_seen_at[0] < GUEST_SEEN_EVERY:
+        return
+    _guest_seen_at[0] = now
+    try:
+        db.set_setting("guest_last_seen", db.now_iso())
+    except Exception:
+        pass                    # a stamp is never worth failing a page load
+
+
 def guest_active():
     """Is this request riding the shared link rather than an account?
 
@@ -237,6 +264,7 @@ def _require_login():
         if (request.method not in ("GET", "HEAD")
                 or ep in ADMIN_ONLY_VIEWS or ep in ACCOUNT_ONLY_VIEWS):
             abort(403)
+        _touch_guest_seen()
         return
     if u is None:
         session.clear()
@@ -272,7 +300,7 @@ def _inject_user():
     if guest:
         me = GUEST_ME
     return {"me": me, "is_admin": is_admin(), "is_guest": guest,
-            "csrf_token": csrf_token}
+            "guest_link_on": bool(GUEST_KEY), "csrf_token": csrf_token}
 
 
 # <form ... method="post" ...> - the tag only, so nothing inside a string or a

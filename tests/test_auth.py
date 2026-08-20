@@ -686,3 +686,37 @@ def test_a_signed_in_person_still_has_their_profile():
     _signin(c, ADMIN, NEWPW)
     assert c.get("/account/password").status_code == 200
     assert "My profile" in c.get("/").data.decode("utf-8", "replace")
+
+
+def test_opening_the_link_is_recorded_and_shown_to_an_admin():
+    """The only question it answers: has anyone opened it."""
+    _reset()
+    con = db.connect()
+    con.execute("DELETE FROM settings WHERE key='guest_last_seen'")
+    con.commit()
+    con.close()
+
+    def go():
+        appmod._guest_seen_at[0] = 0.0        # clear the throttle
+        c = _client()
+        assert c.get("/?key=s3cret-and-long").status_code == 200
+        assert db.get_settings().get("guest_last_seen"), "the visit went unrecorded"
+        a = _client()
+        _signin(a, ADMIN, NEWPW)
+        body = a.get("/settings").data.decode("utf-8", "replace")
+        assert "Last opened by a guest" in body, "an admin cannot see it"
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_the_stamp_is_not_a_write_per_page_view():
+    _reset()
+    def go():
+        appmod._guest_seen_at[0] = 0.0
+        c = _client()
+        c.get("/?key=s3cret-and-long")
+        first = db.get_settings().get("guest_last_seen")
+        for _ in range(5):
+            c.get("/")
+        assert db.get_settings().get("guest_last_seen") == first, \
+            "every page view wrote to the database"
+    _with_guest_key("s3cret-and-long", go)

@@ -69,7 +69,23 @@
     </div>
 
     <div class="pane" id="pane-advanced">
-      <h3 style="margin:0 0 10px; font-size:15px">Where your assets live</h3>
+      {#- Whether the shared read-only link has been opened. Admin-only by
+          virtue of this whole page being admin-only. A timestamp and nothing
+          else: everyone arrives through one link, so there is no "who". -#}
+      <h3 style="margin:0 0 10px; font-size:15px">The shared link</h3>
+      <p class="muted" style="margin-top:0">
+        {% if not guest_link_on %}
+          <b>Off.</b> iRadar can only be opened by signing in.
+        {% elif s.guest_last_seen %}
+          <b>On.</b> Last opened by a guest
+          <b>{{ s.guest_last_seen|localtime }}</b>.
+        {% else %}
+          <b>On.</b> Nobody has opened it yet.
+        {% endif %}
+        Anyone holding the link can read everything here; they cannot change
+        anything, reach these settings, or download the database.
+      </p>
+      <h3 style="margin:18px 0 10px; font-size:15px">Where your assets live</h3>
       <p class="muted" style="margin-top:0">Paste each system's <b>search
         page URL</b> to make its badges clickable. <code>{q}</code> puts the
         asset name into the search; without it, the name is copied for you to
