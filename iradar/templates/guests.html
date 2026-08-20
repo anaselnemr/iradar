@@ -36,7 +36,7 @@
   <div class="tablewrap">
   <table style="white-space:nowrap">
     <tr><th>Arrived</th><th>Last seen</th><th>Pages</th><th>Opened on</th>
-        <th style="white-space:normal">Last page they were on</th></tr>
+        <th style="white-space:normal">Last page they were on</th><th></th></tr>
     {% for r in rows %}
     <tr>
       <td>{{ r.first_seen|localtime }}</td>
@@ -44,6 +44,14 @@
       <td><b>{{ r.hits }}</b></td>
       <td>{{ r.agent or '—' }}</td>
       <td style="white-space:normal"><span class="muted">{{ r.last_path }}</span></td>
+      <td><form method="post"
+                action="{{ url_for('guests_delete', vid=r.id) }}"
+                onsubmit="return confirm('Forget this visit?
+
+It only removes the line. If they are still reading, they come back as a new one.')">
+        <button type="submit" class="btn-reject btn-sm"
+                title="Take this visit off the register">Forget</button>
+      </form></td>
     </tr>
     {% endfor %}
   </table>
@@ -52,6 +60,14 @@
   <p class="muted" style="margin-top:10px">Showing the 200 most recent of
     {{ tot.v }}.</p>
   {% endif %}
+
+  <form method="post" action="{{ url_for('guests_clear') }}"
+        style="margin-top:16px"
+        onsubmit="return confirm('Clear the whole register?
+
+All {{ tot.v }} visits are forgotten. Anyone still reading reappears as a new line on their next page.')">
+    <button type="submit" class="btn-reject btn-sm">Clear the register</button>
+  </form>
   {% endif %}
 </div>
 {% endblock %}

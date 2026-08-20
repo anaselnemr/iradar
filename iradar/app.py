@@ -95,7 +95,7 @@ ACCOUNT_ONLY_VIEWS = {"account_password", "account_name"}
 GUEST_MAY_POST = {"logout"}
 # Pages only the owner may see. Every account here is an admin, so an
 # admin-only page is a team-wide page; these are refused to anyone else.
-OWNER_ONLY_VIEWS = {"guests_page"}
+OWNER_ONLY_VIEWS = {"guests_page", "guests_delete", "guests_clear"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static"}
 
@@ -6758,6 +6758,38 @@ def guests_page():
         con.close()
     return render_template("guests.html", rows=rows, tot=tot, today=today,
                            link_on=bool(GUEST_KEY))
+
+
+@app.route("/guests/<int:vid>/delete", methods=["POST"])
+def guests_delete(vid):
+    """Forget one visit. Owner only - see OWNER_ONLY_VIEWS.
+
+    The browser that made it keeps its session id, so if that person is still
+    reading they will reappear as a NEW line rather than silently resuming the
+    deleted one. That is the honest behaviour: this forgets a record, it does
+    not evict anybody.
+    """
+    con = db.connect()
+    try:
+        con.execute("DELETE FROM guest_visits WHERE id=?", (vid,))
+        con.commit()
+    finally:
+        con.close()
+    flash("That visit is off the register.")
+    return redirect(url_for("guests_page"))
+
+
+@app.route("/guests/clear", methods=["POST"])
+def guests_clear():
+    """Empty the register. Owner only - see OWNER_ONLY_VIEWS."""
+    con = db.connect()
+    try:
+        n = con.execute("DELETE FROM guest_visits").rowcount
+        con.commit()
+    finally:
+        con.close()
+    flash("Register cleared - %d visit%s forgotten." % (n, "" if n == 1 else "s"))
+    return redirect(url_for("guests_page"))
 
 
 @app.route("/prewarm", methods=["POST"])

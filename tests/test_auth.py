@@ -792,3 +792,92 @@ def test_a_guest_can_always_reach_the_sign_in_page():
         assert r.status_code == 200
         assert b'type="password"' in r.data, "no sign-in form for a guest"
     _with_guest_key("s3cret-and-long", go)
+
+
+def _seed_visits(n=3):
+    con = db.connect()
+    con.execute("DELETE FROM guest_visits")
+    for i in range(n):
+        con.execute("INSERT INTO guest_visits(visit,first_seen,last_seen,hits,"
+                    "agent,last_path) VALUES(?,?,?,?,?,?)",
+                    ("v%d" % i, "2026-08-20 10:0%d:00" % i,
+                     "2026-08-20 10:1%d:00" % i, 5, "Chrome on Windows", "/"))
+    con.commit()
+    ids = [r[0] for r in con.execute("SELECT id FROM guest_visits ORDER BY id")]
+    con.close()
+    return ids
+
+
+def _owner_client():
+    c = _client()
+    _signin(c, ADMIN, NEWPW)
+    return c
+
+
+def test_the_owner_can_forget_one_visit_and_the_rest_stay():
+    _reset()
+    ids = _seed_visits(3)
+    old_owner = appmod.OWNER_EMAIL
+    try:
+        appmod.OWNER_EMAIL = ADMIN
+        c = _owner_client()
+        r = c.post("/guests/%d/delete" % ids[1], data={"_csrf": _token(c, "/")})
+        assert r.status_code in (302, 200), "delete answered %s" % r.status_code
+        con = db.connect()
+        left = [x[0] for x in con.execute("SELECT id FROM guest_visits")]
+        con.close()
+        assert ids[1] not in left, "the visit is still on the register"
+        assert len(left) == 2, "it took the others with it"
+    finally:
+        appmod.OWNER_EMAIL = old_owner
+
+
+def test_the_owner_can_clear_the_whole_register():
+    _reset()
+    _seed_visits(4)
+    old_owner = appmod.OWNER_EMAIL
+    try:
+        appmod.OWNER_EMAIL = ADMIN
+        c = _owner_client()
+        c.post("/guests/clear", data={"_csrf": _token(c, "/")})
+        con = db.connect()
+        n = con.execute("SELECT COUNT(*) FROM guest_visits").fetchone()[0]
+        con.close()
+        assert n == 0, "%d visits survived the clear" % n
+    finally:
+        appmod.OWNER_EMAIL = old_owner
+
+
+def test_nobody_but_the_owner_can_erase_the_register():
+    """Every account is an admin, so this must not be an admin-level power."""
+    _reset()
+    ids = _seed_visits(2)
+    old_owner = appmod.OWNER_EMAIL
+    try:
+        appmod.OWNER_EMAIL = "someone.else@example.com"
+        c = _owner_client()                       # an admin, not the owner
+        assert c.post("/guests/%d/delete" % ids[0],
+                      data={"_csrf": _token(c, "/")}).status_code == 403
+        assert c.post("/guests/clear",
+                      data={"_csrf": _token(c, "/")}).status_code == 403
+        con = db.connect()
+        n = con.execute("SELECT COUNT(*) FROM guest_visits").fetchone()[0]
+        con.close()
+        assert n == 2, "a non-owner erased something"
+    finally:
+        appmod.OWNER_EMAIL = old_owner
+
+
+def test_a_guest_cannot_erase_the_register_of_guests():
+    _reset()
+    ids = _seed_visits(2)
+    def go():
+        c = _client()
+        c.get("/?key=s3cret-and-long")
+        assert c.post("/guests/%d/delete" % ids[0], data={}).status_code != 200
+        assert c.post("/guests/clear", data={}).status_code != 200
+        con = db.connect()
+        n = con.execute("SELECT COUNT(*) FROM guest_visits").fetchone()[0]
+        con.close()
+        assert n >= 2, "a guest cleared the register"
+    _with_guest_key("s3cret-and-long", go)
