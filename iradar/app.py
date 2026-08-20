@@ -87,6 +87,12 @@ ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page",
 # current_user() is None and the view subscripts it. A guest gets 403 here and
 # the link is not drawn for them either.
 ACCOUNT_ONLY_VIEWS = {"account_password", "account_name"}
+# The one write a guest must be allowed. Signing out is a POST, so a blanket
+# "GET only" refused it: the button answered 403, the guest session survived
+# the click, and the next page load re-read the cookie and made them a guest
+# again - a trap with no way out of it from inside the app. It only ever
+# clears the caller's own session.
+GUEST_MAY_POST = {"logout"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static"}
 
@@ -214,6 +220,29 @@ def is_admin():
     return bool(u and u["role"] == "admin")
 
 
+# The person this installation belongs to, by the address that seeded it.
+# ADMIN IS NOT A SMALL GROUP HERE: all seven accounts are admins, so
+# "admin only" is the same as "everyone", which is the wrong audience for
+# something that is nobody's business but the owner's - like whether the
+# shared link has been opened. This is the one distinction the app already
+# had, it costs no schema, and handing the tool over is changing one variable
+# rather than editing code.
+OWNER_EMAIL = os.environ.get("OWNER_EMAIL", "").strip().lower()
+
+
+def is_owner():
+    """Is the signed-in person the one OWNER_EMAIL names?
+
+    False when OWNER_EMAIL is unset, which is deliberate: unset means nobody
+    has claimed this installation, and guessing that the lowest user id is the
+    owner would hand a stranger's install to whoever registered first.
+    """
+    u = current_user()
+    if not u or not OWNER_EMAIL:
+        return False
+    return (u["email"] or "").strip().lower() == OWNER_EMAIL
+
+
 @app.before_request
 def _require_login():
     ep = request.endpoint
@@ -261,8 +290,9 @@ def _require_login():
         # Look, do not touch. Anything that writes, configures, or hands over
         # the database is refused outright rather than hidden in the template -
         # a guest who guesses a URL gets a 403, not a form that half works.
-        if (request.method not in ("GET", "HEAD")
-                or ep in ADMIN_ONLY_VIEWS or ep in ACCOUNT_ONLY_VIEWS):
+        if ep in ADMIN_ONLY_VIEWS or ep in ACCOUNT_ONLY_VIEWS:
+            abort(403)
+        if request.method not in ("GET", "HEAD") and ep not in GUEST_MAY_POST:
             abort(403)
         _touch_guest_seen()
         return
@@ -299,8 +329,9 @@ def _inject_user():
     guest = me is None and guest_active()
     if guest:
         me = GUEST_ME
-    return {"me": me, "is_admin": is_admin(), "is_guest": guest,
-            "guest_link_on": bool(GUEST_KEY), "csrf_token": csrf_token}
+    return {"me": me, "is_admin": is_admin(), "is_owner": is_owner(),
+            "is_guest": guest, "guest_link_on": bool(GUEST_KEY),
+            "csrf_token": csrf_token}
 
 
 # <form ... method="post" ...> - the tag only, so nothing inside a string or a

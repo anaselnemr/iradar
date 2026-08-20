@@ -7,6 +7,7 @@ last admin cannot be removed, and the shared starting password cannot survive
 first sign-in.
 """
 import os
+import re
 import sys
 import tempfile
 import time
@@ -701,10 +702,22 @@ def test_opening_the_link_is_recorded_and_shown_to_an_admin():
         c = _client()
         assert c.get("/?key=s3cret-and-long").status_code == 200
         assert db.get_settings().get("guest_last_seen"), "the visit went unrecorded"
-        a = _client()
-        _signin(a, ADMIN, NEWPW)
-        body = a.get("/settings").data.decode("utf-8", "replace")
-        assert "Last opened by a guest" in body, "an admin cannot see it"
+        # OWNER sees it; another admin does not. Every account here is an
+        # admin, so admin-only would have meant the whole team.
+        old_owner = appmod.OWNER_EMAIL
+        appmod.OWNER_EMAIL = ADMIN
+        try:
+            a = _client()
+            _signin(a, ADMIN, NEWPW)
+            body = a.get("/settings").data.decode("utf-8", "replace")
+            assert "Last opened by a guest" in body, "the owner cannot see it"
+            appmod.OWNER_EMAIL = "someone.else@example.com"
+            b2 = _client()
+            _signin(b2, ADMIN, NEWPW)
+            body2 = b2.get("/settings").data.decode("utf-8", "replace")
+            assert "Last opened by a guest" not in body2,                 "an admin who is not the owner was shown it"
+        finally:
+            appmod.OWNER_EMAIL = old_owner
     _with_guest_key("s3cret-and-long", go)
 
 
@@ -719,4 +732,33 @@ def test_the_stamp_is_not_a_write_per_page_view():
             c.get("/")
         assert db.get_settings().get("guest_last_seen") == first, \
             "every page view wrote to the database"
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_guest_can_leave_and_is_not_trapped_as_one():
+    """Signing out is a POST, and a blanket GET-only refused it: the button
+    answered 403, the session survived, and the next page made you a guest
+    again. There was no way out of the shared view from inside the app."""
+    _reset()
+    def go():
+        c = _client()
+        body = c.get("/?key=s3cret-and-long").data.decode("utf-8", "replace")
+        assert "Sign in with an account" in body, "a guest is offered no way in"
+        m = re.search(r'name="_csrf" value="([^"]+)"', body)
+        r = c.post("/logout", data={"_csrf": m.group(1) if m else ""})
+        assert r.status_code in (302, 200), "leaving answered %s" % r.status_code
+        after = c.get("/", follow_redirects=False)
+        assert after.status_code == 302 and "/login" in after.headers["Location"], \
+            "still a guest after leaving"
+    _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_guest_can_always_reach_the_sign_in_page():
+    _reset()
+    def go():
+        c = _client()
+        c.get("/?key=s3cret-and-long")
+        r = c.get("/login")
+        assert r.status_code == 200
+        assert b'type="password"' in r.data, "no sign-in form for a guest"
     _with_guest_key("s3cret-and-long", go)
