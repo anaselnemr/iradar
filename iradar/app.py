@@ -93,6 +93,9 @@ ACCOUNT_ONLY_VIEWS = {"account_password", "account_name"}
 # again - a trap with no way out of it from inside the app. It only ever
 # clears the caller's own session.
 GUEST_MAY_POST = {"logout"}
+# Pages only the owner may see. Every account here is an admin, so an
+# admin-only page is a team-wide page; these are refused to anyone else.
+OWNER_ONLY_VIEWS = {"guests_page"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static"}
 
@@ -122,31 +125,65 @@ GUEST_ME = {"id": 0, "name": "Guest", "email": "", "role": "viewer",
             "active": 1, "must_change_pw": 0}
 
 
-# How stale the guest stamp may get before it is written again. Same reasoning
-# as auth.SEEN_EVERY: a write per page view, for a number read once a day, is a
-# write per page view. Five minutes answers "has anybody opened the link" for
-# one write per five minutes of somebody actually using it.
-GUEST_SEEN_EVERY = 300
-_guest_seen_at = [0.0]          # monotonic, in this process only
+_BROWSERS = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Chrome/", "Chrome"),
+             ("Firefox/", "Firefox"), ("Safari/", "Safari"))
+_SYSTEMS = (("Windows", "Windows"), ("Android", "Android"),
+            ("iPhone", "iPhone"), ("iPad", "iPad"), ("Mac OS", "Mac"),
+            ("Linux", "Linux"))
 
 
-def _touch_guest_seen():
-    """Record that the shared link was opened, throttled.
+def _agent_label(ua):
+    """"Chrome on Windows" from a user-agent header, or "" if it is not one.
 
-    Deliberately a timestamp and nothing else. Guests have no account to
-    attribute anything to, and the question this answers is the only one that
-    was actually asked: has anyone opened it. No address is stored, no path,
-    no count of people - none of which would be true anyway behind one shared
-    link.
+    Two words, derived and the header thrown away. It is here to tell one
+    visitor apart from another at a glance, not to identify anybody - which is
+    also why the raw string, which is long enough to fingerprint a machine, is
+    not what gets stored. Order matters: every Chromium browser also claims to
+    be Chrome and Safari, so the specific names are tested first.
     """
-    now = time.monotonic()
-    if now - _guest_seen_at[0] < GUEST_SEEN_EVERY:
-        return
-    _guest_seen_at[0] = now
+    ua = ua or ""
+    browser = next((n for t, n in _BROWSERS if t in ua), "")
+    system = next((n for t, n in _SYSTEMS if t in ua), "")
+    if browser and system:
+        return "%s on %s" % (browser, system)
+    return browser or system or ""
+
+
+def _record_guest_visit():
+    """Add this page view to the register of who has opened the shared link.
+
+    ONE ROW PER VISIT, not per page view: a random id is minted into the
+    browser's session the first time it presents the key, so somebody reading
+    forty pages is one line with hits=40 rather than forty lines. That is what
+    makes this readable, and it is also why this is not throttled the way
+    auth.touch_seen is - the row count is bounded by people rather than by
+    clicks, and the hit count is the part worth having accurate.
+
+    NO ADDRESS IS STORED. Everyone arrives through the same link, so an IP
+    would be the only field here able to name a person, and a register of
+    which colleague read which page is a different thing from "has anyone
+    opened it".
+    """
+    vid = session.get("gvid")
+    if not vid:
+        vid = secrets.token_hex(8)
+        session["gvid"] = vid
+    now = db.now_iso()
     try:
-        db.set_setting("guest_last_seen", db.now_iso())
+        con = db.connect()
+        try:
+            con.execute(
+                "INSERT INTO guest_visits(visit, first_seen, last_seen, hits,"
+                " agent, last_path) VALUES(?,?,?,1,?,?)"
+                " ON CONFLICT(visit) DO UPDATE SET last_seen=excluded.last_seen,"
+                " hits=hits+1, last_path=excluded.last_path",
+                (vid, now, now, _agent_label(request.headers.get("User-Agent")),
+                 request.path))
+            con.commit()
+        finally:
+            con.close()
     except Exception:
-        pass                    # a stamp is never worth failing a page load
+        pass                    # a register entry is never worth a failed page
 
 
 def guest_active():
@@ -290,11 +327,12 @@ def _require_login():
         # Look, do not touch. Anything that writes, configures, or hands over
         # the database is refused outright rather than hidden in the template -
         # a guest who guesses a URL gets a 403, not a form that half works.
-        if ep in ADMIN_ONLY_VIEWS or ep in ACCOUNT_ONLY_VIEWS:
+        if (ep in ADMIN_ONLY_VIEWS or ep in ACCOUNT_ONLY_VIEWS
+                or ep in OWNER_ONLY_VIEWS):
             abort(403)
         if request.method not in ("GET", "HEAD") and ep not in GUEST_MAY_POST:
             abort(403)
-        _touch_guest_seen()
+        _record_guest_visit()
         return
     if u is None:
         session.clear()
@@ -308,6 +346,8 @@ def _require_login():
     if u["must_change_pw"] and ep not in ("account_password", "logout"):
         return redirect(url_for("account_password"))
     if ep in ADMIN_ONLY_VIEWS and not is_admin():
+        abort(403)
+    if ep in OWNER_ONLY_VIEWS and not is_owner():
         abort(403)
     if request.method in ("POST", "PUT", "PATCH", "DELETE") \
             and ep not in EDITOR_MAY_POST and not is_admin():
@@ -3680,9 +3720,19 @@ def settings_view():
         matrix_ctx = _matrix_context(con)
     finally:
         con.close()
+    # the shared-link summary is the owner's, so only pay for it for them
+    guest_tot = None
+    if is_owner():
+        c2 = db.connect()
+        try:
+            guest_tot = c2.execute(
+                "SELECT COUNT(*) v, IFNULL(SUM(hits),0) h, MAX(last_seen) l"
+                " FROM guest_visits").fetchone()
+        finally:
+            c2.close()
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS,
-                           **matrix_ctx)
+                           guest_tot=guest_tot, **matrix_ctx)
 
 
 @app.route("/url/<int:url_id>/level", methods=["POST"])
@@ -6679,6 +6729,35 @@ def history():
     runs = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 100").fetchall()
     con.close()
     return render_template("history.html", runs=runs)
+
+
+@app.route("/guests")
+def guests_page():
+    """Who has opened the shared link. Owner only - see OWNER_ONLY_VIEWS.
+
+    One row per visit rather than per page view, so this reads as a list of
+    people who came rather than a server log. There is no name to show and
+    deliberately no address; what distinguishes one line from another is when
+    it arrived, what it was reading on, and how much of the site it read.
+    """
+    con = db.connect()
+    try:
+        rows = con.execute(
+            "SELECT * FROM guest_visits ORDER BY last_seen DESC LIMIT 200"
+        ).fetchall()
+        tot = con.execute(
+            "SELECT COUNT(*) v, IFNULL(SUM(hits),0) h, MIN(first_seen) f,"
+            " MAX(last_seen) l FROM guest_visits").fetchone()
+        # "today" in the reader's timezone, not the server's
+        since = (to_local(db.now_iso()).replace(hour=0, minute=0, second=0)
+                 .astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+        today = con.execute(
+            "SELECT COUNT(*) FROM guest_visits WHERE last_seen>=?",
+            (since,)).fetchone()[0]
+    finally:
+        con.close()
+    return render_template("guests.html", rows=rows, tot=tot, today=today,
+                           link_on=bool(GUEST_KEY))
 
 
 @app.route("/prewarm", methods=["POST"])

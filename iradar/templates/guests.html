@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}The shared link — iRadar{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>The shared link</h1>
+
+  {% if not link_on %}
+  <p class="muted"><b>The link is off.</b> iRadar can only be opened by
+    signing in. Anything below is from when it was on.</p>
+  {% endif %}
+
+  <p class="muted" style="margin-top:0">
+    One line per visit, not per page: somebody who reads forty pages is one
+    line that says 40. There is no name and no address here — everyone arrives
+    through the same link, so what tells the lines apart is when they came,
+    what they were reading on, and how much they read.
+  </p>
+
+  {% if not rows %}
+  <p class="muted">Nobody has opened it yet.</p>
+  {% else %}
+
+  <div style="display:flex; gap:26px; flex-wrap:wrap; margin:16px 0 18px">
+    <div><div class="muted" style="font-size:12px">Visits</div>
+      <div style="font-size:22px; font-weight:600">{{ tot.v }}</div></div>
+    <div><div class="muted" style="font-size:12px">Today</div>
+      <div style="font-size:22px; font-weight:600">{{ today }}</div></div>
+    <div><div class="muted" style="font-size:12px">Pages read</div>
+      <div style="font-size:22px; font-weight:600">{{ tot.h }}</div></div>
+    <div><div class="muted" style="font-size:12px">First</div>
+      <div style="font-size:22px; font-weight:600">{{ tot.f|localtime }}</div></div>
+    <div><div class="muted" style="font-size:12px">Most recent</div>
+      <div style="font-size:22px; font-weight:600">{{ tot.l|localtime }}</div></div>
+  </div>
+
+  <div class="tablewrap">
+  <table style="white-space:nowrap">
+    <tr><th>Arrived</th><th>Last seen</th><th>Pages</th><th>Opened on</th>
+        <th style="white-space:normal">Last page they were on</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.first_seen|localtime }}</td>
+      <td>{{ r.last_seen|localtime }}</td>
+      <td><b>{{ r.hits }}</b></td>
+      <td>{{ r.agent or '—' }}</td>
+      <td style="white-space:normal"><span class="muted">{{ r.last_path }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% if tot.v > 200 %}
+  <p class="muted" style="margin-top:10px">Showing the 200 most recent of
+    {{ tot.v }}.</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

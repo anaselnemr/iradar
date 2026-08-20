@@ -345,6 +345,28 @@ def init_db():
     -- can look INSIDE the pages, not just at their item titles
     CREATE VIRTUAL TABLE IF NOT EXISTS page_fts USING fts5(txt);
     CREATE INDEX IF NOT EXISTS idx_changes_url ON changes(url_id, ts);
+    -- Who has opened the shared read-only link. ONE ROW PER VISIT, not per
+    -- page view: `visit` is a random id minted into that browser's session
+    -- when it first presents the key, so a person reading forty pages is one
+    -- line rather than forty.
+    --
+    -- NO ADDRESS IS STORED, and none should be. Everyone arrives through one
+    -- shared link, so an IP would be the only thing here capable of naming a
+    -- person - which is a different thing from what this is for, and would
+    -- make a log of colleagues' reading habits out of a "has anyone opened
+    -- it". `agent` is a two-word summary ("Chrome on Windows"), derived and
+    -- discarded, not the raw header.
+    CREATE TABLE IF NOT EXISTS guest_visits(
+        id INTEGER PRIMARY KEY,
+        visit TEXT UNIQUE NOT NULL,
+        first_seen TEXT,
+        last_seen TEXT,
+        hits INTEGER DEFAULT 0,
+        agent TEXT DEFAULT '',
+        last_path TEXT DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_guest_visits_seen
+        ON guest_visits(last_seen DESC);
     """)
     # lightweight migrations for databases created by older versions
     # How to LINK BACK to the thing a note is about. An asset's note is keyed

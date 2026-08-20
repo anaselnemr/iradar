@@ -689,50 +689,80 @@ def test_a_signed_in_person_still_has_their_profile():
     assert "My profile" in c.get("/").data.decode("utf-8", "replace")
 
 
-def test_opening_the_link_is_recorded_and_shown_to_an_admin():
-    """The only question it answers: has anyone opened it."""
+def test_every_visit_lands_in_the_register_and_pages_are_counted():
+    """One row per VISIT, not per page view - that is what makes it readable."""
     _reset()
     con = db.connect()
-    con.execute("DELETE FROM settings WHERE key='guest_last_seen'")
+    con.execute("DELETE FROM guest_visits")
     con.commit()
     con.close()
 
     def go():
-        appmod._guest_seen_at[0] = 0.0        # clear the throttle
         c = _client()
         assert c.get("/?key=s3cret-and-long").status_code == 200
-        assert db.get_settings().get("guest_last_seen"), "the visit went unrecorded"
-        # OWNER sees it; another admin does not. Every account here is an
-        # admin, so admin-only would have meant the whole team.
-        old_owner = appmod.OWNER_EMAIL
-        appmod.OWNER_EMAIL = ADMIN
-        try:
-            a = _client()
-            _signin(a, ADMIN, NEWPW)
-            body = a.get("/settings").data.decode("utf-8", "replace")
-            assert "Last opened by a guest" in body, "the owner cannot see it"
-            appmod.OWNER_EMAIL = "someone.else@example.com"
-            b2 = _client()
-            _signin(b2, ADMIN, NEWPW)
-            body2 = b2.get("/settings").data.decode("utf-8", "replace")
-            assert "Last opened by a guest" not in body2,                 "an admin who is not the owner was shown it"
-        finally:
-            appmod.OWNER_EMAIL = old_owner
+        for _ in range(4):
+            c.get("/")
+        con = db.connect()
+        rows = con.execute("SELECT * FROM guest_visits").fetchall()
+        con.close()
+        assert len(rows) == 1, "five page views made %d rows" % len(rows)
+        assert rows[0]["hits"] == 5, "pages read counted %s" % rows[0]["hits"]
+        assert rows[0]["last_path"] == "/"
+
+        other = _client()                      # a second browser is a second row
+        other.get("/?key=s3cret-and-long")
+        con = db.connect()
+        n = con.execute("SELECT COUNT(*) FROM guest_visits").fetchone()[0]
+        con.close()
+        assert n == 2, "a second visitor did not get their own line"
     _with_guest_key("s3cret-and-long", go)
 
 
-def test_the_stamp_is_not_a_write_per_page_view():
+def test_the_register_never_stores_an_address():
+    _reset()
+    con = db.connect()
+    con.execute("DELETE FROM guest_visits")
+    con.commit()
+    cols = [r[1] for r in con.execute("PRAGMA table_info(guest_visits)")]
+    con.close()
+    for banned in ("ip", "addr", "address", "remote", "forwarded"):
+        assert not any(banned in c.lower() for c in cols),             "guest_visits grew a %s column" % banned
+
+
+def test_the_register_is_the_owners_and_not_every_admins():
+    """Every account here is an admin, so admin-only would be team-wide."""
+    _reset()
+    old_owner = appmod.OWNER_EMAIL
+    try:
+        appmod.OWNER_EMAIL = ADMIN
+        c = _client()
+        _signin(c, ADMIN, NEWPW)
+        assert c.get("/guests").status_code == 200, "the owner is refused"
+        appmod.OWNER_EMAIL = "someone.else@example.com"
+        d = _client()
+        _signin(d, ADMIN, NEWPW)
+        assert d.get("/guests").status_code == 403,             "an admin who is not the owner reached the register"
+    finally:
+        appmod.OWNER_EMAIL = old_owner
+
+
+def test_a_guest_cannot_read_the_register_of_guests():
     _reset()
     def go():
-        appmod._guest_seen_at[0] = 0.0
         c = _client()
         c.get("/?key=s3cret-and-long")
-        first = db.get_settings().get("guest_last_seen")
-        for _ in range(5):
-            c.get("/")
-        assert db.get_settings().get("guest_last_seen") == first, \
-            "every page view wrote to the database"
+        assert c.get("/guests").status_code == 403
     _with_guest_key("s3cret-and-long", go)
+
+
+def test_the_agent_label_is_two_words_not_a_fingerprint():
+    f = appmod._agent_label
+    assert f("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+             " (KHTML, like Gecko) Chrome/120.0 Safari/537.36") == "Chrome on Windows"
+    assert f("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1"
+             " (KHTML, like Gecko) Version/17 Safari/605.1") == "Safari on Mac"
+    assert f("Mozilla/5.0 (Windows NT 10.0) ... Chrome/120 Safari/537 Edg/120")         == "Edge on Windows", "Chromium browsers all claim to be Chrome"
+    assert f("") == "" and f(None) == ""
 
 
 def test_a_guest_can_leave_and_is_not_trapped_as_one():

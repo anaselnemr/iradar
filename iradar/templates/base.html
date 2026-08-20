@@ -1202,6 +1202,14 @@
         </a>
         {% endif %}
 
+        {%- if is_owner %}
+        <a class="acct-item" href="{{ url_for('guests_page') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+          The shared link
+        </a>
+        {%- endif %}
+
         {#- A guest arrived by link, not by signing in, so the way OUT of the
             shared view is also the only way to an account. Without this the
             menu offered "Sign out" and nothing else, and leaving put you back

@@ -78,15 +78,18 @@
       <p class="muted" style="margin-top:0">
         {% if not guest_link_on %}
           <b>Off.</b> iRadar can only be opened by signing in.
-        {% elif s.guest_last_seen %}
-          <b>On.</b> Last opened by a guest
-          <b>{{ s.guest_last_seen|localtime }}</b>.
+        {% elif guest_tot and guest_tot.v %}
+          <b>On.</b> <b>{{ guest_tot.v }}</b> visit{{ '' if guest_tot.v == 1 else 's' }},
+          <b>{{ guest_tot.h }}</b> page{{ '' if guest_tot.h == 1 else 's' }} read,
+          most recently <b>{{ guest_tot.l|localtime }}</b>.
         {% else %}
           <b>On.</b> Nobody has opened it yet.
         {% endif %}
         Anyone holding the link can read everything here; they cannot change
         anything, reach these settings, or download the database.
       </p>
+      <p style="margin-top:0"><a href="{{ url_for('guests_page') }}">See who
+        has opened it →</a></p>
       {% endif %}
       <h3 style="margin:{% if is_owner %}18px{% else %}0{% endif %} 0 10px; font-size:15px">Where your assets live</h3>
       <p class="muted" style="margin-top:0">Paste each system's <b>search
