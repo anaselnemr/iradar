@@ -21,8 +21,14 @@ actually changed since last time — wording, documents, images, videos, boards
 and prices.
 
 It exists because the alternative is opening a page and trying to remember what
-it said last month. At the time of writing it watches **4,267 pages** and
-**202,378 individual items** across them, including **6,550 distinct documents**.
+it said last month. At the time of writing it holds **4,266 pages** — **3,584
+checked every week**, **682 paused** — and **202,915 individual items** across
+them, including **6,598 distinct documents**.
+
+*The 682 are addresses that answer 4xx: pages that were removed or never
+published. They stay in the list so you can see they went, but they are no
+longer re-read every week, because doing so spent a sixth of every check on
+pages that are gone.*
 
 ## Contents
 
@@ -42,8 +48,9 @@ it said last month. At the time of writing it watches **4,267 pages** and
 10. [Changing the schedule](#changing-when-it-runs)
 11. [Where things are](#where-things-are)
 12. [Accounts and roles](#accounts-and-roles)
-13. [Worth knowing](#worth-knowing)
-14. [What it does not do](#what-it-does-not-do)
+13. [The shared link](#the-shared-link)
+14. [Worth knowing](#worth-knowing)
+15. [What it does not do](#what-it-does-not-do)
 
 ---
 
@@ -218,7 +225,7 @@ caused a flood of false alarms before it was handled.
 | **Text** — wording added, removed or edited. Text that only *moved* does not count; same lines in a new order is layout. | **Stock levels** — "4387 in stock" reads 4382 by morning. The price is still watched. |
 | **Library** — a document, video, board, design resource or partner appears or disappears, or its version, date, size or price changes. | **The community feed** — re-sorts itself constantly. Whether the widget is present, empty or busy *is* tracked. |
 | **Images** — a picture appears on or disappears from the page. | **Latest news and the mega-menu** — identical on every page. One retired thumbnail once raised 585 pages at once. |
-| **Screenshot** — more than 1.5% of pixels differ, or the page height moves more than 80px. | **Tabs loading differently** — two visits can land on different tabs. Their contents are tracked item by item instead. |
+| **Screenshot** — more than 2.5% of pixels differ, or the page height moves more than 80px. | **Tabs loading differently** — two visits can land on different tabs. Their contents are tracked item by item instead. |
 | **File updates** — a file republished at the same address. The page is identical; the datasheet behind it is new. | **Timestamps and "3 days ago"** — they change with nobody editing anything. |
 | | **The same words, set differently** — a page is photographed only once its fonts have arrived, so text that wraps at a different word is never mistaken for text that changed. |
 
@@ -348,13 +355,13 @@ bar underneath tells you when it last happened.
 
 ### What it has today
 
-**5,961 mentions across 381 families**, from all eight sources — the Infineon
+**6,224 mentions across 381 families**, from all eight sources — the Infineon
 community and YouTube are the two loudest by a distance:
 
 | | | | |
 |---|---|---|---|
-| Infineon community 1,836 | YouTube 1,700 | GitHub 970 | Forums 504 |
-| Reddit 379 | Hacker News 350 | Blogs 141 | StackExchange 81 |
+| Infineon community 1,846 | YouTube 1,795 | GitHub 1,118 | Forums 505 |
+| Reddit 387 | Hacker News 351 | Blogs 141 | StackExchange 81 |
 
 **Tone scoring is switched off.** Collecting mentions is pure pattern-matching
 and needs no AI at all — but rating each one from negative to positive, with
@@ -486,6 +493,50 @@ and can be undone. Deleting cannot.
 
 ---
 
+## The shared link
+
+Not everything worth showing somebody is worth giving them an account for. A
+**read-only link** opens iRadar without one — hand it to a neighbouring team,
+put it in a meeting invite, and they can look at everything without being able
+to touch it.
+
+**What someone holding it can do:** read. Every page, every update, the whole
+content library, the hierarchy, the notes, the exports.
+
+**What they cannot do:** anything at all that writes. No accepting or
+rejecting, no starting a check, no editing page details, no notes. Settings,
+Manage people and the database backup are refused outright rather than merely
+hidden — a guessed address gets a refusal, not a form that half works.
+
+The link carries a key on the end of it (`…/?key=…`). It is needed **once**:
+the browser is given an ordinary session afterwards, so every link inside the
+app is a plain address from then on. Nobody has to paste a key onto anything.
+
+> **Treat it as "keeps out crawlers", not as a password.** A key in an address
+> goes into browser history, into the referrer header of every outbound link
+> somebody clicks, and into whatever they paste it into. Anyone it reaches is
+> in. It is the right tool for showing a team the work, and the wrong one for
+> anything that must stay inside a named list of people.
+
+**Signing in still works over the top of it.** A guest who has an account can
+pick *Sign in with an account* from the avatar menu and get their own access,
+with everything their role allows. *Leave the shared view* ends the guest
+session.
+
+**Whether anyone has opened it** is on the shared-link page, which only the
+owner of the installation can see. One line per visit rather than per page
+view, so somebody who reads forty pages is one line that says 40: when they
+arrived, when they were last seen, how many pages, what they opened it on, and
+where they got to. **No addresses are recorded** — everyone arrives through the
+same link, so there is nobody to name, and a register of which colleague read
+which page is not what this is for. Any line can be forgotten, or the whole
+register cleared.
+
+Switching the link off is one setting on the server, and every guest session
+ends with it.
+
+---
+
 ## Worth knowing
 
 The things people ask about in the second week.
@@ -506,6 +557,12 @@ The things people ask about in the second week.
   something that happens to a page.
 - **A page can be paused** when it is known to be in flux and you do not want it
   coming up every week. It stays in the list, marked *Paused*, and is not checked.
+  **The 682 addresses that answer 4xx are paused for this reason.** They were
+  being re-read every week and failing every week, which cost about a sixth of
+  each check. They are still listed and still say *Not live*; they are simply
+  not retried. The trade is deliberate and worth knowing: if one of them is
+  ever republished, iRadar will not notice on its own — resume it and it goes
+  back into the weekly check.
 - **Redirects are followed and merged.** If two addresses land on the same page
   it is watched once, not twice. Where a page's own address is not the one that
   answered, the page says so in a **Redirects** box under its snapshots. A
