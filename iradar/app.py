@@ -300,10 +300,18 @@ def _require_login():
             # session exists by definition. A log line records what the browser
             # actually sent, so a repeat is diagnosed instead of guessed at.
             if not have or not secrets.compare_digest(str(sent), str(have)):
+                # Sec-Fetch-* is what separates the two ways a browser sends
+                # no cookie: "dest=iframe" or "site=cross-site" means the app is
+                # embedded somewhere and SameSite=Lax is holding the cookie
+                # back; "dest=document, site=same-origin" with no cookie means
+                # the browser is simply not keeping them. Twenty-four failures
+                # went by without anyone being able to tell those apart.
                 print("[signin] token mismatch: cookie=%s session_token=%s"
-                      " form_token=%s ua=%.40s"
+                      " form_token=%s fetch-dest=%s fetch-site=%s ua=%.40s"
                       % (bool(request.cookies), (have or "-")[:8],
                          (sent or "-")[:8],
+                         request.headers.get("Sec-Fetch-Dest", "?"),
+                         request.headers.get("Sec-Fetch-Site", "?"),
                          request.headers.get("User-Agent", "?")), flush=True)
             return None
         if not have or not secrets.compare_digest(str(sent), str(have)):
@@ -7255,10 +7263,17 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "")
         pw = request.form.get("password", "")
+        # A POST means this browser was handed the sign-in page, and the page
+        # always sets a cookie. Coming back without one means the browser is
+        # not keeping it, and no password can survive the redirect that
+        # follows - which is what twenty-four attempts looked like from the
+        # outside: the form, again, with nothing said. It is a NOTE and never
+        # a refusal; being wrong about this must not become a locked door.
+        no_cookie = not request.cookies
         user, err = auth.check_login(email, pw, ip=_client_ip())
         if err:
             return render_template("login.html", error=err, email=email,
-                                   next=nxt), 401
+                                   next=nxt, no_cookie=no_cookie), 401
         session.clear()          # new session id on sign-in: no fixation
         session["uid"] = user["id"]
         session["pwfp"] = auth.pw_fingerprint(user)
@@ -7270,9 +7285,16 @@ def login():
     # carrying is of no further use - an expired one, or one signed with a key
     # this app no longer has. Throw it away and hand back a clean, freshly
     # signed cookie, so a stale cookie cannot shadow the new one forever.
+    # THE SILENT LOOP. A correct password sets the session, redirects, and the
+    # browser returns without the cookie - so it lands back here with no error
+    # to show, and looks exactly like a typo. A same-site referrer with no
+    # cookie at all is that bounce; a first visit has no referrer from us.
+    bounced = (not request.cookies
+               and "iradar" in (request.headers.get("Referer") or ""))
     session.clear()
     csrf_token()
-    return render_template("login.html", error=None, email="", next=nxt)
+    return render_template("login.html", error=None, email="", next=nxt,
+                           no_cookie=bounced)
 
 
 @app.route("/logout", methods=["POST", "GET"])

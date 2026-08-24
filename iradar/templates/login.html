@@ -83,6 +83,13 @@
     <form method="post" action="{{ url_for('login') }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       {% if error %}<div class="err"><span>&#9888;</span><span>{{ error }}</span></div>{% endif %}
+      {%- if no_cookie %}
+      <div class="err"><span>&#9888;</span><span><b>Your browser is not keeping
+        our cookie</b>, so signing in cannot stick — the right password will
+        still land you back here. Open <b>iradar.net</b> directly in its own
+        tab rather than inside another page, and allow cookies for it.</span>
+      </div>
+      {%- endif %}
       <label for="email">Email</label>
       <input id="email" name="email" type="email" autocomplete="username"
              value="{{ email }}" required autofocus>

@@ -881,3 +881,33 @@ def test_a_guest_cannot_erase_the_register_of_guests():
         con.close()
         assert n >= 2, "a guest cleared the register"
     _with_guest_key("s3cret-and-long", go)
+
+
+def test_a_browser_that_keeps_no_cookie_is_told_so():
+    """Twenty-four attempts went by showing nothing but the form again."""
+    _reset()
+    # a POST carrying no cookie at all: the browser was handed the page and
+    # came back without what it was given
+    c = _client()
+    r = c.post("/login", data={"email": ADMIN, "password": "wrong"})
+    body = r.data.decode("utf-8", "replace")
+    assert "not keeping" in body, "the cookie problem was not explained"
+
+
+def test_the_note_is_never_a_refusal():
+    """Being wrong about a cookie must not become a locked door - the code
+    comment on the CSRF exemption says this cost four lockouts already."""
+    _reset()
+    c = _client()
+    tok = _token(c)
+    r = c.post("/login", data={"email": ADMIN, "password": NEWPW, "_csrf": tok},
+               follow_redirects=False)
+    assert r.status_code == 302, "a correct password was refused (%s)" % r.status_code
+    assert c.get("/").status_code == 200, "signing in did not take"
+
+
+def test_a_first_visit_is_not_accused_of_blocking_cookies():
+    _reset()
+    c = _client()
+    body = c.get("/login").data.decode("utf-8", "replace")
+    assert "not keeping" not in body, "a first-time visitor was shown the warning"
