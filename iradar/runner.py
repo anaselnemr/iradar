@@ -57,7 +57,13 @@ def item_key(category, title, item_url):
     forty product pages is ONE document with forty pages, while two distinct
     products sharing a vendor URL stay two items (title is part of the key).
     """
-    norm = re.sub(r"\s+", " ", (title or "")).strip().lower()
+    # Trademark marks are decoration, not identity - and Infineon renders them
+    # inconsistently, so "PSOC™ 4 datasheet" and "PSOC 4 datasheet" are the
+    # same file. Keyed on the raw title they were two, which split one document
+    # into two entries and broke the count of pages carrying it. Same rule the
+    # comparison uses, from the same function, so the library and the detector
+    # can never disagree about what one item is.
+    norm = cmp.strip_marks(title).lower()
     raw = f"{category}|{norm}|{(item_url or '').strip().rstrip('/').lower()}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 

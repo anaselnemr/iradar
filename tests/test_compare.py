@@ -530,3 +530,39 @@ def test_every_signal_carries_a_revision():
     import capture
     for name in ("TEXT_REV", "SHOT_REV", "IMG_REV", "SECTIONS_REV"):
         assert isinstance(getattr(capture, name, None), int), f"{name} is missing"
+
+
+def test_a_trademark_mark_is_decoration_not_identity():
+    """Infineon renders them inconsistently: the same datasheet came back as
+    "PSOC(tm) 4 ..." one week and "PSOC 4 ..." the next. Keyed on the raw
+    title that is one item removed and a different one added, on every page
+    carrying it."""
+    import compare as cmp
+    same = lambda a, b: cmp._item_id({"title": a, "url": "https://x/a.pdf"}) == \
+                        cmp._item_id({"title": b, "url": "https://x/a.pdf"})
+    assert same("AN85951 - PSOC\u2122 4 MCU guide", "AN85951 - PSOC 4 MCU guide")
+    assert same("AIROC(TM) Wi-Fi", "AIROC Wi-Fi")
+    assert same("Bluetooth(R) combo", "Bluetooth combo")
+    assert same("OPTIGA\u2122 TPM", "OPTIGA TPM")
+
+
+def test_the_mark_rule_does_not_eat_real_words():
+    """(C) and (R2) are revisions, not trademarks - stripping them would merge
+    two genuinely different documents into one."""
+    import compare as cmp
+    diff = lambda a, b: cmp._item_id({"title": a, "url": "https://x/a.pdf"}) != \
+                        cmp._item_id({"title": b, "url": "https://x/a.pdf"})
+    assert diff("Rev(C) board notes", "Rev board notes")
+    assert diff("Board (R2) revision", "Board revision")
+    assert cmp.strip_marks("(C) 2026 Infineon") == "(C) 2026 Infineon"
+
+
+def test_a_real_version_bump_still_flags():
+    """The thing this must never suppress: a republished document."""
+    import compare as cmp
+    a = {"title": "PSOC\u2122 Edge datasheet", "url": "https://x/d.pdf",
+         "meta": "Datasheet | PDF | EN | 15_00 | 3.55MB | May 04, 2026"}
+    b = {"title": "PSOC Edge datasheet", "url": "https://x/d.pdf",
+         "meta": "Datasheet | PDF | EN | 16_00 | 3.76MB | Aug 12, 2026"}
+    assert cmp._item_id(a) == cmp._item_id(b), "should be the same document"
+    assert cmp._item_body(a) != cmp._item_body(b), "its version change must show"

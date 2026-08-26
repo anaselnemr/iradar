@@ -352,9 +352,28 @@ def _norm_item_url(u):
     return u
 
 
+# Trademark marks are DECORATION, not identity. Infineon renders them
+# inconsistently - the same datasheet came back as "PSOC™ 4 …" one week and
+# "PSOC 4 …" the next, and elsewhere as "AIROC(TM)" against "AIROC" - so an
+# identity built on the raw title turns one document into two: removed here,
+# added there. Run 9 raised 2,772 of 3,584 pages on exactly that, every one of
+# them a datasheet that had not changed, and the double-check it triggered
+# filled the disk and killed the run.
+#
+# Stripped on BOTH sides at comparison time, which is why this needs no
+# re-baseline: a capture stored with the glyph and one stored without now
+# answer to the same name.
+_MARKS_RE = re.compile(r"(?<=\w)(?:[™®©℠]|\((?:tm|r)\))", re.I)
+
+
+def strip_marks(text):
+    """A title without its trademark decoration, whitespace collapsed."""
+    return re.sub(r"\s+", " ", _MARKS_RE.sub("", text or "")).strip()
+
+
 def _item_id(d):
     """What makes an item itself: its name and where it points."""
-    return (str(d.get("title", "")).strip().lower(),
+    return (strip_marks(str(d.get("title", ""))).lower(),
             _norm_item_url(d.get("url", "")))
 
 
