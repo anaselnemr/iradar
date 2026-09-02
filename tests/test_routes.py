@@ -408,3 +408,81 @@ def test_mark_filter_bolds_safely():
     assert "<script>" not in out and "&lt;script&gt;" in out
     out2 = str(app.mark_filter("Infineon CY8C4247 kit", "PSOC"))
     assert "<b>Infineon</b>" in out2 and "<b>CY8C4247</b>" in out2 or "<b>CY8C</b>4247" in out2
+
+
+# --- BL / PL filter and the eval-board filter --------------------------------
+
+def _pages_with_owners():
+    """Four pages: two business lines, three product lines, one unassigned."""
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    rows = [("https://www.infineon.com/part/a", "ICW", "81"),
+            ("https://www.infineon.com/part/b", "ICW", "92"),
+            ("https://www.infineon.com/part/c", "DSI", "81"),
+            ("https://www.infineon.com/part/d", "",    "")]
+    for u, bl, pl in rows:
+        con.execute("INSERT INTO urls(url, active, ptype, last_checked,"
+                    " last_status, bl, pl) VALUES(?,1,'Part','x','unchanged',?,?)",
+                    (u, bl, pl))
+    con.commit()
+    con.close()
+
+
+def _ids(where, params):
+    con = db.connect()
+    rows = con.execute("SELECT u.url FROM urls u " + where, params).fetchall()
+    con.close()
+    return sorted(r["url"].rsplit("/", 1)[-1] for r in rows)
+
+
+def test_one_business_line_narrows_and_two_mean_either():
+    _pages_with_owners()
+    w, p = app._url_filter("", [], [], [], bls=["ICW"])
+    assert _ids(w, p) == ["a", "b"]
+    w, p = app._url_filter("", [], [], [], bls=["ICW", "DSI"])
+    assert _ids(w, p) == ["a", "b", "c"], "two business lines must mean either"
+
+
+def test_business_line_and_product_line_are_and_ed_together():
+    _pages_with_owners()
+    w, p = app._url_filter("", [], [], [], bls=["ICW"], pls=["81"])
+    assert _ids(w, p) == ["a"], "the two dimensions must narrow each other"
+
+
+def test_unassigned_pages_can_be_asked_for_rather_than_hidden():
+    """A third of real pages carry no BL. They are not 'some other BL'."""
+    _pages_with_owners()
+    w, p = app._url_filter("", [], [], [], bls=[app._UNASSIGNED])
+    assert _ids(w, p) == ["d"]
+
+
+def test_an_unfiltered_list_still_holds_everything():
+    _pages_with_owners()
+    w, p = app._url_filter("", [], [], [])
+    assert _ids(w, p) == ["a", "b", "c", "d"]
+
+
+def test_the_owner_values_are_read_from_the_data():
+    _pages_with_owners()
+    con = db.connect()
+    vals = app._owner_values(con, "bl")
+    con.close()
+    labels = {v["label"]: v["n"] for v in vals}
+    assert labels.get("ICW") == 2 and labels.get("DSI") == 1
+    assert labels.get("(not assigned)") == 1, "unassigned must be offered"
+
+
+def test_eval_board_filter_reads_the_links_already_captured():
+    _pages_with_owners()
+    con = db.connect()
+    uid = con.execute("SELECT id FROM urls WHERE url LIKE '%/a'").fetchone()["id"]
+    con.execute("INSERT INTO items(url_id, category, title, item_url, item_key)"
+                " VALUES(?, 'design_resources', 'KIT_XMC', ?, 'k1')",
+                (uid, "https://www.infineon.com/evaluation-board/KIT_XMC"))
+    con.commit()
+    con.close()
+    w, p = app._url_filter("", [], [], ["haseval"])
+    assert _ids(w, p) == ["a"]
+    w, p = app._url_filter("", [], [], ["noeval"])
+    assert "a" not in _ids(w, p), "a page with a board must not be listed as having none"
+    assert "b" in _ids(w, p), "the report people want is the pages with no board"

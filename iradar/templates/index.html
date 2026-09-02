@@ -233,6 +233,27 @@
              placeholder="Search pages — name, title or address…"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
     </span>
 
+    {#- Business line and product line. Values, not yes/no, so they are their
+        own dropdowns rather than attribute chips: ticking two business lines
+        has to mean "either". "(not assigned)" is offered explicitly because a
+        third of pages carry no BL, and a filter that silently hid them would
+        be answering a different question. -#}
+    {% for dim, opts, sel, name in [("Business line", bls, sel_bl, "bl"),
+                                    ("Product line", pls, sel_pl, "pl")] %}
+    {% if opts|length > 1 %}
+    <details class="dd" name="filters">
+      <summary>{{ dim }}{% if sel %}<span class="fbadge">{{ sel|length }}</span>{% endif %}</summary>
+      <div class="panel">
+        {% for o in opts %}
+        <label data-opt><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
+                 {% if o.v in sel %}checked{% endif %}> {{ o.label }}
+          <span class="cnt">{{ '{:,}'.format(o.n) }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    {% endfor %}
+
     <details class="dd" name="filters">
       <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
       <div class="panel">
@@ -331,6 +352,8 @@
     <input type="hidden" name="q" value="{{ q }}">
     {% for s in sel_status %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
     {% for t in sel_types %}<input type="hidden" name="ptype" value="{{ t }}">{% endfor %}
+    {% for b in sel_bl %}<input type="hidden" name="bl" value="{{ b }}">{% endfor %}
+    {% for l in sel_pl %}<input type="hidden" name="pl" value="{{ l }}">{% endfor %}
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>

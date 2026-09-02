@@ -952,6 +952,19 @@ _VIDEO_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
 ATTR_FILTERS["hasvideos"] = ("Has videos", _VIDEO_SQL)
 ATTR_FILTERS["novideos"] = ("No videos",
                             _KNOWN_GOOD + " AND NOT " + _VIDEO_SQL)
+# An EVAL BOARD linked in Design resources. The link is already captured on
+# every page; what identifies it is its address, because an evaluation board
+# lives under /evaluation-board/ whatever the entry happens to be titled.
+# The inverse is the report people actually want - the part pages that offer
+# no board to try the part on - so it is guarded on the page having been
+# captured, or "no board" would include pages nobody has read yet.
+_EVAL_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
+             " AND i.category='design_resources'"
+             " AND lower(i.item_url) LIKE '%/evaluation-board/%')")
+ATTR_FILTERS["haseval"] = ("Has an eval board linked", _EVAL_SQL)
+ATTR_FILTERS["noeval"] = ("No eval board linked",
+                          _KNOWN_GOOD + " AND NOT " + _EVAL_SQL)
+
 # price is captured text on component pages; "no price" only means something
 # once the page has been through component detection ('' = not measured yet)
 ATTR_FILTERS["hasprice"] = ("Has price",
@@ -1440,8 +1453,13 @@ def _dash_order(sort):
     return _DASH_ORDER.get(sort, _DASH_ORDER["page"])
 
 
-def _url_filter(q, statuses, ptypes, attrs):
+def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=()):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
+
+    bl and pl are their own dimensions rather than attributes, because they
+    hold VALUES rather than yes/no: ticking two business lines has to mean
+    "either", the way two types do, and attributes are AND'd. Passed as
+    keywords so the callers that do not offer them are unchanged.
 
     EVERY condition is wrapped in its own parentheses before being combined.
     Several filter conditions contain a top-level OR (e.g. "Not live" is
@@ -1495,10 +1513,44 @@ def _url_filter(q, statuses, ptypes, attrs):
                 tconds.append("u.ptype=?")
                 params.append(t)
         where.append("(" + " OR ".join(tconds) + ")")
+    # A page with no BL at all is not "some other BL" - it is unassigned, and
+    # on a third of pages that is the honest answer. Ticking (none) asks for
+    # exactly those, so the filter can never quietly hide them.
+    for vals, col in ((bls, "bl"), (pls, "pl")):
+        vals = [v for v in vals if v]
+        if not vals:
+            continue
+        conds = []
+        for v in vals:
+            if v == _UNASSIGNED:
+                conds.append(f"IFNULL(u.{col},'')=''")
+            else:
+                conds.append(f"u.{col}=?")
+                params.append(v)
+        where.append("(" + " OR ".join(conds) + ")")
     for a in attrs:
         if a in ATTR_FILTERS:
             where.append("(" + ATTR_FILTERS[a][1] + ")")
     return ("WHERE " + " AND ".join(where)) if where else "", params
+
+
+# the sentinel a "(none)" tick sends, kept out of the value space itself
+_UNASSIGNED = "__unassigned__"
+
+
+def _owner_values(con, col):
+    """Every BL (or PL) in use, with how many pages carry it, plus the
+    unassigned count. Read from the data rather than configured, so a value
+    that appears in a new import needs no code change to become filterable."""
+    rows = con.execute(
+        f"SELECT IFNULL({col},'') v, COUNT(*) n FROM urls"
+        f" GROUP BY v ORDER BY (v='') ASC, n DESC").fetchall()
+    out = []
+    for r in rows:
+        out.append({"v": r["v"] or _UNASSIGNED,
+                    "label": r["v"] or "(not assigned)",
+                    "n": r["n"]})
+    return out
 
 
 @app.route("/")
@@ -1506,6 +1558,8 @@ def index():
     q = request.args.get("q", "").strip()
     statuses = [s for s in request.args.getlist("status") if s in STATUS_FILTERS]
     sel_types = request.args.getlist("ptype")
+    sel_bl = request.args.getlist("bl")
+    sel_pl = request.args.getlist("pl")
     attrs = [a for a in request.args.getlist("attr") if a in ATTR_FILTERS]
     sort = request.args.get("sort", "page")
     # Sort by page ADDRESS, not title: the URL is the site's own path, so
@@ -1526,7 +1580,7 @@ def index():
     except ValueError:
         page = 1
 
-    wsql, params = _url_filter(q, statuses, sel_types, attrs)
+    wsql, params = _url_filter(q, statuses, sel_types, attrs, sel_bl, sel_pl)
 
     con = db.connect()
     total_match = con.execute(
@@ -1637,6 +1691,8 @@ def index():
                       if lvl_counts.get((r["ptype"], l))]
             ptypes.append({"ptype": r["ptype"], "n": r["n"], "levels": levels})
     cat_pages, vid_pages, status_counts, attr_counts = _dash_counts(con)
+    # read while this connection is still open - it closes on the next line
+    bl_opts, pl_opts = _owner_values(con, "bl"), _owner_values(con, "pl")
     con.close()
     con2 = db.connect()
     # content/component has/no counts come from cat_pages: has = pages with the
@@ -1703,7 +1759,8 @@ def index():
     # were quick. The chips keep the corpus-wide counts: a chip says how many
     # pages are in that state, not how many are left after the other filters.
     try:
-        facets = _dash_facets(con2, q, statuses, sel_types, attrs)
+        facets = _dash_facets(con2, q, statuses, sel_types, attrs,
+                              sel_bl, sel_pl)
     finally:
         con2.close()
     con3 = db.connect()
@@ -1719,6 +1776,9 @@ def index():
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            asset_open=asset_open, mention_total=mention_total,
                            facets=facets,
+                           bls=bl_opts, pls=pl_opts,
+                           sel_bl=sel_bl, sel_pl=sel_pl,
+                           unassigned=_UNASSIGNED,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
                            secs_per_page=seconds_per_page(),
@@ -1754,7 +1814,9 @@ def urls_bulk():
         wsql, params = _url_filter(request.form.get("q", "").strip(),
                                    request.form.getlist("status"),
                                    request.form.getlist("ptype"),
-                                   request.form.getlist("attr"))
+                                   request.form.getlist("attr"),
+                                   request.form.getlist("bl"),
+                                   request.form.getlist("pl"))
         con0 = db.connect()
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
@@ -4804,7 +4866,7 @@ def _dash_counts(con):
     return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
 
 
-def _dash_facets(con, q, statuses, ptypes, attrs):
+def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=()):
     """What each filter option would still be worth, given the others.
 
     Faceted, not flat: a dimension is narrowed by the OTHER dimensions and
@@ -4814,10 +4876,14 @@ def _dash_facets(con, q, statuses, ptypes, attrs):
     not "how many did I already choose".
     """
     def where(skip):
+        # bl and pl narrow every other dimension, and like the others they do
+        # not narrow themselves - "how many more would this let in".
         return _url_filter("" if skip == "q" else q,
                            [] if skip == "status" else statuses,
                            [] if skip == "type" else ptypes,
-                           [] if skip == "attr" else attrs)
+                           [] if skip == "attr" else attrs,
+                           () if skip == "owner" else bls,
+                           () if skip == "owner" else pls)
 
     out = {"s_" + k: 0 for k in STATUS_FILTERS}
     out.update({"a_" + k: 0 for k in ATTR_FILTERS})
@@ -4917,7 +4983,8 @@ def dash_avail():
             con, request.args.get("q", "").strip(),
             [s for s in request.args.getlist("status") if s in STATUS_FILTERS],
             request.args.getlist("ptype"),
-            [a for a in request.args.getlist("attr") if a in ATTR_FILTERS])
+            [a for a in request.args.getlist("attr") if a in ATTR_FILTERS],
+            request.args.getlist("bl"), request.args.getlist("pl"))
     finally:
         con.close()
     return jsonify(data)
