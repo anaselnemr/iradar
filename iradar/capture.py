@@ -500,7 +500,9 @@ IMG_REV = 6
 #       (_NAV_SUBMENU_SEL, the 2026-08-03 caption-flap wave). SECTIONS_JS
 #       walks inside VOLATILE_SEL containers on purpose, but what counts as
 #       "outside them" moved, so the read is stamped anew like the other three.
-SECTIONS_REV = 3
+# 4: the product table's own count and column names, and the page's
+#    meta description, which the visible-text walk never saw.
+SECTIONS_REV = 4
 
 TEXT_JS = r"""
 () => {
@@ -1567,8 +1569,43 @@ SECTIONS_JS = r"""
       if (commThreads.length >= 24) break;
     }
   }
+  // WHAT the table holds, which is a different question from whether it is
+  // there. The count is the page's OWN "N matching results" readout, never a
+  // row count: the components nest and carry filter rows, so counting rows
+  // here reports 84 where the page says 7. Columns are the header cells of
+  // the outermost table, stored in the order found and compared without it -
+  // a re-ordered table is the same table.
+  // Guarded, because this runs inside the one extraction that produces every
+  // section: anything thrown here would cost the page its documents, its
+  // images and its text, to learn a column name. Two new fields are not worth
+  // that, so they fail to nothing instead.
+  let tblCols = [];
+  let tblCount = null;
+  try {
+    if (tableEls.length) {
+      const outer = tableEls.find(e => !tableEls.some(o => o !== e && o.contains(e)))
+                    || tableEls[0];
+      tblCols = Array.from(outer.querySelectorAll('thead th'))
+        .map(th => (th.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter(t => t.length > 0 && t.length < 80);
+      const nTxt = (document.querySelector('.total-count') || {}).textContent || '';
+      const m = nTxt.match(/\d[\d,]*/);
+      if (m) tblCount = parseInt(m[0].replace(/,/g, ''), 10);
+    }
+  } catch (e) { tblCols = []; tblCount = null; }
+
+  // The page's meta description. It lives in the head, so the text walk - which
+  // reads what a person can see - never had it. Stored as its own string, the
+  // way the price is, so a change to it is compared like any other field.
+  out.meta_description = '';
+  try {
+    const metaEl = document.querySelector('meta[name="description" i]');
+    out.meta_description = metaEl ? (metaEl.getAttribute('content') || '').trim() : '';
+  } catch (e) { out.meta_description = ''; }
+
   out.flags = {
-    product_table: {exists: tableEls.length > 0, has_content: tableHasRows},
+    product_table: {exists: tableEls.length > 0, has_content: tableHasRows,
+                    count: tblCount, columns: tblCols},
     developer_community: {
       exists: !!comm,
       // the component renders its own empty state rather than disappearing
@@ -2139,11 +2176,17 @@ async def _expand_interactive(page):
 async def capture_one(browser, url, out_dir):
     """Capture a single URL into out_dir. Returns a result dict."""
     out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     result = {"url": url, "status": "error", "error": "", "title": "",
               "text_lines": 0, "image_count": 0, "http_status": None}
     context = None
     try:
+        # INSIDE the try. Making the folder was the one step above it, so when
+        # the volume filled mid-run the OSError went straight past this
+        # function, past the gather that called it, and out of the whole run -
+        # taking 2,772 held pages with it and skipping the browser close on the
+        # way. A page that cannot be written is a page that failed, which this
+        # function already knows how to report.
+        out_dir.mkdir(parents=True, exist_ok=True)
         context = await browser.new_context(
             viewport=VIEWPORT, user_agent=USER_AGENT, locale="en-US",
             ignore_https_errors=True)
@@ -2946,13 +2989,22 @@ async def capture_all(jobs, concurrency=4, progress=None, pause_check=None,
                         progress(res)
                     return res
 
-            batch_results = await asyncio.gather(
-                *(run_job(u, d) for u, d in batch))
-            results.extend(r for r in batch_results if r is not None)
+            # FINALLY, not afterwards. The close used to sit below the
+            # gather, so anything the batch raised jumped over it and left a
+            # Chromium alive with nothing holding it. Twice that filled the
+            # container's process table until it could not fork at all, and a
+            # run then reported itself running while doing nothing for two
+            # days - the worst shape a failure can take, because the dashboard
+            # says everything is fine.
             try:
-                await browser.close()
-            except Exception:
-                pass
+                batch_results = await asyncio.gather(
+                    *(run_job(u, d) for u, d in batch))
+                results.extend(r for r in batch_results if r is not None)
+            finally:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
             if stop_check and stop_check():
                 break
     return results

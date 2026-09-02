@@ -434,6 +434,10 @@ def init_db():
         _ensure_column(con, "urls", _c, "TEXT DEFAULT ''")
     # the page's own section-nav = the authoritative list of components it
     # carries (JSON list); plus the Product-details sub-tabs and price text.
+    # Which editorial limits this page's copy breaks, as a JSON list of short
+    # findings. '' = never measured; '[]' = measured and within every limit,
+    # which is a different fact and the filters rely on the difference.
+    _ensure_column(con, "urls", "copy_flags", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "components", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "detail_tabs", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "price", "TEXT DEFAULT ''")

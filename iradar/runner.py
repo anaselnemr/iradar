@@ -229,6 +229,15 @@ def index_items(con, url_id, snap_dir, dead=False):
     con.execute("DELETE FROM items WHERE url_id=?", (url_id,))
     # the page's full text rides along: same lifecycle, same dead-page purge
     con.execute("DELETE FROM page_fts WHERE rowid=?", (url_id,))
+    # ...and so do the editorial limits. Same lifecycle as everything else read
+    # off this capture: a dead page has no copy to judge, so its findings go
+    # with its items rather than lingering as a complaint about a 404.
+    try:
+        con.execute("UPDATE urls SET copy_flags=? WHERE id=?",
+                    ("" if dead else json.dumps(cmp.copy_findings(snap_dir)),
+                     url_id))
+    except Exception:
+        pass
     if not dead:
         tp = Path(snap_dir) / "text.txt"
         if tp.exists():

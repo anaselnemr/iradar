@@ -400,6 +400,99 @@ def _item_body(d):
             if k not in ("title", "url", "img", "exact")}
 
 
+# --- editorial limits -------------------------------------------------------
+# What the copy is supposed to fit in, as given by the people who own it.
+#
+#   key            the section the capture already stores
+#   label          what it is called in the brief
+#   chars          the longest a single block may be
+#   lo, hi         how many blocks there should be (None = no bound)
+#
+# CHARS IS PER BLOCK, not per section. Features and benefits are bullet lists
+# where each bullet has its own 40, and a page carrying several prose blocks
+# under one heading should be judged on the longest rather than on their sum -
+# a page with three short paragraphs has not written a 1,200-character
+# description.
+#
+# "Description" is read from `about`, which is where the capture files a
+# page's own prose. If the brief means the Description TAB instead, this one
+# line is the change - the tab is stored separately, in urls.detail_tabs.
+COPY_LIMITS = [
+    ("about",            "Description",      450, 1, None),
+    ("subheadline",      "Sub-headline",     150, 1, None),
+    ("meta_description", "Meta description", 150, 1, None),
+    ("features",         "Features",          40, 2, 12),
+    ("benefits",         "Benefits",          40, 2, 12),
+    ("overview",         "Overview",         450, 1, None),
+]
+
+
+def _blocks(sections, key):
+    """The text blocks a section holds, however that section is shaped."""
+    v = sections.get(key)
+    if isinstance(v, str):
+        return [v.strip()] if v.strip() else []
+    out = []
+    for it in (v or []):
+        t = (it.get("title") if isinstance(it, dict) else it) or ""
+        t = str(t).strip()
+        if t:
+            out.append(t)
+    return out
+
+
+def copy_findings(snap_dir):
+    """Which editorial limits this capture breaks, in plain words.
+
+    Returns a list like ["Sub-headline 187 over 150", "Features 1, needs 2-12"].
+    Empty means everything measured is within its limits.
+
+    Measured here rather than at capture time so the limits can be argued
+    about and re-applied without re-reading four thousand pages.
+    """
+    sec = _load_sections(snap_dir)
+    if not sec:
+        return []
+    out = []
+    for key, label, chars, lo, hi in COPY_LIMITS:
+        blocks = _blocks(sec, key)
+        n = len(blocks)
+        if lo is not None and n < lo:
+            out.append("%s missing" % label if lo == 1 and n == 0
+                       else "%s %d, needs %d%s" % (label, n, lo,
+                                                   "-%d" % hi if hi else "+"))
+        elif hi is not None and n > hi:
+            out.append("%s %d, allows %d-%d" % (label, n, lo, hi))
+        longest = max((len(b) for b in blocks), default=0)
+        if longest > chars:
+            out.append("%s %d over %d" % (label, longest, chars))
+    return out
+
+
+def _table_state(d):
+    """(how many products the table says it holds, which columns it has).
+
+    ORDER IS DELIBERATELY DROPPED. Columns come back as a frozenset, because a
+    table whose dimensions are dealt in a different sequence is the same table
+    - and this app already treats re-ordering as layout rather than an edit
+    everywhere else. What is worth raising a page for is a column appearing or
+    disappearing, or the number of products moving.
+
+    The count is the page's own "N matching results" readout. A row count
+    would be wrong: the components nest and carry filter rows, so counting
+    rows reports 84 where the page says 7.
+
+    Returns (None, None) when the page has no table at all, which is different
+    from a table with nothing in it.
+    """
+    f = (_load_sections(d).get("flags") or {}).get("product_table") or {}
+    if not f.get("exists"):
+        return (None, None)
+    cols = f.get("columns")
+    return (f.get("count"),
+            frozenset(cols) if isinstance(cols, list) else None)
+
+
 def _community_state(snap_dir):
     """The developer-community widget's tri-state on this capture:
     'absent' (not on the page) / 'empty' (widget there, no questions) /
@@ -576,6 +669,15 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     comm_to = _community_state(new_dir)
     comm_changed = comm_from != comm_to
 
+    # THE PRODUCT TABLE'S SHAPE, compared across a sections revision the same
+    # way everything else is: rev 4 first stored it, so a rev-3 baseline has
+    # nothing to compare and must not read as "the table lost all its columns".
+    tbl_from = tbl_to = (None, None)
+    tbl_changed = False
+    if _sections_rev(old_dir) == _sections_rev(new_dir):
+        tbl_from, tbl_to = _table_state(old_dir), _table_state(new_dir)
+        tbl_changed = tbl_from != tbl_to
+
     # ACROSS A SCREENSHOT REVISION the picture is not comparable either: the
     # feed-hidden shot (rev 2) differs from the old full one everywhere the
     # community/news boxes used to be, so a pixel diff would flag every page
@@ -601,13 +703,30 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
         parts.append(f"visual: {n_regions} area(s), {ratio_pct:.2f}% of pixels")
     if comm_changed:
         parts.append(f"developer community: {comm_from} → {comm_to}")
+    if tbl_changed:
+        n0, c0 = tbl_from
+        n1, c1 = tbl_to
+        bits = []
+        if n0 != n1:
+            bits.append("%s → %s products" % ("?" if n0 is None else n0,
+                                              "?" if n1 is None else n1))
+        gone = sorted((c0 or frozenset()) - (c1 or frozenset()))
+        came = sorted((c1 or frozenset()) - (c0 or frozenset()))
+        if came:
+            bits.append("columns added: " + ", ".join(came[:4]))
+        if gone:
+            bits.append("columns removed: " + ", ".join(gone[:4]))
+        parts.append("products table: " + ("; ".join(bits) or "changed"))
 
     return {
         # the library counts too: an item can be repointed, redated or removed
         # without moving one visible word or one pixel over the threshold -
         # and so does a community tri-state transition
         "any_changed": (t_changed or i_changed or v_changed or lib["changed"]
-                        or comm_changed),
+                        or comm_changed or tbl_changed),
+        "table_changed": tbl_changed,
+        "table_from": tbl_from,
+        "table_to": tbl_to,
         "community_changed": comm_changed,
         "community_from": comm_from,
         "community_to": comm_to,

@@ -566,3 +566,121 @@ def test_a_real_version_bump_still_flags():
          "meta": "Datasheet | PDF | EN | 16_00 | 3.76MB | Aug 12, 2026"}
     assert cmp._item_id(a) == cmp._item_id(b), "should be the same document"
     assert cmp._item_body(a) != cmp._item_body(b), "its version change must show"
+
+
+# --- the product table's shape ----------------------------------------------
+
+def _snap_with_table(tmp, rev=4, count=7, columns=None, exists=True):
+    """A capture carrying nothing but a product-table flag."""
+    import json, pathlib
+    d = pathlib.Path(tmp)
+    d.mkdir(parents=True, exist_ok=True)
+    flags = {"product_table": {"exists": exists, "has_content": bool(count),
+                               "count": count, "columns": columns or []}}
+    (d / "sections.json").write_text(json.dumps({"flags": flags}), encoding="utf-8")
+    (d / "meta.json").write_text(json.dumps({"sections_rev": rev}), encoding="utf-8")
+    return str(d)
+
+
+def test_a_reordered_products_table_is_not_a_change():
+    """The whole point of the request: structure, not sequence."""
+    import tempfile, compare as cmp
+    t = tempfile.mkdtemp()
+    a = _snap_with_table(t + "/a", columns=["Part", "Flash", "GPIO"])
+    b = _snap_with_table(t + "/b", columns=["GPIO", "Part", "Flash"])
+    assert cmp._table_state(a) == cmp._table_state(b), \
+        "a table dealt in a different order is the same table"
+
+
+def test_a_column_appearing_or_disappearing_is_a_change():
+    import tempfile, compare as cmp
+    t = tempfile.mkdtemp()
+    a = _snap_with_table(t + "/a", columns=["Part", "Flash"])
+    b = _snap_with_table(t + "/b", columns=["Part", "Flash", "Vdd"])
+    assert cmp._table_state(a) != cmp._table_state(b)
+
+
+def test_the_number_of_products_moving_is_a_change():
+    import tempfile, compare as cmp
+    t = tempfile.mkdtemp()
+    a = _snap_with_table(t + "/a", count=7, columns=["Part"])
+    b = _snap_with_table(t + "/b", count=9, columns=["Part"])
+    assert cmp._table_state(a) != cmp._table_state(b)
+
+
+def test_no_table_is_not_the_same_as_an_empty_one():
+    import tempfile, compare as cmp
+    t = tempfile.mkdtemp()
+    none = _snap_with_table(t + "/n", exists=False, count=None, columns=[])
+    empty = _snap_with_table(t + "/e", exists=True, count=0, columns=[])
+    assert cmp._table_state(none) == (None, None)
+    assert cmp._table_state(empty) != (None, None)
+
+
+def test_the_table_is_silent_across_the_revision_that_introduced_it():
+    """A rev-3 baseline never stored columns; that must not read as a table
+    that lost all of them."""
+    import tempfile, compare as cmp
+    t = tempfile.mkdtemp()
+    old = _snap_with_table(t + "/o", rev=3, count=None, columns=[])
+    new = _snap_with_table(t + "/n", rev=4, count=7, columns=["Part", "Flash"])
+    res = cmp.compare_snapshots(old, new, change_dir=None, settings={})
+    assert not res["table_changed"], "the rev boundary must suppress this"
+
+
+# --- editorial limits --------------------------------------------------------
+
+def _copy(**sections):
+    import json, tempfile, pathlib
+    d = pathlib.Path(tempfile.mkdtemp())
+    (d / "sections.json").write_text(json.dumps(sections), encoding="utf-8")
+    return str(d)
+
+
+def test_copy_within_every_limit_reports_nothing():
+    import compare as cmp
+    d = _copy(about=[{"title": "a" * 400}],
+              subheadline=[{"title": "s" * 140}],
+              meta_description="m" * 140,
+              features=[{"title": "f" * 30}, {"title": "g" * 12}],
+              benefits=[{"title": "b" * 20}, {"title": "c" * 20}],
+              overview=[{"title": "o" * 440}])
+    assert cmp.copy_findings(d) == []
+
+
+def test_each_limit_is_reported_with_the_number_that_broke_it():
+    import compare as cmp
+    got = cmp.copy_findings(_copy(subheadline=[{"title": "s" * 187}]))
+    assert any("Sub-headline 187 over 150" == g for g in got), got
+
+
+def test_a_bullet_is_judged_on_its_own_length_not_the_list_total():
+    """Twelve 30-character features are fine; one 55-character one is not."""
+    import compare as cmp
+    fine = cmp.copy_findings(_copy(features=[{"title": "f" * 30}] * 12,
+                                   benefits=[{"title": "b"}] * 2))
+    assert not [g for g in fine if g.startswith("Features")], fine
+    over = cmp.copy_findings(_copy(features=[{"title": "f" * 55},
+                                             {"title": "ok"}]))
+    assert any("Features 55 over 40" == g for g in over), over
+
+
+def test_too_few_and_too_many_are_both_caught():
+    import compare as cmp
+    few = cmp.copy_findings(_copy(features=[{"title": "only one"}]))
+    assert any("Features 1, needs 2-12" == g for g in few), few
+    many = cmp.copy_findings(_copy(benefits=[{"title": "b"}] * 13))
+    assert any("Benefits 13, allows 2-12" == g for g in many), many
+
+
+def test_a_missing_block_is_named_as_missing():
+    import compare as cmp
+    got = cmp.copy_findings(_copy(subheadline=[]))
+    assert "Sub-headline missing" in got, got
+
+
+def test_the_meta_description_is_measured_as_a_plain_string():
+    """It comes from the page head, so it is a string, not a list of blocks."""
+    import compare as cmp
+    got = cmp.copy_findings(_copy(meta_description="m" * 200))
+    assert any("Meta description 200 over 150" == g for g in got), got

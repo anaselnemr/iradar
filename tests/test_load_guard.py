@@ -87,3 +87,62 @@ def test_transient_failure_classification():
     # degenerate input never crashes
     assert runner._transient_failure({}) is True
     assert runner._transient_failure(None) is True
+
+
+# --- the browser is closed whatever the batch does --------------------------
+# Two production incidents, one cause: the close sat below the gather, so
+# anything the batch raised jumped over it. The leaked Chromium filled the
+# container's process table until it could not fork, and the run then reported
+# itself running while doing nothing at all.
+
+def test_a_page_that_cannot_be_written_fails_alone():
+    """The volume filling must cost one page, not the whole run."""
+    import asyncio, capture
+    class Boom:
+        async def new_context(self, **kw):
+            raise OSError(28, "No space left on device")
+    res = asyncio.run(capture.capture_one(Boom(), "https://x/y", _unwritable()))
+    assert res["status"] == "error", "a disk error must be reported, not raised"
+    assert "space" in res["error"].lower()
+
+
+def _unwritable():
+    import tempfile
+    from pathlib import Path
+    return str(Path(tempfile.mkdtemp()) / "sub")
+
+
+def test_the_browser_is_closed_even_when_the_batch_explodes():
+    import asyncio, capture
+    closed = []
+
+    class FakeBrowser:
+        async def close(self): closed.append(True)
+
+    class FakePW:
+        chromium = None
+        def __init__(self): self.chromium = self
+        async def launch(self, **kw): return FakeBrowser()
+
+    class FakeCtx:
+        async def __aenter__(self): return FakePW()
+        async def __aexit__(self, *a): return False
+
+    orig_pw, orig_one, orig_self = (capture.async_playwright,
+                                    capture.capture_one, capture._selftest)
+    async def _boom(browser, url, out_dir):
+        raise RuntimeError("the batch blew up")
+    async def _noop(browser): pass
+    capture.async_playwright = lambda: FakeCtx()
+    capture.capture_one = _boom
+    capture._selftest = _noop
+    try:
+        try:
+            asyncio.run(capture.capture_all([("https://x/a", _unwritable())],
+                                            concurrency=1))
+        except RuntimeError:
+            pass
+        assert closed, "the browser was left running when the batch raised"
+    finally:
+        capture.async_playwright, capture.capture_one, capture._selftest = (
+            orig_pw, orig_one, orig_self)

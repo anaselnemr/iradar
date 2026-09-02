@@ -965,6 +965,16 @@ ATTR_FILTERS["haseval"] = ("Has an eval board linked", _EVAL_SQL)
 ATTR_FILTERS["noeval"] = ("No eval board linked",
                           _KNOWN_GOOD + " AND NOT " + _EVAL_SQL)
 
+# EDITORIAL LIMITS. copy_flags is '' until the page has been read under the
+# rules, '[]' once it has and nothing is over. "Within limits" therefore has
+# to be guarded on the column being non-empty, or every page nobody has
+# measured yet would be reported as passing.
+ATTR_FILTERS["copyover"] = (
+    "Copy over its limits",
+    "(u.copy_flags IS NOT NULL AND u.copy_flags NOT IN ('', '[]'))")
+ATTR_FILTERS["copyok"] = (
+    "Copy within its limits", "(IFNULL(u.copy_flags,'') = '[]')")
+
 # price is captured text on component pages; "no price" only means something
 # once the page has been through component detection ('' = not measured yet)
 ATTR_FILTERS["hasprice"] = ("Has price",
