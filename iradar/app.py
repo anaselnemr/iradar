@@ -7509,7 +7509,39 @@ def _seed_accounts():
               + "   (must be changed at first sign-in)")
 
 
+def _reap_children():
+    """Collect finished child processes, because nothing else will.
+
+    In the container this process is PID 1, and PID 1 inherits every orphan.
+    A normal init reaps them; python does not, so each Chromium the capture
+    finished with stayed in the process table as a zombie - holding no memory
+    and no CPU, just a slot. 128 of them had accumulated by the second run,
+    and a full table is why the container reached "Cannot fork" and a run
+    stopped dead while still reporting itself as running.
+
+    SIGCHLD arrives whenever a child ends; the loop drains every one that is
+    ready, since signals coalesce and one delivery can stand for several
+    exits. Harmless off the container, where this process is not PID 1 and
+    there is nothing to collect.
+    """
+    if not hasattr(os, "WNOHANG"):
+        return                   # Windows has no orphans to collect
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if pid == 0:
+            return
+
+
 if __name__ == "__main__":
+    # before anything is allowed to start a browser
+    try:
+        import signal
+        signal.signal(signal.SIGCHLD, lambda *_: _reap_children())
+    except (AttributeError, ValueError):
+        pass                     # no SIGCHLD on Windows; nothing to reap there
     db.init_db()
     _seed_accounts()
     _housekeeping("startup")

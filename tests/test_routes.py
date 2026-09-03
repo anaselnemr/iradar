@@ -486,3 +486,36 @@ def test_eval_board_filter_reads_the_links_already_captured():
     w, p = app._url_filter("", [], [], ["noeval"])
     assert "a" not in _ids(w, p), "a page with a board must not be listed as having none"
     assert "b" in _ids(w, p), "the report people want is the pages with no board"
+
+
+def test_the_reaper_is_safe_where_there_is_nothing_to_reap():
+    """It only ever runs from a SIGCHLD handler, which Windows has not got -
+    but a function that throws when called is a trap for the next person."""
+    app._reap_children()
+
+
+def test_the_reaper_collects_what_it_can_and_stops():
+    """Drains ready children without blocking, because signals coalesce: one
+    delivery can stand for several exits."""
+    import os
+    calls = []
+    real_wait = getattr(os, "waitpid", None)
+    had_flag = hasattr(os, "WNOHANG")
+    if not had_flag:
+        os.WNOHANG = 1           # the container has it; this box need not
+    def fake(pid, opts):
+        calls.append((pid, opts))
+        if len(calls) < 3:
+            return (1000 + len(calls), 0)
+        return (0, 0)            # nothing left ready
+    os.waitpid = fake
+    try:
+        app._reap_children()
+    finally:
+        if real_wait is not None:
+            os.waitpid = real_wait
+        if not had_flag:
+            del os.WNOHANG
+    assert len(calls) == 3, "should drain until nothing is ready, got %d" % len(calls)
+    assert all(pid == -1 for pid, _ in calls), "must collect ANY child"
+    assert all(o != 0 for _, o in calls), "must never block waiting"

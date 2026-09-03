@@ -457,10 +457,21 @@ def copy_findings(snap_dir):
     for key, label, chars, lo, hi in COPY_LIMITS:
         blocks = _blocks(sec, key)
         n = len(blocks)
+        # A BLOCK THAT IS NOT THERE AT ALL IS NOT A BREACH. Most of what this
+        # app watches are part pages, and a part page carries no marketing
+        # overview, features or benefits - it never should. Reporting those as
+        # missing flagged 2,819 of 2,820 measured pages, which is a report
+        # nobody can act on: the real over-length count is about fifty.
+        #
+        # Whether a page OUGHT to carry a block is a question the component
+        # matrix already answers, per page type, and that is where it belongs -
+        # not in a rule that assumes every page is a product page. So this
+        # judges what is written, and says nothing about what is absent.
+        if n == 0:
+            continue
         if lo is not None and n < lo:
-            out.append("%s missing" % label if lo == 1 and n == 0
-                       else "%s %d, needs %d%s" % (label, n, lo,
-                                                   "-%d" % hi if hi else "+"))
+            out.append("%s %d, needs %d%s" % (label, n, lo,
+                                              "-%d" % hi if hi else "+"))
         elif hi is not None and n > hi:
             out.append("%s %d, allows %d-%d" % (label, n, lo, hi))
         longest = max((len(b) for b in blocks), default=0)

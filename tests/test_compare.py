@@ -673,10 +673,16 @@ def test_too_few_and_too_many_are_both_caught():
     assert any("Benefits 13, allows 2-12" == g for g in many), many
 
 
-def test_a_missing_block_is_named_as_missing():
+def test_a_block_that_is_not_there_is_not_a_breach():
+    """Most tracked pages are part pages and carry no marketing copy at all.
+    Judging them for its absence flagged 2,819 of 2,820 measured pages -
+    whether a page OUGHT to have a block is the component matrix's question."""
     import compare as cmp
-    got = cmp.copy_findings(_copy(subheadline=[]))
-    assert "Sub-headline missing" in got, got
+    assert cmp.copy_findings(_copy(subheadline=[])) == []
+    assert cmp.copy_findings(_copy()) == []
+    # but a block that IS written is still judged
+    got = cmp.copy_findings(_copy(subheadline=[{"title": "s" * 200}]))
+    assert any("Sub-headline 200 over 150" == g for g in got), got
 
 
 def test_the_meta_description_is_measured_as_a_plain_string():
