@@ -234,7 +234,9 @@ def index_items(con, url_id, snap_dir, dead=False):
     # with its items rather than lingering as a complaint about a 404.
     try:
         con.execute("UPDATE urls SET copy_flags=? WHERE id=?",
-                    ("" if dead else json.dumps(cmp.copy_findings(snap_dir)),
+                    ("" if dead
+                     else json.dumps(cmp.copy_findings(snap_dir,
+                                                       db.get_settings())),
                      url_id))
     except Exception:
         pass

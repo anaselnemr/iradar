@@ -645,48 +645,70 @@ def test_copy_within_every_limit_reports_nothing():
               features=[{"title": "f" * 30}, {"title": "g" * 12}],
               benefits=[{"title": "b" * 20}, {"title": "c" * 20}],
               overview=[{"title": "o" * 440}])
-    assert cmp.copy_findings(d) == []
+    assert cmp.copy_findings(d) == {}
 
 
-def test_each_limit_is_reported_with_the_number_that_broke_it():
+def test_a_finding_is_keyed_by_its_block():
+    """Keyed, not a flat list, so the flag can sit beside the block it is
+    about and the dashboard can filter on one block at a time."""
     import compare as cmp
     got = cmp.copy_findings(_copy(subheadline=[{"title": "s" * 187}]))
-    assert any("Sub-headline 187 over 150" == g for g in got), got
+    assert got == {"subheadline": "187 over 150"}, got
 
 
 def test_a_bullet_is_judged_on_its_own_length_not_the_list_total():
-    """Twelve 30-character features are fine; one 55-character one is not."""
     import compare as cmp
-    fine = cmp.copy_findings(_copy(features=[{"title": "f" * 30}] * 12,
-                                   benefits=[{"title": "b"}] * 2))
-    assert not [g for g in fine if g.startswith("Features")], fine
+    fine = cmp.copy_findings(_copy(features=[{"title": "f" * 30}] * 12))
+    assert "features" not in fine, fine
     over = cmp.copy_findings(_copy(features=[{"title": "f" * 55},
                                              {"title": "ok"}]))
-    assert any("Features 55 over 40" == g for g in over), over
+    assert over["features"] == "55 over 40", over
 
 
 def test_too_few_and_too_many_are_both_caught():
     import compare as cmp
-    few = cmp.copy_findings(_copy(features=[{"title": "only one"}]))
-    assert any("Features 1, needs 2-12" == g for g in few), few
-    many = cmp.copy_findings(_copy(benefits=[{"title": "b"}] * 13))
-    assert any("Benefits 13, allows 2-12" == g for g in many), many
+    assert cmp.copy_findings(_copy(features=[{"title": "one"}]))["features"]         == "1, needs 2-12"
+    assert cmp.copy_findings(_copy(benefits=[{"title": "b"}] * 13))["benefits"]         == "13, allows 2-12"
 
 
 def test_a_block_that_is_not_there_is_not_a_breach():
     """Most tracked pages are part pages and carry no marketing copy at all.
-    Judging them for its absence flagged 2,819 of 2,820 measured pages -
-    whether a page OUGHT to have a block is the component matrix's question."""
+    Judging them for its absence flagged 2,819 of 2,820 measured pages."""
     import compare as cmp
-    assert cmp.copy_findings(_copy(subheadline=[])) == []
-    assert cmp.copy_findings(_copy()) == []
-    # but a block that IS written is still judged
+    assert cmp.copy_findings(_copy(subheadline=[])) == {}
+    assert cmp.copy_findings(_copy()) == {}
     got = cmp.copy_findings(_copy(subheadline=[{"title": "s" * 200}]))
-    assert any("Sub-headline 200 over 150" == g for g in got), got
+    assert got["subheadline"] == "200 over 150"
 
 
 def test_the_meta_description_is_measured_as_a_plain_string():
-    """It comes from the page head, so it is a string, not a list of blocks."""
     import compare as cmp
     got = cmp.copy_findings(_copy(meta_description="m" * 200))
-    assert any("Meta description 200 over 150" == g for g in got), got
+    assert got["meta_description"] == "200 over 150", got
+
+
+def test_the_limit_itself_comes_from_settings():
+    """The whole point of making it editable: 1,907 pages sit at 151-199 and
+    whether that is a breach is an editorial decision, not a code one."""
+    import compare as cmp
+    page = _copy(meta_description="m" * 157)
+    assert cmp.copy_findings(page)["meta_description"] == "157 over 150"
+    relaxed = cmp.copy_findings(page, {"copy_meta_description_chars": "160"})
+    assert relaxed == {}, relaxed
+
+
+def test_a_limit_of_zero_switches_the_rule_off():
+    import compare as cmp
+    page = _copy(features=[{"title": "f" * 900}])
+    assert "features" in cmp.copy_findings(page)
+    off = cmp.copy_findings(page, {"copy_features_chars": "0",
+                                   "copy_features_min": "0",
+                                   "copy_features_max": "0"})
+    assert off == {}, off
+
+
+def test_a_nonsense_setting_falls_back_instead_of_crashing():
+    import compare as cmp
+    got = cmp.copy_findings(_copy(subheadline=[{"title": "s" * 200}]),
+                            {"copy_subheadline_chars": "not a number"})
+    assert got["subheadline"] == "200 over 150"

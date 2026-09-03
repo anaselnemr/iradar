@@ -969,6 +969,14 @@ ATTR_FILTERS["noeval"] = ("No eval board linked",
 # rules, '[]' once it has and nothing is over. "Within limits" therefore has
 # to be guarded on the column being non-empty, or every page nobody has
 # measured yet would be reported as passing.
+# ...and one per block, because "something on this page is too long" is not
+# the question anyone actually asks. The finding is stored keyed by block, so
+# each of these looks for its own key.
+for _k, _lbl, _c, _lo, _hi in cmp.COPY_LIMITS:
+    ATTR_FILTERS["over_" + _k] = (
+        _lbl + " over its limit",
+        "(instr(IFNULL(u.copy_flags,''), '\"%s\":') > 0)" % _k)
+
 ATTR_FILTERS["copyover"] = (
     "Copy over its limits",
     "(u.copy_flags IS NOT NULL AND u.copy_flags NOT IN ('', '[]'))")
@@ -2814,6 +2822,13 @@ def url_detail(url_id):
                 if isinstance(it, dict) and it.get("url"):
                     it["page_id"] = tracked.get(it["url"].rstrip("/"))
 
+    # What this page's copy breaks, keyed by block, so the flag can sit beside
+    # the block it is about rather than in a list at the bottom that nobody
+    # reads. Measured live from the capture on screen, not from the stored
+    # column, so an edited limit shows the moment it is saved.
+    copy_flags = cmp.copy_findings(latest["dir"], db.get_settings()) if latest else {}
+    copy_labels = {k: l for k, l, _c, _lo, _hi in cmp.COPY_LIMITS}
+
     cat_tree = _category_tree(sections.get("categories", []) if sections else [])
 
     con3 = db.connect()
@@ -2972,6 +2987,7 @@ def url_detail(url_id):
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
+                           copy_flags=copy_flags, copy_labels=copy_labels,
                            components=comp_rows, price=(u["price"] or ""),
                            settings=_settings_now, level_names=LEVEL_NAMES,
                            meta_fields=_mfields, meta_labels=META_LABELS,
@@ -3787,7 +3803,8 @@ def settings_view():
                     "keep_snapshots",
                     "visual_threshold", "height_threshold", "ignore_patterns",
                     "ignore_image_patterns", "dam_search_url",
-                    "windchill_search_url", "aem_author_url"):
+                    "windchill_search_url", "aem_author_url",
+                    *[k for k, _d in cmp.COPY_SETTING_KEYS]):
             if key in request.form:
                 db.set_setting(key, request.form[key].strip())
         reschedule()
@@ -3812,6 +3829,7 @@ def settings_view():
             c2.close()
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS,
+                           copy_limits=cmp.copy_limits(db.get_settings()),
                            guest_tot=guest_tot, **matrix_ctx)
 
 

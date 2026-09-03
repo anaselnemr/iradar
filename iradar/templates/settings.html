@@ -69,6 +69,37 @@
     </div>
 
     <div class="pane" id="pane-advanced">
+      {#- Editorial limits. An editorial rule is an editorial decision, so the
+          numbers live here rather than in code. 0 = no bound, which switches a
+          rule off without removing the row. Only blocks a page actually has
+          are judged: a part page carries no overview and never should. -#}
+      <h3 style="margin:0 0 6px; font-size:15px">Copy limits</h3>
+      <p class="muted" style="margin-top:0">The longest a single block may be,
+        and how many of them there should be. <b>0 means no limit.</b> A page
+        is only judged on blocks it actually has &mdash; whether it
+        <i>should</i> have one is the Components grid's question.</p>
+      <div class="tablewrap">
+      <table style="white-space:nowrap; font-size:14px">
+        <tr><th style="text-align:left">Block</th>
+            <th>Longest block</th><th>At least</th><th>At most</th></tr>
+        {% for key, label, chars, lo, hi in copy_limits %}
+        <tr>
+          <td style="padding-right:14px">{{ label }}</td>
+          <td><input type="number" min="0" style="width:6.5em"
+                     name="copy_{{ key }}_chars" value="{{ chars }}"></td>
+          <td><input type="number" min="0" style="width:5em"
+                     name="copy_{{ key }}_min" value="{{ lo }}"></td>
+          <td><input type="number" min="0" style="width:5em"
+                     name="copy_{{ key }}_max" value="{{ hi }}"></td>
+        </tr>
+        {% endfor %}
+      </table>
+      </div>
+      <p class="muted" style="margin-top:8px">Changing these takes effect as
+        each page is next read. Filter the dashboard by
+        <b>Content &rarr; &lt;block&gt; over its limit</b> to see who is over.</p>
+
+
       {#- Whether the shared read-only link has been opened. OWNER only, not
           admin: every account here is an admin, so admin-only would be the
           whole team. A timestamp and nothing else - everyone arrives through

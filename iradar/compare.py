@@ -417,14 +417,39 @@ def _item_body(d):
 # "Description" is read from `about`, which is where the capture files a
 # page's own prose. If the brief means the Description TAB instead, this one
 # line is the change - the tab is stored separately, in urls.detail_tabs.
+# key, label, and the DEFAULTS. The live numbers come from Settings, because
+# an editorial limit is an editorial decision - the people who own the copy
+# change it without anyone touching code.
 COPY_LIMITS = [
-    ("about",            "Description",      450, 1, None),
-    ("subheadline",      "Sub-headline",     150, 1, None),
-    ("meta_description", "Meta description", 150, 1, None),
+    ("about",            "Description",      450, 1, 0),
+    ("subheadline",      "Sub-headline",     150, 1, 0),
+    ("meta_description", "Meta description", 150, 1, 0),
     ("features",         "Features",          40, 2, 12),
     ("benefits",         "Benefits",          40, 2, 12),
-    ("overview",         "Overview",         450, 1, None),
+    ("overview",         "Overview",         450, 1, 0),
 ]
+# 0 for a bound means "no bound", so a limit can be switched off from Settings
+# without removing the row.
+COPY_SETTING_KEYS = [("copy_%s_%s" % (k, part), default)
+                     for k, _lbl, chars, lo, hi in COPY_LIMITS
+                     for part, default in (("chars", chars), ("min", lo),
+                                           ("max", hi))]
+
+
+def copy_limits(settings=None):
+    """The limits in force, defaults where Settings has not been touched."""
+    settings = settings or {}
+    out = []
+    for key, label, chars, lo, hi in COPY_LIMITS:
+        def num(part, fallback):
+            try:
+                return int(str(settings.get("copy_%s_%s" % (key, part),
+                                            fallback)).strip() or fallback)
+            except (TypeError, ValueError):
+                return fallback
+        out.append((key, label, num("chars", chars), num("min", lo),
+                    num("max", hi)))
+    return out
 
 
 def _blocks(sections, key):
@@ -441,42 +466,36 @@ def _blocks(sections, key):
     return out
 
 
-def copy_findings(snap_dir):
-    """Which editorial limits this capture breaks, in plain words.
+def copy_findings(snap_dir, settings=None):
+    """Which editorial limits this capture breaks, keyed by the block.
 
-    Returns a list like ["Sub-headline 187 over 150", "Features 1, needs 2-12"].
-    Empty means everything measured is within its limits.
+    {"overview": "451 over 450", "features": "1, needs 2-12"} - keyed rather
+    than a flat list so the dashboard can filter on one block ("Overview over
+    its limit") and the page can put the flag beside the block it belongs to.
 
-    Measured here rather than at capture time so the limits can be argued
-    about and re-applied without re-reading four thousand pages.
+    A BLOCK THAT IS NOT THERE AT ALL IS NOT A BREACH. Most of what this app
+    watches are part pages, and a part page carries no marketing overview or
+    feature bullets - it never should. Judging them for its absence flagged
+    2,819 of 2,820 measured pages, which is not a report. Whether a page OUGHT
+    to carry a block is the component matrix's question, per page type, and
+    that is where it belongs.
     """
     sec = _load_sections(snap_dir)
     if not sec:
-        return []
-    out = []
-    for key, label, chars, lo, hi in COPY_LIMITS:
+        return {}
+    out = {}
+    for key, label, chars, lo, hi in copy_limits(settings):
         blocks = _blocks(sec, key)
         n = len(blocks)
-        # A BLOCK THAT IS NOT THERE AT ALL IS NOT A BREACH. Most of what this
-        # app watches are part pages, and a part page carries no marketing
-        # overview, features or benefits - it never should. Reporting those as
-        # missing flagged 2,819 of 2,820 measured pages, which is a report
-        # nobody can act on: the real over-length count is about fifty.
-        #
-        # Whether a page OUGHT to carry a block is a question the component
-        # matrix already answers, per page type, and that is where it belongs -
-        # not in a rule that assumes every page is a product page. So this
-        # judges what is written, and says nothing about what is absent.
         if n == 0:
             continue
-        if lo is not None and n < lo:
-            out.append("%s %d, needs %d%s" % (label, n, lo,
-                                              "-%d" % hi if hi else "+"))
-        elif hi is not None and n > hi:
-            out.append("%s %d, allows %d-%d" % (label, n, lo, hi))
+        if lo and n < lo:
+            out[key] = "%d, needs %d%s" % (n, lo, "-%d" % hi if hi else "+")
+        elif hi and n > hi:
+            out[key] = "%d, allows %d-%d" % (n, lo or 1, hi)
         longest = max((len(b) for b in blocks), default=0)
-        if longest > chars:
-            out.append("%s %d over %d" % (label, longest, chars))
+        if chars and longest > chars:
+            out[key] = "%d over %d" % (longest, chars)
     return out
 
 

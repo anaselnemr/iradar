@@ -54,6 +54,28 @@ DEFAULT_SETTINGS = {
     # Default: auto-generated video-player thumbnails (load flakily, not real
     # page content - removing a video still shows up via the text layer).
     "ignore_image_patterns": r"/jcr:content/renditions/cq5dam\.thumbnail\.",
+    # Editorial limits, per content block: the longest a single block may be,
+    # and how many blocks there should be. 0 means no bound, so a rule can be
+    # switched off from Settings without removing it. Judged only on blocks a
+    # page actually has - see compare.copy_findings.
+    "copy_about_chars": "450",
+    "copy_about_min": "1",
+    "copy_about_max": "0",
+    "copy_subheadline_chars": "150",
+    "copy_subheadline_min": "1",
+    "copy_subheadline_max": "0",
+    "copy_meta_description_chars": "150",
+    "copy_meta_description_min": "1",
+    "copy_meta_description_max": "0",
+    "copy_features_chars": "40",
+    "copy_features_min": "2",
+    "copy_features_max": "12",
+    "copy_benefits_chars": "40",
+    "copy_benefits_min": "2",
+    "copy_benefits_max": "12",
+    "copy_overview_chars": "450",
+    "copy_overview_min": "1",
+    "copy_overview_max": "0",
 }
 
 
