@@ -311,6 +311,65 @@ def _overlaps_painted(y0, y1, painted):
     return covered / (y1 - y0) > 0.5
 
 
+def _blur_match(a, b, w, ay0, ay1, by0, by1, base_px, noise=PIXEL_NOISE_THRESHOLD):
+    """Does the difference vanish under a one-pixel blur, at any small
+    offset, judged with a little context around the band?
+
+    Anti-aliased text re-rendered half a pixel off lights every glyph
+    edge past the noise threshold at every integer offset, so the slip
+    test alone cannot catch it - the letter-spaced small-caps rows are
+    the classic victim, boxed in red while reading identically. Two
+    things beat a naive blur test: the wobble also shifts the row, and
+    the region extractor can split one jittering row so a fragment's
+    window straddles a boundary no single offset aligns. So the check
+    blurs AND sweeps a few offsets, on a window grown by a few rows of
+    context - a real edit survives every combination, jitter survives
+    none. High frequency that a blur erases is never content.
+    """
+    # the window comes from WHICHEVER side holds the content - a surplus
+    # band has rows on one side only, and searching with the empty side's
+    # context finds nothing
+    if (ay1 - ay0) >= (by1 - by0):
+        src, s0, s1, dst, d0 = a, ay0, ay1, b, by0
+    else:
+        src, s0, s1, dst, d0 = b, by0, by1, a, ay0
+    pad = SLIP_MAX
+    top = max(0, s0 - pad)
+    h = min(s1 + pad, src.height) - top
+    if h <= 0 or h > 160:          # a whole moved SECTION is the page's
+        return False               # business to report, not to forgive
+    ca = src.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
+    keep = max(REGION_MIN_PX, SLIP_KEEP * base_px)
+    for dy in range(-AA_SWEEP, AA_SWEEP + 1):
+        bt = d0 - (s0 - top) + dy
+        if bt < 0 or bt + h > dst.height:
+            continue
+        cb = dst.crop((0, bt, w, bt + h)).filter(ImageFilter.BoxBlur(1))
+        d = ImageChops.difference(ca, cb).convert("L")
+        if d.point(lambda p: 255 if p > noise else 0).histogram()[255] <= keep:
+            return True
+    # Content also drifts SIDEWAYS: a table column resizes by a few
+    # pixels and every glyph to its right moves, so the same row lights
+    # up at every vertical offset - the reference-design finder boxed
+    # six identical rows that way. One horizontal pass at the matched
+    # rows: judged on the overlapping width, same blur, same bar.
+    bt = d0 - (s0 - top)
+    if 0 <= bt and bt + h <= dst.height:
+        cbl = dst.crop((0, bt, w, bt + h)).filter(ImageFilter.BoxBlur(1))
+        for dx in range(-8, 9):
+            if dx == 0:
+                continue
+            ww = w - abs(dx)
+            if ww <= 0:
+                continue
+            pa = ca.crop((max(0, -dx), 0, max(0, -dx) + ww, h))
+            pb = cbl.crop((max(0, dx), 0, max(0, dx) + ww, h))
+            d = ImageChops.difference(pa, pb).convert("L")
+            if d.point(lambda p: 255 if p > noise else 0).histogram()[255] <= keep:
+                return True
+    return False
+
+
 def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
                      painted_a=(), painted_b=()):
     """Compare two page images with row alignment.
@@ -335,43 +394,7 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
     regions = []
 
     def aa_jitter(ay0, ay1, by0, by1, base_px):
-        """Does the difference vanish under a one-pixel blur, at any small
-        offset, judged with a little context around the band?
-
-        Anti-aliased text re-rendered half a pixel off lights every glyph
-        edge past the noise threshold at every integer offset, so the slip
-        test alone cannot catch it - the letter-spaced small-caps rows are
-        the classic victim, boxed in red while reading identically. Two
-        things beat a naive blur test: the wobble also shifts the row, and
-        the region extractor can split one jittering row so a fragment's
-        window straddles a boundary no single offset aligns. So the check
-        blurs AND sweeps a few offsets, on a window grown by a few rows of
-        context - a real edit survives every combination, jitter survives
-        none. High frequency that a blur erases is never content.
-        """
-        # the window comes from WHICHEVER side holds the content - a surplus
-        # band has rows on one side only, and searching with the empty side's
-        # context finds nothing
-        if (ay1 - ay0) >= (by1 - by0):
-            src, s0, s1, dst, d0 = a, ay0, ay1, b, by0
-        else:
-            src, s0, s1, dst, d0 = b, by0, by1, a, ay0
-        pad = SLIP_MAX
-        top = max(0, s0 - pad)
-        h = min(s1 + pad, src.height) - top
-        if h <= 0 or h > 160:          # a whole moved SECTION is the page's
-            return False               # business to report, not to forgive
-        ca = src.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
-        keep = max(REGION_MIN_PX, SLIP_KEEP * base_px)
-        for dy in range(-AA_SWEEP, AA_SWEEP + 1):
-            bt = d0 - (s0 - top) + dy
-            if bt < 0 or bt + h > dst.height:
-                continue
-            cb = dst.crop((0, bt, w, bt + h)).filter(ImageFilter.BoxBlur(1))
-            d = ImageChops.difference(ca, cb).convert("L")
-            if d.point(lambda p: 255 if p > noise else 0).histogram()[255] <= keep:
-                return True
-        return False
+        return _blur_match(a, b, w, ay0, ay1, by0, by1, base_px, noise)
 
     def slipped(ay0, ay1, by0, by1, base_px):
         """Does this band's difference vanish at a small vertical offset?
@@ -828,6 +851,21 @@ def visual_diff(old_dir, new_dir, change_dir=None):
                     kept.append(r)
             raw = kept
         regions = _merge_regions(raw) if raw else []
+        # THE SAME WITNESS, ON THE MERGED BOX. Bands are tested before they
+        # merge, and merging unions everything within a text-line's gap - so
+        # a box can ring rows that individually passed every test only
+        # because a real fragment nearby pulled them in, or ride on fragments
+        # whose sum collapses even though no single band did. One more pass
+        # over the dozen final boxes costs nothing and answers the question
+        # the reviewer actually asks of the BOX, not of its parts.
+        kept = []
+        for r in regions:
+            if _blur_match(a_c, b_c, w, r["a"][0], r["a"][1],
+                           r["b"][0], r["b"][1], r["px"]):
+                changed_px = max(0, changed_px - r["px"])
+            else:
+                kept.append(r)
+        regions = kept
         denom = float(w * max(a_c.height, b_c.height, 1))
         ratio_pct = 100.0 * changed_px / denom
         boxes_old = _boxes_for(regions, "a", a_c.height)
