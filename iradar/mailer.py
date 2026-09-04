@@ -193,6 +193,11 @@ def run_digest(con, run):
              or (c["images_added"] or 0) > 0]
     d["gains"] = len(gains)
 
+    # the changes table has no library column - a library change lives in the
+    # summary text ("Documents (+2/-1)"), written by the same comparison that
+    # raised the review. Count the summaries that name a library section.
+    LIB_MARKS = ("Documents (", "Design resources & boards (",
+                 "Trainings & webinars (", "Videos (", "Partner solutions (")
     by_kind = {"text": 0, "images": 0, "visual": 0, "library": 0}
     for c in ch:
         if c["text_changed"]:
@@ -201,11 +206,8 @@ def run_digest(con, run):
             by_kind["images"] += 1
         if c["visual_changed"]:
             by_kind["visual"] += 1
-        try:
-            if c["library_changed"]:
-                by_kind["library"] += 1
-        except (KeyError, IndexError):
-            pass
+        if any(m in (c["summary"] or "") for m in LIB_MARKS):
+            by_kind["library"] += 1
     d["by_kind"] = by_kind
 
     def _dir(c):
