@@ -14,6 +14,14 @@ the account password, once 2-step is on. Set:
   MAIL_PASS        the 16-char app password
   MAIL_FROM        optional; defaults to MAIL_USER
   MAIL_FROM_NAME   optional; defaults to "iRadar"
+
+Railway, measured 2026-09-05, silently drops ALL outbound SMTP - 25, 465,
+587, even 2525 - while HTTPS egress is open. So on Railway the SMTP path
+above can never connect, and mail goes over an HTTPS API instead:
+
+  RESEND_API_KEY   send via api.resend.com (HTTPS). When set, this path is
+                   used and the SMTP settings are ignored. The From address
+                   is MAIL_FROM (a verified domain on the Resend account).
 """
 import os
 import smtplib
@@ -27,14 +35,15 @@ import db
 
 
 def configured():
-    """Is enough set to send at all?"""
-    return bool(os.environ.get("MAIL_USER") and os.environ.get("MAIL_PASS"))
+    """Is enough set to send at all - either path?"""
+    return bool(os.environ.get("RESEND_API_KEY")
+                or (os.environ.get("MAIL_USER") and os.environ.get("MAIL_PASS")))
 
 
 def _from():
     user = os.environ.get("MAIL_USER", "")
     return (os.environ.get("MAIL_FROM_NAME") or "iRadar",
-            os.environ.get("MAIL_FROM") or user)
+            os.environ.get("MAIL_FROM") or user or "iradar@iradar.net")
 
 
 def _logo_part():
@@ -62,6 +71,8 @@ def send(to_addr, subject, html, text_fallback=""):
     """Send one message. Returns None on success, an error string otherwise."""
     if not configured():
         return "mail not configured"
+    if os.environ.get("RESEND_API_KEY"):
+        return _send_https(to_addr, subject, html, text_fallback)
     host = os.environ.get("MAIL_SMTP_HOST", "smtp.gmail.com")
     port = int(os.environ.get("MAIL_SMTP_PORT", "587"))
     user = os.environ["MAIL_USER"]
@@ -92,6 +103,40 @@ def send(to_addr, subject, html, text_fallback=""):
                 s.login(user, pw)
                 s.sendmail(addr, [to_addr], msg.as_string())
         return None
+    except Exception as e:
+        return "%s: %s" % (type(e).__name__, e)
+
+
+def _send_https(to_addr, subject, html, text_fallback=""):
+    """The HTTPS path (Resend). A CID image cannot ride an API call, so the
+    logo points at the site's own public copy instead - same mark, same look."""
+    import json
+    import urllib.error
+    import urllib.request
+    base = os.environ.get("PUBLIC_URL", "https://iradar.net").rstrip("/")
+    html = html.replace("cid:iradarlogo", base + "/static/logo.png?v=3")
+    name, addr = _from()
+    body = json.dumps({
+        "from": "%s <%s>" % (name, addr),
+        "to": [to_addr],
+        "subject": subject,
+        "html": html,
+        "text": text_fallback or _strip(html),
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.resend.com/emails", data=body,
+        headers={"Authorization": "Bearer " + os.environ["RESEND_API_KEY"],
+                 "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+        return None
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            detail = ""
+        return "HTTP %s: %s" % (e.code, detail)
     except Exception as e:
         return "%s: %s" % (type(e).__name__, e)
 
