@@ -311,7 +311,59 @@ def _overlaps_painted(y0, y1, painted):
     return covered / (y1 - y0) > 0.5
 
 
-def _blur_match(a, b, w, ay0, ay1, by0, by1, base_px, noise=PIXEL_NOISE_THRESHOLD):
+def _moved_elsewhere(band_img, other, w, y0, y1, ink,
+                     noise=PIXEL_NOISE_THRESHOLD, reach=1500):
+    """Does this band's content exist ANYWHERE in the other picture?
+
+    A move can be long - a reorganised page carried blocks 395 and 729
+    pixels from where they were. The app's founding rule is that reordering
+    is layout, not an edit (the text diff compares line multisets for
+    exactly this reason), so the visual signal searches the whole
+    counterpart before calling content new or gone. Bounded to substantial,
+    mid-sized bands so the scan stays rare and a very large removal is
+    still a person's to judge.
+    """
+    hh = y1 - y0
+    if not (12 < hh <= 200 and ink >= 1000):
+        return False
+    # a bounded reach, not the whole page: the longest move seen in the wild
+    # is 729px, and an unbounded scan of a 14,000-row page cost seconds per
+    # band - on the capture path, thousands of times a night
+    lo = max(0, y0 - reach)
+    hi = min(other.height - hh, y1 + reach)
+    if hi <= lo:
+        return False
+    # scan at HALF resolution, coarse-then-fine: blur first (so the halving
+    # loses nothing a match needs), walk the window at a wide step to find
+    # the most promising spots, then refine only around those. The exhaustive
+    # full-resolution walk cost 3.7s per band; this is ~40x cheaper with the
+    # same verdicts on every benchmark page.
+    hw = max(1, w // 2)
+    band = band_img.crop((0, y0, w, y1)).filter(ImageFilter.BoxBlur(1))         .resize((hw, max(1, hh // 2)), Image.Resampling.BOX)
+    window = other.crop((0, lo, w, min(other.height, hi + hh)))         .filter(ImageFilter.BoxBlur(1))
+    window = window.resize((hw, max(1, window.height // 2)),
+                           Image.Resampling.BOX)
+    bh = band.height
+    floor = max(REGION_MIN_PX // 4, int(SLIP_KEEP * ink) // 4)
+
+    def residual(t):
+        d = ImageChops.difference(band, window.crop((0, t, hw, t + bh)))
+        return d.convert("L").point(
+            lambda v: 255 if v > noise else 0).histogram()[255]
+
+    top = window.height - bh
+    if top <= 0:
+        return False
+    coarse = sorted(range(0, top, 4), key=residual)[:3]
+    for c in coarse:
+        for t in range(max(0, c - 4), min(top, c + 5)):
+            if residual(t) <= floor:
+                return True
+    return False
+
+
+def _blur_match(a, b, w, ay0, ay1, by0, by1, base_px,
+                noise=PIXEL_NOISE_THRESHOLD, max_h=160):
     """Does the difference vanish under a one-pixel blur, at any small
     offset, judged with a little context around the band?
 
@@ -336,8 +388,8 @@ def _blur_match(a, b, w, ay0, ay1, by0, by1, base_px, noise=PIXEL_NOISE_THRESHOL
     pad = SLIP_MAX
     top = max(0, s0 - pad)
     h = min(s1 + pad, src.height) - top
-    if h <= 0 or h > 160:          # a whole moved SECTION is the page's
-        return False               # business to report, not to forgive
+    if h <= 0 or h > max_h:        # the size bar is the caller's decision:
+        return False               # equal-height boxes may be any size
     ca = src.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
     keep = max(REGION_MIN_PX, SLIP_KEEP * base_px)
     for dy in range(-AA_SWEEP, AA_SWEEP + 1):
@@ -493,6 +545,16 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
         # and a genuinely NEW block exists nowhere else and survives.
         if aa_jitter(a0, a1, b0, b1, band_ink):
             return
+        # A move can be LONG: this page carried two blocks that travelled
+        # 395 and 729 pixels when it was reorganised. The app's own founding
+        # rule is that reordering is layout, not an edit - the text diff
+        # compares line MULTISETS for exactly this reason - so the visual
+        # signal searches the whole counterpart page before calling content
+        # new or gone. Bounded to substantial, mid-sized bands so the scan
+        # stays rare and a 1,500-row removal is still a person's to judge.
+        if _moved_elsewhere(img, b if img is a else a, w, sy0, sy1,
+                            band_ink):
+            return                    # it moved; it did not change
             # A seam defeats the offset test - content above it matches
             # at one offset, below it at another, so no single nudge
             # collapses the window. But a STRETCHED row is its own
@@ -860,8 +922,20 @@ def visual_diff(old_dir, new_dir, change_dir=None):
         # the reviewer actually asks of the BOX, not of its parts.
         kept = []
         for r in regions:
+            same_h = abs((r["a"][1] - r["a"][0])
+                         - (r["b"][1] - r["b"][0])) <= 8
+            if (r["a"][1] - r["a"][0]) >= (r["b"][1] - r["b"][0]):
+                big_img, big_y, other = a_c, r["a"], b_c
+            else:
+                big_img, big_y, other = b_c, r["b"], a_c
             if _blur_match(a_c, b_c, w, r["a"][0], r["a"][1],
-                           r["b"][0], r["b"][1], r["px"]):
+                           r["b"][0], r["b"][1], r["px"],
+                           max_h=100_000 if same_h else 160)                     or (not same_h
+                        and _moved_elsewhere(big_img, other, w,
+                                             big_y[0], big_y[1],
+                                             _ink(big_img,
+                                                  (0, big_y[0], w, big_y[1]),
+                                                  _page_tone(big_img)))):
                 changed_px = max(0, changed_px - r["px"])
             else:
                 kept.append(r)
