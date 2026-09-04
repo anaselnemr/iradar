@@ -28,7 +28,32 @@
 {% endmacro %}
 {% block content %}
 
+<div class="xquick">
+  <div class="xquick-txt">
+    <b>Everything, one row per page</b>
+    <span>The whole picture in a single sheet: each page's address, then
+      every document, component, the main image and its owners — spelled out,
+      not ticked. The completeness list, one click.</span>
+  </div>
+  <a class="btn xquick-btn"
+     href="{{ url_for('export_builder_download') }}?mode=pages&amp;go=1&amp;all=1">
+    Download everything per page
+  </a>
+</div>
+
+<p class="xor">or build a narrower table</p>
+
 <style>
+  .xquick { display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+            border: 1px solid var(--accent); border-radius: 12px;
+            background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+            padding: 16px 18px; margin-bottom: 6px; }
+  .xquick-txt { flex: 1 1 320px; display: flex; flex-direction: column; gap: 3px; }
+  .xquick-txt b { font-size: 15px; }
+  .xquick-txt span { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .xquick-btn { white-space: nowrap; }
+  .xor { text-align: center; color: var(--muted); font-size: 12.5px;
+         margin: 14px 0 10px; text-transform: uppercase; letter-spacing: .06em; }
   /* wide enough for "Design resources & boards" and its count to sit on one
      line - the longest label in the pane is what sets this, not a round number */
   .xbuild { display: grid; gap: 16px; grid-template-columns: 288px 1fr;
@@ -153,14 +178,20 @@
   <a class="xmode {{ 'on' if mode == 'pages' }}"
      href="{{ url_for('export_builder') }}">
     <b>A row per page</b>
-    <span>Which pages have which components, and who owns them.</span>
+    <span>One line per page. Pick which components and owners to show.
+      <i>Is this page missing a datasheet?</i></span>
   </a>
   <a class="xmode {{ 'on' if mode == 'items' }}"
      href="{{ url_for('export_builder', mode='items') }}">
     <b>A row per document, video, board…</b>
-    <span>Where each one is used, and on how many pages of each type.</span>
+    <span>One line per item, and every page it sits on.
+      <i>Which datasheet is on the most pages — or on none?</i></span>
   </a>
 </div>
+<p class="muted" style="font-size:12px; margin:-2px 0 14px">
+  In the <b>document</b> shape you can also download
+  <b>one row per page&nbsp;&times;&nbsp;document</b> — every pairing with the
+  document's full metadata as columns, once you have built the table.</p>
 
 {# One definition of the page-type list, used as rows in one mode and as
    columns in the other. The parent carries no name attribute, so it is a

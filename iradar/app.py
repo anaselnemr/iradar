@@ -5902,6 +5902,17 @@ def _export_meta_cols():
 _CELL_CAP = 30000
 
 
+def _all_page_columns():
+    """Every column the per-page export can carry, for the one-click
+    "everything" download - owners, each meta field, every component's
+    content, the page-status fields. One definition so the quick button and
+    the tick-panel can never drift on what "everything" means."""
+    cols = [k for k, _l in _export_meta_cols()]
+    cols += [k for k, _l, _kind, _a in _all_components()]
+    cols += [k for k, _l in PAGE_FIELDS]
+    return cols
+
+
 def _export_rows(con, levels, cols, verbose=False):
     """One row per page: its identity, then whichever columns were ticked.
 
@@ -6714,15 +6725,22 @@ def export_builder_download():
                       + [e["levels"].get(l, 0) for l in ilevels]
                       + ["; ".join(p["title"] for p in e["pages"])])
     else:
+        # "Everything per page" quick download: no columns ticked AND the
+        # all=1 flag means give them the lot - every owner, every component's
+        # content, the main image - one row per page, URL first. Otherwise
+        # honour exactly what was ticked.
+        if request.args.get("all") == "1":
+            cols = _all_page_columns()
         # verbose: the sheet carries what is on the page, not a yes/no you would
         # then have to open the page to resolve
         rows, want_meta, want_comps, want_page = _export_rows(
             con, levels, cols, verbose=True)
         ws = wb.create_sheet("Pages")
-        ws.append(["Level", "Type", "Page", "URL"]
+        # URL first: it is the join key people paste into their own tools
+        ws.append(["URL", "Page", "Level", "Type"]
                   + _export_headers(want_meta, want_comps, want_page))
         for r in rows:
-            ws.append([r["level"], r["ptype"], r["title"], r["url"]]
+            ws.append([r["url"], r["title"], r["level"], r["ptype"]]
                       + r["vals"])
     con.close()
     f = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")

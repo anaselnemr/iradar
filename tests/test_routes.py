@@ -620,3 +620,34 @@ def test_the_pairs_export_is_the_join_of_the_other_two():
     assert b["Version"] == "02_00", b
     assert b["Date"] == "Aug 12, 2026", b
     assert b["Link"] == "https://x/an12345.pdf", b
+
+
+def test_everything_per_page_is_one_click_and_carries_the_lot():
+    """The quick download: no columns ticked, all=1 means give them
+    everything - URL first, every owner and component's content."""
+    con = db.connect()
+    uid = con.execute(
+        "INSERT INTO urls(url, active, ptype, level, bl, pl, last_status,"
+        " components) VALUES('https://www.infineon.com/part/ALLX', 1, 'Part',"
+        " 'PTP', 'ICW', '92', 'unchanged', '[]')").lastrowid
+    con.execute(
+        "INSERT INTO items(url_id, category, title, item_url, meta, item_key)"
+        " VALUES(?, 'documents', 'AN99 datasheet', 'https://x/an99.pdf',"
+        " 'Datasheet | PDF | Public | EN', 'kall1')", (uid,))
+    con.commit()
+    con.close()
+    r = _ok("/export/download?mode=pages&go=1&all=1")
+    assert r.data[:2] == b"PK", "not a workbook"
+    import io
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(r.data)).active
+    head = [c.value for c in ws[1]]
+    assert head[0] == "URL", "URL must lead the row: %s" % head[:4]
+    assert "Documents" in head, "the documents column is missing"
+    assert "BL" in head and "Owner" in head, "owners missing from everything"
+    body = [dict(zip(head, [c.value for c in row])) for row in ws.iter_rows(min_row=2)]
+    mine = [b for b in body if b["URL"].endswith("/part/ALLX")]
+    assert mine, "the page row is missing"
+    assert "AN99 datasheet" in (mine[0]["Documents"] or ""), \
+        "the document content was not spelled out: %r" % mine[0]["Documents"]
+    assert mine[0]["BL"] == "ICW"
