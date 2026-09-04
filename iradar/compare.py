@@ -408,11 +408,27 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
         # took this path, where the slip test never ran. Change 12394
         # kept its five phantom bands through the first fix that way.
         # Only small stretches are tested: a banner is not a wobble.
-        if max(a1 - a0, b1 - b0) <= 4 * SLIP_MAX \
-                and slipped(a0, a1, b0, b1,
-                            _ink(img, (0, sy0, w, sy1),
-                                 tone_a if img is a else tone_b)):
-            return
+        if max(a1 - a0, b1 - b0) <= 4 * SLIP_MAX:
+            if slipped(a0, a1, b0, b1,
+                       _ink(img, (0, sy0, w, sy1),
+                            tone_a if img is a else tone_b)):
+                return
+            # A seam defeats the offset test - content above it matches
+            # at one offset, below it at another, so no single nudge
+            # collapses the window. But a STRETCHED row is its own
+            # witness: reflow duplicates a neighbouring row, so the
+            # surplus reads as a copy of the rows beside it. A genuinely
+            # new hairline copies nothing.
+            hh = sy1 - sy0
+            for off in (-hh, hh):
+                n0, n1 = sy0 + off, sy1 + off
+                if hh <= 0 or n0 < 0 or n1 > img.height:
+                    continue
+                d = ImageChops.difference(img.crop((0, sy0, w, sy1)),
+                                          img.crop((0, n0, w, n1)))
+                m = d.convert("L").point(lambda v: 255 if v > noise else 0)
+                if m.histogram()[255] <= REGION_MIN_PX:
+                    return
         px_here = _ink(img, (0, sy0, w, sy1),
                        tone_a if img is a else tone_b)
         if not px_here:
