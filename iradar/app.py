@@ -6342,6 +6342,55 @@ def _export_item_rows(con, kinds, levels, cols=()):
     return rows, used, want_f
 
 
+def _export_pair_rows(con, kinds, levels):
+    """One row per document ON each page - the join of the other two shapes.
+
+    "A row per page" says what a page has, by title only. "A row per item"
+    says where a document lives, with its metadata, but one line per document
+    however many pages carry it. Anyone assessing content completeness per
+    product page was left joining the two by hand: this is that join, done
+    here. Every metadata field the page view shows rides along as its own
+    column, parsed once per row from the same meta line the dashboard reads.
+    """
+    if not kinds:
+        kinds = ["docs"]
+    _sset = db.get_settings()
+    kind_sql = " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")"
+                           for k in kinds)
+    kind_case = ("CASE " + " ".join(
+        "WHEN (" + _q_items(ITEM_KIND_SQL[k]) + ") THEN " + repr(k)
+        for k in kinds) + " END AS kind")
+    q = ("SELECT " + kind_case + ", i.category, i.title, i.item_url, i.meta,"
+         " i.doc_type, i.grp, IFNULL(u.level,'') AS lv, u.url AS purl,"
+         " IFNULL(u.bl,'') AS bl, IFNULL(u.pl,'') AS pl,"
+         " COALESCE(NULLIF(u.title_override,''),"
+         "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
+         "    AND s.status='ok' AND s.page_title<>''"
+         "    ORDER BY s.id DESC LIMIT 1), u.url) AS ptitle"
+         " FROM items i JOIN urls u ON u.id=i.url_id"
+         " WHERE u.active=1 AND (" + kind_sql + ")")
+    args = []
+    if levels:
+        q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
+        args += levels
+    q += " ORDER BY u.url, i.category, i.grp, i.title"
+    fields = [f for f, _l in ITEM_FIELDS if f not in ("group", "link")]
+    rows = []
+    for r in con.execute(q, args):
+        got = parse_item_meta(r["meta"], r["doc_type"])
+        got["backend"] = backend_system(r["category"], r["meta"],
+                                        r["doc_type"], r["grp"],
+                                        r["item_url"] or "")
+        got["source"] = item_source({r["category"]})
+        rows.append({
+            "level": r["lv"], "bl": r["bl"], "pl": r["pl"],
+            "ptitle": r["ptitle"], "purl": r["purl"],
+            "grp": r["grp"] or "", "kind": r["kind"] or r["category"],
+            "title": r["title"] or "", "url": r["item_url"] or "",
+            "fields": {f: got.get(f, "") for f in fields}})
+    return rows, fields
+
+
 def _item_fields_present(r):
     """The data fields one item row carries, from a SINGLE parse of its meta.
 
@@ -6618,7 +6667,21 @@ def export_builder_download():
     cols = request.args.getlist("col")
     mode = request.args.get("mode")
     wb = Workbook(write_only=True)
-    if mode == "items":
+    if mode == "pairs":
+        kinds = _wanted_kinds(request.args.getlist("kind"))
+        prows, pfields = _export_pair_rows(con, kinds, levels)
+        flab = dict(ITEM_FIELDS)
+        klab = dict(ITEM_KINDS_ALL)
+        ws = wb.create_sheet("Documents by page")
+        ws.append(["Level", "BL", "PL", "Page", "Page URL",
+                   "Section on page", "Kind", "Title"]
+                  + [flab[f] for f in pfields] + ["Link"])
+        for e in prows:
+            ws.append([e["level"], e["bl"], e["pl"], e["ptitle"], e["purl"],
+                       e["grp"], klab.get(e["kind"], e["kind"]), e["title"]]
+                      + [e["fields"].get(f, "") for f in pfields]
+                      + [e["url"]])
+    elif mode == "items":
         kinds = _wanted_kinds(request.args.getlist("kind"))
         irows, ilevels, ifields = _export_item_rows(con, kinds, levels, cols)
         flab = dict(ITEM_FIELDS)

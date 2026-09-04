@@ -268,6 +268,10 @@
       <button name="go" value="1">Build table</button>
       {% if ran %}
       <a class="btn btn-ghost" href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode() }}">Download as Excel</a>
+      <a class="btn btn-ghost"
+         href="{{ url_for('export_builder_download') }}?{{ request.query_string.decode()|replace('mode=items', 'mode=pairs') }}"
+         title="The join of the two shapes: every document on every page, one line per pairing, with the document's full metadata (type, format, access, language, version, size, date) as columns. For per-page content-completeness work.">
+        Download as one row per page &times; document</a>
       <span class="muted" style="font-size:12.5px">{{ '{:,}'.format(shown) }} item{{ 's' if shown != 1 }}</span>
       {% endif %}
       {#- the whole-workbook download is an action on this page like the

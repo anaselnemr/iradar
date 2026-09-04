@@ -404,12 +404,13 @@ Anything on screen can leave as a workbook. You pick the rows and you pick the
 columns; the numbers beside every option tell you how much you would get before
 you ask for it.
 
-**Two shapes, and which you want depends on the question.**
+**Three shapes, and which you want depends on the question.**
 
 | | One row per | Use it for |
 |---|---|---|
 | **A row per page** | each tracked page | "every product page missing datasheets", or handing a business line its own list |
 | **A row per document, video, board…** | each item, with where it is used | "which datasheets are on the most pages", or finding the ones on none |
+| **A row per page × document** | each pairing, with the document's full metadata (type, format, access, language, version, size, date) as columns | content-completeness work per product page — the join of the two views above, done for you |
 
 - **Rows are what to include.** Tick the page types you want; ticking a family
   ticks everything under it. Nothing ticked means everything.

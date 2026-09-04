@@ -559,3 +559,44 @@ def test_a_change_with_no_artwork_says_why_nothing_is_boxed():
     # leaks into every later test that counts url 1 open updates
     _client.post("/change/%d/review" % cid,
                  data={"resolution": "approve", "_csrf": _csrf()})
+
+
+def test_the_pairs_export_is_the_join_of_the_other_two():
+    """One row per document ON each page, with the metadata as columns - the
+    join reviewers were doing by hand across two exports."""
+    con = db.connect()
+    # self-sufficient: earlier filter tests rebuild the urls table wholesale
+    uid = con.execute(
+        "INSERT INTO urls(url, active, ptype, level, bl, pl, last_status)"
+        " VALUES('https://www.infineon.com/part/PAIRX', 1, 'Part', 'PTP',"
+        " 'ICW', '81', 'unchanged')").lastrowid
+    con.execute("DELETE FROM items WHERE url_id=?", (uid,))
+    con.execute(
+        "INSERT INTO items(url_id, category, title, item_url, meta, doc_type,"
+        " grp, item_key) VALUES(?, 'documents',"
+        " 'AN12345 - Getting started', 'https://x/an12345.pdf',"
+        " 'Application note | PDF | Public | EN | 02_00 | 1.10MB |"
+        "  Aug 12, 2026', 'Application note', 'Documents', 'kpair1')", (uid,))
+    con.commit()
+    con.close()
+    r = _ok("/export/download?mode=pairs&kind=docs")
+    assert r.data[:2] == b"PK", "not a workbook"
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(r.data))
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    head = rows[0]
+    assert head[:8] == ("Level", "BL", "PL", "Page", "Page URL",
+                        "Section on page", "Kind", "Title"), head
+    body = [dict(zip(head, r)) for r in rows[1:]]
+    mine = [b for b in body if b["Title"] == "AN12345 - Getting started"]
+    assert mine, "the document row is missing"
+    b = mine[0]
+    assert b["BL"] == "ICW" and b["PL"] == "81" and b["Level"] == "PTP"
+    assert b["Page URL"].endswith("/part/PAIRX")
+    assert b["File type"] == "PDF", b
+    assert b["Access"] == "Public", b
+    assert b["Version"] == "02_00", b
+    assert b["Date"] == "Aug 12, 2026", b
+    assert b["Link"] == "https://x/an12345.pdf", b
