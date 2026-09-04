@@ -153,7 +153,16 @@
 {% endif %}
 
 <div class="card">
-  <h2>Full-page screenshots <span class="muted">(updated areas boxed in red — click to open full size)</span></h2>
+  <h2>Full-page screenshots{% if art.boxed %} <span class="muted">(updated areas boxed in red — click to open full size)</span>{% endif %}</h2>
+  {%- if not art.boxed and not art.regions and not c.visual_changed %}
+  {#- The question every reviewer asks here: "why is nothing highlighted?"
+      Answer it where the highlights would have been, not in a footnote. -#}
+  <p class="muted" style="margin:2px 0 12px">
+    <b>Nothing is boxed because the two pictures are identical</b> — the
+    change lives in content the screenshot cannot show: a collapsed tab or
+    accordion, or a detail (a date, a version, a link target) that does not
+    alter a pixel. The sections above carry the whole change.</p>
+  {%- endif %}
   <div class="shots shots2">
     <figure>
       <figcaption>BEFORE ({{ old_snap.ts|localtime if old_snap else '' }})</figcaption>

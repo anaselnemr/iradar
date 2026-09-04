@@ -546,3 +546,16 @@ def test_the_guide_teaches_the_six_signals():
     assert "Six signals" in body, "the guide still counts five"
     assert "Products table" in body, "the new signal is not taught"
     assert "outlined in amber" in body, "the new close-ups are not described"
+
+
+def test_a_change_with_no_artwork_says_why_nothing_is_boxed():
+    """The first question a reviewer asks on a text-only change is "why no
+    highlights?" - the page answers it where the boxes would have been."""
+    cid, _old, _new = _make_change()
+    body = _ok("/change/%d" % cid).data.decode("utf-8", "replace")
+    assert "Nothing is boxed because" in body, \
+        "a change without artwork does not explain itself"
+    # leave the shared page the way it was found - an open change here
+    # leaks into every later test that counts url 1 open updates
+    _client.post("/change/%d/review" % cid,
+                 data={"resolution": "approve", "_csrf": _csrf()})
