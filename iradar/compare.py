@@ -184,7 +184,7 @@ SLIP_KEEP = 0.15          # below 15% of its pixels left, the band was a slip
 # capture), leaving a residual larger than one line after run alignment; #12410
 # carried six such phantom boxes at 24-30px shifts. Bounded so it still cannot
 # reach a different paragraph.
-AA_SWEEP = 14
+AA_SWEEP = 40
 
 
 def _row_signatures(img, cols=24):
@@ -349,18 +349,25 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
         context - a real edit survives every combination, jitter survives
         none. High frequency that a blur erases is never content.
         """
+        # the window comes from WHICHEVER side holds the content - a surplus
+        # band has rows on one side only, and searching with the empty side's
+        # context finds nothing
+        if (ay1 - ay0) >= (by1 - by0):
+            src, s0, s1, dst, d0 = a, ay0, ay1, b, by0
+        else:
+            src, s0, s1, dst, d0 = b, by0, by1, a, ay0
         pad = SLIP_MAX
-        top = max(0, ay0 - pad)
-        h = min(ay1 + pad, a.height) - top
-        if h <= 0:
-            return False
-        ca = a.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
+        top = max(0, s0 - pad)
+        h = min(s1 + pad, src.height) - top
+        if h <= 0 or h > 160:          # a whole moved SECTION is the page's
+            return False               # business to report, not to forgive
+        ca = src.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
         keep = max(REGION_MIN_PX, SLIP_KEEP * base_px)
         for dy in range(-AA_SWEEP, AA_SWEEP + 1):
-            bt = by0 - (ay0 - top) + dy
-            if bt < 0 or bt + h > b.height:
+            bt = d0 - (s0 - top) + dy
+            if bt < 0 or bt + h > dst.height:
                 continue
-            cb = b.crop((0, bt, w, bt + h)).filter(ImageFilter.BoxBlur(1))
+            cb = dst.crop((0, bt, w, bt + h)).filter(ImageFilter.BoxBlur(1))
             d = ImageChops.difference(ca, cb).convert("L")
             if d.point(lambda p: 255 if p > noise else 0).histogram()[255] <= keep:
                 return True
@@ -450,16 +457,19 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
         # took this path, where the slip test never ran. Change 12394
         # kept its five phantom bands through the first fix that way.
         # Only small stretches are tested: a banner is not a wobble.
-        if max(a1 - a0, b1 - b0) <= 4 * SLIP_MAX:
-            band_ink = _ink(img, (0, sy0, w, sy1),
-                            tone_a if img is a else tone_b)
-            if slipped(a0, a1, b0, b1, band_ink):
-                return
-            # the letter-spaced small-caps rows arrive on THIS path too - a
-            # half-pixel re-raster makes the run lengths wobble, so the same
-            # anti-aliasing jitter reads as seven rows against six
-            if aa_jitter(a0, a1, b0, b1, band_ink):
-                return
+        band_ink = _ink(img, (0, sy0, w, sy1),
+                        tone_a if img is a else tone_b)
+        if max(a1 - a0, b1 - b0) <= 4 * SLIP_MAX                 and slipped(a0, a1, b0, b1, band_ink):
+            return
+        # DISPLACED content arrives on this path at any height: a partner
+        # card grows, everything below it moves 30px, and run alignment
+        # leaves the section's teal headers as surplus bands - full-width,
+        # solid ink, and boxed in red although the reader sees no change.
+        # The blur witness is side-aware and sweeps far enough to find the
+        # content where it now lives; a band it finds elsewhere is a move,
+        # and a genuinely NEW block exists nowhere else and survives.
+        if aa_jitter(a0, a1, b0, b1, band_ink):
+            return
             # A seam defeats the offset test - content above it matches
             # at one offset, below it at another, so no single nudge
             # collapses the window. But a STRETCHED row is its own
