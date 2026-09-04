@@ -269,3 +269,39 @@ def test_a_real_edit_survives_the_slip_test():
     b = _snap(t, "b", edited)
     ratio, dh, n = cmp.visual_diff(a, b)
     assert n >= 1, "a recoloured row was eaten by the slip test"
+
+
+def test_anti_aliasing_jitter_is_not_a_change():
+    """Letter-spaced small-caps re-rendered half a pixel off light every
+    glyph edge past the threshold at EVERY integer offset - the slip test
+    cannot catch that. Under a one-pixel blur the jitter vanishes; a real
+    edit does not."""
+    t = tempfile.mkdtemp()
+    img = _page(height=1200)
+    jittered = img.copy()
+    d = ImageDraw.Draw(jittered)
+    # re-render one text row with soft half-intensity fringes above and
+    # below - what a half-pixel vertical re-raster does to sharp edges
+    y = 616
+    g = 120 + ((y * 37) % 113)
+    x = 40 + ((y * 13) % 60)
+    x1 = 600 - 40 - ((y * 7) % 50)
+    d.rectangle([x, y + 8, x1, y + 18], fill=(255, 255, 255))
+    d.rectangle([x, y + 9, x1, y + 19], fill=(g, g, g))
+    half = (g + 255) // 2
+    d.rectangle([x, y + 8, x1, y + 8], fill=(half, half, half))
+    a = _snap(t, "a", img)
+    b = _snap(t, "b", jittered)
+    ratio, dh, n = cmp.visual_diff(a, b)
+    assert n == 0, "AA jitter earned %d red boxes" % n
+
+
+def test_a_real_word_change_survives_the_blur():
+    t = tempfile.mkdtemp()
+    img = _page(height=1200)
+    edited = img.copy()
+    ImageDraw.Draw(edited).rectangle([100, 620, 420, 632], fill=(30, 30, 160))
+    a = _snap(t, "a", img)
+    b = _snap(t, "b", edited)
+    ratio, dh, n = cmp.visual_diff(a, b)
+    assert n >= 1, "a real edit was blurred away"

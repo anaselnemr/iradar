@@ -5,7 +5,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 Image.MAX_IMAGE_PIXELS = None   # full-page screenshots are very tall
 
@@ -326,6 +326,26 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
     changed_px = 0
     regions = []
 
+    def aa_jitter(ay0, ay1, by0, by1, base_px):
+        """Does the difference vanish under a one-pixel blur?
+
+        Anti-aliased text re-rendered half a pixel off lights every glyph
+        edge past the noise threshold at EVERY integer offset, so the slip
+        test cannot catch it - the letter-spaced small-caps rows are the
+        classic victim, boxed in red while reading identically. The jitter
+        is pure high frequency: a gentle blur averages the on/off edge
+        pixels together and it disappears, while a real edit - different
+        glyphs, a new line, a moved image - survives any amount of it.
+        """
+        h = min(ay1 - ay0, by1 - by0)
+        if h <= 0:
+            return False
+        ca = a.crop((0, ay0, w, ay0 + h)).filter(ImageFilter.BoxBlur(1))
+        cb = b.crop((0, by0, w, by0 + h)).filter(ImageFilter.BoxBlur(1))
+        d = ImageChops.difference(ca, cb).convert("L")
+        m = d.point(lambda p: 255 if p > noise else 0)
+        return m.histogram()[255] <= max(REGION_MIN_PX, SLIP_KEEP * base_px)
+
     def slipped(ay0, ay1, by0, by1, base_px):
         """Does this band's difference vanish at a small vertical offset?
 
@@ -372,6 +392,8 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
                         and _mostly_black(b, (0, b0 + y0, w, b0 + y1))):
                 continue
             if slipped(a0 + y0, a0 + y1, b0 + y0, b0 + y1, px):
+                continue
+            if aa_jitter(a0 + y0, a0 + y1, b0 + y0, b0 + y1, px):
                 continue
             changed_px += px
             regions.append({"a": (a0 + y0, a0 + y1), "b": (b0 + y0, b0 + y1),
