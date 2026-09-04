@@ -327,24 +327,36 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
     regions = []
 
     def aa_jitter(ay0, ay1, by0, by1, base_px):
-        """Does the difference vanish under a one-pixel blur?
+        """Does the difference vanish under a one-pixel blur, at any small
+        offset, judged with a little context around the band?
 
         Anti-aliased text re-rendered half a pixel off lights every glyph
-        edge past the noise threshold at EVERY integer offset, so the slip
-        test cannot catch it - the letter-spaced small-caps rows are the
-        classic victim, boxed in red while reading identically. The jitter
-        is pure high frequency: a gentle blur averages the on/off edge
-        pixels together and it disappears, while a real edit - different
-        glyphs, a new line, a moved image - survives any amount of it.
+        edge past the noise threshold at every integer offset, so the slip
+        test alone cannot catch it - the letter-spaced small-caps rows are
+        the classic victim, boxed in red while reading identically. Two
+        things beat a naive blur test: the wobble also shifts the row, and
+        the region extractor can split one jittering row so a fragment's
+        window straddles a boundary no single offset aligns. So the check
+        blurs AND sweeps a few offsets, on a window grown by a few rows of
+        context - a real edit survives every combination, jitter survives
+        none. High frequency that a blur erases is never content.
         """
-        h = min(ay1 - ay0, by1 - by0)
+        pad = SLIP_MAX
+        top = max(0, ay0 - pad)
+        h = min(ay1 + pad, a.height) - top
         if h <= 0:
             return False
-        ca = a.crop((0, ay0, w, ay0 + h)).filter(ImageFilter.BoxBlur(1))
-        cb = b.crop((0, by0, w, by0 + h)).filter(ImageFilter.BoxBlur(1))
-        d = ImageChops.difference(ca, cb).convert("L")
-        m = d.point(lambda p: 255 if p > noise else 0)
-        return m.histogram()[255] <= max(REGION_MIN_PX, SLIP_KEEP * base_px)
+        ca = a.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
+        keep = max(REGION_MIN_PX, SLIP_KEEP * base_px)
+        for dy in range(-SLIP_MAX, SLIP_MAX + 1):
+            bt = by0 - (ay0 - top) + dy
+            if bt < 0 or bt + h > b.height:
+                continue
+            cb = b.crop((0, bt, w, bt + h)).filter(ImageFilter.BoxBlur(1))
+            d = ImageChops.difference(ca, cb).convert("L")
+            if d.point(lambda p: 255 if p > noise else 0).histogram()[255] <= keep:
+                return True
+        return False
 
     def slipped(ay0, ay1, by0, by1, base_px):
         """Does this band's difference vanish at a small vertical offset?
