@@ -177,6 +177,14 @@ REGION_MIN_PX = 30
 # five such bands beside four real ones.
 SLIP_MAX = 3
 SLIP_KEEP = 0.15          # below 15% of its pixels left, the band was a slip
+# The BLUR test may sweep further than the slip test, because a blur cannot
+# match unrelated text by accident the way a sharp offset can - it only
+# collapses content that is genuinely the same, a few pixels adrift. A whole
+# section shifts when a card above it expands (partner cards do this on every
+# capture), leaving a residual larger than one line after run alignment; #12410
+# carried six such phantom boxes at 24-30px shifts. Bounded so it still cannot
+# reach a different paragraph.
+AA_SWEEP = 14
 
 
 def _row_signatures(img, cols=24):
@@ -348,7 +356,7 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
             return False
         ca = a.crop((0, top, w, top + h)).filter(ImageFilter.BoxBlur(1))
         keep = max(REGION_MIN_PX, SLIP_KEEP * base_px)
-        for dy in range(-SLIP_MAX, SLIP_MAX + 1):
+        for dy in range(-AA_SWEEP, AA_SWEEP + 1):
             bt = by0 - (ay0 - top) + dy
             if bt < 0 or bt + h > b.height:
                 continue
