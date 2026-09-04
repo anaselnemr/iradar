@@ -169,6 +169,15 @@ ALIGN_MAX_COST = 4_000_000
 # toward the ratio; it just is not drawn.
 REGION_MIN_PX = 30
 
+# How far a band may slip vertically and still be called the same content.
+# Two captures of one unchanged page routinely render a row a pixel or two
+# apart - fonts settle differently, a flex gap rounds the other way - and at
+# the noise threshold a one-pixel slip lights up both edges of every glyph:
+# a thin full-width box around text nobody changed. Change #12394 carried
+# five such bands beside four real ones.
+SLIP_MAX = 3
+SLIP_KEEP = 0.15          # below 15% of its pixels left, the band was a slip
+
 
 def _row_signatures(img, cols=24):
     """One coarse token per pixel row, tolerant of palette jitter.
@@ -317,6 +326,30 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
     changed_px = 0
     regions = []
 
+    def slipped(ay0, ay1, by0, by1, base_px):
+        """Does this band's difference vanish at a small vertical offset?
+
+        The offsets difflib can express are whole runs; WITHIN a matched
+        stretch a one-pixel rendering slip still pairs row k with row k, and
+        the pixel diff lights the edges of every glyph. Content that matches
+        a pixel or two away is the same content."""
+        margin = SLIP_MAX + 1
+        top = max(0, ay0 - margin)
+        ca = a.crop((0, top, w, min(a.height, ay1 + margin)))
+        best = base_px
+        for dy in range(-SLIP_MAX, SLIP_MAX + 1):
+            if dy == 0:
+                continue
+            bt = by0 - (ay0 - top) + dy
+            if bt < 0 or bt + ca.height > b.height:
+                continue
+            d = ImageChops.difference(ca, b.crop((0, bt, w, bt + ca.height)))
+            m = d.convert("L").point(lambda p: 255 if p > noise else 0)
+            best = min(best, m.histogram()[255])
+            if best <= max(REGION_MIN_PX, SLIP_KEEP * base_px):
+                return True
+        return False
+
     def diff_aligned(a0, a1, b0, b1):
         nonlocal changed_px
         ca = a.crop((0, a0, w, a1))
@@ -337,6 +370,8 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
                     and _mostly_black(a, (0, a0 + y0, w, a0 + y1))) \
                     or (_overlaps_painted(b0 + y0, b0 + y1, painted_b)
                         and _mostly_black(b, (0, b0 + y0, w, b0 + y1))):
+                continue
+            if slipped(a0 + y0, a0 + y1, b0 + y0, b0 + y1, px):
                 continue
             changed_px += px
             regions.append({"a": (a0 + y0, a0 + y1), "b": (b0 + y0, b0 + y1),

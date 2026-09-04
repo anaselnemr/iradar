@@ -239,3 +239,33 @@ def test_pathological_striping_falls_back_within_budget():
     cmp.visual_diff(a, b)
     took = time.time() - t0
     assert took < 3.0, "the zebra pair took %.1fs - the cost guard failed" % took
+
+
+def test_a_one_pixel_rendering_slip_is_not_a_change():
+    """Two captures of an unchanged page routinely render a row 1-2px apart.
+    At the noise threshold that lights both edges of every glyph - a thin
+    full-width box around text nobody touched. Change #12394 carried five."""
+    t = tempfile.mkdtemp()
+    img = _page(height=1200)
+    slipped = Image.new("RGB", (img.width, 1200), (255, 255, 255))
+    # the lower half sits one pixel lower, the slack absorbed in a white gap
+    # (that is where real reflow slack lives - splitting mid-glyph would tear
+    # a real pixel row in two, which genuinely IS a difference)
+    slipped.paste(img.crop((0, 0, img.width, 612)), (0, 0))
+    slipped.paste(img.crop((0, 612, img.width, 1199)), (0, 613))
+    a = _snap(t, "a", img)
+    b = _snap(t, "b", slipped)
+    ratio, dh, n = cmp.visual_diff(a, b)
+    assert n == 0, "a 1px slip earned %d red boxes" % n
+
+
+def test_a_real_edit_survives_the_slip_test():
+    """The slip test must not eat genuine changes: a recoloured row stays
+    different at every offset."""
+    t = tempfile.mkdtemp()
+    img = _page(height=1200, blocks=[(600, 30, (200, 40, 40))])
+    edited = _page(height=1200, blocks=[(600, 30, (40, 160, 40))])
+    a = _snap(t, "a", img)
+    b = _snap(t, "b", edited)
+    ratio, dh, n = cmp.visual_diff(a, b)
+    assert n >= 1, "a recoloured row was eaten by the slip test"
