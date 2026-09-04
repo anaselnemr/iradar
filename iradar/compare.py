@@ -431,9 +431,14 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
         # kept its five phantom bands through the first fix that way.
         # Only small stretches are tested: a banner is not a wobble.
         if max(a1 - a0, b1 - b0) <= 4 * SLIP_MAX:
-            if slipped(a0, a1, b0, b1,
-                       _ink(img, (0, sy0, w, sy1),
-                            tone_a if img is a else tone_b)):
+            band_ink = _ink(img, (0, sy0, w, sy1),
+                            tone_a if img is a else tone_b)
+            if slipped(a0, a1, b0, b1, band_ink):
+                return
+            # the letter-spaced small-caps rows arrive on THIS path too - a
+            # half-pixel re-raster makes the run lengths wobble, so the same
+            # anti-aliasing jitter reads as seven rows against six
+            if aa_jitter(a0, a1, b0, b1, band_ink):
                 return
             # A seam defeats the offset test - content above it matches
             # at one offset, below it at another, so no single nudge
