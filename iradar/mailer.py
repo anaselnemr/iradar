@@ -491,7 +491,8 @@ def render_digest(d, base_url, when_label):
 '<tr><td style="padding:16px 28px 24px;border-top:1px solid ' + _LINE + ';">'
 '<div style="font:400 11px/1.6 ' + FONT + ';color:' + _FAINT + ';">'
 'You are getting this because email alerts are on for your iRadar account. '
-'Turn them off any time under your avatar \u2192 <b>Email alerts</b>.'
+'Opt out any time: your avatar (top right) \u2192 <b>Email alerts</b> \u2014 '
+'one click turns these off.'
 '</div></td></tr>'
 
 '</table></td></tr></table></body></html>')
