@@ -126,7 +126,10 @@ def _send_https(to_addr, subject, html, text_fallback=""):
     req = urllib.request.Request(
         "https://api.resend.com/emails", data=body,
         headers={"Authorization": "Bearer " + os.environ["RESEND_API_KEY"],
-                 "Content-Type": "application/json"})
+                 "Content-Type": "application/json",
+                 # api.resend.com sits behind a WAF that 403s the default
+                 # Python-urllib agent (error 1010) - name ourselves honestly
+                 "User-Agent": "iradar-mailer/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             r.read()
