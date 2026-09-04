@@ -252,13 +252,18 @@ def _runs(*specs):
     """Replace run history with (pages, elapsed_seconds) pairs, newest last."""
     con = db.connect()
     con.execute("DELETE FROM runs")
-    for i, (pages, secs) in enumerate(specs):
+    for i, spec in enumerate(specs):
+        pages, secs = spec[0], spec[1]
         start = 1_700_000_000 + i * 1_000_000
         fmt = lambda t: __import__("datetime").datetime.utcfromtimestamp(t) \
             .strftime("%Y-%m-%d %H:%M:%S")
-        con.execute("INSERT INTO runs(started, finished, kind, total)"
-                    " VALUES(?,?,?,?)", (fmt(start), fmt(start + secs),
-                                         "full", pages))
+        # ok defaults to the full page count so the run reads as one that
+        # finished its own work; a test wanting an interrupted run passes a
+        # 3-tuple (pages, secs, ok)
+        ok = spec[2] if len(spec) > 2 else pages
+        con.execute("INSERT INTO runs(started, finished, kind, total, ok,"
+                    " errors) VALUES(?,?,?,?,?,0)",
+                    (fmt(start), fmt(start + secs), "full", pages, ok))
     con.commit()
     con.close()
 
@@ -274,6 +279,21 @@ def test_an_interrupted_run_does_not_poison_the_estimate():
     _runs((4000, 4000 * 8), (4000, 4000 * 40), (4000, 4000 * 9))
     got = app.seconds_per_page()
     assert got < 12, f"one interrupted run moved the estimate to {got:.1f}s/page"
+
+
+def test_a_resumed_run_that_captured_little_does_not_set_the_rate():
+    """Run 10 read 56 hours because a deploy left it open two days while it
+    captured 9 of work. A run whose ok is far below its total is downtime, not
+    a rate, and must be skipped entirely."""
+    # newest run: 4000 pages, but only 500 ok (interrupted), 56h wall clock
+    _runs((4000, 4000 * 8, 4000), (4000, 202608, 500))
+    got = app.seconds_per_page()
+    assert abs(got - 8.0) < 0.5,         "a barely-captured run set the rate to %.1fs/page" % got
+
+
+def test_a_page_that_takes_minutes_is_rejected_as_downtime():
+    _runs((4000, 4000 * 8, 4000), (4000, 4000 * 400, 4000))  # 400s/page
+    assert app.seconds_per_page() < 20
 
 
 def test_a_fresh_install_still_gets_a_number():

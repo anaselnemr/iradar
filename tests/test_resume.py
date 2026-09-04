@@ -1084,3 +1084,52 @@ def test_library_and_community_suspects_demand_the_same_difference():
     quiet2 = R._diff_fingerprint(base, walk_died_p3, st, signals={})
     assert R._fingerprints_agree(quiet, quiet2), \
         "a signal that did not fire must not block agreement"
+
+
+def test_the_bar_bands_sum_to_the_total_mid_verify():
+    """The guide promises every page sits in exactly one band. A transiently
+    blocked page increments the error counter but never stamps last_checked,
+    so deriving green as saved-minus-errors subtracted pages saved never held
+    and the bands overran the total. The server counts a 'settled' band from
+    page state so green can never disagree with red."""
+    import app, auth, time, json
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    now = db.now_iso()
+    # 60 unchanged, 5 changed (both stamp last_checked), 3 hard errors,
+    # 2 blocked (no last_checked), 30 waiting
+    for i in range(100):
+        if i < 65:
+            lc, stt = now, "unchanged"
+        elif i < 68:
+            lc, stt = now, "error"
+        else:
+            lc, stt = None, ""
+        con.execute("INSERT INTO urls(url, active, last_checked, last_status)"
+                    " VALUES(?,1,?,?)", ("https://x/%d" % i, lc, stt))
+    con.commit()
+    con.close()
+    try:
+        u = auth.create_user("bar@x.c", "B", "admin")[0]
+        auth.set_password(u, "pw", must_change=False)
+    except Exception:
+        u = auth.by_email("bar@x.c")["id"]
+    c = app.app.test_client()
+    with c.session_transaction() as sd:
+        sd["uid"] = u
+        sd["pwfp"] = auth.pw_fingerprint(auth.get_user(u))
+    runner.RUN_STATE.update(
+        running=True, started="2000-01-01 00:00:00",
+        started_ts=time.time() - 300, done=65, done0=0, saved0=0,
+        changed=5, errors=3, held=2, suspects=0, pages_total=100, total=100,
+        phase="verify")
+    try:
+        st = json.loads(c.get("/status").data)
+    finally:
+        runner.RUN_STATE.update(running=False)
+    settled = st["settled"]
+    green = max(0, settled - st["changed"])
+    wait = max(0, 100 - green - st["changed"] - st["held"] - st["errors"])
+    assert green == 60, "green miscounts blocked/error pages: %d" % green
+    assert green + st["changed"] + st["held"] + st["errors"] + wait == 100, \
+        "the five bands do not sum to the total"

@@ -1842,6 +1842,11 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                                 (vsnap_id,))
                     counters["errors"] += 1
                     counters["saved"] += 1
+                    RUN_STATE["saved"] = counters["saved"]
+                    # this suspect is resolved (as an error); it must leave the
+                    # 'double-checking' band or it counts twice - once violet,
+                    # once red - and the five bands overrun the total
+                    RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
                     _mark_item(con, run_id, url_id, "done")
                     con.commit()
                     print(f"[verify] {row['url']}: empty sections did not"
@@ -1898,6 +1903,11 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                                 (vsnap_id,))
                     counters["errors"] += 1
                     counters["saved"] += 1
+                    RUN_STATE["saved"] = counters["saved"]
+                    # this suspect is resolved (as an error); it must leave the
+                    # 'double-checking' band or it counts twice - once violet,
+                    # once red - and the five bands overrun the total
+                    RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
                     _mark_item(con, run_id, url_id, "done")
                     con.commit()
                     print(f"[verify] {row['url']}: pure loss did not survive a"
@@ -1955,6 +1965,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                                     (vsnap_id,))
                         counters["errors"] += 1
                         counters["saved"] += 1
+                        RUN_STATE["saved"] = counters["saved"]
+                        RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
                         _mark_item(con, run_id, url_id, "done")
                         con.commit()
                         print(f"[verify] {row['url']}: three captures, no two"

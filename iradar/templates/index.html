@@ -788,7 +788,10 @@ function bulk(action, btn) {
 }
 function fmtEta(sec) {
   if (sec == null) return '';
-  const h = Math.floor(sec / 3600), m = Math.max(1, Math.round((sec % 3600) / 60));
+  // round to whole minutes FIRST, then split - otherwise a remainder that
+  // rounds up to 60 printed "1h 60m left"
+  const mins = Math.max(1, Math.round(sec / 60));
+  const h = Math.floor(mins / 60), m = mins % 60;
   return h ? ` · ≈ ${h}h ${m}m left` : ` · ≈ ${m}m left`;
 }
 // measured from the runs that have finished, not typed in - see
@@ -881,7 +884,12 @@ async function poll() {
       // ---- the page buckets: every page in exactly one colour -------------
       const errs = s.errors || 0, upd = s.changed || 0;
       const held = s.held != null ? s.held : (s.suspects || 0);
-      const noUpd = Math.max(0, (s.saved || 0) - upd - errs);
+      // green = pages that settled to a non-error state this session, minus
+      // the ones that settled as UPDATES (their own band). The server counts
+      // this from page state now, so it can never disagree with red: a
+      // blocked page is red and only red, never subtracted out of green.
+      const settled = s.settled != null ? s.settled : (s.saved || 0);
+      const noUpd = Math.max(0, settled - upd);
       const pagesTotal = s.pages_total || 0;
       if (pagesTotal) {
         const wait = Math.max(0, pagesTotal - noUpd - upd - held - errs);

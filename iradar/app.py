@@ -3685,9 +3685,24 @@ def status():
         # resumed run had carried forward and the bar read "0 no update" over
         # a run that was 55% through. saved0 is that carried base.
         con = db.connect()
-        s["saved"] = s.get("saved0", 0) + con.execute(
-            "SELECT COUNT(*) FROM urls WHERE last_checked >= ?",
-            (s["started"],)).fetchone()[0]
+        base = s.get("started",)
+        # Count each band from the database instead of letting the bar derive
+        # green by subtraction. A transiently blocked page increments the error
+        # counter but does NOT stamp last_checked (its retry has the last
+        # word), so "saved minus errors" subtracted pages saved never held and
+        # ran green backwards. Counted directly, each page sits in exactly the
+        # state its row says, and the bands cannot contradict each other.
+        row = con.execute(
+            "SELECT"
+            "  SUM(CASE WHEN last_checked >= ? THEN 1 ELSE 0 END) saved,"
+            "  SUM(CASE WHEN last_checked >= ? AND IFNULL(last_status,'')"
+            "      NOT IN ('error','blank') THEN 1 ELSE 0 END) settled"
+            " FROM urls", (base, base)).fetchone()
+        s["saved"] = s.get("saved0", 0) + (row["saved"] or 0)
+        # green = pages that reached a NON-error final state this session,
+        # plus any carried by a resume; the changed ones are peeled off in the
+        # bar, the errors live in their own red band from the counter
+        s["settled"] = s.get("saved0", 0) + (row["settled"] or 0)
         con.close()
     # rate THIS session only: a resumed run starts with the pages it had
     # already finished on the clock, and dividing those by two seconds of
@@ -7265,14 +7280,16 @@ def guide_page():
             " WHERE finished IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
     finally:
         con.close()
+    # how long a check takes, from the measured per-page rate x the pages it
+    # covers - NOT the last run's wall clock, which counts a resumed run's
+    # downtime as work and once read "56 hours" for nine of real capture.
     hours = ""
-    if last and last["started"] and last["finished"]:
-        try:
-            a = datetime.strptime(last["started"], "%Y-%m-%d %H:%M:%S")
-            b = datetime.strptime(last["finished"], "%Y-%m-%d %H:%M:%S")
-            hours = "%.0f hours" % max(1, round((b - a).total_seconds() / 3600))
-        except Exception:
-            pass
+    spp = seconds_per_page()
+    npages = facts.get("live") or facts.get("pages") or 0
+    if spp and npages:
+        h = spp * npages / 3600.0
+        hours = ("about an hour" if h < 1.5
+                 else "%.0f hours" % round(h))
     every = {"daily": "every day", "bidaily": "every two days",
              "weekly": "every %s" % _WEEKDAY_NAME.get(s.get("weekday", "mon"),
                                                       "Monday")}.get(
@@ -7355,17 +7372,31 @@ def seconds_per_page(con=None):
     try:
         rates = []
         for r in con.execute(
-                "SELECT started, finished, total FROM runs"
+                "SELECT started, finished, total, ok, errors, IFNULL(stopped,'')"
+                " stopped FROM runs"
                 " WHERE finished IS NOT NULL AND IFNULL(total,0) > 50"
-                " ORDER BY id DESC LIMIT 7"):
+                " ORDER BY id DESC LIMIT 12"):
+            # A run that was stopped, or that did not finish most of its own
+            # pages, spent its wall clock on downtime rather than work - its
+            # elapsed/page is fiction. run 10 read 56 hours for 12 of real
+            # capture because a deploy left it open for two days. Rate is only
+            # trustworthy from a run that ran start to finish in one sitting.
+            if r["stopped"]:
+                continue
+            done = (r["ok"] or 0) + (r["errors"] or 0)
+            if done < r["total"] * 0.9:
+                continue
             try:
                 a = datetime.strptime(r["started"], "%Y-%m-%d %H:%M:%S")
                 b = datetime.strptime(r["finished"], "%Y-%m-%d %H:%M:%S")
             except (TypeError, ValueError):
                 continue
             secs = (b - a).total_seconds()
-            if secs > 0:
-                rates.append(secs / r["total"])
+            per = secs / r["total"] if r["total"] else 0
+            # a real page is 8-70s; anything past 180s/page is a run whose
+            # wall clock swallowed downtime and must not set expectations
+            if 0 < per <= 180:
+                rates.append(per)
     finally:
         if own:
             con.close()

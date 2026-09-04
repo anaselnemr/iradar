@@ -72,7 +72,7 @@ screen is in **your local time**, not the server's.
 
 ## What happens on a check
 
-Every **Monday at 23:00**, on its own. Nobody starts it. It takes about nine
+Every **Sunday at 03:00**, on its own. Nobody starts it. It takes about nine
 hours and is finished long before Monday morning.
 
 [IMAGE: 09-page-through-a-check.png]
@@ -225,7 +225,7 @@ caused a flood of false alarms before it was handled.
 | **Text** — wording added, removed or edited. Text that only *moved* does not count; same lines in a new order is layout. | **Stock levels** — "4387 in stock" reads 4382 by morning. The price is still watched. |
 | **Library** — a document, video, board, design resource or partner appears or disappears, or its version, date, size or price changes. | **The community feed** — re-sorts itself constantly. Whether the widget is present, empty or busy *is* tracked. |
 | **Images** — a picture appears on or disappears from the page. | **Latest news and the mega-menu** — identical on every page. One retired thumbnail once raised 585 pages at once. |
-| **Screenshot** — more than 2.5% of pixels differ, or the page height moves more than 80px. | **Tabs loading differently** — two visits can land on different tabs. Their contents are tracked item by item instead. |
+| **Screenshot** — more than 2.5% of pixels differ, or the page height moves more than 80px. Compared after lining the two pictures up row by row, so content that only shifted does not count. | **Tabs loading differently** — two visits can land on different tabs. Their contents are tracked item by item instead. |
 | **Products table** — the table of parts changes shape: the product count the page itself reports moves, or a column appears or disappears. Columns in a new order do not count; that is layout. | |
 | **File updates** — a file republished at the same address. The page is identical; the datasheet behind it is new. | **Timestamps and "3 days ago"** — they change with nobody editing anything. |
 | | **The same words, set differently** — a page is photographed only once its fonts have arrived, so text that wraps at a different word is never mistaken for text that changed. |
@@ -243,6 +243,17 @@ before on the left, after on the right, the change outlined in amber. Content
 that moved up or down the page is followed to where it now sits, so the two
 halves always show the same content. The full screenshots underneath carry the
 same areas boxed in red.
+
+> **What earns a red box — and what deliberately does not.** A box means the
+> pixels are different *and* the difference survived a battery of honesty
+> checks. Things a reader cannot see are never boxed: text re-rendered a hair
+> differently, a row that slipped a pixel or two as the page reflowed, a block
+> that merely *moved* without changing — the same rule the text side has
+> always had, that reordering is layout, not an edit. A block that moved *and*
+> changed inside is still boxed, and a section genuinely added or removed
+> always is. When an update says TEXT but shows no boxes, the change sits in
+> content the screenshot cannot show — a collapsed tab or accordion — and the
+> page says so where the boxes would have been.
 
 [IMAGE: 04-an-update.png]
 
@@ -455,7 +466,7 @@ one.
 
 ## Changing when it runs
 
-**Settings → Schedule** (admin only). It runs **every Monday at 23:00** today.
+**Settings → Schedule** (admin only). It runs **every Sunday at 03:00** today.
 
 | Setting | What it means |
 |---|---|
