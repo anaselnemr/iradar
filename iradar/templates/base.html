@@ -1176,6 +1176,32 @@
           <span class="themelabel-dark">Light mode</span>
         </button>
 
+        {#- Email alerts: a preference, toggled in place. A guest has no
+            account and no address, so it is not shown to them. -#}
+        {% if not is_guest %}
+        <form method="post" action="{{ url_for('account_alerts') }}" style="margin:0">
+          <input type="hidden" name="on" value="{{ '0' if email_alerts else '1' }}">
+          <button type="submit" class="acct-item" title="A summary of each check, emailed to you">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 6l8 6 8-6"/></svg>
+            <span>Email alerts</span>
+            <span style="margin-left:auto; font-size:11px; font-weight:600;
+                  color:{{ 'var(--accent)' if email_alerts else 'var(--muted)' }}">
+              {{ 'ON' if email_alerts else 'OFF' }}</span>
+          </button>
+        </form>
+        {% if email_alerts %}
+        <form method="post" action="{{ url_for('account_test_email') }}" style="margin:0">
+          <button type="submit" class="acct-item" style="font-size:12px; color:var(--muted); padding-top:2px"
+                  title="Send yourself the last check's summary now">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" style="opacity:.6"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            <span>Send me a test</span>
+          </button>
+        </form>
+        {% endif %}
+        {% endif %}
+
         {#- A guest has no account, so there is no profile to open. -#}
         {% if not is_guest %}
         <a class="acct-item" href="{{ url_for('account_password') }}">

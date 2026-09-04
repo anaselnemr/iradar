@@ -651,3 +651,50 @@ def test_everything_per_page_is_one_click_and_carries_the_lot():
     assert "AN99 datasheet" in (mine[0]["Documents"] or ""), \
         "the document content was not spelled out: %r" % mine[0]["Documents"]
     assert mine[0]["BL"] == "ICW"
+
+
+def test_the_digest_builds_and_renders_from_a_real_run():
+    """The after-run email: run_digest reads the run, render_digest makes
+    valid HTML with the brand logo reference and both good and bad counts."""
+    import mailer
+    con = db.connect()
+    # a finished run plus one gain and one loss change tied to it
+    con.execute("DELETE FROM runs")
+    rid = con.execute(
+        "INSERT INTO runs(started, finished, kind, total, ok, changed, errors)"
+        " VALUES('2026-09-06 01:00:00','2026-09-06 10:00:00','scheduled',"
+        " 3651, 3600, 41, 2)").lastrowid
+    u = con.execute("SELECT id FROM urls LIMIT 1").fetchone()["id"]
+    s1 = con.execute("INSERT INTO snapshots(url_id, ts, dir, status)"
+                     " VALUES(?, 'a', '', 'ok')", (u,)).lastrowid
+    s2 = con.execute("INSERT INTO snapshots(url_id, ts, dir, status)"
+                     " VALUES(?, 'b', '', 'ok')", (u,)).lastrowid
+    con.execute("INSERT INTO changes(url_id, ts, old_snapshot_id,"
+                " new_snapshot_id, text_changed, lines_added, lines_removed,"
+                " summary, reviewed) VALUES(?,'2026-09-06 05:00:00',?,?,1,40,3,"
+                " 'page text (+40/-3 lines)', 0)", (u, s1, s2))
+    con.commit()
+    run = con.execute("SELECT * FROM runs WHERE id=?", (rid,)).fetchone()
+    d = mailer.run_digest(con, run)
+    con.close()
+    assert d["updates"] == 1
+    assert d["gains"] == 1 and d["losses"] == 0, d
+    html = mailer.render_digest(d, "https://iradar.net", "Sunday, 6 September 2026")
+    assert html.startswith("<!doctype html")
+    assert "cid:iradarlogo" in html, "the brand logo is not referenced"
+    assert "Review the queue" in html
+    assert "ADDED" in html, "a gain should carry an ADDED chip"
+    assert "what changed" in html.lower(), "the chart section is missing"
+
+
+def test_email_alerts_toggle_flips_the_flag():
+    _client.post("/account/alerts", data={"on": "1", "_csrf": _csrf()})
+    con = db.connect()
+    v = con.execute("SELECT email_opt_in FROM users WHERE id=?", (_uid,)).fetchone()[0]
+    con.close()
+    assert v == 1, "opt-in did not turn on"
+    _client.post("/account/alerts", data={"on": "0", "_csrf": _csrf()})
+    con = db.connect()
+    v = con.execute("SELECT email_opt_in FROM users WHERE id=?", (_uid,)).fetchone()[0]
+    con.close()
+    assert v == 0, "opt-in did not turn off"

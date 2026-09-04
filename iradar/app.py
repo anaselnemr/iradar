@@ -28,6 +28,7 @@ from rapidfuzz import fuzz, process
 import auth
 import comments
 import compare as cmp
+import mailer
 import db
 import runner
 
@@ -70,6 +71,8 @@ EDITOR_MAY_POST = {
     "url_set_title",
     "prewarm",               # warms document previews; no data changes
     "account_password",      # everyone may change their OWN password
+    "account_alerts",        # everyone toggles their OWN email alerts
+    "account_test_email",    # ...and may send themselves a test
     "logout",
     # Notes are the review conversation itself - an editor who cannot write one
     # cannot do the job. Who may edit or delete WHICH note is decided per note
@@ -377,8 +380,15 @@ def _inject_user():
     guest = me is None and guest_active()
     if guest:
         me = GUEST_ME
+    alerts_on = False
+    if me is not None and not guest:
+        try:
+            alerts_on = bool(me["email_opt_in"])
+        except (KeyError, IndexError, TypeError):
+            alerts_on = False
     return {"me": me, "is_admin": is_admin(), "is_owner": is_owner(),
-            "is_guest": guest, "guest_link_on": bool(GUEST_KEY),
+            "is_guest": guest, "email_alerts": alerts_on,
+            "mail_ready": mailer.configured(), "guest_link_on": bool(GUEST_KEY),
             "csrf_token": csrf_token}
 
 
@@ -697,6 +707,32 @@ def pretty_slug_filter(s):
 # the platform felt like, and a platform that quietly switches to UTC moves
 # every timestamp in the app two hours without one line of code changing.
 DISPLAY_TZ = os.environ.get("IRADAR_TZ", "Europe/Berlin")
+
+
+def _digest_when(run):
+    """Human date for the run in the display zone, portable across OSes."""
+    ts = run["finished"] or run["started"]
+    if not ts:
+        return ""
+    dt = to_local(ts)
+    return "%s, %d %s %d" % (dt.strftime("%A"), dt.day,
+                             dt.strftime("%B"), dt.year)
+
+
+def _base_url():
+    """The public address for links in email - the run's digest is built off
+    the request thread when tested, and off nothing when the scheduler fires,
+    so a configured PUBLIC_URL wins and the request root is only a fallback."""
+    env = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+    if env:
+        return env
+    try:
+        from flask import has_request_context, request as _rq
+        if has_request_context():
+            return _rq.url_root.rstrip("/")
+    except Exception:
+        pass
+    return "https://iradar.net"
 try:
     from zoneinfo import ZoneInfo
     _DISPLAY_ZONE = ZoneInfo(DISPLAY_TZ)
@@ -4333,7 +4369,54 @@ def _post_run_watcher():
             except Exception as e:
                 print(f"[post-run] housekeeping failed: {e}", flush=True)
             _collect_mentions_after_run()
+            try:
+                _email_after_run()
+            except Exception as e:
+                print(f"[post-run] email digest failed: {e}", flush=True)
         prev = running
+
+
+def _email_after_run():
+    """Email the digest to everyone opted in, once a REAL check finishes.
+
+    Guarded the same way mention collection is: never for a token run - a
+    three-page manual poke does not earn a bulletin - and dark unless mail is
+    configured. Each person is sent individually to their own address, so one
+    bad address cannot stop the rest, and a send never raises into the caller.
+    """
+    if not mailer.configured():
+        return
+    con = db.connect()
+    try:
+        run = con.execute("SELECT * FROM runs WHERE finished IS NOT NULL"
+                          " ORDER BY id DESC LIMIT 1").fetchone()
+        if not run or (run["total"] or 0) < 50:
+            return                       # token run, or nothing to summarise
+        recipients = con.execute(
+            "SELECT email FROM users WHERE active=1 AND IFNULL(email_opt_in,0)=1"
+            " AND email<>''").fetchall()
+        if not recipients:
+            return
+        d = mailer.run_digest(con, run)
+        when = _digest_when(run)
+        html = mailer.render_digest(d, _base_url(), when)
+        subj = "iRadar — %s" % (
+            "no changes this week" if d["updates"] == 0 and d["file_updates"] == 0
+            else "%d update%s to review"
+            % (d["updates"] or d["file_updates"],
+               "" if (d["updates"] or d["file_updates"]) == 1 else "s"))
+    finally:
+        con.close()
+    sent = fail = 0
+    for r in recipients:
+        err = mailer.send(r["email"], subj, html)
+        if err:
+            fail += 1
+            print(f"[email] {r['email']}: {err}", flush=True)
+        else:
+            sent += 1
+    print(f"[email] digest sent to {sent} recipient(s), {fail} failed",
+          flush=True)
 
 
 def _collect_mentions_after_run():
@@ -7580,6 +7663,51 @@ def account_name():
     auth.set_name(me["id"], request.form.get("name", ""))
     flash("Name updated.")
     return redirect(url_for("account_password"))
+
+
+@app.route("/account/alerts", methods=["POST"])
+def account_alerts():
+    """Turn the after-run email digest on or off for yourself. It is a
+    preference, not a credential, so no password - like the theme toggle."""
+    me = current_user()
+    on = 1 if request.form.get("on") == "1" else 0
+    con = db.connect()
+    con.execute("UPDATE users SET email_opt_in=? WHERE id=?", (on, me["id"]))
+    con.commit()
+    con.close()
+    if on and not mailer.configured():
+        flash("Email alerts are on for you — but the server has no mail account"
+              " set up yet, so nothing can send until an admin adds one.")
+    else:
+        flash("Email alerts are ON — you'll get a summary after each check."
+              if on else "Email alerts are off.")
+    return redirect(request.referrer or url_for("account_password"))
+
+
+@app.route("/account/test-email", methods=["POST"])
+def account_test_email():
+    """Send yourself the digest of the last finished run, now, to check it
+    lands and looks right - before a real Sunday depends on it."""
+    me = current_user()
+    if not mailer.configured():
+        flash("No mail account is set up on the server yet — an admin needs to"
+              " add the MAIL_* settings first.")
+        return redirect(request.referrer or url_for("account_password"))
+    con = db.connect()
+    run = con.execute("SELECT * FROM runs WHERE finished IS NOT NULL"
+                      " ORDER BY id DESC LIMIT 1").fetchone()
+    if not run:
+        con.close()
+        flash("No finished check yet to summarise.")
+        return redirect(request.referrer or url_for("account_password"))
+    d = mailer.run_digest(con, run)
+    con.close()
+    when = _digest_when(run)
+    html = mailer.render_digest(d, _base_url(), when)
+    err = mailer.send(me["email"], "iRadar — your test summary", html)
+    flash("Test email sent to %s." % me["email"] if not err
+          else "Could not send: %s" % err)
+    return redirect(request.referrer or url_for("account_password"))
 
 
 @app.route("/users")

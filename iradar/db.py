@@ -399,6 +399,9 @@ def init_db():
     # one lookup. It is a HINT, not the identity: if that key is gone the note
     # still belongs to the same asset.
     _ensure_column(con, "users", "last_seen", "TEXT DEFAULT ''")
+    # 1 = this person wants the after-run digest emailed to them. Default 0:
+    # nobody is signed up to receive mail they did not ask for.
+    _ensure_column(con, "users", "email_opt_in", "INTEGER DEFAULT 0")
     _ensure_column(con, "comments", "target_hint", "TEXT DEFAULT ''")
     _ensure_column(con, "urls", "last_http", "INTEGER")
     # how many runs in a row this page has failed EVERY capture attempt -
