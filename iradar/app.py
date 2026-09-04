@@ -776,7 +776,7 @@ def _scheduled_check(_retry=0):
 
 def next_run_text():
     job = scheduler.get_job("check")
-    if job and job.next_run_time:
+    if job and getattr(job, "next_run_time", None):
         return job.next_run_time.strftime("%a %d %b %Y, %H:%M")
     return "not scheduled"
 
@@ -1057,6 +1057,12 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 CONTENT_KEYS = []
 for _stem, _c, _l in _CONTENT_ATTRS:
     CONTENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
+# an eval board is content a page offers, so it lives with the content -
+# these existed as filters for a week with no way to reach them but a
+# hand-typed URL, which is a feature only for whoever built it
+CONTENT_KEYS += ["haseval", "noeval"]
+# ...and the copy limits: one entry per block that can be over
+CONTENT_KEYS += ["over_" + _k for _k, *_ in cmp.COPY_LIMITS]
 COMPONENT_KEYS = []
 for _stem, _c, _l in _COMPONENT_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
@@ -5871,7 +5877,6 @@ def hierarchy():
                            home=home)
 
 
-@app.route("/export.xlsx")
 def _export_meta_cols():
     """The ownership columns, in the order the CSS report used."""
     return [("bl", "BL"), ("pl", "PL"), ("cm", "CM"), ("owner", "Owner")]
@@ -6652,6 +6657,10 @@ def export_builder_download():
                               "spreadsheetml.sheet")
 
 
+# /export.xlsx is the address this feature had before the export rework, and
+# for a while it decorated a helper by mistake - a bookmark from July fetched
+# a JSON array of column names. An old address should keep doing the old job.
+@app.route("/export.xlsx")
 @app.route("/export/all")
 def export_xlsx():
     """Everything, as a workbook: every page with all of its content, then one
@@ -7223,6 +7232,21 @@ def guide_page():
 # written up: the logo, dark mode and the Help rewrite are all the 28th, and
 # accounts and notes are the 27th - the 20th was nothing but a guess.
 WHATS_NEW = [
+    {"on": "2026-09-04", "what": [
+        "The close-ups follow moved content: each BEFORE|AFTER strip now "
+        "shows the same content on both sides even when the page grew, with "
+        "the changed area outlined in amber.",
+        "The products table is watched as a shape: the page's own product "
+        "count and its columns. A column re-ordered is layout; a column "
+        "gone is an update.",
+        "Filter the dashboard by Business line and Product line, and by "
+        "whether an eval board is linked.",
+        "Copy limits: how long each text block may be is editable under "
+        "Settings → Advanced, pages over a limit wear an amber flag beside "
+        "the block, and each block has its own dashboard filter.",
+        "A read-only shared link can open iRadar without an account - ask "
+        "Anas. Guests can look at everything and touch nothing.",
+    ]},
     {"on": "2026-07-28", "what": [
         "Pages are photographed only once their fonts have arrived — before, "
         "the same text wrapping differently read as a change.",

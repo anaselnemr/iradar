@@ -519,3 +519,30 @@ def test_the_reaper_collects_what_it_can_and_stops():
     assert len(calls) == 3, "should drain until nothing is ready, got %d" % len(calls)
     assert all(pid == -1 for pid, _ in calls), "must collect ANY child"
     assert all(o != 0 for _, o in calls), "must never block waiting"
+
+
+def test_the_old_export_bookmark_downloads_the_workbook():
+    """/export.xlsx decorated a helper by mistake - a July bookmark fetched a
+    JSON array of column names instead of a spreadsheet."""
+    r = _ok("/export.xlsx")
+    assert r.data[:2] == b"PK", "not a workbook: %r" % r.data[:40]
+
+
+def test_every_shipped_filter_is_reachable_from_a_dropdown():
+    """A filter with no UI entry point is a feature only for whoever built it.
+    The eval-board and per-block copy filters lived a week like that."""
+    for key in ("haseval", "noeval", "over_overview", "over_subheadline",
+                "over_meta_description", "over_features", "over_benefits",
+                "over_about"):
+        assert key in app.CONTENT_KEYS, "%s is not offered anywhere" % key
+        assert key in app.ATTR_FILTERS, "%s does not resolve" % key
+    body = _ok("/").data.decode("utf-8", "replace")
+    assert 'value="haseval"' in body, "the Content dropdown does not offer it"
+    assert 'value="over_overview"' in body
+
+
+def test_the_guide_teaches_the_six_signals():
+    body = _ok("/guide").data.decode("utf-8", "replace")
+    assert "Six signals" in body, "the guide still counts five"
+    assert "Products table" in body, "the new signal is not taught"
+    assert "outlined in amber" in body, "the new close-ups are not described"

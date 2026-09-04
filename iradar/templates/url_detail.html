@@ -437,8 +437,9 @@
                        else cat['items']|selectattr('is_generic')|list %}
       <details class="libcat" {% if own and loop.index <= 3 %}open{% endif %}>
         <summary>{{ cat['label'] }} <b>{{ own|length }}</b>{#-
-          -#}{% if copy_flags.get(cat['cat']) %} <span class="overlim"
-             title="{{ copy_labels.get(cat['cat'], cat['label']) }}: {{ copy_flags[cat['cat']] }} — the limit is set in Settings → Advanced">over limit · {{ copy_flags[cat['cat']] }}</span>{% endif %}{% if generic %}
+          -#}{% if copy_flags.get(cat['cat']) %} <a class="overlim"
+             href="{{ url_for('index', attr='over_' + cat['cat']) }}"
+             title="{{ copy_labels.get(cat['cat'], cat['label']) }}: {{ copy_flags[cat['cat']] }} — the limit is set in Settings → Advanced. Click for every page over it.">over limit · {{ copy_flags[cat['cat']] }}</a>{% endif %}{% if generic %}
           <span class="muted" style="font-weight:400">+{{ generic|length }} site-wide</span>{% endif %}</summary>
         {% if cat['cat'] == 'images' and (own or generic) %}
         <ul class="liblist">

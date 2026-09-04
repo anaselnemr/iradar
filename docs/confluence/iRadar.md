@@ -91,7 +91,7 @@ The visible text, every image, the whole library — documents, videos, boards,
 design resources, partners — the price, and a full-page screenshot.
 
 **3. It is compared with last time.**
-Five signals, listed below. Any one of them is enough to raise the page.
+Six signals, listed below. Any one of them is enough to raise the page.
 
 **4. Anything raised goes to a vote.**
 Before the run ends, the page is captured again — and the two captures must
@@ -226,6 +226,7 @@ caused a flood of false alarms before it was handled.
 | **Library** — a document, video, board, design resource or partner appears or disappears, or its version, date, size or price changes. | **The community feed** — re-sorts itself constantly. Whether the widget is present, empty or busy *is* tracked. |
 | **Images** — a picture appears on or disappears from the page. | **Latest news and the mega-menu** — identical on every page. One retired thumbnail once raised 585 pages at once. |
 | **Screenshot** — more than 2.5% of pixels differ, or the page height moves more than 80px. | **Tabs loading differently** — two visits can land on different tabs. Their contents are tracked item by item instead. |
+| **Products table** — the table of parts changes shape: the product count the page itself reports moves, or a column appears or disappears. Columns in a new order do not count; that is layout. | |
 | **File updates** — a file republished at the same address. The page is identical; the datasheet behind it is new. | **Timestamps and "3 days ago"** — they change with nobody editing anything. |
 | | **The same words, set differently** — a page is photographed only once its fonts have arrived, so text that wraps at a different word is never mistaken for text that changed. |
 
@@ -236,9 +237,12 @@ Settings, and the in-app Help page always shows the current ones.*
 
 ## Reviewing an update
 
-Open one from the Dashboard. You see exactly what moved — the wording before and
-after, which documents came and went, and the two screenshots with the changed
-areas boxed.
+Open one from the Dashboard. You see exactly what moved — the wording before
+and after, which documents came and went, and each changed area up close:
+before on the left, after on the right, the change outlined in amber. Content
+that moved up or down the page is followed to where it now sits, so the two
+halves always show the same content. The full screenshots underneath carry the
+same areas boxed in red.
 
 [IMAGE: 04-an-update.png]
 
@@ -457,6 +461,7 @@ one.
 | **How often** | Every day, every two days, or weekly. Weekly is the normal choice: Infineon does not republish a page most days, and a daily check mostly re-reads pages that have not moved. |
 | **Which day** | For a weekly check. |
 | **What hour** | 0 to 23, **in your time**, not the server's. A check takes several hours, so an evening start finishes overnight and the queue is waiting when people arrive. |
+| **Copy limits** *(Advanced tab)* | The longest each text block may be — description, sub-headline, meta description, features, benefits, overview — and how many of them a page should carry. A page over a limit wears an amber flag beside the block, and the Dashboard's Content dropdown lists who is over, per block. Pages are only judged on blocks they actually have. |
 | **Parallel browser tabs** | How many pages are opened at once. Higher is faster and heavier; too high and Infineon starts refusing us, which shows up as capture errors rather than as speed. Currently 8. |
 
 > Changing the schedule does not touch a check already running, and never loses
@@ -469,7 +474,7 @@ one.
 
 | | |
 |---|---|
-| **Dashboard** | Every tracked page, its state, and your review queue. Filter by type, status, or by what content a page has. |
+| **Dashboard** | Every tracked page, its state, and your review queue. Filter by business line, product line, type, status, or by what content a page has. |
 | **Content** | Every document, video, image and board across all pages, and which pages each appears on. Answers *"where is this datasheet used?"* |
 | **Notes** | Everything anyone has written, newest first — and the box for telling us something is broken, confusing or missing. |
 | **Reports** | Hierarchy (the site as a tree), Export (any of it as a spreadsheet), Run history (every check and what it found). |
@@ -549,7 +554,7 @@ The things people ask about in the second week.
   infineon.com nests them, so you can see a whole product family and everything
   under it rather than a flat list.
 - **Pages carry who owns them** — BL, PL, CM and the marketing owner, shown on
-  the page and available as export columns. Where a page disagrees with what was
+  the page, filterable on the Dashboard, and available as export columns. Where a page disagrees with what was
   imported it is flagged *Ownership mismatch* for somebody to settle, never
   quietly corrected.
 - **There is a small test set** — a fixed handful of pages used to try a change

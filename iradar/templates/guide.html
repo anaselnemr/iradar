@@ -290,7 +290,7 @@
           screenshot.</p></li>
 
       <li><b>It is compared with last time</b>
-        <p>Five signals, below. Any one of them is enough to raise the page.</p></li>
+        <p>Six signals, below. Any one of them is enough to raise the page.</p></li>
 
       <li><b>Anything raised goes to a vote</b>
         <p>Before the run ends, the page is captured again — and the two
@@ -427,6 +427,10 @@
           <li><b>Screenshot</b><span>More than {{ s.visual_threshold }}% of
             pixels differ, or the page height moves more than
             {{ s.height_threshold }}px.</span></li>
+          <li><b>Products table</b><span>The table of parts changes shape —
+            the product count the page itself reports moves, or a column
+            appears or disappears. Columns dealt in a new order do not count;
+            that is layout.</span></li>
           <li><b>File updates</b><span>A file republished at the same address.
             The page is identical; the datasheet behind it is new.</span></li>
         </ul>
@@ -458,8 +462,11 @@
   <section id="review" class="card">
     <h2><span class="secn">03</span>Reviewing an update</h2>
     <p class="lede">Open one from the Dashboard. You see exactly what moved —
-      the wording before and after, which documents came and went, and the two
-      screenshots with the changed areas boxed.</p>
+      the wording before and after, which documents came and went, and each
+      changed area up close: before on the left, after on the right, the change
+      outlined in amber. Content that moved up or down the page is followed to
+      where it now sits, so the two halves always show the same content. The
+      full screenshots underneath carry the same areas boxed in red.</p>
 
     <div class="choose">
       <div class="opt go">
@@ -763,6 +770,12 @@
   
     <h3>Advanced</h3>
     <ul class="lim" style="margin-top:6px">
+      <li><b>Copy limits</b> — how long each text block may be (description,
+        sub-headline, meta description, features, benefits, overview) and how
+        many of them a page should carry. A page over a limit wears an amber
+        flag beside the block, and the Dashboard's Content dropdown lists who
+        is over, per block. 0 switches a rule off. Pages are only judged on
+        blocks they actually have.</li>
       <li><b>Where your assets live</b> — the DAM and Windchill search
         addresses. Set them and the badges on every document become one-click
         links to the system that owns the file.</li>
@@ -770,7 +783,7 @@
         cannot be rebuilt.</li>
     </ul>
 
-    <div class="note warn"><p><b>What you cannot change:</b> the five signals
+    <div class="note warn"><p><b>What you cannot change:</b> the six signals
       themselves, the double-check, the retry rounds, and the list of lines
       left out of the comparison — the relative dates and result counts that
       rewrite themselves with nobody editing the page. Those are the parts
@@ -783,7 +796,8 @@
     <ul class="map">
       <li><a href="{{ url_for('index') }}">Dashboard</a>
         <span>Every tracked page, its state, and your review queue. Filter by
-          type, status, or by what content a page has.</span></li>
+          business line, product line, type, status, or by what content a page
+          has.</span></li>
       <li><a href="{{ url_for('search_items') }}">Content</a>
         <span>Every document, video, image and board across all pages, and which
           pages each appears on. Answers "where is this datasheet used?"</span></li>
@@ -848,7 +862,8 @@
         the way infineon.com nests them, so you can see a whole product family
         and everything under it rather than a flat list.</li>
       <li><b>Pages carry who owns them</b> — BL, PL, CM and the marketing owner,
-        shown on the page and available as export columns. Where a page
+        shown on the page, filterable on the Dashboard and available as export
+        columns. Where a page
         disagrees with what was imported it is flagged <i>Ownership mismatch</i>
         for somebody to settle, never quietly corrected.</li>
       <li><b>Which parts a page has is tracked too</b> — whether it carries a
