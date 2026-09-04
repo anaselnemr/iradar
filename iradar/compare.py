@@ -134,6 +134,320 @@ def images_diff(old_dir, new_dir, ignore_patterns=None):
     return bool(added or removed), added, removed
 
 
+# --- aligned visual diff ----------------------------------------------------
+# A page is a COLUMN OF CONTENT, not a grid of pixels. Insert a banner at the
+# top and every pixel below it moves down; a pixel-to-pixel diff then calls
+# the whole page changed, the red boxes smear to the footer, and the close-up
+# strips crop the same coordinates from two pictures whose content no longer
+# lives at the same coordinates - a "BEFORE | AFTER" that shows two different
+# places while the caption promises the same spot. That was the inconsistency
+# reviewers saw on every update that changed the page's height.
+#
+# So the rows are aligned first, the same way the text diff aligns lines:
+# each pixel row gets a coarse signature, difflib matches the two sequences,
+# and only then are pixels compared - equal-length stretches diffed at their
+# ALIGNED offsets, inserted or removed stretches taken as changes of exactly
+# their own size. Every region that comes out carries its position in BOTH
+# pictures, so a box lands where the content is in each, and a strip crops
+# each side at its own coordinates.
+
+# Rows beyond this skip alignment and fall back to the plain diff - a memory
+# bound on the signature lists, not the real cost guard (below).
+ALIGN_MAX_ROWS = 40_000
+
+# The REAL cost of difflib is matching work: for every token of one side it
+# walks every position of the other side holding the same token, so the bill
+# is sum over tokens of count_a * count_b. Real pages measure ~80k; a page of
+# one-pixel zebra striping measures 112 million and takes minutes. Rows never
+# predicted that - 20,000 rows of stripes sat under the row cap at 176s per
+# comparison. Above this estimate the positional diff takes over: wrong about
+# shifts, bounded in time.
+ALIGN_MAX_COST = 4_000_000
+
+# A region below this many changed pixels is dust - palette jitter, a moved
+# hairline - not something worth a red box and a close-up. It still counts
+# toward the ratio; it just is not drawn.
+REGION_MIN_PX = 30
+
+
+def _row_signatures(img, cols=24):
+    """One coarse token per pixel row, tolerant of palette jitter.
+
+    The row is box-averaged into `cols` cells and quantized to 16 levels: two
+    captures of the SAME row must produce the same token even though the two
+    screenshots were quantized to different 256-colour palettes. Anything the
+    averaging hides is caught later by the pixel diff inside aligned rows -
+    a too-coarse signature degrades to detection, never to a miss.
+    """
+    w, h = img.size
+    if not w or not h:
+        return []
+    g = img.convert("L").resize((cols, h), Image.Resampling.BOX)
+    data = g.tobytes()
+    return [bytes(v >> 4 for v in data[y * cols:(y + 1) * cols])
+            for y in range(h)]
+
+
+def _page_tone(img):
+    """The page's background, as its dominant luminance."""
+    hist = img.convert("L").histogram()
+    return max(range(256), key=lambda i: hist[i])
+
+
+def _ink(img, box, background, noise=PIXEL_NOISE_THRESHOLD):
+    """How much of this area is CONTENT - pixels far from the PAGE's tone.
+
+    Content that exists on one side only (an inserted banner, a removed
+    section) has no counterpart to pixel-diff against, so it is priced at its
+    ink. Pricing it at its full rectangle counted every white pixel of an
+    inserted paragraph as "changed" and tripled the visual flags on real
+    pages; pricing whitespace growth at zero keeps a page that merely
+    breathed out from flagging at all.
+
+    Measured against the page's OWN background, never the band's: a band's
+    dominant tone is the band, so a solid inserted banner scored zero against
+    itself and the one change on the page went unboxed.
+    """
+    x0, y0, x1, y1 = box
+    if x1 <= x0 or y1 <= y0:
+        return 0
+    hist = img.crop(box).convert("L").histogram()
+    lo = max(0, background - noise)
+    hi = min(255, background + noise)
+    return sum(hist[:lo]) + sum(hist[hi + 1:])
+
+
+def _mostly_black(img, box):
+    """Is this area our own mask ink rather than page content?
+
+    The feed areas are filled black before comparing. When the fill on one
+    side is taller than on the other, the leftover black rows would read as
+    an inserted block - a change made of our own paint. Anything this dark
+    is not content; page content at half scale always carries structure.
+    """
+    x0, y0, x1, y1 = box
+    if x1 <= x0 or y1 <= y0:
+        return False
+    hist = img.crop(box).convert("L").histogram()
+    dark = sum(hist[:12])
+    total = sum(hist)
+    return total > 0 and dark / total > 0.98
+
+
+def _mask_bands(mask):
+    """Row bands with any changed pixel in `mask` -> [(y0, y1, x0, x1, px)]."""
+    w, h = mask.size
+    if not w or not h:
+        return []
+    cols = 16
+    grid = mask.resize((cols, h), Image.Resampling.BOX)
+    data = list(grid.getdata())
+    flagged = [any(data[y * cols + i] for i in range(cols)) for y in range(h)]
+    bands, start, prev = [], None, None
+    for y, f in enumerate(flagged):
+        if not f:
+            continue
+        if start is None:
+            start, prev = y, y
+        elif y - prev > REGION_ROW_GAP:
+            bands.append((start, prev))
+            start, prev = y, y
+        else:
+            prev = y
+    if start is not None:
+        bands.append((start, prev))
+    out = []
+    for y0, y1 in bands:
+        strip = mask.crop((0, y0, w, y1 + 1))
+        bb = strip.getbbox()
+        if not bb:
+            continue
+        out.append((y0, y1 + 1, bb[0], bb[2], strip.histogram()[255]))
+    return out
+
+
+def _runs(sigs):
+    """Consecutive identical row signatures collapsed to (sig, start, count).
+
+    A page is mostly runs - whitespace between blocks, solid banners - and
+    handing every one of those rows to difflib as its own token is both its
+    quadratic worst case (thousands of copies of the same token) and how rows
+    mis-align. On runs the matcher sees a few hundred tokens instead of
+    fourteen thousand rows, each one distinctive.
+    """
+    out = []
+    for i, sig in enumerate(sigs):
+        if out and out[-1][0] == sig:
+            out[-1][2] += 1
+        else:
+            out.append([sig, i, 1])
+    return out
+
+
+def _overlaps_painted(y0, y1, painted):
+    """Does this row band mostly lie where the feed mask was painted?"""
+    if y1 <= y0 or not painted:
+        return False
+    covered = 0
+    for p0, p1 in painted:
+        covered += max(0, min(y1, p1) - max(y0, p0))
+    return covered / (y1 - y0) > 0.5
+
+
+def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
+                     painted_a=(), painted_b=()):
+    """Compare two page images with row alignment.
+
+    Returns (changed_px, regions): each region is a dict carrying the change's
+    y-range in the OLD image ('a'), in the NEW image ('b'), its x-extent, and
+    its changed-pixel mass. A pure insertion has a zero-height 'a' range at
+    its anchor; a pure removal the reverse.
+    """
+    w = min(a.width, b.width)
+    runs_a = _runs(_row_signatures(a))
+    runs_b = _runs(_row_signatures(b))
+    tok_a = [r[0] for r in runs_a]
+    tok_b = [r[0] for r in runs_b]
+    # the actual difflib bill, estimated before it is paid (see ALIGN_MAX_COST)
+    counts_b = Counter(tok_b)
+    if sum(counts_b.get(t, 0) for t in tok_a) > ALIGN_MAX_COST:
+        return None
+    sm = difflib.SequenceMatcher(a=tok_a, b=tok_b, autojunk=False)
+    tone_a, tone_b = _page_tone(a), _page_tone(b)
+    changed_px = 0
+    regions = []
+
+    def diff_aligned(a0, a1, b0, b1):
+        nonlocal changed_px
+        ca = a.crop((0, a0, w, a1))
+        cb = b.crop((0, b0, w, b1))
+        d = ImageChops.difference(ca, cb).convert("L")
+        m = d.point(lambda p: 255 if p > noise else 0)
+        if not m.getbbox():
+            return
+        for y0, y1, x0, x1, px in _mask_bands(m):
+            # a band where either side is our own feed-mask PAINT is paint
+            # meeting content, not content meeting content - under a shift
+            # the union-painted rows pair against unpainted ones, and one
+            # such band once contributed 68% of a pair's "changed" pixels.
+            # Judged by geometry AND colour: black alone is not proof, a
+            # genuinely black page is content too - only black WHERE WE
+            # PAINTED is ours.
+            if (_overlaps_painted(a0 + y0, a0 + y1, painted_a)
+                    and _mostly_black(a, (0, a0 + y0, w, a0 + y1))) \
+                    or (_overlaps_painted(b0 + y0, b0 + y1, painted_b)
+                        and _mostly_black(b, (0, b0 + y0, w, b0 + y1))):
+                continue
+            changed_px += px
+            regions.append({"a": (a0 + y0, a0 + y1), "b": (b0 + y0, b0 + y1),
+                            "x": (x0, x1), "px": px})
+
+    def band(a0, a1, b0, b1):
+        """A stretch the tokens could not pair. The tokens are coarse and
+        quantized, so this is a CLAIM, not a verdict: a cell average sitting
+        on a quantization boundary flips between two captures of the same
+        pixels, runs fragment differently, and visually identical content
+        arrives here labelled inserted. So the overlap is pixel-verified like
+        any aligned stretch - identical pixels contribute nothing however the
+        tokens fragmented - and only the surplus, the rows that exist on one
+        side alone, is judged by what is actually printed on it."""
+        nonlocal changed_px
+        ha, hb = a1 - a0, b1 - b0
+        overlap = min(ha, hb)
+        if overlap:
+            diff_aligned(a0, a0 + overlap, b0, b0 + overlap)
+        if ha == hb:
+            return
+        if ha > hb:
+            img, sy0, sy1 = a, a0 + overlap, a1
+            reg = {"a": (sy0, sy1), "b": (b1, b1)}
+        else:
+            img, sy0, sy1 = b, b0 + overlap, b1
+            reg = {"a": (a1, a1), "b": (sy0, sy1)}
+        painted = painted_a if img is a else painted_b
+        if _overlaps_painted(sy0, sy1, painted) \
+                and _mostly_black(img, (0, sy0, w, sy1)):
+            return                            # our own feed-mask ink
+        px_here = _ink(img, (0, sy0, w, sy1),
+                       tone_a if img is a else tone_b)
+        if not px_here:
+            return                            # whitespace grew; not content
+        changed_px += px_here
+        reg.update({"x": (0, w), "px": px_here})
+        regions.append(reg)
+
+    for tag, ra0, ra1, rb0, rb1 in sm.get_opcodes():
+        if tag == "equal":
+            # matched runs of the same signature. Run lengths can differ
+            # (spacing that grew or shrank): pixel-check the overlap, and let
+            # the surplus rows - repeats of a row that is provably still
+            # there - pass as spacing rather than content. height_delta
+            # already reports the page growing.
+            for k in range(ra1 - ra0):
+                sa, ca_ = runs_a[ra0 + k][1], runs_a[ra0 + k][2]
+                sb, cb_ = runs_b[rb0 + k][1], runs_b[rb0 + k][2]
+                n = min(ca_, cb_)
+                diff_aligned(sa, sa + n, sb, sb + n)
+            continue
+        # replace / insert / delete on runs: the whole differing stretch,
+        # in each image's own rows
+        a0 = runs_a[ra0][1] if ra0 < len(runs_a) else a.height
+        a1 = (runs_a[ra1 - 1][1] + runs_a[ra1 - 1][2]) if ra1 > ra0 else a0
+        b0 = runs_b[rb0][1] if rb0 < len(runs_b) else b.height
+        b1 = (runs_b[rb1 - 1][1] + runs_b[rb1 - 1][2]) if rb1 > rb0 else b0
+        if tag == "replace" and (a1 - a0) == (b1 - b0):
+            diff_aligned(a0, a1, b0, b1)     # in-place rewrite: pixels decide
+        else:
+            band(a0, a1, b0, b1)
+    return changed_px, regions
+
+
+def _merge_regions(regions):
+    """Nearby regions become one area; more than MAX_REGIONS collapse.
+
+    Gap is judged in the NEW image's space (it is what the reviewer reads
+    first), and a merge unions both spaces so the pair stays a pair.
+    """
+    regions = sorted((r for r in regions if r["px"] >= REGION_MIN_PX),
+                     key=lambda r: (r["b"][0], r["a"][0]))
+    merged = []
+    for r in regions:
+        if merged and r["b"][0] - merged[-1]["b"][1] <= REGION_ROW_GAP \
+                and r["a"][0] - merged[-1]["a"][1] <= REGION_ROW_GAP:
+            m = merged[-1]
+            m["a"] = (min(m["a"][0], r["a"][0]), max(m["a"][1], r["a"][1]))
+            m["b"] = (min(m["b"][0], r["b"][0]), max(m["b"][1], r["b"][1]))
+            m["x"] = (min(m["x"][0], r["x"][0]), max(m["x"][1], r["x"][1]))
+            m["px"] += r["px"]
+        else:
+            merged.append(dict(r))
+    while len(merged) > MAX_REGIONS:
+        gaps = [(merged[i + 1]["b"][0] - merged[i]["b"][1], i)
+                for i in range(len(merged) - 1)]
+        _, i = min(gaps)
+        m, n = merged[i], merged[i + 1]
+        m["a"] = (min(m["a"][0], n["a"][0]), max(m["a"][1], n["a"][1]))
+        m["b"] = (min(m["b"][0], n["b"][0]), max(m["b"][1], n["b"][1]))
+        m["x"] = (min(m["x"][0], n["x"][0]), max(m["x"][1], n["x"][1]))
+        m["px"] += n["px"]
+        del merged[i + 1]
+    return merged
+
+
+def _boxes_for(regions, side, height):
+    """Draw-ready boxes for one image. A zero-height range (content that only
+    exists on the other side) becomes a thin marker at its anchor, so the
+    picture still shows WHERE the content arrived or left."""
+    boxes = []
+    for r in regions:
+        y0, y1 = r[side]
+        if y1 - y0 < 6:
+            y0 = max(0, y0 - 3)
+            y1 = min(height, y1 + 3)
+        boxes.append((r["x"][0], y0, r["x"][1], y1))
+    return boxes
+
+
 def _find_regions(mask):
     """Group changed pixels into horizontal bands -> list of (x0,y0,x1,y1).
 
@@ -185,17 +499,55 @@ def _draw_boxes(img, boxes, out_path, pad=8):
     marked.save(out_path, optimize=True)
 
 
-def _region_strip(old_img, new_img, box, out_path, pad=40):
-    """Side-by-side close-up of one changed area: left = before, right = after."""
+# A strip taller than this is cut: an entire inserted section does not need
+# a four-thousand-pixel close-up to say "this arrived", and the full shots
+# show the whole of it anyway.
+STRIP_MAX_H = 1000
+
+
+# Every close-up gets at least this much page around it. Without a floor the
+# strip for a 12px icon came out 92px wide while the strip above it was the
+# whole page - and the template shows both at their own size, so the "zoom"
+# jumped by a factor of two or three between areas of the same update.
+STRIP_MIN_W = 280
+STRIP_MIN_H = 90
+
+
+def _region_strip(old_img, new_img, region, out_path, pad=40):
+    """Side-by-side close-up of one changed area: left = before, right = after.
+
+    Each side is cropped AT ITS OWN COORDINATES - the whole point of the
+    aligned diff. Before it, both sides were cropped at the same y, so any
+    page whose height changed produced strips whose halves showed different
+    places while the caption promised the same spot. The changed area itself
+    is outlined in amber inside each half, because a close-up that spans a
+    whole section still needs to say which line of it moved.
+    """
+    ay0, ay1 = region["a"]
+    by0, by1 = region["b"]
     max_w = min(old_img.width, new_img.width)
-    max_h = min(old_img.height, new_img.height)
-    x0 = max(0, box[0] - pad)
-    y0 = max(0, box[1] - pad)
-    x1 = min(max_w, box[2] + pad)
-    y1 = min(max_h, box[3] + pad)
-    o = old_img.crop((x0, y0, x1, y1))
-    n = new_img.crop((x0, y0, x1, y1))
-    w, h = o.size
+    x0 = max(0, region["x"][0] - pad)
+    x1 = min(max_w, region["x"][1] + pad)
+    if x1 - x0 < STRIP_MIN_W:                # centre out to the floor width
+        cx = (x0 + x1) // 2
+        x0 = max(0, cx - STRIP_MIN_W // 2)
+        x1 = min(max_w, x0 + STRIP_MIN_W)
+        x0 = max(0, x1 - STRIP_MIN_W)
+
+    def crop(img, y0, y1):
+        # the TOP edge is the same distance above the change on both sides,
+        # whatever else happens - the halves are compared by eye, and a few
+        # rows of vertical slip between them reads as "not the same spot"
+        top = max(0, y0 - pad)
+        bot = min(img.height, max(y1 + pad, top + STRIP_MIN_H))
+        if bot - top > STRIP_MAX_H:
+            bot = top + STRIP_MAX_H
+        return img.crop((x0, top, x1, bot)), top
+
+    o, o_top = crop(old_img, ay0, ay1)
+    n, n_top = crop(new_img, by0, by1)
+    w = x1 - x0
+    h = max(o.height, n.height)
     header, divider = 26, 10
     canvas = Image.new("RGB", (w * 2 + divider, h + header), (245, 246, 248))
     draw = ImageDraw.Draw(canvas)
@@ -203,6 +555,17 @@ def _region_strip(old_img, new_img, box, out_path, pad=40):
     draw.text((w + divider + 6, 6), "AFTER", fill=(20, 110, 50))
     canvas.paste(o, (0, header))
     canvas.paste(n, (w + divider, header))
+    # the changed area, outlined inside each half at its own offset
+    hl = (245, 158, 11)
+    for (y0, y1), top, dx in ((region["a"], o_top, 0),
+                              (region["b"], n_top, w + divider)):
+        if y1 - y0 < 2:
+            continue
+        draw.rectangle([dx + max(0, region["x"][0] - x0) - 2,
+                        header + (y0 - top) - 2,
+                        dx + min(w, region["x"][1] - x0) + 2,
+                        header + (y1 - top) + 2],
+                       outline=hl, width=2)
     canvas.save(out_path, optimize=True)
 
 
@@ -280,9 +643,17 @@ def visual_diff(old_dir, new_dir, change_dir=None):
     discounted = abs((a.height - fh_a) - (b.height - fh_b))
     height_delta = min(raw, discounted) / (scale or 1.0)
     w = min(a.width, b.width)
-    h = min(a.height, b.height)
-    if w == 0 or h == 0:
+    if w == 0 or min(a.height, b.height) == 0:
         return 0.0, height_delta, 0
+    # FULL heights from here on. The old positional diff cropped both sides
+    # to the shorter page, which was harmless when every pixel below min(h)
+    # was ignored anyway - but the aligner exists precisely to read the
+    # difference in height, and cropping first fed it two equal-height
+    # pictures with the taller side's tail cut off: the shorter side's last
+    # rows then matched nothing and every grown page carried a phantom
+    # "section removed" box at the bottom. A fifth of real pairs grow.
+    h_a, h_b = a.height, b.height
+    truncated = False
     # When the feeds CHANGED SIZE, everything below them shifted - those
     # pixels would all read as different while nothing real moved. Compare
     # only above the topmost feed box that run; the area below is judged
@@ -290,34 +661,89 @@ def visual_diff(old_dir, new_dir, change_dir=None):
     if regs_a or regs_b:
         if abs(fh_a - fh_b) > 8:
             tops = [r["y"] for r in regs_a + regs_b]
-            h = max(1, min(min(tops), h))
-    a_c = a.crop((0, 0, w, h))
-    b_c = b.crop((0, 0, w, h))
+            cut = max(1, min(min(tops), h_a, h_b))
+            h_a = h_b = cut
+            truncated = True
+    a_c = a.crop((0, 0, w, h_a))
+    b_c = b.crop((0, 0, w, h_b))
     # Mask the feed areas on BOTH sides: their churn (threads rotating, news
     # re-dating) must never count as the page changing. The stored pictures
     # stay complete - only the judgement blindfolds itself here.
+    painted_a, painted_b = [], []
     if regs_a or regs_b:
         da, db_ = ImageDraw.Draw(a_c), ImageDraw.Draw(b_c)
         for r in regs_a + regs_b:
-            box = (max(0, r["x"]), max(0, r["y"]),
-                   min(w, r["x"] + r["w"]), min(h, r["y"] + r["h"]))
-            if box[2] > box[0] and box[3] > box[1]:
-                da.rectangle(box, fill=(0, 0, 0))
-                db_.rectangle(box, fill=(0, 0, 0))
-    diff = ImageChops.difference(a_c, b_c).convert("L")
-    mask = diff.point(lambda p: 255 if p > PIXEL_NOISE_THRESHOLD else 0)
-    changed_px = mask.histogram()[255]
-    ratio_pct = 100.0 * changed_px / float(w * h)
+            x0, y0 = max(0, r["x"]), max(0, r["y"])
+            x1 = min(w, r["x"] + r["w"])
+            # clamp to each crop's own height - the two sides keep their own
+            # heights now, that being the whole point of the aligned diff
+            if x1 > x0:
+                if min(h_a, r["y"] + r["h"]) > y0:
+                    da.rectangle((x0, y0, x1, min(h_a, r["y"] + r["h"])),
+                                 fill=(0, 0, 0))
+                    painted_a.append((y0, min(h_a, r["y"] + r["h"])))
+                if min(h_b, r["y"] + r["h"]) > y0:
+                    db_.rectangle((x0, y0, x1, min(h_b, r["y"] + r["h"])),
+                                  fill=(0, 0, 0))
+                    painted_b.append((y0, min(h_b, r["y"] + r["h"])))
+    # ROW ALIGNMENT before any pixel is judged. Without it, content inserted
+    # anywhere shifts every pixel below into "changed": the ratio explodes,
+    # the boxes smear to the footer, and the strips show two different places.
+    # Beyond the row cap, fall back to the old positional diff - wrong about
+    # shifts but bounded in time - rather than hand difflib a quadratic case.
+    aligned = (_aligned_regions(a_c, b_c,
+                                painted_a=painted_a, painted_b=painted_b)
+               if max(a_c.height, b_c.height) <= ALIGN_MAX_ROWS else None)
+    if aligned is not None:
+        changed_px, raw = aligned
+        if truncated:
+            # the window was cut above the feeds, so content near the cut
+            # exists half-in half-out: a band hugging the bottom edge is the
+            # cut, not the page. That area is judged next run, when the feed
+            # heights match again - the same deferral the cut itself makes.
+            edge = a_c.height - REGION_ROW_GAP
+            kept = []
+            for r in raw:
+                if r["a"][1] >= edge or r["b"][1] >= edge:
+                    changed_px = max(0, changed_px - r["px"])
+                else:
+                    kept.append(r)
+            raw = kept
+        regions = _merge_regions(raw) if raw else []
+        denom = float(w * max(a_c.height, b_c.height, 1))
+        ratio_pct = 100.0 * changed_px / denom
+        boxes_old = _boxes_for(regions, "a", a_c.height)
+        boxes_new = _boxes_for(regions, "b", b_c.height)
+    else:
+        diff = ImageChops.difference(a_c.crop((0, 0, w, min(a_c.height, b_c.height))),
+                                     b_c.crop((0, 0, w, min(a_c.height, b_c.height)))
+                                     ).convert("L")
+        mask = diff.point(lambda p: 255 if p > PIXEL_NOISE_THRESHOLD else 0)
+        changed_px = mask.histogram()[255]
+        ratio_pct = 100.0 * changed_px / float(w * min(a_c.height, b_c.height))
+        boxes = _find_regions(mask) if changed_px else []
+        regions = [{"a": (y0, y1), "b": (y0, y1), "x": (x0, x1), "px": 0}
+                   for x0, y0, x1, y1 in boxes]
+        boxes_old = boxes_new = boxes
 
-    boxes = _find_regions(mask) if changed_px else []
-    if change_dir and boxes:
+    # for tests and callers that want to know WHERE, per image
+    global _last_boxes_old, _last_boxes_new
+    _last_boxes_old, _last_boxes_new = boxes_old, boxes_new
+
+    if change_dir and regions:
         change_dir = Path(change_dir)
         change_dir.mkdir(parents=True, exist_ok=True)
-        _draw_boxes(a, boxes, change_dir / "old_boxed.png")
-        _draw_boxes(b, boxes, change_dir / "new_boxed.png")
-        for i, box in enumerate(boxes):
-            _region_strip(a, b, box, change_dir / f"region_{i:02d}.png")
-    return ratio_pct, height_delta, len(boxes)
+        _draw_boxes(a, boxes_old, change_dir / "old_boxed.png")
+        _draw_boxes(b, boxes_new, change_dir / "new_boxed.png")
+        for i, region in enumerate(regions):
+            _region_strip(a, b, region, change_dir / f"region_{i:02d}.png")
+    return ratio_pct, height_delta, len(regions)
+
+
+# Where the last visual_diff drew its boxes, in each image's own coordinates.
+# Introspection for tests; the artwork is the product.
+_last_boxes_old = []
+_last_boxes_new = []
 
 
 # Sections this comparison does NOT own. 'flags' and 'components' are derived

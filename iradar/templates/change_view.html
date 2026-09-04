@@ -140,7 +140,10 @@
 {% if art.regions %}
 <div class="card">
   <h2>Updated areas up close <span class="muted">({{ art.regions|length }} area(s) — click to open full size)</span></h2>
-  <p class="muted">Each strip shows the same spot on the page: left = before, right = after.</p>
+  <p class="muted">Each strip shows the same spot on the page — left = before,
+    right = after, the changed area outlined in amber. Content that moved up or
+    down the page is followed to where it now sits, so the two halves always
+    show the same content, not the same coordinates.</p>
   {% for r in art.regions %}
   <a href="{{ url_for('change_art', change_id=c.id, name=r) }}" target="_blank" title="Open full size" class="regionstrip">
     <img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=r) }}" alt="Updated area {{ loop.index }}">
