@@ -403,6 +403,16 @@ def _aligned_regions(a, b, noise=PIXEL_NOISE_THRESHOLD,
         if _overlaps_painted(sy0, sy1, painted) \
                 and _mostly_black(img, (0, sy0, w, sy1)):
             return                            # our own feed-mask ink
+        # A ONE-PIXEL SLIP arrives here too: at a run boundary the wobble
+        # reads as six rows against seven - a tiny uneven stretch - and
+        # took this path, where the slip test never ran. Change 12394
+        # kept its five phantom bands through the first fix that way.
+        # Only small stretches are tested: a banner is not a wobble.
+        if max(a1 - a0, b1 - b0) <= 4 * SLIP_MAX \
+                and slipped(a0, a1, b0, b1,
+                            _ink(img, (0, sy0, w, sy1),
+                                 tone_a if img is a else tone_b)):
+            return
         px_here = _ink(img, (0, sy0, w, sy1),
                        tone_a if img is a else tone_b)
         if not px_here:
