@@ -736,9 +736,7 @@ def render_digest(d, base_url, when_label):
                       " not items." % d["wording_pages"])
                      if d.get("wording_pages") else "")
         chart += _chart_img(
-            "Component changes, in pages", d.get("by_component"),
-            footnote="+ pages that gained the component ·"
-                     " − pages that lost it")
+            "Component changes, in pages", d.get("by_component"))
     newcall = ""
 
     rows_top = ""
