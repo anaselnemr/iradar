@@ -314,6 +314,57 @@ def _component_diffs(changes):
     return out
 
 
+def _patterns(changes, top=6):
+    """Group the week's changes by their SHAPE, most-repeated first.
+
+    A pattern is the change's clauses with every number stripped, so "page
+    text (+59/-59 lines)" and "page text (+2/-1 lines)" are the same story
+    told twice. Each row carries how many pages share it and one example to
+    open. This is what a reviewer actually wants: not seven arbitrary pages,
+    but "this exact edit landed on 204 of them"."""
+    import re as _re
+    counts = {}
+    examples = {}
+    for c in changes:
+        seen = []
+        for clause in (c["summary"] or "").split(" · "):
+            p = clause.strip()
+            low = p.lower()
+            if not p:
+                continue
+            if low.startswith("page text"):
+                w = "text edited"
+            elif low.startswith("images ("):
+                w = "images changed"
+            elif low.startswith("visual layout"):
+                w = "layout shifted"
+            else:
+                # drop the counts, and normalise the two ways a whole section
+                # is announced ("X added" and "section 'x' added") into one
+                p = _re.sub(r"\s*\((?:\+\d+)?/?(?:-\d+)?/?(?:~\d+)?\)", "", p)
+                m = _re.fullmatch(r"section '([^']+)' (\w+)", p, _re.I)
+                if m:
+                    w = "%s %s" % (m.group(1).capitalize(), m.group(2))
+                else:
+                    w = p
+            wl = w.lower()
+            if wl not in [x.lower() for x in seen]:
+                seen.append(w)
+        if not seen:
+            continue
+        key = " · ".join(seen)
+        counts[key] = counts.get(key, 0) + 1
+        # keep the first example that is not the Home page, which changes
+        # every week by design and makes a poor illustration
+        if key not in examples or (examples[key]["ptype"] == "Home"
+                                   and c["ptype"] != "Home"):
+            examples[key] = {"id": c["id"], "title": c["title"],
+                             "ptype": c["ptype"]}
+    rows = sorted(counts.items(), key=lambda kv: -kv[1])[:top]
+    return [{"label": k, "pages": n, "id": examples[k]["id"],
+             "example": examples[k]["title"]} for k, n in rows]
+
+
 def _file_types(con, started):
     """File updates grouped by document type. Reads each changed asset's own
     item row for the real type; falls back to the file extension."""
@@ -416,10 +467,13 @@ def run_digest(con, run):
             return "gain"
         return "edit"
 
-    d["top"] = [{
-        "title": c["title"], "url": c["url"], "id": c["id"],
-        "summary": c["summary"] or "", "dir": _dir(c),
-    } for c in ch if c["ptype"] != "Home"][:7]
+    # THE RECURRING CHANGES. Seven individual pages told a reviewer almost
+    # nothing - they were seven arbitrary members of one enormous crowd. The
+    # week's real story is which change REPEATED: 378 pages this run collapse
+    # into 28 patterns, one of which covers 204 of them. Group by the shape of
+    # the change (the same clauses with the numbers stripped), count the pages,
+    # and keep one example so a reviewer can open a real case.
+    d["patterns"] = _patterns(ch)
 
     fu = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
@@ -740,21 +794,26 @@ def render_digest(d, base_url, when_label):
     newcall = ""
 
     rows_top = ""
-    for t in d["top"]:
+    for t in d.get("patterns", []):
         rows_top += (
-            '<tr><td style="padding:13px 0;border-top:1px solid ' + _LINE + ';">'
-            '<a href="' + b + '/change/' + str(t["id"]) + '" '
-            'style="font:600 14px/1.4 ' + FONT + ';color:' + _ACCENT + ';'
-            'text-decoration:none;">' + _esc(t["title"]) + '</a>'
+            '<tr><td width="58" valign="top" style="padding:13px 12px 13px 0;'
+            'border-top:1px solid ' + _LINE + ';font:800 17px/1.2 ' + FONT + ';'
+            'color:' + _ACCENT + ';white-space:nowrap;">'
+            + "{:,}".format(t["pages"]) + '</td>'
+            '<td style="padding:13px 0;border-top:1px solid ' + _LINE + ';">'
+            '<div style="font:600 13px/1.45 ' + FONT + ';color:' + _INK + ';">'
+            + _esc(t["label"]) + '</div>'
             '<div style="font:400 12px/1.5 ' + FONT + ';color:' + _MUT + ';'
-            'margin-top:4px;">' + _esc(_plain(t["summary"])) + '</div>'
-            '</td></tr>')
+            'margin-top:3px;">e.g. <a href="' + b + '/change/' + str(t["id"])
+            + '" style="color:' + _ACCENT + ';text-decoration:none;">'
+            + _esc(t["example"]) + '</a></div></td></tr>')
     big = ""
-    if d["top"]:
+    if d.get("patterns"):
         big = (
             '<tr><td style="padding:8px 28px 0;">'
             '<div style="font:800 12px/1.4 ' + FONT + ';letter-spacing:.06em;'
-            'text-transform:uppercase;color:' + _MUT + ';">The biggest changes</div>'
+            'text-transform:uppercase;color:' + _MUT + ';">'
+            'What repeated, in pages</div>'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
             + rows_top + '</table></td></tr>')
 

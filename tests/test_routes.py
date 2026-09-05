@@ -685,7 +685,13 @@ def test_the_digest_builds_and_renders_from_a_real_run():
     assert html.startswith("<!doctype html")
     assert 'Radar</span>' in html and "cid:iradarlogo" in html,         "the brand wordmark or logo is missing"
     assert "Review the queue" in html
-    assert "40 lines added, 3 removed" in html,         "the summary should read in words, not diff notation"
+    # changes are grouped by SHAPE, not listed page by page: the numbers are
+    # stripped out of the label and the page count leads
+    assert d["patterns"] and d["patterns"][0]["label"] == "text edited", \
+        d["patterns"]
+    assert "what repeated" in html.lower(), "the pattern list is missing"
+    assert "40 lines added" not in html, \
+        "a per-page diff line came back into the pattern list"
     assert "pages affected, by type" in html.lower(), "the page-type chart is missing"
     assert "/digest-chart.png?" in html, "the donut chart image is missing"
 
