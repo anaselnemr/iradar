@@ -305,9 +305,12 @@ def _component_diffs(changes):
             bits.append("+%d" % v["gained"])
         if v["lost"]:
             bits.append("-%d" % v["lost"])
+        label = "%s %s" % (name, "/".join(bits)) if bits else name
         if v["emptied"]:
-            bits.append("~%d" % v["emptied"])
-        out["%s %s" % (name, "/".join(bits))] = sum(v.values())
+            # words, not a symbol: the chart font has no glyph that reads as
+            # "emptied" without looking like a minus
+            label += " (%d emptied)" % v["emptied"]
+        out[label] = sum(v.values())
     return out
 
 
@@ -416,7 +419,7 @@ def run_digest(con, run):
     d["top"] = [{
         "title": c["title"], "url": c["url"], "id": c["id"],
         "summary": c["summary"] or "", "dir": _dir(c),
-    } for c in ch[:7]]
+    } for c in ch if c["ptype"] != "Home"][:7]
 
     fu = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
@@ -566,7 +569,7 @@ def render_donut(pairs):
     from PIL import Image, ImageDraw, ImageFont
     pairs = [(str(l)[:44], int(v)) for l, v in pairs if int(v) > 0][:9]
     total = sum(v for _l, v in pairs)
-    S = 3                                   # supersample, then downscale
+    S = 4                                   # supersample, then downscale
     Wf = 540
     rows = max(1, len(pairs))
     Hf = max(210, 24 + rows * 30)
@@ -619,7 +622,7 @@ def render_donut(pairs):
         dr.text((W - 16 * S - (vb[2] - vb[0]), ly), vs, font=fval, fill="#6b6a76")
         ly += 28 * S
 
-    img = img.resize((Wf, Hf), Image.LANCZOS)
+    img = img.resize((Wf * 2, Hf * 2), Image.LANCZOS)   # 2x for high-DPI
     buf = BytesIO()
     img.save(buf, "PNG")
     return buf.getvalue()
@@ -702,7 +705,7 @@ def render_digest(d, base_url, when_label):
         + _stat("Page updates", n, _ACCENT)
         + _stat("Content updates", d.get("content_updates", 0),
                 _INK if d.get("content_updates") else _FAINT)
-        + _stat("Not live (404)", nl, _BAD if nl else _FAINT))
+        + _stat("Went offline", nl, _BAD if nl else _FAINT))
 
     def _chart_img(title, data, footnote=""):
         if not data:
@@ -734,8 +737,8 @@ def render_digest(d, base_url, when_label):
                      if d.get("wording_pages") else "")
         chart += _chart_img(
             "Component changes, in pages", d.get("by_component"),
-            footnote="+ pages that gained the component · − lost it"
-                     " · ~ it went empty")
+            footnote="+ pages that gained the component ·"
+                     " − pages that lost it")
     newcall = ""
 
     rows_top = ""
