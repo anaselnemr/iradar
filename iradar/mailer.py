@@ -414,11 +414,14 @@ def render_digest(d, base_url, when_label):
         sub = ((", ".join(chunks) + ".").capitalize() if chunks
                else "Waiting for you on the dashboard.")
 
+    # each label says WHAT was added or removed - "Added" alone reads as
+    # anything from new pages to new emails
     stats = (
-        _stat("Updates", n, _ACCENT)
-        + _stat("Added", d.get("gains", 0), _GOOD if d.get("gains") else _FAINT)
-        + _stat("Removed", d["losses"], _BAD if d["losses"] else _FAINT)
-        + _stat("Files", fu, _INK if fu else _FAINT))
+        _stat("Page updates", n, _ACCENT)
+        + _stat("Gained content", d.get("gains", 0),
+                _GOOD if d.get("gains") else _FAINT)
+        + _stat("Lost content", d["losses"], _BAD if d["losses"] else _FAINT)
+        + _stat("File updates", fu, _INK if fu else _FAINT))
 
     k = d["by_kind"]
     kt = max(1, max(k.values()) if k.values() else 1)
