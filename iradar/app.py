@@ -710,11 +710,30 @@ DISPLAY_TZ = os.environ.get("IRADAR_TZ", "Europe/Berlin")
 
 
 def _digest_when(run):
-    """Human date for the run in the display zone, portable across OSes."""
+    """Human date for the run in the display zone, portable across OSes.
+
+    A weekly check is named for its CYCLE day, not the minute the machine
+    happened to finish: started early on the Saturday, or overrunning into
+    the Monday, it is still "the Sunday check". So on a weekly cadence the
+    label snaps to the configured weekday inside the run's own week."""
     ts = run["finished"] or run["started"]
     if not ts:
         return ""
     dt = to_local(ts)
+    try:
+        st = db.get_settings()
+        if (st.get("frequency") or "weekly") == "weekly":
+            names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            want = names.index((st.get("weekday") or "mon").lower()[:3])
+            shift = want - dt.weekday()
+            # forward only for a check run EARLY (a day or two before its
+            # slot); a check that overran into the following days belongs to
+            # the cycle day behind it, not the one a week ahead
+            if shift > 2:
+                shift -= 7
+            dt = dt + timedelta(days=shift)
+    except Exception:
+        pass
     return "%s, %d %s %d" % (dt.strftime("%A"), dt.day,
                              dt.strftime("%B"), dt.year)
 
@@ -797,6 +816,29 @@ def _scheduled_check(_retry=0):
     already holds the lock, and without a retry that whole scheduled check
     would silently vanish (on weekly cadence, a lost week). Re-try every
     15 minutes for up to 12 hours, then give up loudly."""
+    # ONE CHECK PER CYCLE. A check run early - by hand, on the Saturday - is
+    # this week's check; firing the cron on Sunday would redo nine hours of
+    # work over an unchanged site and mail everyone a second, empty report.
+    # Skip when a scheduled check already landed within half a cycle, which
+    # on a weekly cadence means the last three and a half days.
+    try:
+        st = db.get_settings()
+        half = {"daily": 12, "bidaily": 24}.get(st.get("frequency"), 84)
+        con = db.connect()
+        last = con.execute(
+            "SELECT finished FROM runs WHERE kind='scheduled'"
+            " AND finished IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+        con.close()
+        if last and last["finished"]:
+            done = datetime.strptime(last["finished"], "%Y-%m-%d %H:%M:%S")
+            age = (datetime.utcnow() - done).total_seconds() / 3600.0
+            if 0 <= age < half:
+                print("[scheduler] this cycle's check already ran %.1fh ago"
+                      " - skipping" % age, flush=True)
+                return
+    except Exception as e:
+        print("[scheduler] cycle check failed, running anyway: %s" % e,
+              flush=True)
     if runner.run_check(kind="scheduled") is not None:
         return
     if _retry >= 48:
