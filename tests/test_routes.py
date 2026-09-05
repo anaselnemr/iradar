@@ -679,12 +679,15 @@ def test_the_digest_builds_and_renders_from_a_real_run():
     con.close()
     assert d["updates"] == 1
     assert d["gains"] == 1 and d["losses"] == 0, d
+    # the page-type breakdown counts the changed page under its own ptype
+    assert sum(d["by_ptype"].values()) == 1, d["by_ptype"]
     html = mailer.render_digest(d, "https://iradar.net", "Sunday, 6 September 2026")
     assert html.startswith("<!doctype html")
-    assert "cid:iradarlogo" in html, "the brand logo is not referenced"
+    assert 'Radar</span>' in html and "cid:iradarlogo" in html,         "the brand wordmark or logo is missing"
     assert "Review the queue" in html
     assert "40 lines added, 3 removed" in html,         "the summary should read in words, not diff notation"
-    assert "what changed" in html.lower(), "the chart section is missing"
+    assert "pages affected, by type" in html.lower(), "the page-type chart is missing"
+    assert "/digest-chart.png?" in html, "the donut chart image is missing"
 
 
 def test_email_alerts_toggle_flips_the_flag():
@@ -698,3 +701,8 @@ def test_email_alerts_toggle_flips_the_flag():
     v = con.execute("SELECT email_opt_in FROM users WHERE id=?", (_uid,)).fetchone()[0]
     con.close()
     assert v == 0, "opt-in did not turn off"
+
+def test_the_digest_chart_route_draws_a_png():
+    r = _ok("/digest-chart.png?d=Part+pages:334&d=Product+pages:13")
+    assert r.data[1:4] == b"PNG", "not a PNG"
+    assert r.headers["Content-Type"] == "image/png"

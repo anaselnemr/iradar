@@ -87,9 +87,13 @@ def send(to_addr, subject, html, text_fallback=""):
     alt.attach(MIMEText(text_fallback or _strip(html), "plain", "utf-8"))
     alt.attach(MIMEText(html, "html", "utf-8"))
     root.attach(alt)
-    logo = _logo_part()
-    if logo is not None:
-        root.attach(logo)
+    # only carry the inline logo if the HTML actually references it - the
+    # digest dropped its masthead logo, and an unreferenced inline image can
+    # surface as a stray attachment in some clients.
+    if "cid:iradarlogo" in html:
+        logo = _logo_part()
+        if logo is not None:
+            root.attach(logo)
     msg = root
     try:
         ctx = ssl.create_default_context()
@@ -154,6 +158,189 @@ def _strip(html):
 # --------------------------------------------------------------------------
 # The smart summary
 # --------------------------------------------------------------------------
+# The page-type names as a reviewer reads them, pluralised. Anything not here
+# (there should be nothing) falls through to its raw ptype.
+_PTYPE_LABELS = {
+    "Part": "Part pages",
+    "Product": "Product pages",
+    "Application": "Application pages",
+    "Design resources": "Design resource pages",
+    "Home": "Home page",
+    "Board": "Evaluation boards",
+}
+
+
+# Which chart bucket each library section's items belong to. The summaries
+# name sections ("Documents (+2/-1)", "section 'videos' added"); this folds
+# the long tail of product-ish sections into one bucket.
+_ITEM_CAT = {
+    "documents": "New documents", "videos": "Videos",
+    "design resources & boards": "Design resources",
+    "design resources": "Design resources",
+    "trainings & webinars": "Trainings", "partner solutions": "Partner solutions",
+    "news & highlights": "News", "applications": "Applications",
+    "related products": "Related products", "browse by category": "Related products",
+    "bill of material": "Related products", "product details": "Related products",
+    "related product families": "Related products",
+    "related products & applications": "Related products",
+    "register product": "Related products",
+    "product family highlights": "Related products",
+    "featured products": "Related products",
+}
+
+_ITEM_RE = None
+_SECTION_RE = None
+
+
+def _content_items(changes):
+    """The content itself, counted in ITEMS, not pages: how many documents,
+    videos, images, boards actually changed across the week. Images come from
+    the change row's own exact counters; library items from the per-item
+    counts in the summary ("Documents (+2/-1/~3)" = 6 items); a whole section
+    appearing or vanishing counts once. Wording and the developer-community
+    indicator are page-level facts with no item count, so they are returned
+    separately for a footnote rather than distorting the item chart."""
+    import re as _re
+    global _ITEM_RE, _SECTION_RE
+    if _ITEM_RE is None:
+        _ITEM_RE = _re.compile(
+            r"([A-Za-z][\w &]+) \((?:\+(\d+))?/?(?:-(\d+))?/?(?:~(\d+))?\)")
+        _SECTION_RE = _re.compile(r"section '([^']+)' (?:added|removed|emptied|filled)")
+    items = {}
+    wording_pages = 0
+    community_pages = 0
+
+    def bump(cat, n=1):
+        if n:
+            items[cat] = items.get(cat, 0) + n
+
+    for c in changes:
+        if c["text_changed"]:
+            wording_pages += 1
+        bump("Images", (c["images_added"] or 0) + (c["images_removed"] or 0))
+        community_here = False
+        for clause in (c["summary"] or "").split(" · "):
+            p = clause.strip()
+            low = p.lower()
+            if (not p or low.startswith("page text") or low.startswith("images")
+                    or "visual layout" in low):
+                continue
+            if "developer community" in low:
+                community_here = True
+                continue
+            if "hero image" in low:
+                bump("Images")
+                continue
+            m = _ITEM_RE.fullmatch(p)
+            if m:
+                cat = _ITEM_CAT.get(m.group(1).strip().lower(),
+                                    m.group(1).strip())
+                bump(cat, sum(int(x) for x in m.groups()[1:] if x))
+                continue
+            m = _SECTION_RE.fullmatch(low)
+            if m:
+                bump(_ITEM_CAT.get(m.group(1), m.group(1).capitalize()))
+                continue
+            bump("Other")
+        if community_here:
+            community_pages += 1
+    out = dict(sorted(items.items(), key=lambda kv: -kv[1]))
+    return out, wording_pages, community_pages
+
+
+# Component names for the structure chart, folding the long tail of
+# product-ish sections into one and the wording sections into another.
+_COMP_FOLD = {
+    "documents": "Documents", "videos": "Videos",
+    "design resources": "Design resources",
+    "design resources & boards": "Design resources",
+    "developer community": "Developer community",
+    "trainings & webinars": "Trainings", "partner solutions": "Partner solutions",
+    "news & highlights": "News", "applications": "Applications",
+    "bill of material": "Products", "product details": "Products",
+    "related products": "Products", "related product families": "Products",
+    "related products & applications": "Products", "register product": "Products",
+    "browse by category": "Products", "featured products": "Products",
+    "product family highlights": "Products",
+    "about": "Text sections", "overview": "Text sections",
+    "key features": "Text sections", "benefits": "Text sections",
+    "subheadline": "Text sections",
+}
+
+
+def _component_diffs(changes):
+    """Whole components appearing, vanishing or going empty, counted in
+    PAGES: 'Documents +5/-1' means five pages gained a documents section and
+    one lost it this week. Reads the same summaries the review queue shows,
+    de-duplicated per page and component."""
+    import re as _re
+    sec = _re.compile(r"section '([^']+)' (added|removed|emptied|filled)")
+    flag = _re.compile(r"(developer community|hero image|products table)"
+                       r" (added|removed|emptied|filled)")
+    DIR = {"added": "gained", "filled": "gained",
+           "removed": "lost", "emptied": "emptied"}
+    FLAG_NAME = {"developer community": "Developer community",
+                 "hero image": "Hero image", "products table": "Products table"}
+    comp = {}
+    for c in changes:
+        seen = set()
+        for clause in (c["summary"] or "").split(" · "):
+            low = clause.strip().lower()
+            m = sec.fullmatch(low)
+            if m:
+                seen.add((_COMP_FOLD.get(m.group(1), m.group(1).capitalize()),
+                          DIR[m.group(2)]))
+                continue
+            m = flag.fullmatch(low)
+            if m:
+                seen.add((FLAG_NAME[m.group(1)], DIR[m.group(2)]))
+        for name, d in seen:
+            comp.setdefault(name, {"gained": 0, "lost": 0, "emptied": 0})
+            comp[name][d] += 1
+    out = {}
+    for name, v in sorted(comp.items(),
+                          key=lambda kv: -sum(kv[1].values())):
+        bits = []
+        if v["gained"]:
+            bits.append("+%d" % v["gained"])
+        if v["lost"]:
+            bits.append("-%d" % v["lost"])
+        if v["emptied"]:
+            bits.append("~%d" % v["emptied"])
+        out["%s %s" % (name, "/".join(bits))] = sum(v.values())
+    return out
+
+
+def _file_types(con, started):
+    """File updates grouped by document type. Reads each changed asset's own
+    item row for the real type; falls back to the file extension."""
+    import os
+    import re as _re
+    rows = con.execute(
+        "SELECT url, kind FROM asset_changes WHERE IFNULL(reviewed,0)=0"
+        " AND ts >= ?", (started,)).fetchall()
+    out = {}
+    for r in rows:
+        u = r["url"]
+        label = None
+        try:
+            it = con.execute("SELECT meta FROM items WHERE item_url=? LIMIT 1",
+                             (u,)).fetchone()
+            if it and it["meta"]:
+                first = it["meta"].split("|")[0].strip()
+                if first:
+                    label = first
+        except Exception:
+            pass
+        if not label:
+            m = _re.search(r"\.([a-z0-9]{2,4})(?:\?|$)",
+                           os.path.basename(u.split("?")[0]).lower())
+            label = (m.group(1).upper() if m
+                     else (r["kind"] or "file").capitalize())
+        out[label] = out.get(label, 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+
+
 def run_digest(con, run):
     """The facts worth putting in front of a person after a check.
 
@@ -193,24 +380,29 @@ def run_digest(con, run):
              or (c["images_added"] or 0) > 0]
     d["gains"] = len(gains)
 
-    # the changes table has no library column - a library change lives in the
-    # summary text, written by the same comparison that raised the review. Two
-    # phrasings exist: per-item counts ("Documents (+2/-1)") and whole-section
-    # moves ("section 'documents' added"), so match the section NAME, not the
-    # exact phrase, case-insensitively.
-    LIB_MARKS = ("document", "video", "design resource", "training",
-                 "partner solution")
-    by_kind = {"text": 0, "images": 0, "visual": 0, "library": 0}
+    # PAGES AFFECTED, BY PAGE TYPE. The reviewer's first question is "what
+    # KIND of pages moved this week" - 300 part pages is a routine catalogue
+    # refresh, three product pages is worth a look. ptype is the page's own
+    # classification (Part / Product / Application / Design resources / Home).
+    by_ptype = {}
     for c in ch:
-        if c["text_changed"]:
-            by_kind["text"] += 1
-        if c["images_changed"]:
-            by_kind["images"] += 1
-        if c["visual_changed"]:
-            by_kind["visual"] += 1
-        if any(m in (c["summary"] or "").lower() for m in LIB_MARKS):
-            by_kind["library"] += 1
-    d["by_kind"] = by_kind
+        label = _PTYPE_LABELS.get(c["ptype"], c["ptype"] or "Other")
+        by_ptype[label] = by_ptype.get(label, 0) + 1
+    d["by_ptype"] = dict(sorted(by_ptype.items(), key=lambda kv: -kv[1]))
+
+    # FILE UPDATES, BY DOCUMENT TYPE. asset_changes only knows document/image/
+    # video, but the file's own item row carries the real type in its meta
+    # ("Datasheet | PDF | Public | EN") - so a datasheet revision reads as a
+    # Datasheet, not a nameless "document". Fall back to the file extension for
+    # the few assets with no matching item row.
+    d["by_filetype"] = _file_types(con, started)
+
+    # THE CONTENT ITSELF, IN ITEMS: how many documents, videos, images, boards
+    # actually changed across those pages - a different unit from the page
+    # counts above, so the two charts tell two stories instead of one twice.
+    # Wording and the community indicator have no item count; they ride along
+    # as page tallies for a footnote under the chart.
+    d["by_items"], d["wording_pages"], d["community_pages"] = _content_items(ch)
 
     def _dir(c):
         add = (c["lines_added"] or 0) + (c["images_added"] or 0)
@@ -230,6 +422,14 @@ def run_digest(con, run):
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
         " AND ts >= ?", (started,)).fetchone()[0]
     d["file_updates"] = fu
+    # the two document stories, side by side in one chart: "New documents"
+    # (links added to pages) and "Document updates" (the file behind an
+    # existing link replaced with a new version - the page shows nothing)
+    if fu:
+        d["by_items"]["Document updates"] = fu
+        d["by_items"] = dict(sorted(d["by_items"].items(),
+                                    key=lambda kv: -kv[1]))
+    d["content_updates"] = sum(d["by_items"].values())
 
     # pages read for the very first time this run - the newly discovered/added
     first = con.execute(
@@ -238,11 +438,27 @@ def run_digest(con, run):
     d["new_pages"] = first
 
     d["errors"] = run["errors"] or 0
-    d["mismatch"] = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1 AND last_status='ownership'"
-    ).fetchone()[0] if _has_status(con, "ownership") else 0
+    # HEALTH, not content: pages the check found broken rather than edited - a
+    # page that 404s, or renders blank. These are the "something is wrong on
+    # the site" signals, separate from any content change, and the ones most
+    # worth a reviewer's eye. Current state (not just this run) so a page that
+    # has been down for weeks keeps showing until it is fixed.
+    d["notlive"] = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1 AND last_status='notlive'"
+    ).fetchone()[0]
+    d["blank"] = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1 AND last_status='blank'"
+    ).fetchone()[0]
     d["pages"] = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
+    d["errors_total"] = (d["notlive"] + d["blank"] + (d["errors"] or 0))
+    d["by_component"] = _component_diffs(ch)
+    # watched-pages delta against the previous check: extra pages since last
+    # run show as +N beside the count, removals as -N
+    prev = con.execute(
+        "SELECT total FROM runs WHERE finished IS NOT NULL AND id<?"
+        " AND total>=50 ORDER BY id DESC LIMIT 1", (run["id"],)).fetchone()
+    d["pages_delta"] = (d["pages"] - prev["total"]) if prev and prev["total"]         else 0
 
     # how long the check actually worked, not its wall clock - a resumed run's
     # started-to-finished can span days of downtime
@@ -303,33 +519,110 @@ def _esc(s):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def _stat(label, value, colour):
+def _stat(label, value, colour, suffix=""):
     return (
-        '<td align="center" width="25%" style="padding:16px 6px;">'
-        '<div style="font:800 30px/1 ' + FONT + ';color:' + colour + ';">'
-        + _esc(value) + '</div>'
+        '<td align="center" width="25%" style="padding:16px 5px;">'
+        '<div style="font:800 26px/1 ' + FONT + ';color:' + colour + ';'
+        'white-space:nowrap;">' + _esc(value) + suffix + '</div>'
         '<div style="font:700 10px/1.4 ' + FONT + ';letter-spacing:.07em;'
         'text-transform:uppercase;color:' + _MUT + ';margin-top:7px;">'
         + _esc(label) + '</div></td>')
 
 
-def _bar(label, n, total, colour):
-    pct = int(round(100.0 * n / total)) if total else 0
-    fill = max(pct, 3) if n else 0
-    return (
-        '<tr>'
-        '<td width="128" style="font:600 12px/1.5 ' + FONT + ';color:' + _INK
-        + ';padding:5px 12px 5px 0;white-space:nowrap;">' + _esc(label) + '</td>'
-        '<td style="padding:5px 0;">'
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-        '<tr><td style="background:' + _LINE + ';border-radius:5px;">'
-        '<table role="presentation" width="' + str(fill) + '%" cellpadding="0" '
-        'cellspacing="0"><tr><td style="background:' + colour + ';height:9px;'
-        'border-radius:5px;font-size:0;line-height:0;">&nbsp;</td></tr></table>'
-        '</td></tr></table></td>'
-        '<td width="34" align="right" style="font:700 12px/1.5 ' + FONT + ';'
-        'color:' + _MUT + ';padding-left:10px;">' + str(n) + '</td>'
-        '</tr>')
+# The donut palette: iRadar indigo leads, then a spread of distinct hues so
+# neighbouring slices never read as the same colour. Grey is reserved for the
+# "Other" catch-all so it never competes with a real category.
+_DONUT_PAL = ["#5e6ad2", "#e0803a", "#1ea896", "#d6537a", "#8b5cc7",
+              "#3b8ce0", "#6fa83a", "#d9a621"]
+_DONUT_GREY = "#c9c8d2"
+
+
+def cap_slices(data, top=8):
+    """At most `top` named slices; the rest folded into 'Other'. Labels stay
+    unique - overflow merges into an existing 'Other' rather than appending a
+    second one (two 'Other' slices collapse to one when the query is decoded,
+    silently losing a slice's worth of the total)."""
+    items = list(data.items())
+    if len(items) <= top:
+        return items
+    kept = items[:top]
+    rest = sum(v for _l, v in items[top:])
+    if rest:
+        for i, (lab, v) in enumerate(kept):
+            if lab == "Other":
+                kept[i] = ("Other", v + rest)
+                break
+        else:
+            kept.append(("Other", rest))
+    return kept
+
+
+def render_donut(pairs):
+    """A donut chart with a legend, as PNG bytes. Pure PIL so both the web
+    route and a local preview can call it. `pairs` is [(label, value), ...]
+    already capped and ordered. Email clients strip SVG and CSS charts, so a
+    real raster image is the only chart every inbox will show."""
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+    pairs = [(str(l)[:44], int(v)) for l, v in pairs if int(v) > 0][:9]
+    total = sum(v for _l, v in pairs)
+    S = 3                                   # supersample, then downscale
+    Wf = 540
+    rows = max(1, len(pairs))
+    Hf = max(210, 24 + rows * 30)
+    W, H = Wf * S, Hf * S
+    img = Image.new("RGB", (W, H), "#ffffff")
+    dr = ImageDraw.Draw(img)
+
+    def font(sz, bold=False):
+        try:
+            return ImageFont.load_default(size=sz * S)
+        except TypeError:
+            return ImageFont.load_default()
+
+    def colour(i, label):
+        return _DONUT_GREY if label.lower() == "other" \
+            else _DONUT_PAL[i % len(_DONUT_PAL)]
+
+    D = 176 * S
+    cx = 18 * S + D // 2
+    cy = H // 2
+    box = [cx - D // 2, cy - D // 2, cx + D // 2, cy + D // 2]
+    ang = -90.0
+    if total <= 0:
+        dr.ellipse(box, fill=_DONUT_GREY)
+    else:
+        for i, (lab, v) in enumerate(pairs):
+            sweep = 360.0 * v / total
+            dr.pieslice(box, ang, ang + sweep, fill=colour(i, lab))
+            ang += sweep
+    hole = int(D * 0.31)
+    dr.ellipse([cx - hole, cy - hole, cx + hole, cy + hole], fill="#ffffff")
+    ftot = font(24, True)
+    tt = str(total)
+    tb = dr.textbbox((0, 0), tt, font=ftot)
+    dr.text((cx - (tb[2] - tb[0]) / 2, cy - (tb[3] - tb[1]) / 2 - tb[1]),
+            tt, font=ftot, fill="#17161c")
+
+    lx = 18 * S + D + 26 * S
+    flab = font(13)
+    fval = font(13, True)
+    ly = int((H - rows * 28 * S) / 2) + 3 * S
+    for i, (lab, v) in enumerate(pairs):
+        sw = 13 * S
+        dr.rounded_rectangle([lx, ly + 2 * S, lx + sw, ly + 2 * S + sw],
+                             radius=3 * S, fill=colour(i, lab))
+        dr.text((lx + sw + 9 * S, ly), lab, font=flab, fill="#3a3a44")
+        pct = round(100.0 * v / total) if total else 0
+        vs = "%d  ·  %d%%" % (v, pct)
+        vb = dr.textbbox((0, 0), vs, font=fval)
+        dr.text((W - 16 * S - (vb[2] - vb[0]), ly), vs, font=fval, fill="#6b6a76")
+        ly += 28 * S
+
+    img = img.resize((Wf, Hf), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def _plain(summary):
@@ -392,64 +685,58 @@ def render_digest(d, base_url, when_label):
 
     n = d["updates"]
     fu = d["file_updates"]
-    if n == 0 and fu == 0:
-        headline = "All quiet this week."
-        sub = "Every tracked page read exactly as it did last time \u2014 nothing to review."
-    else:
-        parts = []
-        if n:
-            parts.append("<b>%d</b> page update%s" % (n, "" if n == 1 else "s"))
-        if fu:
-            parts.append("<b>%d</b> file update%s" % (fu, "" if fu == 1 else "s"))
-        headline = " and ".join(parts) + " to review."
-        good, bad = [], []
-        if d.get("gains"):
-            good.append("%d pages gained content" % d["gains"])
-        if d.get("new_pages"):
-            good.append("%d new page%s now watched"
-                        % (d["new_pages"], "" if d["new_pages"] == 1 else "s"))
-        if d["losses"]:
-            bad.append("%d lost something" % d["losses"])
-        chunks = good + bad
-        sub = ((", ".join(chunks) + ".").capitalize() if chunks
-               else "Waiting for you on the dashboard.")
 
-    # each label says WHAT was added or removed - "Added" alone reads as
-    # anything from new pages to new emails
+    # The tiles ARE the headline - a sentence above them repeated the same
+    # numbers in words, so it went. Four independent counts, plus the
+    # watched-pages delta as a small +N/-N beside the count.
+    delta = d.get("pages_delta", 0)
+    dsuf = ""
+    if delta:
+        dsuf = ('&nbsp;<span style="font:800 13px/1 ' + FONT + ';color:'
+                + (_GOOD if delta > 0 else _BAD) + ';vertical-align:7px;">'
+                + ("+%d" % delta if delta > 0 else "\u2212%d" % -delta)
+                + '</span>')
+    nl = d.get("notlive", 0)
     stats = (
-        _stat("Page updates", n, _ACCENT)
-        + _stat("Gained content", d.get("gains", 0),
-                _GOOD if d.get("gains") else _FAINT)
-        + _stat("Lost content", d["losses"], _BAD if d["losses"] else _FAINT)
-        + _stat("File updates", fu, _INK if fu else _FAINT))
+        _stat("Pages watched", "{:,}".format(d.get("pages", 0)), _INK, dsuf)
+        + _stat("Page updates", n, _ACCENT)
+        + _stat("Content updates", d.get("content_updates", 0),
+                _INK if d.get("content_updates") else _FAINT)
+        + _stat("Not live (404)", nl, _BAD if nl else _FAINT))
 
-    k = d["by_kind"]
-    kt = max(1, max(k.values()) if k.values() else 1)
+    def _chart_img(title, data, footnote=""):
+        if not data:
+            return ""
+        from urllib.parse import quote
+        q = "&".join("d=" + quote("%s:%d" % (lab, v))
+                     for lab, v in cap_slices(data))
+        src = b + "/digest-chart.png?" + q
+        return (
+            '<tr><td style="padding:6px 28px 2px;">'
+            '<div style="font:800 12px/1.4 ' + FONT + ';letter-spacing:.06em;'
+            'text-transform:uppercase;color:' + _MUT + ';padding:16px 0 8px;">'
+            + title + '</div>'
+            '<img src="' + src + '" width="540" alt="' + _esc(title) + '" '
+            'style="display:block;width:100%;max-width:540px;height:auto;'
+            'border:0;outline:none;">'
+            + (('<div style="font:400 11px/1.5 ' + FONT + ';color:' + _FAINT
+                + ';padding-top:6px;">' + _esc(footnote) + '</div>')
+               if footnote else '')
+            + '</td></tr>')
+
     chart = ""
     if n:
-        chart = (
-            '<tr><td style="padding:2px 28px 4px;">'
-            '<div style="font:800 12px/1.4 ' + FONT + ';letter-spacing:.06em;'
-            'text-transform:uppercase;color:' + _MUT + ';padding:14px 0 8px;">'
-            'What changed</div>'
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-            + _bar("Wording", k.get("text", 0), kt, _ACCENT)
-            + _bar("Documents & media", k.get("library", 0), kt, "#7c8af0")
-            + _bar("Images", k.get("images", 0), kt, "#9aa6f5")
-            + _bar("Visual layout", k.get("visual", 0), kt, "#b9c1f9")
-            + '</table></td></tr>')
-
+        chart += _chart_img("Pages affected, by type", d.get("by_ptype"))
+        chart += _chart_img(
+            "Content updates, by type", d.get("by_items"),
+            footnote=("Plus wording edits on %d pages — measured in lines,"
+                      " not items." % d["wording_pages"])
+                     if d.get("wording_pages") else "")
+        chart += _chart_img(
+            "Component changes, in pages", d.get("by_component"),
+            footnote="+ pages that gained the component · − lost it"
+                     " · ~ it went empty")
     newcall = ""
-    if d.get("new_pages"):
-        newcall = (
-            '<tr><td style="padding:12px 28px 0;">'
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-            'style="background:' + _GOOD_BG + ';border-radius:10px;">'
-            '<tr><td align="center" style="padding:12px 16px;font:600 13px/1.5 '
-            + FONT + ';color:#12703a;"><b>%d newly tracked page%s</b> read for '
-            'the first time this week.'
-            '</td></tr></table></td></tr>'
-            % (d["new_pages"], "" if d["new_pages"] == 1 else "s"))
 
     rows_top = ""
     for t in d["top"]:
@@ -470,19 +757,14 @@ def render_digest(d, base_url, when_label):
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
             + rows_top + '</table></td></tr>')
 
-    extra = []
-    if d["errors"]:
-        extra.append('<span style="color:' + _BAD + ';">%d page%s errored</span>'
-                     % (d["errors"], "" if d["errors"] == 1 else "s"))
-    if d.get("mismatch"):
-        extra.append("%d ownership mismatch%s"
-                     % (d["mismatch"], "" if d["mismatch"] == 1 else "es"))
-    meta = str(d["pages"]) + " pages watched" \
-        + ((" \u00b7 " + " \u00b7 ".join(extra)) if extra else "")
+    # No amber strip: the Not-live tile carries the health signal now, and
+    # the owner asked the highlighted line to go.
+    health = ""
+    meta = ""
     file_link = (
         '<div style="padding-top:12px;"><a href="' + b + '/assets" '
         'style="font:600 13px/1 ' + FONT + ';color:' + _ACCENT + ';'
-        'text-decoration:none;">See the file updates \u2192</a></div>') if fu else ""
+        'text-decoration:none;">See the document updates \u2192</a></div>') if fu else ""
 
     return (
 '<!doctype html><html><head><meta charset="utf-8">'
@@ -494,21 +776,18 @@ def render_digest(d, base_url, when_label):
 'style="max-width:600px;width:100%;background:#ffffff;border:1px solid ' + _LINE + ';'
 'border-radius:16px;overflow:hidden;">'
 
-'<tr><td style="background:' + _INK + ';padding:20px 28px;">'
-'<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>'
-'<td style="padding-right:11px;"><img src="cid:iradarlogo" width="30" height="30" '
+'<tr><td style="background:' + _INK + ';padding:18px 28px;">'
+'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+'<td style="padding-right:11px;"><img src="cid:iradarlogo" width="32" height="32" '
 'alt="iRadar" style="display:block;border-radius:8px;"></td>'
-'<td style="font:800 19px/1 ' + FONT + ';color:#ffffff;letter-spacing:-.02em;">iRadar'
-'<div style="font:400 12px/1.4 ' + FONT + ';color:#b9bdf0;margin-top:3px;'
-'font-weight:400;">Weekly change check \u00b7 ' + _esc(when_label) + '</div>'
+'<td style="font:800 20px/1 ' + FONT + ';letter-spacing:-.02em;">'
+'<span style="color:#ffffff;">i</span><span style="color:#8b5cf6;">Radar</span>'
+'<div style="font:400 12px/1.4 ' + FONT + ';color:#b9bdf0;margin-top:4px;'
+'letter-spacing:0;font-weight:400;">Weekly change check \u00b7 '
++ _esc(when_label) + '</div>'
 '</td></tr></table></td></tr>'
 
-'<tr><td align="center" style="padding:24px 28px 4px;">'
-'<div style="font:400 21px/1.4 ' + FONT + ';color:' + _INK + ';">' + headline + '</div>'
-'<div style="font:400 13px/1.55 ' + FONT + ';color:' + _MUT + ';margin-top:7px;">'
-+ sub + '</div></td></tr>'
-
-'<tr><td style="padding:16px 18px 4px;">'
+'<tr><td style="padding:12px 18px 4px;">'
 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
 'style="background:' + _PAPER + ';border-radius:12px;"><tr>' + stats + '</tr></table>'
 '</td></tr>'
@@ -516,16 +795,17 @@ def render_digest(d, base_url, when_label):
 + chart
 + newcall
 + big
++ health
 
 + '<tr><td align="center" style="padding:24px 28px 10px;">'
 '<a href="' + dash + '" style="display:inline-block;background:' + _ACCENT + ';'
 'color:#ffffff;font:700 14px/1 ' + FONT + ';text-decoration:none;padding:14px 30px;'
 'border-radius:9px;">Review the queue \u2192</a>' + file_link + '</td></tr>'
 
-'<tr><td align="center" style="padding:8px 28px 4px;">'
-'<div style="font:400 11px/1.5 ' + FONT + ';color:' + _FAINT + ';">' + meta
-+ '</div></td></tr>'
-'<tr><td align="center" style="padding:14px 28px 22px;border-top:1px solid '
++ (('<tr><td align="center" style="padding:8px 28px 4px;">'
+    '<div style="font:400 11px/1.5 ' + FONT + ';color:' + _FAINT + ';">'
+    + meta + '</div></td></tr>') if meta else '')
++ '<tr><td align="center" style="padding:14px 28px 22px;border-top:1px solid '
 + _LINE + ';">'
 '<div style="font:400 11px/1.6 ' + FONT + ';color:' + _FAINT + ';">'
 'Email alerts are on for your account \u00b7 '

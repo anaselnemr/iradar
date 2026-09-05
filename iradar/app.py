@@ -100,7 +100,7 @@ GUEST_MAY_POST = {"logout"}
 # admin-only page is a team-wide page; these are refused to anyone else.
 OWNER_ONLY_VIEWS = {"guests_page", "guests_delete", "guests_clear"}
 # Reachable without signing in.
-PUBLIC_ENDPOINTS = {"login", "static"}
+PUBLIC_ENDPOINTS = {"login", "static", "digest_chart"}
 
 # --- the shared read-only link ---------------------------------------------
 # UNSET, WHICH IS THE DEFAULT AND WHAT EVERY EXISTING INSTALL HAS, means none
@@ -7683,6 +7683,29 @@ def account_alerts():
         flash("Email alerts are ON — you'll get a summary after each check."
               if on else "Email alerts are off.")
     return redirect(request.referrer or url_for("account_password"))
+
+
+@app.route("/digest-chart.png")
+def digest_chart():
+    """The donut chart for an email digest, rendered as a PNG on demand.
+    Public: it is fetched by the recipient's mail client, which has no session
+    - and it only draws the aggregate counts handed to it in the query, so
+    there is nothing here a signed-out request should not see. Each `d` is one
+    "Label:value" slice; the run's own numbers make the URL unique, so a mail
+    proxy's per-URL cache never serves last week's chart."""
+    pairs = []
+    for item in request.args.getlist("d")[:12]:
+        lab, _sep, val = item.rpartition(":")
+        try:
+            v = int(val)
+        except ValueError:
+            continue
+        if v > 0 and lab.strip():
+            pairs.append((lab.strip(), v))
+    png = mailer.render_donut(mailer.cap_slices(dict(pairs))) if pairs         else mailer.render_donut([("No data", 1)])
+    resp = app.response_class(png, mimetype="image/png")
+    resp.headers["Cache-Control"] = "public, max-age=604800"
+    return resp
 
 
 @app.route("/account/test-email", methods=["POST"])
