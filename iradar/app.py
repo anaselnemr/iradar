@@ -7624,6 +7624,7 @@ def _pw_tpl(forced):
     return "first_password.html" if forced else "profile.html"
 
 
+@app.route("/account", methods=["GET"])
 @app.route("/account/password", methods=["GET", "POST"])
 def account_password():
     me = current_user()

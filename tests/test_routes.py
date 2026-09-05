@@ -683,7 +683,7 @@ def test_the_digest_builds_and_renders_from_a_real_run():
     assert html.startswith("<!doctype html")
     assert "cid:iradarlogo" in html, "the brand logo is not referenced"
     assert "Review the queue" in html
-    assert "ADDED" in html, "a gain should carry an ADDED chip"
+    assert "40 lines added, 3 removed" in html,         "the summary should read in words, not diff notation"
     assert "what changed" in html.lower(), "the chart section is missing"
 
 

@@ -279,22 +279,23 @@ def _work_span(con, run):
 # --------------------------------------------------------------------------
 # The email itself. Table layout and inline styles - the only thing every
 # mail client renders alike (Outlook ignores most CSS and all of flexbox).
-# iRadar's own palette: indigo brand, green for what was added, red for what
-# was removed. The chart is a stack of table cells with proportional widths,
-# because that is a bar chart an email client cannot refuse to draw.
+# iRadar's own palette: indigo brand, green for added, red for removed. The
+# chart is table cells with proportional widths - a bar chart no client can
+# refuse to draw. Everything reads in words, not diff notation: the reviewer
+# team should never have to decode "(+59/-59)".
 # --------------------------------------------------------------------------
+import re as _re
+
 FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 _INK = "#17161c"      # iRadar's near-black
 _MUT = "#6b6a76"
 _FAINT = "#9a99a6"
 _LINE = "#e7e6ee"
 _ACCENT = "#5e6ad2"   # iRadar indigo
-_ACC_SOFT = "#eceefb"
 _PAPER = "#f5f5f9"
 _GOOD = "#16a34a"
 _GOOD_BG = "#e7f6ec"
 _BAD = "#dc2626"
-_BAD_BG = "#fdeaea"
 
 
 def _esc(s):
@@ -304,7 +305,7 @@ def _esc(s):
 
 def _stat(label, value, colour):
     return (
-        '<td align="center" width="20%" style="padding:16px 6px;">'
+        '<td align="center" width="25%" style="padding:16px 6px;">'
         '<div style="font:800 30px/1 ' + FONT + ';color:' + colour + ';">'
         + _esc(value) + '</div>'
         '<div style="font:700 10px/1.4 ' + FONT + ';letter-spacing:.07em;'
@@ -313,7 +314,6 @@ def _stat(label, value, colour):
 
 
 def _bar(label, n, total, colour):
-    """One horizontal bar: label, a proportional coloured track, a count."""
     pct = int(round(100.0 * n / total)) if total else 0
     fill = max(pct, 3) if n else 0
     return (
@@ -332,16 +332,68 @@ def _bar(label, n, total, colour):
         '</tr>')
 
 
+def _plain(summary):
+    """The change summary in words a reviewer reads, not diff notation.
+
+    'page text (+59/-59 lines) . images (+9/-12)' becomes
+    '59 lines added, 59 removed . 9 images added, 12 removed'."""
+    def counts(a, r, noun, edited=None):
+        def word(n):
+            n = int(n)
+            if not noun:
+                return str(n)
+            return "%d %s" % (n, noun[:-1] if n == 1 and noun.endswith("s")
+                              else noun)
+        bits = []
+        if a:
+            bits.append("%s added" % word(a))
+        if r:
+            bits.append(("%s removed" % word(r)) if not bits
+                        else "%s removed" % int(r))
+        if edited:
+            bits.append(("%s edited" % word(edited)) if not bits
+                        else "%s edited" % int(edited))
+        return ", ".join(bits)
+
+    out = []
+    for part in (summary or "").split(" \u00b7 "):
+        p = part.strip()
+        m = _re.fullmatch(r"page text \(\+(\d+)/-(\d+) lines?\)", p)
+        if m:
+            out.append(counts(m.group(1), m.group(2), "lines")
+                       or "text edited")
+            continue
+        m = _re.fullmatch(r"images? \((?:\+(\d+))?/?(?:-(\d+))?\)", p)
+        if m and (m.group(1) or m.group(2)):
+            out.append(counts(m.group(1), m.group(2), "images"))
+            continue
+        m = _re.fullmatch(r"section '([^']+)' (added|removed|emptied|filled)", p)
+        if m:
+            out.append("\u201c%s\u201d section %s"
+                       % (m.group(1).capitalize(), m.group(2)))
+            continue
+        m = _re.fullmatch(
+            r"([A-Z][\w &]+) \((?:\+(\d+))?/?(?:-(\d+))?/?(?:~(\d+))?\)", p)
+        if m and (m.group(2) or m.group(3) or m.group(4)):
+            body = counts(m.group(2), m.group(3), "", m.group(4)).replace("  ", " ")
+            out.append("%s: %s" % (m.group(1), body.strip()))
+            continue
+        if p == "visual layout":
+            out.append("layout shifted")
+            continue
+        out.append(p)
+    return " \u00b7 ".join(x for x in out if x)
+
+
 def render_digest(d, base_url, when_label):
     """The HTML body. `d` is run_digest(); base_url like https://iradar.net."""
     b = base_url.rstrip("/")
     dash = b + "/?status=changed"
-    assets = b + "/assets"
 
     n = d["updates"]
     fu = d["file_updates"]
     if n == 0 and fu == 0:
-        head = "All quiet this week."
+        headline = "All quiet this week."
         sub = "Every tracked page read exactly as it did last time \u2014 nothing to review."
     else:
         parts = []
@@ -349,35 +401,27 @@ def render_digest(d, base_url, when_label):
             parts.append("<b>%d</b> page update%s" % (n, "" if n == 1 else "s"))
         if fu:
             parts.append("<b>%d</b> file update%s" % (fu, "" if fu == 1 else "s"))
-        head = " and ".join(parts) + " to review."
+        headline = " and ".join(parts) + " to review."
         good, bad = [], []
         if d.get("gains"):
-            good.append("%d added to" % d["gains"])
+            good.append("%d pages gained content" % d["gains"])
         if d.get("new_pages"):
             good.append("%d new page%s now watched"
                         % (d["new_pages"], "" if d["new_pages"] == 1 else "s"))
         if d["losses"]:
-            bad.append("%d where something was removed" % d["losses"])
+            bad.append("%d lost something" % d["losses"])
         chunks = good + bad
-        sub = (("Including " + ", ".join(chunks) + ".") if chunks
+        sub = ((", ".join(chunks) + ".").capitalize() if chunks
                else "Waiting for you on the dashboard.")
 
-    # ---- stat tiles: good AND bad ----
     stats = (
         _stat("Updates", n, _ACCENT)
         + _stat("Added", d.get("gains", 0), _GOOD if d.get("gains") else _FAINT)
         + _stat("Removed", d["losses"], _BAD if d["losses"] else _FAINT)
-        + _stat("Files", fu, _INK if fu else _FAINT)
-        + _stat("Errors", d["errors"], _BAD if d["errors"] else _FAINT))
+        + _stat("Files", fu, _INK if fu else _FAINT))
 
-    # ---- the chart: what kind of change, as bars ----
     k = d["by_kind"]
     kt = max(1, max(k.values()) if k.values() else 1)
-    chart_rows = (
-        _bar("Wording", k.get("text", 0), kt, _ACCENT)
-        + _bar("Documents & media", k.get("library", 0), kt, "#7c8af0")
-        + _bar("Images", k.get("images", 0), kt, "#9aa6f5")
-        + _bar("Visual layout", k.get("visual", 0), kt, "#b9c1f9"))
     chart = ""
     if n:
         chart = (
@@ -386,43 +430,33 @@ def render_digest(d, base_url, when_label):
             'text-transform:uppercase;color:' + _MUT + ';padding:14px 0 8px;">'
             'What changed</div>'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-            + chart_rows + '</table></td></tr>')
+            + _bar("Wording", k.get("text", 0), kt, _ACCENT)
+            + _bar("Documents & media", k.get("library", 0), kt, "#7c8af0")
+            + _bar("Images", k.get("images", 0), kt, "#9aa6f5")
+            + _bar("Visual layout", k.get("visual", 0), kt, "#b9c1f9")
+            + '</table></td></tr>')
 
-    # ---- new pages, as a positive callout ----
     newcall = ""
     if d.get("new_pages"):
         newcall = (
             '<tr><td style="padding:12px 28px 0;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="background:' + _GOOD_BG + ';border-radius:10px;">'
-            '<tr><td style="padding:12px 16px;font:600 13px/1.5 ' + FONT + ';'
-            'color:#12703a;">\U0001f195 <b>%d newly tracked page%s</b> were read for '
-            'the first time this week \u2014 iRadar is watching more of the site.'
+            '<tr><td align="center" style="padding:12px 16px;font:600 13px/1.5 '
+            + FONT + ';color:#12703a;"><b>%d newly tracked page%s</b> read for '
+            'the first time this week.'
             '</td></tr></table></td></tr>'
             % (d["new_pages"], "" if d["new_pages"] == 1 else "s"))
 
-    # ---- biggest changes, with direction chips ----
     rows_top = ""
-    CHIP = {
-        "gain": (_GOOD, _GOOD_BG, "ADDED"),
-        "loss": (_BAD, _BAD_BG, "REMOVED"),
-        "edit": (_ACCENT, _ACC_SOFT, "EDITED"),
-    }
     for t in d["top"]:
-        col, bg, word = CHIP.get(t["dir"], CHIP["edit"])
-        chip = ('<span style="display:inline-block;font:700 9px/1 ' + FONT + ';'
-                'color:' + col + ';background:' + bg + ';padding:3px 7px;'
-                'border-radius:9px;letter-spacing:.05em;margin-left:8px;">'
-                + word + '</span>')
         rows_top += (
             '<tr><td style="padding:13px 0;border-top:1px solid ' + _LINE + ';">'
             '<a href="' + b + '/change/' + str(t["id"]) + '" '
-            'style="font:600 14px/1.4 ' + FONT + ';color:' + _INK + ';'
-            'text-decoration:none;">' + _esc(t["title"]) + '</a>' + chip
-            + '<div style="font:400 12px/1.5 ' + FONT + ';color:' + _MUT + ';'
-            'margin-top:4px;">' + _esc(t["summary"]) + '</div>'
-            '<div style="font:400 11px/1.4 monospace;color:' + _FAINT + ';'
-            'margin-top:3px;word-break:break-all;">' + _esc(t["url"]) + '</div>'
+            'style="font:600 14px/1.4 ' + FONT + ';color:' + _ACCENT + ';'
+            'text-decoration:none;">' + _esc(t["title"]) + '</a>'
+            '<div style="font:400 12px/1.5 ' + FONT + ';color:' + _MUT + ';'
+            'margin-top:4px;">' + _esc(_plain(t["summary"])) + '</div>'
             '</td></tr>')
     big = ""
     if d["top"]:
@@ -433,18 +467,19 @@ def render_digest(d, base_url, when_label):
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
             + rows_top + '</table></td></tr>')
 
-    worked = (" \u00b7 captured in " + _esc(d["worked"])) if d.get("worked") else ""
     extra = []
     if d["errors"]:
-        extra.append("%d page%s errored" % (d["errors"], "" if d["errors"] == 1 else "s"))
+        extra.append('<span style="color:' + _BAD + ';">%d page%s errored</span>'
+                     % (d["errors"], "" if d["errors"] == 1 else "s"))
     if d.get("mismatch"):
         extra.append("%d ownership mismatch%s"
                      % (d["mismatch"], "" if d["mismatch"] == 1 else "es"))
-    extraline = (" \u00b7 " + " \u00b7 ".join(extra)) if extra else ""
+    meta = str(d["pages"]) + " pages watched" \
+        + ((" \u00b7 " + " \u00b7 ".join(extra)) if extra else "")
     file_link = (
-        '&nbsp;&nbsp;<a href="' + assets + '" style="font:600 13px/1 ' + FONT + ';'
-        'color:' + _ACCENT + ';text-decoration:none;">File updates \u2192</a>'
-        ) if fu else ""
+        '<div style="padding-top:12px;"><a href="' + b + '/assets" '
+        'style="font:600 13px/1 ' + FONT + ';color:' + _ACCENT + ';'
+        'text-decoration:none;">See the file updates \u2192</a></div>') if fu else ""
 
     return (
 '<!doctype html><html><head><meta charset="utf-8">'
@@ -456,23 +491,20 @@ def render_digest(d, base_url, when_label):
 'style="max-width:600px;width:100%;background:#ffffff;border:1px solid ' + _LINE + ';'
 'border-radius:16px;overflow:hidden;">'
 
-# masthead - real logo + wordmark on iRadar dark
 '<tr><td style="background:' + _INK + ';padding:20px 28px;">'
-'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+'<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>'
 '<td style="padding-right:11px;"><img src="cid:iradarlogo" width="30" height="30" '
 'alt="iRadar" style="display:block;border-radius:8px;"></td>'
 '<td style="font:800 19px/1 ' + FONT + ';color:#ffffff;letter-spacing:-.02em;">iRadar'
-'<div style="font:400 12px/1.4 ' + FONT + ';color:#b9bdf0;letter-spacing:0;'
-'margin-top:3px;font-weight:400;">Weekly change check \u00b7 ' + _esc(when_label) + '</div>'
+'<div style="font:400 12px/1.4 ' + FONT + ';color:#b9bdf0;margin-top:3px;'
+'font-weight:400;">Weekly change check \u00b7 ' + _esc(when_label) + '</div>'
 '</td></tr></table></td></tr>'
 
-# headline
-'<tr><td style="padding:24px 28px 4px;">'
-'<div style="font:400 21px/1.4 ' + FONT + ';color:' + _INK + ';">' + head + '</div>'
+'<tr><td align="center" style="padding:24px 28px 4px;">'
+'<div style="font:400 21px/1.4 ' + FONT + ';color:' + _INK + ';">' + headline + '</div>'
 '<div style="font:400 13px/1.55 ' + FONT + ';color:' + _MUT + ';margin-top:7px;">'
 + sub + '</div></td></tr>'
 
-# stat tiles
 '<tr><td style="padding:16px 18px 4px;">'
 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
 'style="background:' + _PAPER + ';border-radius:12px;"><tr>' + stats + '</tr></table>'
@@ -482,21 +514,19 @@ def render_digest(d, base_url, when_label):
 + newcall
 + big
 
-# CTA
 + '<tr><td align="center" style="padding:24px 28px 10px;">'
 '<a href="' + dash + '" style="display:inline-block;background:' + _ACCENT + ';'
 'color:#ffffff;font:700 14px/1 ' + FONT + ';text-decoration:none;padding:14px 30px;'
 'border-radius:9px;">Review the queue \u2192</a>' + file_link + '</td></tr>'
 
-# meta + footer
-'<tr><td style="padding:8px 28px 4px;">'
-'<div style="font:400 11px/1.5 ' + FONT + ';color:' + _FAINT + ';">'
-+ str(d["pages"]) + ' pages watched' + worked + extraline + '</div></td></tr>'
-'<tr><td style="padding:16px 28px 24px;border-top:1px solid ' + _LINE + ';">'
+'<tr><td align="center" style="padding:8px 28px 4px;">'
+'<div style="font:400 11px/1.5 ' + FONT + ';color:' + _FAINT + ';">' + meta
++ '</div></td></tr>'
+'<tr><td align="center" style="padding:14px 28px 22px;border-top:1px solid '
++ _LINE + ';">'
 '<div style="font:400 11px/1.6 ' + FONT + ';color:' + _FAINT + ';">'
-'You are getting this because email alerts are on for your iRadar account. '
-'Opt out any time: your avatar (top right) \u2192 <b>Email alerts</b> \u2014 '
-'one click turns these off.'
-'</div></td></tr>'
+'Email alerts are on for your account \u00b7 '
+'<a href="' + b + '/account" style="color:' + _ACCENT + ';text-decoration:none;">'
+'Manage them here</a></div></td></tr>'
 
 '</table></td></tr></table></body></html>')
