@@ -577,13 +577,17 @@ def _esc(s):
 
 
 def _stat(label, value, colour, suffix=""):
+    """One tile. The label is ONE short word on purpose: a phone gives each of
+    four tiles about 70px, where "Pages watched" wraps to two lines and its
+    neighbours do not, so the row came out ragged. Any delta rides on the
+    label line - beside a 26px number it overflowed the tile."""
     return (
-        '<td align="center" width="25%" style="padding:16px 5px;">'
+        '<td align="center" width="25%" style="padding:16px 4px;">'
         '<div style="font:800 26px/1 ' + FONT + ';color:' + colour + ';'
-        'white-space:nowrap;">' + _esc(value) + suffix + '</div>'
-        '<div style="font:700 10px/1.4 ' + FONT + ';letter-spacing:.07em;'
-        'text-transform:uppercase;color:' + _MUT + ';margin-top:7px;">'
-        + _esc(label) + '</div></td>')
+        'white-space:nowrap;">' + _esc(value) + '</div>'
+        '<div style="font:700 10px/1.4 ' + FONT + ';letter-spacing:.06em;'
+        'text-transform:uppercase;color:' + _MUT + ';margin-top:7px;'
+        'white-space:nowrap;">' + _esc(label) + suffix + '</div></td>')
 
 
 # The donut palette: iRadar indigo leads, then a spread of distinct hues so
@@ -749,17 +753,19 @@ def render_digest(d, base_url, when_label):
     delta = d.get("pages_delta", 0)
     dsuf = ""
     if delta:
-        dsuf = ('&nbsp;<span style="font:800 13px/1 ' + FONT + ';color:'
-                + (_GOOD if delta > 0 else _BAD) + ';vertical-align:7px;">'
+        dsuf = ('&nbsp;<span style="color:'
+                + (_GOOD if delta > 0 else _BAD) + ';">'
                 + ("+%d" % delta if delta > 0 else "\u2212%d" % -delta)
                 + '</span>')
     nl = d.get("notlive", 0)
+    # four numbers, four colours - the watched total and the content count
+    # both read as plain ink before, so the eye could not tell them apart
     stats = (
-        _stat("Pages watched", "{:,}".format(d.get("pages", 0)), _INK, dsuf)
-        + _stat("Page updates", n, _ACCENT)
-        + _stat("Content updates", d.get("content_updates", 0),
-                _INK if d.get("content_updates") else _FAINT)
-        + _stat("Went offline", nl, _BAD if nl else _FAINT))
+        _stat("Pages", "{:,}".format(d.get("pages", 0)), _INK, dsuf)
+        + _stat("Updated", n, _ACCENT)
+        + _stat("Content", d.get("content_updates", 0),
+                "#1ea896" if d.get("content_updates") else _FAINT)
+        + _stat("Offline", nl, _BAD if nl else _FAINT))
 
     def _chart_img(title, data, footnote=""):
         if not data:
@@ -784,11 +790,7 @@ def render_digest(d, base_url, when_label):
     chart = ""
     if n:
         chart += _chart_img("Pages affected, by type", d.get("by_ptype"))
-        chart += _chart_img(
-            "Content updates, by type", d.get("by_items"),
-            footnote=("Plus wording edits on %d pages — measured in lines,"
-                      " not items." % d["wording_pages"])
-                     if d.get("wording_pages") else "")
+        chart += _chart_img("Content updates, by type", d.get("by_items"))
         chart += _chart_img(
             "Component changes, in pages", d.get("by_component"))
     newcall = ""
