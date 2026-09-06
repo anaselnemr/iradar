@@ -102,6 +102,55 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     assert 'Check all pages' in body[controls:progress]
 
 
+def test_run_split_button_preserves_partial_forms_and_full_run_report_choice():
+    render = app.render_template
+    def with_partial_options(name, **ctx):
+        if name == "index.html":
+            ctx.update(pending_total=4, comp_pending=2, notlive_total=3)
+            ctx["counts"] = dict(ctx["counts"], fresh=1, checked=10, blank=2)
+            ctx["state"] = dict(ctx["state"], running=False)
+        return render(name, **ctx)
+    app.render_template = with_partial_options
+    try:
+        body = _ok("/").data.decode()
+        assert 'name="email_report" value="1" form="run-all"' in body
+        split = body[body.index('class="run-split has-partial"'):body.index('id="runidle"')]
+        main_form = _re.search(r'<form id="run-all"[^>]*>(.*?)</form>', split, _re.S)
+        assert main_form and 'Check all pages' in main_form.group(1)
+        assert 'name="_csrf"' in main_form.group(1)
+        assert 'aria-label="Partial runs"' in split and '>Partial runs</summary>' not in split
+        menu = split[split.index('class="runmore-menu"'):]
+        forms = _re.findall(r'<form[^>]*action="/run-now"[^>]*>(.*?)</form>', menu, _re.S)
+        assert len(forms) == 5
+        for field, form in zip(("pending", "only_new", "pending_components", "skip_gone", "skip_gone_blank"), forms):
+            assert 'name="%s" value="1"' % field in form
+            assert 'name="_csrf"' in form and 'email_report' not in form
+    finally:
+        app.render_template = render
+
+
+def test_run_split_menu_is_hidden_while_running_and_available_for_offline_only():
+    render = app.render_template
+    running = False
+    def with_offline_only(name, **ctx):
+        if name == "index.html":
+            ctx.update(pending_total=0, comp_pending=0, notlive_total=3)
+            ctx["counts"] = dict(ctx["counts"], fresh=0, blank=0)
+            ctx["state"] = dict(ctx["state"], running=running)
+        return render(name, **ctx)
+    app.render_template = with_offline_only
+    try:
+        body = _ok("/").data.decode()
+        assert 'aria-label="Partial runs"' in body and 'name="skip_gone"' in body
+        running = True
+        body = _ok("/").data.decode()
+        assert 'aria-label="Partial runs"' not in body and 'name="email_report"' not in body
+        main_form = _re.search(r'<form id="run-all"[^>]*>(.*?)</form>', body, _re.S).group(1)
+        assert 'disabled' in main_form and 'Check all pages' in main_form
+    finally:
+        app.render_template = render
+
+
 def test_latest_report_is_self_only_and_does_not_change_automatic_email_settings():
     import mailer
     con = db.connect()

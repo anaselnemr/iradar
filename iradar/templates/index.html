@@ -65,10 +65,25 @@
     .next-check .l { text-transform:uppercase; letter-spacing:.02em; }
     .run-actions { display:flex; align-items:center; justify-content:center;
                    gap:8px; flex-wrap:nowrap; white-space:nowrap; }
-    .run-actions .runmore { margin-top:0; }
-    .run-launch { display:flex; align-items:center; justify-content:center; gap:8px; }
-    .run-launch button { font-size:12px; padding:8px 10px; white-space:nowrap; }
-    .run-actions .runmore > summary { font-size:11px; padding:4px; }
+    .run-split { display:inline-flex; align-items:stretch; }
+    .run-launch { display:flex; margin:0; }
+    .run-launch button { min-height:34px; font-size:12px; line-height:1.25;
+                         padding:8px 10px; white-space:nowrap; }
+    .run-split.has-partial .run-launch button { border-radius:7px 0 0 7px; }
+    .run-split .runmore { display:flex; margin:0; }
+    .run-split .runmore > summary { display:flex; justify-content:center;
+      width:34px; min-height:34px; padding:0; box-sizing:border-box;
+      border:0; border-left:1px solid color-mix(in srgb, var(--btn-ink) 30%, transparent);
+      border-radius:0 7px 7px 0; color:var(--btn-ink); background:var(--btn); }
+    .run-split .runmore > summary::after { content:none; }
+    .run-split .runmore > summary:hover,
+    .run-split .runmore[open] > summary { filter:brightness(1.12); }
+    .run-split .runmore > summary svg { width:13px; height:13px; }
+    .run-split .runmore[open] > summary svg { transform:rotate(180deg); }
+    .run-launch button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .run-split .runmore-menu { width:min(300px, calc(100vw - 64px)); min-width:0;
+                             box-sizing:border-box; white-space:normal; }
+    .run-split .runmore-menu .linkbtn { min-height:36px; white-space:normal; }
     .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
                      font-size:11px; cursor:pointer; white-space:nowrap; }
     .report-choice input { margin:0; }
@@ -87,10 +102,9 @@
       .report-stat:last-child { grid-column:span 2; }
     }
     @media (max-width:360px) {
-      .run-actions, .run-launch { gap:4px; }
+      .run-actions { gap:4px; }
       .run-launch button { padding:8px 6px; font-size:11px; }
       .report-choice { gap:3px; font-size:10px; }
-      .run-actions .runmore > summary { font-size:10px; padding:2px; }
     }
   </style>
 
@@ -141,24 +155,29 @@
     </div>
   <div class="summary-controls">
     <div class="run-actions">
-      <form class="run-launch" method="post" action="{{ url_for('run_now') }}">
         {#- A manual check answers for itself. Scheduled checks always email. -#}
         {% if not state.running %}
         <label class="report-choice" title="Email the report to everyone opted in when this manual check finishes. Automatic checks always send their report.">
-          <input type="checkbox" name="email_report" value="1">
+          <input type="checkbox" name="email_report" value="1" form="run-all">
           <span>Send report</span>
         </label>
         {% endif %}
-        <button {% if state.running %}disabled style="opacity:.5"{% endif %}
+      {% set has_partial = not state.running and (pending_total > 0 or comp_pending
+                                                  or (counts.fresh or 0) > 0 or notlive_total) %}
+      <div class="run-split{{ ' has-partial' if has_partial }}">
+      <form id="run-all" class="run-launch" method="post" action="{{ url_for('run_now') }}">
+        <button type="submit" {% if state.running %}disabled style="opacity:.5"{% endif %}
                 title="Checks every page — never-captured first, then failed, then the rest; dead pages last">▶ Check all pages</button>
       </form>
       {# The partial runs stay one click away instead of standing under the
          button permanently: pages that are blank stay blank for a while, so a
          count that never reaches zero was nagging on every single page load. #}
-      {% if not state.running and (pending_total > 0 or comp_pending
-                                   or (counts.fresh or 0) > 0) %}
+      {% if has_partial %}
       <details class="runmore">
-        <summary title="Run only part of the list">Partial runs</summary>
+        <summary aria-label="Partial runs" title="Partial runs — check only part of the list">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+        </summary>
         <div class="runmore-menu">
           {% if pending_total > 0 %}
           <form method="post" action="{{ url_for('run_now') }}">
@@ -196,6 +215,7 @@
         </div>
       </details>
       {% endif %}
+      </div>
     </div>
   </div>
   </div>
