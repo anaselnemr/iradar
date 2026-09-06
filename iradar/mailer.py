@@ -111,22 +111,74 @@ def send(to_addr, subject, html, text_fallback=""):
         return "%s: %s" % (type(e).__name__, e)
 
 
+def _inline_images(html):
+    """Turn every image the digest references into an attachment carried BY
+    the message, and point the HTML at those instead.
+
+    Infineon's filter accepts our plain mail (tested) but swallows the digest,
+    and the one thing the digest does that the tests do not is fetch images
+    from a young domain. Nothing is fetched now: the logo and each chart ride
+    along as inline parts, which also means they render without anyone having
+    to click "download pictures". Returns (html, attachments)."""
+    import base64 as _b64
+    import re as _re
+    from urllib.parse import unquote
+    atts = []
+
+    if "cid:iradarlogo" in html:
+        try:
+            path = os.path.join(os.path.dirname(__file__), "static", "logo.png")
+            with open(path, "rb") as f:
+                atts.append({"filename": "logo.png", "content_id": "iradarlogo",
+                             "content_type": "image/png",
+                             "content": _b64.b64encode(f.read()).decode()})
+        except Exception:
+            html = html.replace("cid:iradarlogo", "")
+
+    def swap(m):
+        qs = m.group(1)
+        pairs = []
+        for item in qs.replace("&amp;", "&").split("&"):
+            if item.startswith("d="):
+                lab, _sep, val = unquote(item[2:]).rpartition(":")
+                try:
+                    pairs.append((lab, int(val)))
+                except ValueError:
+                    pass
+        if not pairs:
+            return m.group(0)
+        cid = "chart%d" % (len(atts) + 1)
+        try:
+            png = render_donut(cap_slices(dict(pairs)))
+        except Exception:
+            return m.group(0)
+        atts.append({"filename": cid + ".png", "content_id": cid,
+                     "content_type": "image/png",
+                     "content": _b64.b64encode(png).decode()})
+        return "cid:" + cid
+
+    html = _re.sub(r"https?://[^\"']+?/digest-chart\.png\?([^\"']+)", swap, html)
+    return html, atts
+
+
 def _send_https(to_addr, subject, html, text_fallback=""):
-    """The HTTPS path (Resend). A CID image cannot ride an API call, so the
-    logo points at the site's own public copy instead - same mark, same look."""
+    """The HTTPS path (Resend), with every image inlined - see _inline_images."""
     import json
     import urllib.error
     import urllib.request
-    base = os.environ.get("PUBLIC_URL", "https://iradar.net").rstrip("/")
-    html = html.replace("cid:iradarlogo", base + "/static/logo.png?v=3")
+    text = text_fallback or _strip(html)
+    html, atts = _inline_images(html)
     name, addr = _from()
-    body = json.dumps({
+    payload = {
         "from": "%s <%s>" % (name, addr),
         "to": [to_addr],
         "subject": subject,
         "html": html,
-        "text": text_fallback or _strip(html),
-    }).encode("utf-8")
+        "text": text,
+    }
+    if atts:
+        payload["attachments"] = atts
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         "https://api.resend.com/emails", data=body,
         headers={"Authorization": "Bearer " + os.environ["RESEND_API_KEY"],
