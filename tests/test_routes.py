@@ -81,15 +81,15 @@ def test_dashboard_renders():
     _ok("/")
 
 
-def test_dashboard_summary_matches_the_digest_order():
-    """The web summary is the digest's six readings, with web-only detail
-    underneath; scheduling and run controls must not become extra tiles."""
+def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
+    """Inventory includes paused pages; monitoring and health have their own
+    readings. Scheduling and run controls must not become extra tiles."""
     body = _ok("/").data.decode("utf-8", "replace")
     start = body.index('class="digest-stats"')
     end = body.index('class="summary-controls"', start)
     summary = body[start:end]
-    labels = [">Pages<", ">Live<", ">Updated<", ">Content<",
-              ">Files<", ">Offline<"]
+    labels = [">Total pages<", ">Live<", ">Paused<", ">Updated<", ">Content<",
+              ">Updated files<", ">Total offline<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard digest metrics changed order"
     assert "Next auto check" not in summary and "Check all pages" not in summary

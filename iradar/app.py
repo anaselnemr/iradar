@@ -968,7 +968,7 @@ STATUS_FILTERS = {
     # no 'rejected' state: rejecting a capture means "not this one as the
     # baseline", after which the page is dealt with and reads as unchanged
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
-    "notlive":   ("Not live (404)", "u.last_status='notlive'"),
+    "notlive":   ("Offline (404/410)", "u.last_http IN (404,410)"),
     "blank":     ("Blank page", "u.last_status='blank'"),
     "error":     ("Capture error", "u.last_status='error'"),
     "paused":    ("Paused", "u.active=0"),
@@ -1007,7 +1007,7 @@ ATTR_FILTERS = {
     # is UNKNOWN, not dead: only 404/410 - the server saying "gone" - count as
     # not live. A 403/429/5xx is the CDN blocking us, never a page state.
     "live":     ("Live (HTTP OK)",
-                 "u.last_http IS NOT NULL AND u.last_http NOT IN (404, 410)"
+                 "u.last_http BETWEEN 200 AND 399"
                  " AND IFNULL(u.last_status,'') NOT IN ('blank', 'error')"),
     "notlive":  ("Not live (404)",
                  "u.last_http IN (404, 410)"),
@@ -1659,31 +1659,28 @@ _BAR_EXTRAS_CACHE = {}
 
 
 def _bar_extras(con):
-    """(updated_pages, content_updates, file_updates, pages_delta) for the
-    stat bar - the digest email's own numbers, on the dashboard, so the two
-    bars read as one instrument.
+    """Latest updates/content/files plus inventory and offline deltas.
 
     Content updates are counted in ITEMS (documents, images, boards) across
     the changes the last finished run opened, exactly as the email counts
-    them; the delta is watched pages now vs the previous full check. Parsing
+    them; inventory includes paused pages, independently of run size. Parsing
     ~1k summaries per page load would be rude, so the result is cached per
     (run, open-change-count) - the count in the key means a review or a new
     change invalidates it without any bookkeeping."""
     run = con.execute("SELECT * FROM runs WHERE finished IS NOT NULL"
                       " ORDER BY id DESC LIMIT 1").fetchone()
     if not run:
-        return 0, 0, 0, 0
+        return 0, 0, 0, 0, 0
     open_n = con.execute(
         "SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
         (run["started"],)).fetchone()[0]
     fu = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
         " AND ts>=?", (run["started"],)).fetchone()[0]
-    watched = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
+    tracked = con.execute("SELECT COUNT(*) FROM urls").fetchone()[0]
     # A file review or a watch-list edit can happen without changing open_n;
     # both belong in the key so the bar never holds their old numbers.
-    key = (run["id"], open_n, fu, watched)
+    key = (run["id"], open_n, fu, tracked)
     if key not in _BAR_EXTRAS_CACHE:
         rows = con.execute(
             "SELECT summary, text_changed, images_added, images_removed"
@@ -1692,15 +1689,21 @@ def _bar_extras(con):
         items, _w, _c = mailer._content_items(rows)
         delta = 0
         prev = con.execute(
-            "SELECT total FROM runs WHERE finished IS NOT NULL AND id<?"
+            "SELECT finished, tracked_total FROM runs WHERE finished IS NOT NULL AND id<?"
             " AND total>=50 ORDER BY id DESC LIMIT 1",
             (run["id"],)).fetchone()
-        if prev and prev["total"] and (run["total"] or 0) >= 50:
-            # same definition as mailer.run_digest: today's active watch list
-            # against the previous full run, not the current run's old total
-            delta = watched - prev["total"]
+        if prev:
+            if prev["tracked_total"] is not None:
+                delta = tracked - prev["tracked_total"]
+            else:
+                # Legacy runs saved workload, not inventory. Count actual
+                # additions instead of mistaking pauses/resumes for new pages.
+                delta = con.execute("SELECT COUNT(*) FROM urls WHERE created_at>?",
+                                    (prev["finished"],)).fetchone()[0]
+        offline_delta = db.run_offline_delta(con, run)
         _BAR_EXTRAS_CACHE.clear()          # one live entry is plenty
-        _BAR_EXTRAS_CACHE[key] = (open_n, sum(items.values()) + fu, fu, delta)
+        _BAR_EXTRAS_CACHE[key] = (open_n, sum(items.values()) + fu, fu, delta,
+                                  offline_delta)
     return _BAR_EXTRAS_CACHE[key]
 
 
@@ -1775,19 +1778,20 @@ def index():
                    THEN 1 ELSE 0 END) AS captured_active,
           SUM(CASE WHEN last_status='changed' AND active=1 THEN 1 ELSE 0 END) AS changed,
           SUM(CASE WHEN last_status='unchanged' AND active=1 THEN 1 ELSE 0 END) AS unchanged,
-          SUM(CASE WHEN active=1 AND last_http IS NOT NULL
-                   AND last_http NOT IN (404, 410)
+          SUM(CASE WHEN last_http BETWEEN 200 AND 399
                    AND IFNULL(last_status,'') NOT IN ('blank','error')
                    THEN 1 ELSE 0 END) AS live,
           SUM(CASE WHEN last_checked IS NOT NULL THEN 1 ELSE 0 END) AS checked,
           SUM(CASE WHEN last_status='rejected' THEN 1 ELSE 0 END) AS rejected,
           SUM(CASE WHEN last_status='error' THEN 1 ELSE 0 END) AS errors,
           SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS paused,
+          SUM(CASE WHEN active=0 AND last_status='blank' THEN 1 ELSE 0 END) AS paused_blank,
+          SUM(CASE WHEN active=0 AND last_http IN (404,410) THEN 1 ELSE 0 END) AS paused_offline,
           SUM(CASE WHEN last_checked IS NULL THEN 1 ELSE 0 END) AS fresh,
           SUM(CASE WHEN last_status='blank' THEN 1 ELSE 0 END) AS blank,
           -- not live = the server says GONE (404/410). Blank bodies and
           -- blocked captures (403/429/5xx) are their own states, never this
-          SUM(CASE WHEN active=1 AND last_status='notlive'
+          SUM(CASE WHEN last_http IN (404,410)
                    THEN 1 ELSE 0 END) AS notlive
         FROM urls""").fetchone()
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
@@ -1927,7 +1931,7 @@ def index():
         # the Mentions tile appears once anything has been collected
         mention_total = con3.execute(
             "SELECT COUNT(*) FROM mentions").fetchone()[0]
-        latest_updates, content_updates, file_updates, pages_delta = \
+        latest_updates, content_updates, file_updates, pages_delta, offline_delta = \
             _bar_extras(con3)
     finally:
         con3.close()
@@ -1937,6 +1941,7 @@ def index():
                            content_updates=content_updates,
                            file_updates=file_updates,
                            pages_delta=pages_delta,
+                           offline_delta=offline_delta,
                            facets=facets,
                            bls=bl_opts, pls=pl_opts,
                            sel_bl=sel_bl, sel_pl=sel_pl,
@@ -7266,6 +7271,7 @@ def _normalize_statuses():
     con = db.connect()
     n = con.execute("UPDATE urls SET last_status='unchanged'"
                     " WHERE last_status IN ('baseline','rejected')").rowcount
+    n += db.reconcile_live_statuses(con)
     con.commit()
     con.close()
     if n:

@@ -79,6 +79,74 @@ DEFAULT_SETTINGS = {
 }
 
 
+def reconcile_live_statuses(con):
+    """Repair stale offline verdicts confirmed by the latest settled capture.
+
+    Keep open changes in the queue; never treat a pending, rejected or failed
+    capture as a live verdict. Snapshot files may have been pruned, but their
+    recorded HTTP result stays.
+    """
+    return con.execute(
+        "UPDATE urls SET last_status=CASE WHEN EXISTS"
+        " (SELECT 1 FROM changes c WHERE c.url_id=urls.id AND c.reviewed=0)"
+        " THEN 'changed' ELSE 'unchanged' END"
+        " WHERE last_status='notlive' AND last_http BETWEEN 200 AND 399"
+        " AND EXISTS (SELECT 1 FROM snapshots s WHERE s.url_id=urls.id"
+        " AND s.id=(SELECT MAX(s2.id) FROM snapshots s2 WHERE s2.url_id=urls.id)"
+        " AND s.status='ok' AND IFNULL(s.rejected,0)=0"
+        " AND s.http_status BETWEEN 200 AND 399"
+        " AND s.ts>=urls.last_checked)"
+    ).rowcount
+
+
+def inventory_counts(con):
+    """All tracked pages and genuine HTTP 404/410s, including paused pages."""
+    row = con.execute(
+        "SELECT COUNT(*) total, COALESCE(SUM(last_http IN (404,410)),0) offline"
+        " FROM urls").fetchone()
+    return row["total"], row["offline"]
+
+
+def finish_run_counts(con, run_id):
+    total, offline = inventory_counts(con)
+    con.execute("UPDATE runs SET tracked_total=?, offline_after=? WHERE id=?",
+                (total, offline, run_id))
+
+
+def run_offline_delta(con, run):
+    """Offline arrivals minus recoveries during this completed run.
+
+    New runs retain both counters so pruning snapshots cannot erase the
+    comparison. Older runs use HTTP transitions in retained capture history,
+    bounded by the run's end so later checks cannot change its result.
+    """
+    if run["offline_before"] is not None and run["offline_after"] is not None:
+        return run["offline_after"] - run["offline_before"]
+    row = con.execute("""
+        WITH before_run AS (
+          SELECT url_id, MAX(id) id FROM snapshots
+          WHERE ts<? AND status='ok' AND IFNULL(rejected,0)=0 GROUP BY url_id
+        ), in_run AS (
+          SELECT url_id, MAX(id) id FROM snapshots
+          WHERE ts>=? AND ts<=? AND status='ok' AND IFNULL(rejected,0)=0
+          GROUP BY url_id
+        )
+        SELECT COALESCE(SUM(CASE
+          WHEN current.http_status IN (404,410)
+               AND (previous.http_status BETWEEN 200 AND 399
+                    OR (previous.id IS NULL AND u.created_at>=?)) THEN 1
+          WHEN current.http_status BETWEEN 200 AND 399
+               AND previous.http_status IN (404,410) THEN -1
+          ELSE 0 END),0)
+        FROM in_run r JOIN snapshots current ON current.id=r.id
+        JOIN urls u ON u.id=r.url_id
+        LEFT JOIN before_run b ON b.url_id=r.url_id
+        LEFT JOIN snapshots previous ON previous.id=b.id
+    """, (run["started"], run["started"], run["finished"], run["started"])
+    ).fetchone()
+    return row[0]
+
+
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -411,6 +479,10 @@ def init_db():
     # suspects were held: the run is over for THEM, but its parked suspects
     # wait for the next check to finish their double-check
     _ensure_column(con, "runs", "stopped", "TEXT DEFAULT ''")
+    # Capture workload excludes paused pages and cannot measure inventory.
+    _ensure_column(con, "runs", "tracked_total", "INTEGER")
+    _ensure_column(con, "runs", "offline_before", "INTEGER")
+    _ensure_column(con, "runs", "offline_after", "INTEGER")
     _ensure_column(con, "snapshots", "http_status", "INTEGER")
     # rejected=1: reviewer said the OLD version was correct - this snapshot is
     # kept for the record but never used as a comparison baseline.

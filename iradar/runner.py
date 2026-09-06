@@ -532,8 +532,9 @@ def _set_checked(con, url_id, now, status):
                 (now, url_id))
     if status == "unchanged":
         con.execute(
-            "UPDATE urls SET last_status='unchanged' WHERE id=? AND NOT EXISTS"
-            " (SELECT 1 FROM changes c WHERE c.url_id=urls.id AND c.reviewed=0)",
+            "UPDATE urls SET last_status=CASE WHEN EXISTS"
+            " (SELECT 1 FROM changes c WHERE c.url_id=urls.id AND c.reviewed=0)"
+            " THEN 'changed' ELSE 'unchanged' END WHERE id=?",
             (url_id,))
     else:
         con.execute("UPDATE urls SET last_status=? WHERE id=?",
@@ -807,9 +808,11 @@ def _run_check_inner(kind, url_ids, baseline=False):
             urls = con.execute(
                 f"SELECT * FROM urls WHERE active=1"
                 f" ORDER BY {priority}, id").fetchall()
+        tracked_total, offline_before = db.inventory_counts(con)
         run_cur = con.execute(
-            "INSERT INTO runs(started, kind, total) VALUES(?, ?, ?)",
-            (db.now_iso(), kind, len(urls)))
+            "INSERT INTO runs(started, kind, total, tracked_total, offline_before)"
+            " VALUES(?, ?, ?, ?, ?)",
+            (db.now_iso(), kind, len(urls), tracked_total, offline_before))
         run_id = run_cur.lastrowid
         try:
             con.executemany(
@@ -875,6 +878,7 @@ def _run_check_inner(kind, url_ids, baseline=False):
         try:
             con.execute("UPDATE runs SET finished=? WHERE id=?",
                         (db.now_iso(), run_id))
+            db.finish_run_counts(con, run_id)
             con.commit()
         except Exception:
             pass
@@ -1139,6 +1143,7 @@ def _run_check_inner(kind, url_ids, baseline=False):
         con.execute("UPDATE runs SET finished=?, ok=?, changed=?, errors=?"
                     " WHERE id=?",
                     (db.now_iso(), ok, changed, errors, run_id))
+        db.finish_run_counts(con, run_id)
     con.commit()
     con.close()
 
