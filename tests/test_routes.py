@@ -86,7 +86,7 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     readings. Scheduling and run controls must not become extra tiles."""
     body = _ok("/").data.decode("utf-8", "replace")
     start = body.index('class="digest-stats"')
-    end = body.index('class="summary-controls"', start)
+    end = body.index('class="next-check"', start)
     summary = body[start:end]
     labels = [">Total pages<", ">Live<", ">Paused<", ">Updated<", ">Content<",
               ">Updated files<", ">Total offline<"]
@@ -94,6 +94,13 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     assert positions == sorted(positions), "dashboard digest metrics changed order"
     assert "Next auto check" not in summary and "Check all pages" not in summary
     assert 'name="email_digest"' in body, "manual digest choice is missing"
+    # The classic layout puts the schedule alongside the stats, and the
+    # centered run controls on their own row below; keep the new digest opt-in.
+    controls = body.index('class="summary-controls"', end)
+    progress = body.index('id="runidle"', controls)
+    assert 'Next auto check (' in body[end:controls]
+    assert 'name="email_digest"' in body[controls:progress]
+    assert 'Check all pages' in body[controls:progress]
 
 
 def test_offline_delta_is_red_beside_the_total_for_every_sign():
