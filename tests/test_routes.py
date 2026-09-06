@@ -85,22 +85,91 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     """Inventory includes paused pages; monitoring and health have their own
     readings. Scheduling and run controls must not become extra tiles."""
     body = _ok("/").data.decode("utf-8", "replace")
-    start = body.index('class="digest-stats"')
+    start = body.index('class="report-stats"')
     end = body.index('class="next-check"', start)
     summary = body[start:end]
     labels = [">Total pages<", ">Live<", ">Paused<", ">Updated<", ">Content<",
               ">Updated files<", ">Total offline<"]
     positions = [summary.index(label) for label in labels]
-    assert positions == sorted(positions), "dashboard digest metrics changed order"
+    assert positions == sorted(positions), "dashboard report metrics changed order"
     assert "Next auto check" not in summary and "Check all pages" not in summary
-    assert 'name="email_digest"' in body, "manual digest choice is missing"
-    # The classic layout puts the schedule alongside the stats, and the
-    # centered run controls on their own row below; keep the new digest opt-in.
+    assert 'name="email_report"' in body, "manual report choice is missing"
+    # Schedule and controls share one column beside the stats, above progress.
     controls = body.index('class="summary-controls"', end)
     progress = body.index('id="runidle"', controls)
     assert 'Next auto check (' in body[end:controls]
-    assert 'name="email_digest"' in body[controls:progress]
+    assert 'name="email_report"' in body[controls:progress]
     assert 'Check all pages' in body[controls:progress]
+
+
+def test_latest_report_is_self_only_and_does_not_change_automatic_email_settings():
+    import mailer
+    con = db.connect()
+    previous_opt_in = con.execute("SELECT email_opt_in FROM users WHERE id=?", (_uid,)).fetchone()[0]
+    con.execute("UPDATE users SET email_opt_in=0 WHERE id=?", (_uid,))
+    rid = con.execute("INSERT INTO runs(started,finished,kind,total) VALUES("
+                      "'2026-09-06 01:00:00','2026-09-06 02:00:00','scheduled',100)").lastrowid
+    pending = con.execute("INSERT INTO runs(started,kind,total)"
+                          " VALUES('2026-09-07 01:00:00','manual',100)").lastrowid
+    con.commit()
+    con.close()
+    before = {key:db.get_settings().get(key) for key in
+              ("last_emailed_run", "email_after_manual_run")}
+    sent, selected = [], []
+    configured, send, build = mailer.configured, mailer.send, mailer.run_report
+    mailer.configured = lambda: True
+    mailer.send = lambda to, subject, html: sent.append((to,subject,html)) or None
+    def record(con, run):
+        selected.append(run["id"])
+        return build(con, run)
+    mailer.run_report = record
+    try:
+        profile = _ok("/account").data.decode()
+        assert "Send latest report" in profile and "Send me a test" not in profile
+        assert "digest" not in profile.lower()
+        assert 'action="/account/latest-report"' in profile
+        response = _client.post("/account/latest-report", data={"_csrf":_csrf()})
+        assert response.status_code == 302
+        assert selected == [rid], "must use the latest finished check, not the in-progress one"
+        assert len(sent) == 1 and sent[0][0] == "routes@example.com"
+        assert "latest report" in sent[0][1] and not _re.search(r"\btest\b", sent[0][1])
+        assert ">Total offline<" in sent[0][2]
+        assert before == {key:db.get_settings().get(key) for key in before}
+        c = db.connect()
+        assert c.execute("SELECT email_opt_in FROM users WHERE id=?", (_uid,)).fetchone()[0] == 0
+        c.close()
+        # Existing account pages can still submit their old action.
+        assert _client.post("/account/test-email", data={"_csrf":_csrf()}).status_code == 302
+        assert len(sent) == 2
+    finally:
+        mailer.configured, mailer.send, mailer.run_report = configured, send, build
+        con = db.connect()
+        con.execute("UPDATE users SET email_opt_in=? WHERE id=?", (previous_opt_in,_uid))
+        con.execute("DELETE FROM runs WHERE id IN (?,?)", (rid,pending))
+        con.commit()
+        con.close()
+
+
+def test_latest_report_with_no_finished_run_does_not_send():
+    import mailer
+    con = db.connect()
+    prior = [(r["finished"],r["id"]) for r in con.execute("SELECT id,finished FROM runs")]
+    con.execute("UPDATE runs SET finished=NULL")
+    con.commit()
+    con.close()
+    configured, send = mailer.configured, mailer.send
+    sent = []
+    mailer.configured = lambda: True
+    mailer.send = lambda *args: sent.append(args)
+    try:
+        response = _client.post("/account/latest-report", data={"_csrf":_csrf()})
+        assert response.status_code == 302 and not sent
+    finally:
+        mailer.configured, mailer.send = configured, send
+        con = db.connect()
+        con.executemany("UPDATE runs SET finished=? WHERE id=?", prior)
+        con.commit()
+        con.close()
 
 
 def test_offline_delta_is_red_beside_the_total_for_every_sign():
@@ -111,7 +180,7 @@ def test_offline_delta_is_red_beside_the_total_for_every_sign():
             app._bar_extras = lambda con, d=delta: (*original(con)[:4], d)
             body = _ok("/").data.decode("utf-8")
             tiles = [ElementTree.fromstring(markup) for markup in _re.findall(
-                r'<a class="digest-stat"[^>]*>.*?</a>', body, _re.S)]
+                r'<a class="report-stat"[^>]*>.*?</a>', body, _re.S)]
             tile = next(t for t in tiles
                         if t.find("div[@class='l']").text == "Total offline")
             inline = tile.find("div[@class='n']/span[@class='delta']")
@@ -696,8 +765,8 @@ def test_everything_per_page_is_one_click_and_carries_the_lot():
     assert mine[0]["BL"] == "ICW"
 
 
-def test_the_digest_builds_and_renders_from_a_real_run():
-    """The after-run email: run_digest reads the run, render_digest makes
+def test_the_report_builds_and_renders_from_a_real_run():
+    """The after-run email: run_report reads the run, render_report makes
     valid HTML with the brand logo reference and both good and bad counts."""
     import mailer
     con = db.connect()
@@ -718,13 +787,13 @@ def test_the_digest_builds_and_renders_from_a_real_run():
                 " 'page text (+40/-3 lines)', 0)", (u, s1, s2))
     con.commit()
     run = con.execute("SELECT * FROM runs WHERE id=?", (rid,)).fetchone()
-    d = mailer.run_digest(con, run)
+    d = mailer.run_report(con, run)
     con.close()
     assert d["updates"] == 1
     assert d["gains"] == 1 and d["losses"] == 0, d
     # the page-type breakdown counts the changed page under its own ptype
     assert sum(d["by_ptype"].values()) == 1, d["by_ptype"]
-    html = mailer.render_digest(d, "https://iradar.net", "Sunday, 6 September 2026")
+    html = mailer.render_report(d, "https://iradar.net", "Sunday, 6 September 2026")
     assert html.startswith("<!doctype html")
     assert 'Radar</span>' in html and "cid:iradarlogo" in html,         "the brand wordmark or logo is missing"
     assert "Review the queue" in html
@@ -736,16 +805,37 @@ def test_the_digest_builds_and_renders_from_a_real_run():
     assert "40 lines added" not in html, \
         "a per-page diff line came back into the pattern list"
     assert "pages affected, by type" in html.lower(), "the page-type chart is missing"
-    assert "/digest-chart.png?" in html, "the donut chart image is missing"
-    # the stat row mirrors the dashboard's own bar: six tiles, dashboard names
-    assert "live" in d, "run_digest must count live pages"
-    for label in (">Pages<", ">Live<", ">Updated<", ">Content<",
-                  ">Files<", ">Offline<"):
-        assert label in html, "stat tile %s missing from the digest" % label
+    assert "/report-chart.png?" in html, "the donut chart image is missing"
+    assert "digest" not in html.lower() and "test summary" not in html.lower()
+    # The stat row mirrors all seven dashboard readings, in the same order.
+    assert "live" in d, "run_report must count live pages"
+    labels = (">Total pages<", ">Live<", ">Paused<", ">Updated<", ">Content<",
+              ">Updated files<", ">Total offline<")
+    assert [html.index(label) for label in labels] == sorted(html.index(label) for label in labels)
+    assert html.count('class="report-stat"') == 7
+    assert html.count('class="delta"') == 2
+
+
+def test_manual_report_form_choice_is_per_run_and_accepts_older_pages():
+    import runner
+    previous = db.get_settings().get("email_after_manual_run", "")
+    launch = runner.run_check_background
+    calls = []
+    runner.run_check_background = lambda **kwargs: calls.append(kwargs) or True
+    try:
+        for fields, expected in (({"email_report":"1"}, "1"), ({}, ""),
+                                 ({"email_digest":"1"}, "1")):
+            response = _client.post("/run-now", data={"_csrf":_csrf(), **fields})
+            assert response.status_code == 302
+            assert db.get_settings().get("email_after_manual_run") == expected
+            assert calls[-1] == {"kind":"manual", "url_ids":None}
+    finally:
+        runner.run_check_background = launch
+        db.set_setting("email_after_manual_run", previous)
 
 
 def test_manual_runs_only_email_when_asked():
-    """The digest gate: a scheduled run always mails, a manual run only when
+    """The report gate: a scheduled run always mails, a manual run only when
     its starter ticked the box, a baseline run never - and the box's flag is
     consumed by the run it belongs to."""
     import app as appmod
@@ -807,7 +897,18 @@ def test_email_alerts_toggle_flips_the_flag():
     con.close()
     assert v == 0, "opt-in did not turn off"
 
-def test_the_digest_chart_route_draws_a_png():
-    r = _ok("/digest-chart.png?d=Part+pages:334&d=Product+pages:13")
+def test_the_report_chart_route_draws_a_png():
+    r = _ok("/report-chart.png?d=Part+pages:334&d=Product+pages:13")
     assert r.data[1:4] == b"PNG", "not a PNG"
     assert r.headers["Content-Type"] == "image/png"
+    assert _ok("/digest-chart.png?d=Part+pages:334").data[1:4] == b"PNG"
+
+
+def test_report_charts_keep_inline_email_images_and_legacy_urls_working():
+    import mailer
+    html = ('<img src="https://iradar.net/report-chart.png?d=Part:3">'
+            '<img src="https://iradar.net/digest-chart.png?d=Product:2">')
+    converted, attachments = mailer._inline_images(html)
+    assert len(attachments) == 2
+    assert 'src="cid:chart1"' in converted and 'src="cid:chart2"' in converted
+    assert "http" not in converted

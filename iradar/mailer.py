@@ -1,4 +1,4 @@
-"""After-run email digest.
+"""After-run email report.
 
 Sends each opted-in person a summary of the check when it finishes. SMTP is
 read from the environment - unset means the whole feature is dark, so a fresh
@@ -108,7 +108,7 @@ def send(to_addr, subject, html, text_fallback=""):
     alt.attach(MIMEText(html, "html", "utf-8"))
     root.attach(alt)
     # only carry the inline logo if the HTML actually references it - the
-    # digest dropped its masthead logo, and an unreferenced inline image can
+    # report dropped its masthead logo, and an unreferenced inline image can
     # surface as a stray attachment in some clients.
     if "cid:iradarlogo" in html:
         logo = _logo_part()
@@ -132,11 +132,11 @@ def send(to_addr, subject, html, text_fallback=""):
 
 
 def _inline_images(html):
-    """Turn every image the digest references into an attachment carried BY
+    """Turn every image the report references into an attachment carried BY
     the message, and point the HTML at those instead.
 
-    Infineon's filter accepts our plain mail (tested) but swallows the digest,
-    and the one thing the digest does that the tests do not is fetch images
+    Infineon's filter accepts our plain mail (tested) but swallows the report,
+    and the one thing the report does that the tests do not is fetch images
     from a young domain. Nothing is fetched now: the logo and each chart ride
     along as inline parts, which also means they render without anyone having
     to click "download pictures". Returns (html, attachments)."""
@@ -177,7 +177,7 @@ def _inline_images(html):
                      "content": _b64.b64encode(png).decode()})
         return "cid:" + cid
 
-    html = _re.sub(r"https?://[^\"']+?/digest-chart\.png\?([^\"']+)", swap, html)
+    html = _re.sub(r"https?://[^\"']+?/(?:report|digest)-chart\.png\?([^\"']+)", swap, html)
     return html, atts
 
 
@@ -467,11 +467,11 @@ def _file_types(con, started):
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
-def run_digest(con, run):
+def run_report(con, run):
     """The facts worth putting in front of a person after a check.
 
     Not just the four counters - the reviewer already sees those on the bar.
-    What a digest is for is the SHAPE of the week: how much of it is losses
+    What a report is for is the SHAPE of the week: how much of it is losses
     (the expensive kind), what the biggest changes are by name, what came in
     new, and what is quietly wrong (ownership, errors). Everything is scoped
     to the changes THIS run opened - ts on or after the run started - so a
@@ -500,7 +500,7 @@ def run_digest(con, run):
     d["losses"] = len(losses)
 
     # GAINS are as worth naming as losses - a datasheet ADDED, a section that
-    # grew, an image that appeared. A digest that only counts what vanished
+    # grew, an image that appeared. A report that only counts what vanished
     # tells half the week.
     gains = [c for c in ch if (c["lines_added"] or 0) > (c["lines_removed"] or 0)
              or (c["images_added"] or 0) > 0]
@@ -572,28 +572,19 @@ def run_digest(con, run):
     # the site" signals, separate from any content change, and the ones most
     # worth a reviewer's eye. Current state (not just this run) so a page that
     # has been down for weeks keeps showing until it is fixed.
-    d["notlive"] = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1 AND last_status='notlive'"
-    ).fetchone()[0]
-    d["blank"] = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1 AND last_status='blank'"
-    ).fetchone()[0]
-    d["pages"] = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
-    # live = a visitor actually gets the page - the dashboard's own formula,
-    # so the email's number and the site's number can never disagree
-    d["live"] = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1"
-        " AND last_http IS NOT NULL AND last_http NOT IN (404, 410)"
-        " AND IFNULL(last_status,'') NOT IN ('blank','error')").fetchone()[0]
+    counts = db.dashboard_counts(con)
+    d["pages"] = counts["total"]
+    d["captured"] = counts["checked"] or 0
+    for key in ("live", "paused", "paused_blank", "paused_offline", "notlive", "blank"):
+        d[key] = counts[key] or 0
+    d["open_updates"] = con.execute(
+        "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
+    d["open_files"] = con.execute(
+        "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0").fetchone()[0]
     d["errors_total"] = (d["notlive"] + d["blank"] + (d["errors"] or 0))
     d["by_component"] = _component_diffs(ch)
-    # watched-pages delta against the previous check: extra pages since last
-    # run show as +N beside the count, removals as -N
-    prev = con.execute(
-        "SELECT total FROM runs WHERE finished IS NOT NULL AND id<?"
-        " AND total>=50 ORDER BY id DESC LIMIT 1", (run["id"],)).fetchone()
-    d["pages_delta"] = (d["pages"] - prev["total"]) if prev and prev["total"]         else 0
+    d["pages_delta"] = db.run_pages_delta(con, run, d["pages"])
+    d["offline_delta"] = db.run_offline_delta(con, run)
 
     # how long the check actually worked, not its wall clock - a resumed run's
     # started-to-finished can span days of downtime
@@ -654,19 +645,23 @@ def _esc(s):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def _stat(label, value, colour, suffix="", width="16%"):
-    """One tile. The label is ONE short word on purpose: a phone gives each of
-    six tiles about 58px, where any two-word label wraps and the row comes out
-    ragged. Any delta rides on the label line - beside the big number it
-    overflowed the tile. Number sized for six across on a 375px phone; the
-    two thousands-sized numbers get wider cells than the small counts."""
+def _stat(label, value, colour, detail="", suffix="", width="25%"):
+    """An unboxed reading, four/three across in mail and two across on phones.
+
+    Inline-block min-width provides wrapping without requiring media queries;
+    the parent supplies a presentation-table fallback for desktop Outlook.
+    """
     return (
-        '<td align="center" width="' + width + '" style="padding:16px 2px;">'
-        '<div style="font:800 20px/1 ' + FONT + ';color:' + colour + ';'
-        'white-space:nowrap;">' + _esc(value) + '</div>'
-        '<div style="font:700 9px/1.4 ' + FONT + ';letter-spacing:.05em;'
-        'text-transform:uppercase;color:' + _MUT + ';margin-top:7px;'
-        'white-space:nowrap;">' + _esc(label) + suffix + '</div></td>')
+        '<div class="report-stat" style="display:inline-block;width:' + width + ';'
+        'min-width:130px;vertical-align:top;text-align:center;">'
+        '<div style="padding:10px 4px;">'
+        '<div class="n" style="font:700 26px/1.2 ' + FONT + ';color:' + colour + ';'
+        'white-space:nowrap;">' + _esc(value) + suffix + '</div>'
+        '<div class="l" style="font:400 12px/1.3 ' + FONT + ';letter-spacing:.02em;'
+        'text-transform:uppercase;color:' + _MUT + ';margin-top:3px;">'
+        + _esc(label) + '</div>'
+        '<div class="detail" style="font:400 11px/1.35 ' + FONT + ';color:' + _MUT + ';'
+        'margin-top:5px;">' + _esc(detail) + '</div></div></div>')
 
 
 # The donut palette: iRadar indigo leads, then a spread of distinct hues so
@@ -818,40 +813,58 @@ def _plain(summary):
     return " \u00b7 ".join(x for x in out if x)
 
 
-def render_digest(d, base_url, when_label):
-    """The HTML body. `d` is run_digest(); base_url like https://iradar.net."""
+def render_report(d, base_url, when_label):
+    """The HTML body. `d` is run_report(); base_url like https://iradar.net."""
     b = base_url.rstrip("/")
     dash = b + "/?status=changed"
 
     n = d["updates"]
     fu = d["file_updates"]
 
-    # The tiles ARE the headline - a sentence above them repeated the same
-    # numbers in words, so it went. Four independent counts, plus the
-    # watched-pages delta as a small +N/-N beside the count.
+    # Match the website's inventory, order, colours and detail lines. An
+    # email is narrower than the dashboard: four readings then three, with
+    # natural two-column wrapping on phones and an Outlook table fallback.
+    def suffix(delta, colour):
+        label = "+%d" % delta if delta > 0 else "−%d" % -delta if delta < 0 else "±0"
+        return ('<span class="delta" style="font:700 12px/1 ' + FONT
+                + ';vertical-align:3px;margin-left:3px;color:' + colour + ';">'
+                + label + '</span>')
+
     delta = d.get("pages_delta", 0)
-    dsuf = ""
-    if delta:
-        dsuf = ('&nbsp;<span style="color:'
-                + (_GOOD if delta > 0 else _BAD) + ';">'
-                + ("+%d" % delta if delta > 0 else "\u2212%d" % -delta)
-                + '</span>')
-    nl = d.get("notlive", 0)
-    fu_n = d.get("file_updates", 0) or 0
-    # the same six numbers the dashboard's own bar carries, in the same
-    # colours, so the mail and the site read as one instrument - each number
-    # its own colour, so no two unrelated counts can be mistaken for a pair
-    stats = (
-        _stat("Pages", "{:,}".format(d.get("pages", 0)), _INK, dsuf,
-              width="19%")
-        + _stat("Live", "{:,}".format(d.get("live", 0)),
-                "#16a34a" if d.get("live") else _FAINT, width="19%")
-        + _stat("Updated", n, _ACCENT, width="17%")
-        + _stat("Content", d.get("content_updates", 0),
-                "#1ea896" if d.get("content_updates") else _FAINT,
-                width="17%")
-        + _stat("Files", fu_n, "#7c3aed" if fu_n else _FAINT, width="14%")
-        + _stat("Offline", nl, _BAD if nl else _FAINT, width="14%"))
+    pages = d.get("pages", 0)
+    paused = d.get("paused", 0)
+    paused_blank = d.get("paused_blank", 0)
+    paused_offline = d.get("paused_offline", 0)
+    other = paused - paused_blank - paused_offline
+    paused_detail = "%s blank · %s offline" % (paused_blank, paused_offline)
+    if other:
+        paused_detail += " · %s other" % other
+    live_pct = round(d.get("live", 0) * 100 / (pages or 1))
+    readings = [
+        ("Total pages", pages, _ACCENT, "{:,} captured".format(d.get("captured", 0)),
+         suffix(delta, _GOOD if delta > 0 else _BAD if delta < 0 else _MUT)),
+        ("Live", d.get("live", 0), _GOOD, "%d%% of all pages" % live_pct, ""),
+        ("Paused", paused, _MUT, paused_detail, ""),
+        ("Updated", n, "#ea580c" if n else _MUT,
+         "{:,} awaiting review".format(d.get("open_updates", n)), ""),
+        ("Content", d.get("content_updates", 0), "#168b7d" if d.get("content_updates") else _MUT,
+         "items in the latest report", ""),
+        ("Updated files", fu, "#7c3aed" if fu else _MUT,
+         "{:,} awaiting review".format(d.get("open_files", fu)), ""),
+        ("Total offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
+         "includes paused pages", suffix(d.get("offline_delta", 0), _BAD)),
+    ]
+    stats = ""
+    for group in (readings[:4], readings[4:]):
+        width = "25%" if len(group) == 4 else "33.33%"
+        stats += ('<div class="report-stat-row" style="text-align:center;font-size:0;">'
+                  '<!--[if mso]><table role="presentation" width="100%" cellpadding="0"'
+                  ' cellspacing="0" style="table-layout:fixed;"><tr><![endif]-->')
+        for label, value, colour, detail, extra in group:
+            stats += ('<!--[if mso]><td width="' + width + '" valign="top"><![endif]-->'
+                      + _stat(label, "{:,}".format(value), colour, detail, extra, width)
+                      + '<!--[if mso]></td><![endif]-->')
+        stats += '<!--[if mso]></tr></table><![endif]--></div>'
 
     def _chart_img(title, data, footnote=""):
         if not data:
@@ -859,7 +872,7 @@ def render_digest(d, base_url, when_label):
         from urllib.parse import quote
         q = "&".join("d=" + quote("%s:%d" % (lab, v))
                      for lab, v in cap_slices(data))
-        src = b + "/digest-chart.png?" + q
+        src = b + "/report-chart.png?" + q
         return (
             '<tr><td style="padding:6px 28px 2px;">'
             '<div style="font:800 12px/1.4 ' + FONT + ';letter-spacing:.06em;'
@@ -916,7 +929,9 @@ def render_digest(d, base_url, when_label):
 
     return (
 '<!doctype html><html><head><meta charset="utf-8">'
-'<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+'<meta name="viewport" content="width=device-width,initial-scale=1">'
+'<!--[if mso]><style>.report-stat{width:100% !important;min-width:0 !important;}'
+'</style><![endif]--></head>'
 '<body style="margin:0;padding:0;background:' + _PAPER + ';">'
 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
 'style="background:' + _PAPER + ';padding:24px 12px;"><tr><td align="center">'
@@ -931,13 +946,12 @@ def render_digest(d, base_url, when_label):
 '<td style="font:800 20px/1 ' + FONT + ';letter-spacing:-.02em;">'
 '<span style="color:#ffffff;">i</span><span style="color:#8b5cf6;">Radar</span>'
 '<div style="font:400 12px/1.4 ' + FONT + ';color:#b9bdf0;margin-top:4px;'
-'letter-spacing:0;font-weight:400;">Weekly change check \u00b7 '
+'letter-spacing:0;font-weight:400;">Change report \u00b7 '
 + _esc(when_label) + '</div>'
 '</td></tr></table></td></tr>'
 
 '<tr><td style="padding:12px 18px 4px;">'
-'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-'style="background:' + _PAPER + ';border-radius:12px;"><tr>' + stats + '</tr></table>'
+'<div class="report-summary" style="background:#ffffff;">' + stats + '</div>'
 '</td></tr>'
 
 + chart
@@ -956,7 +970,7 @@ def render_digest(d, base_url, when_label):
 + '<tr><td align="center" style="padding:14px 28px 22px;border-top:1px solid '
 + _LINE + ';">'
 '<div style="font:400 11px/1.6 ' + FONT + ';color:' + _FAINT + ';">'
-'Email alerts are on for your account \u00b7 '
+'Email report preferences \u00b7 '
 '<a href="' + b + '/account" style="color:' + _ACCENT + ';text-decoration:none;">'
 'Manage them here</a></div></td></tr>'
 

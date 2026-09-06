@@ -72,7 +72,7 @@ EDITOR_MAY_POST = {
     "prewarm",               # warms document previews; no data changes
     "account_password",      # everyone may change their OWN password
     "account_alerts",        # everyone toggles their OWN email alerts
-    "account_test_email",    # ...and may send themselves a test
+    "account_latest_report",    # ...and may send themselves the latest report
     "logout",
     # Notes are the review conversation itself - an editor who cannot write one
     # cannot do the job. Who may edit or delete WHICH note is decided per note
@@ -100,7 +100,7 @@ GUEST_MAY_POST = {"logout"}
 # admin-only page is a team-wide page; these are refused to anyone else.
 OWNER_ONLY_VIEWS = {"guests_page", "guests_delete", "guests_clear"}
 # Reachable without signing in.
-PUBLIC_ENDPOINTS = {"login", "static", "digest_chart"}
+PUBLIC_ENDPOINTS = {"login", "static", "report_chart"}
 
 # --- the shared read-only link ---------------------------------------------
 # UNSET, WHICH IS THE DEFAULT AND WHAT EVERY EXISTING INSTALL HAS, means none
@@ -709,7 +709,7 @@ def pretty_slug_filter(s):
 DISPLAY_TZ = os.environ.get("IRADAR_TZ", "Europe/Berlin")
 
 
-def _digest_when(run):
+def _report_when(run):
     """Human date for the run in the display zone, portable across OSes.
 
     A weekly check is named for its CYCLE day, not the minute the machine
@@ -1687,19 +1687,7 @@ def _bar_extras(con):
             " FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
             (run["started"],)).fetchall()
         items, _w, _c = mailer._content_items(rows)
-        delta = 0
-        prev = con.execute(
-            "SELECT finished, tracked_total FROM runs WHERE finished IS NOT NULL AND id<?"
-            " AND total>=50 ORDER BY id DESC LIMIT 1",
-            (run["id"],)).fetchone()
-        if prev:
-            if prev["tracked_total"] is not None:
-                delta = tracked - prev["tracked_total"]
-            else:
-                # Legacy runs saved workload, not inventory. Count actual
-                # additions instead of mistaking pauses/resumes for new pages.
-                delta = con.execute("SELECT COUNT(*) FROM urls WHERE created_at>?",
-                                    (prev["finished"],)).fetchone()[0]
+        delta = db.run_pages_delta(con, run, tracked)
         offline_delta = db.run_offline_delta(con, run)
         _BAR_EXTRAS_CACHE.clear()          # one live entry is plenty
         _BAR_EXTRAS_CACHE[key] = (open_n, sum(items.values()) + fu, fu, delta,
@@ -1771,29 +1759,7 @@ def index():
         LIMIT ? OFFSET ?
     """, params + [per_page, (page - 1) * per_page]).fetchall()
 
-    counts = con.execute("""
-        SELECT COUNT(*) AS total,
-          SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS watched,
-          SUM(CASE WHEN active=1 AND last_checked IS NOT NULL
-                   THEN 1 ELSE 0 END) AS captured_active,
-          SUM(CASE WHEN last_status='changed' AND active=1 THEN 1 ELSE 0 END) AS changed,
-          SUM(CASE WHEN last_status='unchanged' AND active=1 THEN 1 ELSE 0 END) AS unchanged,
-          SUM(CASE WHEN last_http BETWEEN 200 AND 399
-                   AND IFNULL(last_status,'') NOT IN ('blank','error')
-                   THEN 1 ELSE 0 END) AS live,
-          SUM(CASE WHEN last_checked IS NOT NULL THEN 1 ELSE 0 END) AS checked,
-          SUM(CASE WHEN last_status='rejected' THEN 1 ELSE 0 END) AS rejected,
-          SUM(CASE WHEN last_status='error' THEN 1 ELSE 0 END) AS errors,
-          SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS paused,
-          SUM(CASE WHEN active=0 AND last_status='blank' THEN 1 ELSE 0 END) AS paused_blank,
-          SUM(CASE WHEN active=0 AND last_http IN (404,410) THEN 1 ELSE 0 END) AS paused_offline,
-          SUM(CASE WHEN last_checked IS NULL THEN 1 ELSE 0 END) AS fresh,
-          SUM(CASE WHEN last_status='blank' THEN 1 ELSE 0 END) AS blank,
-          -- not live = the server says GONE (404/410). Blank bodies and
-          -- blocked captures (403/429/5xx) are their own states, never this
-          SUM(CASE WHEN last_http IN (404,410)
-                   THEN 1 ELSE 0 END) AS notlive
-        FROM urls""").fetchone()
+    counts = db.dashboard_counts(con)
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
         "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
@@ -3780,19 +3746,20 @@ def run_now():
         else:
             flash("A check is already running.")
         return redirect(url_for("index"))
+    want_report = request.form.get("email_report", request.form.get("email_digest")) == "1"
     if ids is None:
         # written EVERY time, ticked or not: the flag must never survive from
         # an earlier run's choice - each manual full check answers for itself
         db.set_setting("email_after_manual_run",
-                       "1" if request.form.get("email_digest") == "1" else "")
+                       "1" if want_report else "")
     if runner.run_check_background(kind="manual", url_ids=ids):
         if ids:
             flash(f"Checking {len(ids)} page(s)…")
-        elif request.form.get("email_digest") == "1":
-            flash("Check started - the digest goes out to everyone opted in "
+        elif want_report:
+            flash("Check started - the report goes out to everyone opted in "
                   "when it finishes.")
         else:
-            flash("Check started - no digest email for this one.")
+            flash("Check started - no report email for this one.")
     else:
         flash("A check is already running.")
     return redirect(url_for("index"))
@@ -4501,7 +4468,7 @@ def _post_run_watcher():
                 print(f"[post-run] housekeeping failed: {e}", flush=True)
             try:
                 # the file sweep runs INSIDE the chain, synchronously: the
-                # digest below quotes its count, so mailing first meant the
+                # report below quotes its count, so mailing first meant the
                 # email's file number was minutes stale every single week.
                 # /status surfaces it as the run's last visible phase.
                 if runner.RUN_STATE.pop("asset_check_due", False):
@@ -4513,12 +4480,12 @@ def _post_run_watcher():
             try:
                 _email_after_run()
             except Exception as e:
-                print(f"[post-run] email digest failed: {e}", flush=True)
+                print(f"[post-run] email report failed: {e}", flush=True)
         prev = running
 
 
 def _email_after_run():
-    """Email the digest to everyone opted in, once a REAL check finishes.
+    """Email the report to everyone opted in, once a REAL check finishes.
 
     Guarded the same way mention collection is: never for a token run - a
     three-page manual poke does not earn a bulletin - and dark unless mail is
@@ -4534,7 +4501,7 @@ def _email_after_run():
         if not run or (run["total"] or 0) < 50:
             return                       # token run, or nothing to summarise
         # WHO asked for this mail. The weekly scheduled check always reports;
-        # a manual run only when whoever started it ticked "email the digest"
+        # a manual run only when whoever started it ticked "email the report"
         # - a by-hand re-check is usually a private look, and before this
         # gate every full manual run mailed all seven people unasked. A
         # baseline run never mails: by definition everything "changed".
@@ -4544,7 +4511,7 @@ def _email_after_run():
             if kind == "manual" and wanted:
                 db.set_setting("email_after_manual_run", "")
             else:
-                print("[email] %s run %s - digest not requested, skipping"
+                print("[email] %s run %s - report not requested, skipping"
                       % (kind or "unkinded", run["id"]), flush=True)
                 return
         # ONE BATCH PER RUN, EVER. The watcher fires on every running->False
@@ -4563,11 +4530,11 @@ def _email_after_run():
             " AND email<>''").fetchall()
         if not recipients:
             return
-        d = mailer.run_digest(con, run)
-        when = _digest_when(run)
-        html = mailer.render_digest(d, _base_url(), when)
-        subj = "iRadar — %s" % (
-            "no changes this week" if d["updates"] == 0 and d["file_updates"] == 0
+        d = mailer.run_report(con, run)
+        when = _report_when(run)
+        html = mailer.render_report(d, _base_url(), when)
+        subj = "iRadar report — %s" % (
+            "no changes" if d["updates"] == 0 and d["file_updates"] == 0
             else "%d update%s to review"
             % (d["updates"] or d["file_updates"],
                "" if (d["updates"] or d["file_updates"]) == 1 else "s"))
@@ -4581,7 +4548,7 @@ def _email_after_run():
             print(f"[email] {r['email']}: {err}", flush=True)
         else:
             sent += 1
-    print(f"[email] digest sent to {sent} recipient(s), {fail} failed",
+    print(f"[email] report sent to {sent} recipient(s), {fail} failed",
           flush=True)
 
 
@@ -7835,7 +7802,7 @@ def account_name():
 
 @app.route("/account/alerts", methods=["POST"])
 def account_alerts():
-    """Turn the after-run email digest on or off for yourself. It is a
+    """Turn the after-run email report on or off for yourself. It is a
     preference, not a credential, so no password - like the theme toggle."""
     me = current_user()
     on = 1 if request.form.get("on") == "1" else 0
@@ -7847,14 +7814,15 @@ def account_alerts():
         flash("Email alerts are on for you — but the server has no mail account"
               " set up yet, so nothing can send until an admin adds one.")
     else:
-        flash("Email alerts are ON — you'll get a summary after each check."
+        flash("Email alerts are ON — you'll get a report after scheduled checks."
               if on else "Email alerts are off.")
     return redirect(request.referrer or url_for("account_password"))
 
 
-@app.route("/digest-chart.png")
-def digest_chart():
-    """The donut chart for an email digest, rendered as a PNG on demand.
+@app.route("/digest-chart.png")  # Keep images in already-sent emails working.
+@app.route("/report-chart.png")
+def report_chart():
+    """The donut chart for an email report, rendered as a PNG on demand.
     Public: it is fetched by the recipient's mail client, which has no session
     - and it only draws the aggregate counts handed to it in the query, so
     there is nothing here a signed-out request should not see. Each `d` is one
@@ -7875,10 +7843,13 @@ def digest_chart():
     return resp
 
 
-@app.route("/account/test-email", methods=["POST"])
-def account_test_email():
-    """Send yourself the digest of the last finished run, now, to check it
-    lands and looks right - before a real Sunday depends on it."""
+@app.route("/account/test-email", methods=["POST"])  # Older open account pages.
+@app.route("/account/latest-report", methods=["POST"])
+def account_latest_report():
+    """Send the latest completed report only to the signed-in person.
+
+    This is independent of opt-in and the scheduled once-per-run mail marker.
+    """
     me = current_user()
     if not mailer.configured():
         flash("No mail account is set up on the server yet — an admin needs to"
@@ -7891,12 +7862,12 @@ def account_test_email():
         con.close()
         flash("No finished check yet to summarise.")
         return redirect(request.referrer or url_for("account_password"))
-    d = mailer.run_digest(con, run)
+    d = mailer.run_report(con, run)
     con.close()
-    when = _digest_when(run)
-    html = mailer.render_digest(d, _base_url(), when)
-    err = mailer.send(me["email"], "iRadar — your test summary", html)
-    flash("Test email sent to %s." % me["email"] if not err
+    when = _report_when(run)
+    html = mailer.render_report(d, _base_url(), when)
+    err = mailer.send(me["email"], "iRadar — latest report · " + when, html)
+    flash("Latest report sent to %s." % me["email"] if not err
           else "Could not send: %s" % err)
     return redirect(request.referrer or url_for("account_password"))
 

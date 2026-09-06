@@ -99,6 +99,49 @@ def reconcile_live_statuses(con):
     ).rowcount
 
 
+def dashboard_counts(con):
+    """The same current inventory and health readings for web and email."""
+    return con.execute("""
+        SELECT COUNT(*) AS total,
+          SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS watched,
+          SUM(CASE WHEN active=1 AND last_checked IS NOT NULL
+                   THEN 1 ELSE 0 END) AS captured_active,
+          SUM(CASE WHEN last_status='changed' AND active=1 THEN 1 ELSE 0 END) AS changed,
+          SUM(CASE WHEN last_status='unchanged' AND active=1 THEN 1 ELSE 0 END) AS unchanged,
+          SUM(CASE WHEN last_http BETWEEN 200 AND 399
+                   AND IFNULL(last_status,'') NOT IN ('blank','error')
+                   THEN 1 ELSE 0 END) AS live,
+          SUM(CASE WHEN last_checked IS NOT NULL THEN 1 ELSE 0 END) AS checked,
+          SUM(CASE WHEN last_status='rejected' THEN 1 ELSE 0 END) AS rejected,
+          SUM(CASE WHEN last_status='error' THEN 1 ELSE 0 END) AS errors,
+          SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS paused,
+          SUM(CASE WHEN active=0 AND last_status='blank' THEN 1 ELSE 0 END) AS paused_blank,
+          SUM(CASE WHEN active=0 AND last_http IN (404,410) THEN 1 ELSE 0 END) AS paused_offline,
+          SUM(CASE WHEN last_checked IS NULL THEN 1 ELSE 0 END) AS fresh,
+          SUM(CASE WHEN last_status='blank' THEN 1 ELSE 0 END) AS blank,
+          -- not live = the server says GONE (404/410). Blank bodies and
+          -- blocked captures (403/429/5xx) are their own states, never this
+          SUM(CASE WHEN last_http IN (404,410)
+                   THEN 1 ELSE 0 END) AS notlive
+        FROM urls""").fetchone()
+
+
+def run_pages_delta(con, run, tracked=None):
+    """Inventory change since the preceding full check, independent of pauses."""
+    if tracked is None:
+        tracked = con.execute("SELECT COUNT(*) FROM urls").fetchone()[0]
+    prev = con.execute(
+        "SELECT finished, tracked_total FROM runs WHERE finished IS NOT NULL AND id<?"
+        " AND total>=50 ORDER BY id DESC LIMIT 1", (run["id"],)).fetchone()
+    if not prev:
+        return 0
+    if prev["tracked_total"] is not None:
+        return tracked - prev["tracked_total"]
+    # Legacy runs recorded workload, not inventory; use actual additions.
+    return con.execute("SELECT COUNT(*) FROM urls WHERE created_at>?",
+                       (prev["finished"],)).fetchone()[0]
+
+
 def inventory_counts(con):
     """All tracked pages and genuine HTTP 404/410s, including paused pages."""
     row = con.execute(

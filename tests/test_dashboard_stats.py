@@ -60,6 +60,39 @@ def test_inventory_and_offline_include_paused_but_not_blank_or_stale_status():
         assert db.inventory_counts(con) == (5, 2)
 
 
+def test_email_and_dashboard_share_all_seven_readings():
+    import app
+    import mailer
+    with database() as con:
+        page(con, 1, 404, "notlive", 0)
+        page(con, 2, 200, "blank", 0)
+        page(con, 3)
+        page(con, 4, 200, "changed")
+        page(con, 5, 503, "error")
+        page(con, 6, 200, "unchanged", 0)
+        con.execute("INSERT INTO runs(id,started,finished,total,tracked_total)"
+                    " VALUES(1,'2026-08-20','2026-08-21',100,5)")
+        r = run(con, 2, offline_before=2, offline_after=1)
+        con.execute("INSERT INTO changes(url_id,ts,dir,reviewed,images_added)"
+                    " VALUES(4,'2026-09-06 02:00:00','',0,2)")
+        con.execute("INSERT INTO asset_changes(url,kind,ts,reviewed)"
+                    " VALUES('https://example.test/doc.pdf','document','2026-09-06 02:00:00',0)")
+        app._BAR_EXTRAS_CACHE.clear()
+        counts = db.dashboard_counts(con)
+        extra = app._bar_extras(con)
+        report = mailer.run_report(con, r)
+        assert report["pages"] == counts["total"] == 6
+        assert report["live"] == counts["live"] == 3
+        assert report["paused"] == counts["paused"] == 3
+        assert report["paused_blank"] == counts["paused_blank"] == 1
+        assert report["paused_offline"] == counts["paused_offline"] == 1
+        assert report["notlive"] == counts["notlive"] == 1
+        assert tuple(report[k] for k in ("updates","content_updates","file_updates",
+                                        "pages_delta","offline_delta")) == extra
+        assert report["pages_delta"] == 1 and report["offline_delta"] == -1
+        assert report["open_updates"] == 1 and report["open_files"] == 1
+
+
 def test_reconcile_only_settled_successes_preserving_open_reviews():
     with database() as con:
         for ident in range(1, 8):

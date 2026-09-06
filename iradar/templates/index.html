@@ -36,111 +36,117 @@
     /* Restore the original open stat row, retaining the richer readings. */
     .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
-    .summary-overview { display:grid; grid-template-columns:minmax(0,1fr) 210px;
-                        align-items:start; gap:18px; padding:6px 0; }
-    .digest-stats { display:grid; grid-template-columns:repeat(7,minmax(0,1fr));
+    .summary-overview { display:grid; grid-template-columns:minmax(0,1fr) 340px;
+                        align-items:start; gap:16px; padding:6px 0 12px; }
+    .summary-operations { align-self:stretch; display:flex; flex-direction:column;
+                          justify-content:center; gap:8px; min-width:0; }
+    .report-stats { display:grid; grid-template-columns:repeat(7,minmax(0,1fr));
                     gap:8px; }
-    .digest-stat { min-width:0; padding:6px 4px; text-align:center;
+    .report-stat { min-width:0; padding:6px 4px; text-align:center;
                    color:inherit; text-decoration:none; border-radius:4px; }
-    .digest-stat .n { font-size:26px; line-height:1.2; font-weight:700;
+    .report-stat .n { font-size:26px; line-height:1.2; font-weight:700;
                       font-variant-numeric:tabular-nums; }
-    .digest-stat .l { margin-top:3px; color:var(--muted); font-size:12.5px;
+    .report-stat .l { margin-top:3px; color:var(--muted); font-size:12.5px;
                       font-weight:400; line-height:1.25; letter-spacing:.02em;
                       text-transform:uppercase; }
-    .digest-stat .detail { min-height:2.5em; margin-top:5px; color:var(--muted);
+    .report-stat .detail { min-height:2.5em; margin-top:5px; color:var(--muted);
                            font-size:11.5px; line-height:1.25; }
-    .digest-stat .delta { margin-left:3px; font-size:12px; letter-spacing:0;
+    .report-stat .delta { margin-left:3px; font-size:12px; letter-spacing:0;
                           vertical-align:3px; }
-    a.digest-stat:hover .l { color:var(--accent); text-decoration:underline; }
-    a.digest-stat:focus-visible { outline:2px solid var(--accent);
+    a.report-stat:hover .l { color:var(--accent); text-decoration:underline; }
+    a.report-stat:focus-visible { outline:2px solid var(--accent);
                                   outline-offset:-3px; }
     .summary-controls { display:flex; align-items:center;
-                        justify-content:center; margin:10px 0 12px; }
-    .next-check { padding:15px 0 6px; min-width:0; text-align:center;
+                        justify-content:center; margin:0; }
+    .next-check { min-width:0; text-align:center;
                   color:var(--muted); font-size:12.5px; }
     .next-check strong { display:block; color:var(--ink); font-size:15px;
                          line-height:1.4; }
     .next-check .l { text-transform:uppercase; letter-spacing:.02em; }
     .run-actions { display:flex; align-items:center; justify-content:center;
-                   gap:12px; flex-wrap:wrap; }
+                   gap:8px; flex-wrap:nowrap; white-space:nowrap; }
     .run-actions .runmore { margin-top:0; }
-    .run-launch { display:flex; align-items:center; justify-content:center; gap:12px; }
-    .digest-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
-                     font-size:12px; cursor:pointer; white-space:nowrap; }
-    .digest-choice input { margin:0; }
+    .run-launch { display:flex; align-items:center; justify-content:center; gap:8px; }
+    .run-launch button { font-size:12px; padding:8px 10px; white-space:nowrap; }
+    .run-actions .runmore > summary { font-size:11px; padding:4px; }
+    .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
+                     font-size:11px; cursor:pointer; white-space:nowrap; }
+    .report-choice input { margin:0; }
     @media (max-width:1100px) {
       .summary-overview { grid-template-columns:1fr; gap:0; }
-      .digest-stats { grid-template-columns:repeat(4,minmax(0,1fr)); }
-      .digest-stat:last-child { grid-column:span 2; }
-      .next-check { padding-top:8px; }
+      .report-stats { grid-template-columns:repeat(4,minmax(0,1fr)); }
+      .report-stat:last-child { grid-column:span 2; }
+      .summary-operations { padding-top:8px; }
     }
     @media (max-width:760px) {
-      .digest-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
-      .digest-stat:last-child { grid-column:span 3; }
+      .report-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .report-stat:last-child { grid-column:span 3; }
     }
     @media (max-width:520px) {
-      .digest-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
-      .digest-stat:last-child { grid-column:span 2; }
+      .report-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .report-stat:last-child { grid-column:span 2; }
     }
-    @media (max-width:620px) {
-      .run-launch { flex-wrap:wrap; }
+    @media (max-width:360px) {
+      .run-actions, .run-launch { gap:4px; }
+      .run-launch button { padding:8px 6px; font-size:11px; }
+      .report-choice { gap:3px; font-size:10px; }
+      .run-actions .runmore > summary { font-size:10px; padding:2px; }
     }
   </style>
 
   <div class="summary-overview">
-  <div class="digest-stats" aria-label="iRadar page and update summary">
-    <a class="digest-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages. The delta counts pages added or removed since the previous full check; pausing a page does not change it.">
+  <div class="report-stats" aria-label="iRadar page and update summary">
+    <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages. The delta counts pages added or removed since the previous full check; pausing a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' if pages_delta < 0 else 'var(--muted)' }}">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) if pages_delta < 0 else '±0' }}</span></div>
       <div class="l">Total pages</div>
       <div class="detail">{{ '{:,}'.format(counts.checked or 0) }} captured</div>
     </a>
-    <a class="digest-stat" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring">
+    <a class="report-stat" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring">
       <div class="n" style="color:var(--ok)">{{ '{:,}'.format(counts.live or 0) }}</div>
       <div class="l">Live</div>
       <div class="detail">{{ (((counts.live or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
     </a>
-    <a class="digest-stat" href="{{ url_for('index', status='paused') }}" title="Pages excluded from automatic and full manual checks. They stay in the inventory and can be resumed.">
+    <a class="report-stat" href="{{ url_for('index', status='paused') }}" title="Pages excluded from automatic and full manual checks. They stay in the inventory and can be resumed.">
       <div class="n" style="color:var(--muted)">{{ '{:,}'.format(counts.paused or 0) }}</div>
       <div class="l">Paused</div>
       <div class="detail">{{ counts.paused_blank or 0 }} blank · {{ counts.paused_offline or 0 }} offline{% set other_paused = (counts.paused or 0) - (counts.paused_blank or 0) - (counts.paused_offline or 0) %}{% if other_paused %} · {{ other_paused }} other{% endif %}</div>
     </a>
-    <a class="digest-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
       <div class="n" style="color:{{ 'var(--warn)' if latest_updates else 'var(--muted)' }}">{{ '{:,}'.format(latest_updates or 0) }}</div>
       <div class="l">Updated</div>
       <div class="detail">{{ '{:,}'.format(total_open or 0) }} awaiting review</div>
     </a>
-    <a class="digest-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
       <div class="n" style="color:{{ 'var(--stat-content)' if content_updates else 'var(--muted)' }}">{{ '{:,}'.format(content_updates or 0) }}</div>
       <div class="l">Content</div>
-      <div class="detail">items in the latest digest</div>
+      <div class="detail">items in the latest report</div>
     </a>
     {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
-    <a class="digest-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
+    <a class="report-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
       <div class="n" style="color:{{ 'var(--stat-files)' if file_updates else 'var(--muted)' }}">{{ '{:,}'.format(file_updates or 0) }}</div>
       <div class="l">Updated files</div>
       <div class="detail">{{ '{:,}'.format(asset_open or 0) }} awaiting review</div>
     </a>
-    <a class="digest-stat" href="{{ url_for('index', status='notlive') }}" title="All pages answering HTTP 404 or 410, including paused pages. The run delta is newly offline pages minus pages that came back live.">
+    <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="All pages answering HTTP 404 or 410, including paused pages. The run delta is newly offline pages minus pages that came back live.">
       <div class="n" style="color:{{ 'var(--err)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}<span class="delta" style="color:var(--err)" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) if offline_delta < 0 else '±0' }}</span></div>
       <div class="l">Total offline</div>
       <div class="detail">includes paused pages</div>
     </a>
   </div>
 
+  <div class="summary-operations">
     <div class="next-check">
       <strong>{{ next_run }}</strong>
       <div class="l">Next auto check ({{ settings.frequency }})</div>
     </div>
-  </div>
-
   <div class="summary-controls">
     <div class="run-actions">
       <form class="run-launch" method="post" action="{{ url_for('run_now') }}">
         {#- A manual check answers for itself. Scheduled checks always email. -#}
         {% if not state.running %}
-        <label class="digest-choice" title="Email the digest to everyone opted in when this manual check finishes. Automatic checks always send their digest.">
-          <input type="checkbox" name="email_digest" value="1">
-          <span>Send digest</span>
+        <label class="report-choice" title="Email the report to everyone opted in when this manual check finishes. Automatic checks always send their report.">
+          <input type="checkbox" name="email_report" value="1">
+          <span>Send report</span>
         </label>
         {% endif %}
         <button {% if state.running %}disabled style="opacity:.5"{% endif %}
@@ -191,6 +197,8 @@
       </details>
       {% endif %}
     </div>
+  </div>
+  </div>
   </div>
 
   {#- the run box's seat is never empty: a grey track holds the spot when

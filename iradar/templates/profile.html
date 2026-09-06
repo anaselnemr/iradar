@@ -73,7 +73,7 @@
 
   <div class="card" style="margin-top:16px">
     <h3 style="margin:0 0 6px">Email alerts</h3>
-    <p class="hint" style="margin:0 0 14px">A summary of each weekly check,
+    <p class="hint" style="margin:0 0 14px">A report after each scheduled check,
       sent to {{ me['email'] }} when it finishes.</p>
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
       <form method="post" action="{{ url_for('account_alerts') }}" style="margin:0">
@@ -82,12 +82,12 @@
           {{ 'Turn off' if email_alerts else 'Turn on' }}</button>
       </form>
       <span class="hint" style="margin:0">
-        {%- if email_alerts %}On — you get the digest.
-        {%- else %}Off — you get nothing.{% endif %}</span>
-      {% if email_alerts and mail_ready %}
-      <form method="post" action="{{ url_for('account_test_email') }}"
+        {%- if email_alerts %}On — you get the report.
+        {%- else %}Off — no automatic reports.{% endif %}</span>
+      {% if mail_ready %}
+      <form method="post" action="{{ url_for('account_latest_report') }}"
             style="margin:0 0 0 auto">
-        <button type="submit" class="linkbtn">Send me a test</button>
+        <button type="submit" class="linkbtn">Send latest report</button>
       </form>
       {% endif %}
     </div>
