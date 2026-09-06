@@ -96,6 +96,27 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     assert 'name="email_digest"' in body, "manual digest choice is missing"
 
 
+def test_offline_delta_is_red_beside_the_total_for_every_sign():
+    from xml.etree import ElementTree
+    original = app._bar_extras
+    try:
+        for delta, label in [(4, "+4"), (-4, "−4"), (0, "±0")]:
+            app._bar_extras = lambda con, d=delta: (*original(con)[:4], d)
+            body = _ok("/").data.decode("utf-8")
+            tiles = [ElementTree.fromstring(markup) for markup in _re.findall(
+                r'<a class="digest-stat"[^>]*>.*?</a>', body, _re.S)]
+            tile = next(t for t in tiles
+                        if t.find("div[@class='l']").text == "Total offline")
+            inline = tile.find("div[@class='n']/span[@class='delta']")
+            assert inline is not None, "offline delta must sit next to the total"
+            assert inline.text == label
+            assert inline.get("style") == "color:var(--err)"
+            assert inline.get("title") == "Change in offline pages this run"
+            assert tile.find("div[@class='detail']").text == "includes paused pages"
+    finally:
+        app._bar_extras = original
+
+
 def test_sentiment_page_renders():
     # off by default (SENTIMENT unset) - must still render its 'switched off' state
     _ok("/sentiment")

@@ -121,9 +121,9 @@
       <div class="detail">{{ '{:,}'.format(asset_open or 0) }} awaiting review</div>
     </a>
     <a class="digest-stat" href="{{ url_for('index', status='notlive') }}" title="All pages answering HTTP 404 or 410, including paused pages. The run delta is newly offline pages minus pages that came back live.">
-      <div class="n" style="color:{{ 'var(--err)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}</div>
+      <div class="n" style="color:{{ 'var(--err)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}<span class="delta" style="color:var(--err)" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) if offline_delta < 0 else '±0' }}</span></div>
       <div class="l">Total offline</div>
-      <div class="detail"><b style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' if offline_delta < 0 else 'var(--muted)' }}">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) if offline_delta < 0 else '±0' }}</b> this run · includes paused</div>
+      <div class="detail">includes paused pages</div>
     </a>
   </div>
 
