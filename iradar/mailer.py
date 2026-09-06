@@ -67,10 +67,30 @@ def _logo_part():
 _LOGO_CACHE = None
 
 
+def _delink(html):
+    """No clickable links - measured, not guessed. Infineon's filter (probes
+    A-I, 6 Sep 2026) quarantines any HTML mail carrying even ONE anchor to
+    our young domain: plain text with a link arrives, HTML without links
+    arrives, HTML with a single <a href> to iradar.net vanishes. The same
+    digest with every anchor flattened to a coloured span - charts, styling
+    and all - arrives. So the calls to action name the address in words and
+    nothing in any mail is clickable."""
+    import re as _re
+    html = html.replace("Review the queue →", "Review at iradar.net")
+    html = html.replace("See the document updates →",
+                        "Document updates: iradar.net/assets")
+    html = html.replace("Manage them here", "manage at iradar.net/account")
+    return _re.sub('<a[^>]*>(.*?)</a>',
+                   '<span style="color:#5e6ad2;font-weight:600;">\\1</span>',
+                   html, flags=_re.S)
+
+
 def send(to_addr, subject, html, text_fallback=""):
     """Send one message. Returns None on success, an error string otherwise."""
     if not configured():
         return "mail not configured"
+    if html:
+        html = _delink(html)
     if os.environ.get("RESEND_API_KEY"):
         return _send_https(to_addr, subject, html, text_fallback)
     host = os.environ.get("MAIL_SMTP_HOST", "smtp.gmail.com")
