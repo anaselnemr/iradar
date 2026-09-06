@@ -31,21 +31,108 @@
 {% block mainclass %}wide{% endblock %}
 {% block content %}
 
-<div class="card">
-  <div class="statrow">
-    <div class="stat"><div class="n" style="color:var(--accent)">{{ counts.total }}</div><div class="l">Total Pages</div></div>
-    <div class="stat"><div class="n">{{ counts.checked or 0 }}</div><div class="l">Pages Captured</div></div>
-    <a class="stat statlink" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring"><div class="n" style="color:#16a34a">{{ counts.live or 0 }}</div><div class="l">Live</div></a>
-    <a class="stat statlink" href="{{ url_for('index', status='changed') }}" title="Pages whose content updated — waiting for your review{% if total_open and total_open != counts.changed %} ({{ total_open }} updates across them){% endif %}"><div class="n" style="color:{{ '#ea580c' if counts.changed else 'var(--muted)' }}">{{ counts.changed or 0 }}</div><div class="l">Updated</div></a>
-    {#- ALWAYS shown, even at zero. Hidden when empty, this was the only link
-        to File updates anywhere in the app, so a whole review queue became
-        unreachable the moment it was caught up. -#}
-    <a class="stat statlink" href="{{ url_for('assets_page') }}" title="Files (datasheets, images) whose bytes changed behind an unchanged address — invisible to the page compare, caught by their server fingerprint"><div class="n" style="color:{{ '#7c3aed' if asset_open else 'var(--muted)' }}">{{ asset_open or 0 }}</div><div class="l">File updates</div></a>
-    <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">{{ next_run }}</div><div class="l">Next auto check ({{ settings.frequency }})</div></div>
-    <div class="stat" style="padding-top:8px; text-align:right">
-      <form method="post" action="{{ url_for('run_now') }}" style="display:inline">
+<div class="card dashboard-summary">
+  <style>
+    /* The email digest and dashboard open with the same six readings. The
+       dashboard earns its extra room with one quiet diagnostic line each. */
+    .digest-stats { display:grid; grid-template-columns:repeat(6,minmax(0,1fr));
+                    overflow:hidden; border:1px solid var(--line);
+                    border-radius:12px; background:var(--hover); }
+    .digest-stat { min-width:0; padding:16px 12px 13px; text-align:center;
+                   color:inherit; text-decoration:none; }
+    .digest-stat + .digest-stat { border-left:1px solid var(--line); }
+    .digest-stat .n { font-size:27px; line-height:1; font-weight:800;
+                      letter-spacing:-.35px; font-variant-numeric:tabular-nums; }
+    .digest-stat .l { margin-top:7px; color:var(--muted); font-size:11px;
+                      font-weight:700; line-height:1.25; letter-spacing:.06em;
+                      text-transform:uppercase; }
+    .digest-stat .detail { min-height:2.5em; margin-top:6px; color:var(--muted);
+                           font-size:11.5px; line-height:1.25; }
+    .digest-stat .delta { margin-left:3px; font-size:12px; letter-spacing:0;
+                          vertical-align:3px; }
+    a.digest-stat:hover { background:var(--line); }
+    a.digest-stat:focus-visible { outline:2px solid var(--accent);
+                                  outline-offset:-3px; }
+    .summary-controls { display:flex; align-items:center;
+                        justify-content:space-between; gap:14px;
+                        margin:14px 0 12px; }
+    .next-check { display:flex; align-items:baseline; gap:7px; min-width:0;
+                  color:var(--muted); font-size:12.5px; }
+    .next-check strong { color:var(--ink); font-size:13px; }
+    .run-actions { display:flex; align-items:center; justify-content:flex-end;
+                   gap:10px; flex-wrap:wrap; }
+    .run-launch { display:flex; align-items:center; gap:10px; }
+    .digest-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
+                     font-size:12px; cursor:pointer; white-space:nowrap; }
+    .digest-choice input { margin:0; }
+    @media (max-width:980px) {
+      .digest-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .digest-stat:nth-child(4) { border-left:0; }
+      .digest-stat:nth-child(n+4) { border-top:1px solid var(--line); }
+      .summary-controls { align-items:flex-start; }
+    }
+    @media (max-width:620px) {
+      .digest-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .digest-stat:nth-child(odd) { border-left:0; }
+      .digest-stat:nth-child(n+3) { border-top:1px solid var(--line); }
+      .digest-stat:nth-child(4) { border-left:1px solid var(--line); }
+      .summary-controls { display:block; }
+      .next-check { margin-bottom:10px; flex-wrap:wrap; }
+      .run-actions { justify-content:flex-start; }
+      .run-launch { width:100%; justify-content:space-between; }
+    }
+  </style>
+
+  <div class="digest-stats" aria-label="Latest iRadar digest summary">
+    <div class="digest-stat" title="Every active page on the watch list">
+      <div class="n">{{ '{:,}'.format(counts.watched or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
+      <div class="l">Pages</div>
+      <div class="detail">{{ '{:,}'.format(counts.captured_active or 0) }} captured{% if counts.paused %} · {{ counts.paused }} paused{% endif %}</div>
+    </div>
+    <a class="digest-stat" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring">
+      <div class="n" style="color:var(--ok)">{{ '{:,}'.format(counts.live or 0) }}</div>
+      <div class="l">Live</div>
+      <div class="detail">{{ (((counts.live or 0) * 100 / (counts.watched or 1))|round|int) }}% of watched pages</div>
+    </a>
+    <a class="digest-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
+      <div class="n" style="color:{{ 'var(--accent)' if latest_updates else 'var(--muted)' }}">{{ '{:,}'.format(latest_updates or 0) }}</div>
+      <div class="l">Updated</div>
+      <div class="detail">{{ '{:,}'.format(total_open or 0) }} awaiting review</div>
+    </a>
+    <a class="digest-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
+      <div class="n" style="color:{{ '#1ea896' if content_updates else 'var(--muted)' }}">{{ '{:,}'.format(content_updates or 0) }}</div>
+      <div class="l">Content</div>
+      <div class="detail">items in the latest digest</div>
+    </a>
+    {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
+    <a class="digest-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
+      <div class="n" style="color:{{ '#7c3aed' if file_updates else 'var(--muted)' }}">{{ '{:,}'.format(file_updates or 0) }}</div>
+      <div class="l">Files</div>
+      <div class="detail">{{ '{:,}'.format(asset_open or 0) }} awaiting review</div>
+    </a>
+    <a class="digest-stat" href="{{ url_for('index', status='notlive') }}" title="Pages the server says are gone — HTTP 404 or 410">
+      <div class="n" style="color:{{ 'var(--err)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}</div>
+      <div class="l">Offline</div>
+      <div class="detail">{{ counts.blank or 0 }} blank · {{ counts.errors or 0 }} capture errors</div>
+    </a>
+  </div>
+
+  <div class="summary-controls">
+    <div class="next-check">
+      <span>Next auto check</span><strong>{{ next_run }}</strong>
+      <span>· {{ settings.frequency }}</span>
+    </div>
+    <div class="run-actions">
+      <form class="run-launch" method="post" action="{{ url_for('run_now') }}">
+        {#- A manual check answers for itself. Scheduled checks always email. -#}
+        {% if not state.running %}
+        <label class="digest-choice" title="Email the digest to everyone opted in when this manual check finishes. Automatic checks always send their digest.">
+          <input type="checkbox" name="email_digest" value="1">
+          <span>Send digest</span>
+        </label>
+        {% endif %}
         <button {% if state.running %}disabled style="opacity:.5"{% endif %}
-                title="Checks every page — in NEED order: never-captured first, then failed (blank/error), then the rest; dead pages last">▶ Check all pages</button>
+                title="Checks every page — never-captured first, then failed, then the rest; dead pages last">▶ Check all pages</button>
       </form>
       {# The partial runs stay one click away instead of standing under the
          button permanently: pages that are blank stay blank for a while, so a
@@ -147,6 +234,8 @@
       <span class="rp-step" id="step-verify" title="Pages that looked updated are captured a second time; only the same update showing again is confirmed"><span class="dot"></span>Reconfirming updates</span>
       <span class="rp-arrow">→</span>
       <span class="rp-step" id="step-retry" title="Pages the CDN blocked or that failed to load get two more tries before counting as errors"><span class="dot"></span>Retry blocked</span>
+      <span class="rp-arrow">→</span>
+      <span class="rp-step" id="step-files" title="Every referenced file (datasheets, images) gets a header check — a file republished at the same address is caught only here"><span class="dot"></span>File check</span>
       <span id="run-paused" style="display:none; color:#ea580c; font-weight:600">⏸ paused</span>
       <span id="run-stopping" style="display:none; color:#dc2626; font-weight:600">⏹ ending…</span>
       <span style="margin-left:auto; display:inline-flex; gap:8px">
@@ -874,9 +963,15 @@ async function poll() {
       // ---- stepper: where the run is, where it has been -------------------
       setStep('step-capture', phase === 'capture' ? 'on' : 'done');
       setStep('step-verify',  phase === 'verify' ? 'on'
-              : (phase === 'retry' ? 'done'
+              : ((phase === 'retry' || phase === 'files') ? 'done'
                  : ((s.held || s.suspects) ? '' : 'skip')));
-      setStep('step-retry',   phase === 'retry' ? 'on' : 'skip');
+      setStep('step-retry',   phase === 'retry' ? 'on'
+              : (phase === 'files' ? 'done' : 'skip'));
+      setStep('step-files',   phase === 'files' ? 'on' : '');
+      // the file sweep has no pause/resume - hide the run controls under it
+      const runCtl = document.getElementById('run-pause');
+      if (runCtl && runCtl.parentElement)
+        runCtl.parentElement.style.display = phase === 'files' ? 'none' : '';
       const retryLbl = document.getElementById('step-retry');
       if (retryLbl && phase === 'retry' && s.round)
         retryLbl.lastChild.textContent = 'Retry blocked · round ' + s.round + ' of 2';
@@ -921,7 +1016,8 @@ async function poll() {
       if (pctEl) pctEl.textContent = 'overall ' + overall + '%';
       if (phc) phc.textContent = (s.phase_total != null && s.phase_total > 0)
           ? (Math.min(s.phase_done || 0, s.phase_total) + ' of ' + s.phase_total
-             + (phase === 'capture' ? ' pages' : ''))
+             + (phase === 'capture' ? ' pages'
+                : phase === 'files' ? ' files' : ''))
           : (s.done + ' of ' + s.total);
       if (isStopping) {
         verb.textContent = 'Ending —';
@@ -936,6 +1032,7 @@ async function poll() {
       } else {
         verb.textContent = phase === 'verify' ? 'Reconfirming the updates'
           : phase === 'retry' ? ('Retrying blocked pages — round ' + (s.round || 1) + ' of 2')
+          : phase === 'files' ? 'Checking referenced files'
           : 'Capturing pages';
         rateHist.push({t: Date.now(), done: s.done});
         rateHist = rateHist.filter(x => Date.now() - x.t < 180000);
@@ -943,7 +1040,8 @@ async function poll() {
         if (rateHist.length > 2) {
           const a = rateHist[0], b = rateHist[rateHist.length - 1];
           const perMin = (b.done - a.done) / ((b.t - a.t) / 60000);
-          if (perMin > 0) rate = perMin.toFixed(1) + ' pages/min';
+          if (perMin > 0) rate = perMin.toFixed(1)
+              + (phase === 'files' ? ' files/min' : ' pages/min');
         }
         document.getElementById('run-rate').textContent = rate;
         document.getElementById('run-eta').textContent = fmtEta(s.eta_s);

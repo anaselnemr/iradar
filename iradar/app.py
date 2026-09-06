@@ -1655,6 +1655,55 @@ def _owner_values(con, col):
     return out
 
 
+_BAR_EXTRAS_CACHE = {}
+
+
+def _bar_extras(con):
+    """(updated_pages, content_updates, file_updates, pages_delta) for the
+    stat bar - the digest email's own numbers, on the dashboard, so the two
+    bars read as one instrument.
+
+    Content updates are counted in ITEMS (documents, images, boards) across
+    the changes the last finished run opened, exactly as the email counts
+    them; the delta is watched pages now vs the previous full check. Parsing
+    ~1k summaries per page load would be rude, so the result is cached per
+    (run, open-change-count) - the count in the key means a review or a new
+    change invalidates it without any bookkeeping."""
+    run = con.execute("SELECT * FROM runs WHERE finished IS NOT NULL"
+                      " ORDER BY id DESC LIMIT 1").fetchone()
+    if not run:
+        return 0, 0, 0, 0
+    open_n = con.execute(
+        "SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
+        (run["started"],)).fetchone()[0]
+    fu = con.execute(
+        "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
+        " AND ts>=?", (run["started"],)).fetchone()[0]
+    watched = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
+    # A file review or a watch-list edit can happen without changing open_n;
+    # both belong in the key so the bar never holds their old numbers.
+    key = (run["id"], open_n, fu, watched)
+    if key not in _BAR_EXTRAS_CACHE:
+        rows = con.execute(
+            "SELECT summary, text_changed, images_added, images_removed"
+            " FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
+            (run["started"],)).fetchall()
+        items, _w, _c = mailer._content_items(rows)
+        delta = 0
+        prev = con.execute(
+            "SELECT total FROM runs WHERE finished IS NOT NULL AND id<?"
+            " AND total>=50 ORDER BY id DESC LIMIT 1",
+            (run["id"],)).fetchone()
+        if prev and prev["total"] and (run["total"] or 0) >= 50:
+            # same definition as mailer.run_digest: today's active watch list
+            # against the previous full run, not the current run's old total
+            delta = watched - prev["total"]
+        _BAR_EXTRAS_CACHE.clear()          # one live entry is plenty
+        _BAR_EXTRAS_CACHE[key] = (open_n, sum(items.values()) + fu, fu, delta)
+    return _BAR_EXTRAS_CACHE[key]
+
+
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
@@ -1721,9 +1770,13 @@ def index():
 
     counts = con.execute("""
         SELECT COUNT(*) AS total,
+          SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS watched,
+          SUM(CASE WHEN active=1 AND last_checked IS NOT NULL
+                   THEN 1 ELSE 0 END) AS captured_active,
           SUM(CASE WHEN last_status='changed' AND active=1 THEN 1 ELSE 0 END) AS changed,
           SUM(CASE WHEN last_status='unchanged' AND active=1 THEN 1 ELSE 0 END) AS unchanged,
-          SUM(CASE WHEN last_http IS NOT NULL AND last_http NOT IN (404, 410)
+          SUM(CASE WHEN active=1 AND last_http IS NOT NULL
+                   AND last_http NOT IN (404, 410)
                    AND IFNULL(last_status,'') NOT IN ('blank','error')
                    THEN 1 ELSE 0 END) AS live,
           SUM(CASE WHEN last_checked IS NOT NULL THEN 1 ELSE 0 END) AS checked,
@@ -1734,7 +1787,8 @@ def index():
           SUM(CASE WHEN last_status='blank' THEN 1 ELSE 0 END) AS blank,
           -- not live = the server says GONE (404/410). Blank bodies and
           -- blocked captures (403/429/5xx) are their own states, never this
-          SUM(CASE WHEN last_http IN (404, 410) THEN 1 ELSE 0 END) AS notlive
+          SUM(CASE WHEN active=1 AND last_status='notlive'
+                   THEN 1 ELSE 0 END) AS notlive
         FROM urls""").fetchone()
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
@@ -1873,10 +1927,16 @@ def index():
         # the Mentions tile appears once anything has been collected
         mention_total = con3.execute(
             "SELECT COUNT(*) FROM mentions").fetchone()[0]
+        latest_updates, content_updates, file_updates, pages_delta = \
+            _bar_extras(con3)
     finally:
         con3.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            asset_open=asset_open, mention_total=mention_total,
+                           latest_updates=latest_updates,
+                           content_updates=content_updates,
+                           file_updates=file_updates,
+                           pages_delta=pages_delta,
                            facets=facets,
                            bls=bl_opts, pls=pl_opts,
                            sel_bl=sel_bl, sel_pl=sel_pl,
@@ -3715,9 +3775,19 @@ def run_now():
         else:
             flash("A check is already running.")
         return redirect(url_for("index"))
+    if ids is None:
+        # written EVERY time, ticked or not: the flag must never survive from
+        # an earlier run's choice - each manual full check answers for itself
+        db.set_setting("email_after_manual_run",
+                       "1" if request.form.get("email_digest") == "1" else "")
     if runner.run_check_background(kind="manual", url_ids=ids):
-        flash(f"Checking {len(ids)} page(s)…" if ids
-              else "Check started - progress is shown below.")
+        if ids:
+            flash(f"Checking {len(ids)} page(s)…")
+        elif request.form.get("email_digest") == "1":
+            flash("Check started - the digest goes out to everyone opted in "
+                  "when it finishes.")
+        else:
+            flash("Check started - no digest email for this one.")
     else:
         flash("A check is already running.")
     return redirect(url_for("index"))
@@ -3755,6 +3825,20 @@ def stop_run():
 def status():
     import time as _time
     s = dict(runner.RUN_STATE)
+    if not s.get("running"):
+        # the file sweep is the run's LAST phase - it used to happen off in
+        # the dark ("0%" over a machine 20 minutes from done), so when pages
+        # are finished but the sweep is going, the bar shows the sweep
+        import asset_watch
+        a = asset_watch.ASSET_STATE
+        if a.get("running"):
+            return jsonify({
+                "running": True, "phase": "files", "paused": False,
+                "stopping": False, "done": a.get("done", 0),
+                "total": a.get("total", 0), "phase_done": a.get("done", 0),
+                "phase_total": a.get("total", 0),
+                "changed": a.get("changed", 0), "pages_total": 0,
+                "message": a.get("message", "")})
     if s.get("running") and s.get("started"):
         # How many are actually committed to the database so far - counted
         # rather than trusted, because a page is only really done once its row
@@ -4410,6 +4494,16 @@ def _post_run_watcher():
                 _housekeeping("after run")
             except Exception as e:
                 print(f"[post-run] housekeeping failed: {e}", flush=True)
+            try:
+                # the file sweep runs INSIDE the chain, synchronously: the
+                # digest below quotes its count, so mailing first meant the
+                # email's file number was minutes stale every single week.
+                # /status surfaces it as the run's last visible phase.
+                if runner.RUN_STATE.pop("asset_check_due", False):
+                    import asset_watch
+                    asset_watch.run_asset_check()
+            except Exception as e:
+                print(f"[post-run] file sweep failed: {e}", flush=True)
             _collect_mentions_after_run()
             try:
                 _email_after_run()
@@ -4434,6 +4528,20 @@ def _email_after_run():
                           " ORDER BY id DESC LIMIT 1").fetchone()
         if not run or (run["total"] or 0) < 50:
             return                       # token run, or nothing to summarise
+        # WHO asked for this mail. The weekly scheduled check always reports;
+        # a manual run only when whoever started it ticked "email the digest"
+        # - a by-hand re-check is usually a private look, and before this
+        # gate every full manual run mailed all seven people unasked. A
+        # baseline run never mails: by definition everything "changed".
+        kind = (run["kind"] or "").lower()
+        if kind != "scheduled":
+            wanted = db.get_settings().get("email_after_manual_run") == "1"
+            if kind == "manual" and wanted:
+                db.set_setting("email_after_manual_run", "")
+            else:
+                print("[email] %s run %s - digest not requested, skipping"
+                      % (kind or "unkinded", run["id"]), flush=True)
+                return
         # ONE BATCH PER RUN, EVER. The watcher fires on every running->False
         # transition, and a run that is interrupted and resumed produces one
         # per resume - the team got the same digest twice on 6 Sep because a

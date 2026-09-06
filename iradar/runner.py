@@ -1142,17 +1142,15 @@ def _run_check_inner(kind, url_ids, baseline=False):
     con.commit()
     con.close()
 
-    # After a FULL run, fingerprint every referenced asset file in the
-    # background (HEAD only, no downloads): a datasheet or image republished
-    # at the SAME URL is invisible to the page compare - the validators are
-    # the only signal it changed. Partial runs skip it (a 3-page manual check
+    # After a FULL run the referenced-file fingerprint sweep is OWED (a
+    # datasheet republished at the SAME URL is invisible to the page compare),
+    # but it no longer starts here: fired in the background from this thread
+    # it raced the digest email, which went out while the sweep was minutes
+    # from its file count. The post-run watcher runs the sweep INSIDE its
+    # chain - visible on the progress bar, finished before the mail - so this
+    # only records that the sweep is due. Partial runs skip it (a 3-page poke
     # should not fire 14k HEAD requests), as does an early stop.
-    if not url_ids and not stopped:
-        try:
-            import asset_watch
-            asset_watch.run_in_background()
-        except Exception as exc:      # never let the watcher break a run
-            print(f"[assets] skipped: {exc}", flush=True)
+    RUN_STATE["asset_check_due"] = bool(not url_ids and not stopped)
 
     RUN_STATE.update(changed=changed, errors=errors, last_finished=db.now_iso(),
                      message=f"stopped early - {ok + errors} of {len(urls)} captured"

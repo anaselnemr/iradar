@@ -81,6 +81,21 @@ def test_dashboard_renders():
     _ok("/")
 
 
+def test_dashboard_summary_matches_the_digest_order():
+    """The web summary is the digest's six readings, with web-only detail
+    underneath; scheduling and run controls must not become extra tiles."""
+    body = _ok("/").data.decode("utf-8", "replace")
+    start = body.index('class="digest-stats"')
+    end = body.index('class="summary-controls"', start)
+    summary = body[start:end]
+    labels = [">Pages<", ">Live<", ">Updated<", ">Content<",
+              ">Files<", ">Offline<"]
+    positions = [summary.index(label) for label in labels]
+    assert positions == sorted(positions), "dashboard digest metrics changed order"
+    assert "Next auto check" not in summary and "Check all pages" not in summary
+    assert 'name="email_digest"' in body, "manual digest choice is missing"
+
+
 def test_sentiment_page_renders():
     # off by default (SENTIMENT unset) - must still render its 'switched off' state
     _ok("/sentiment")
@@ -694,6 +709,62 @@ def test_the_digest_builds_and_renders_from_a_real_run():
         "a per-page diff line came back into the pattern list"
     assert "pages affected, by type" in html.lower(), "the page-type chart is missing"
     assert "/digest-chart.png?" in html, "the donut chart image is missing"
+    # the stat row mirrors the dashboard's own bar: six tiles, dashboard names
+    assert "live" in d, "run_digest must count live pages"
+    for label in (">Pages<", ">Live<", ">Updated<", ">Content<",
+                  ">Files<", ">Offline<"):
+        assert label in html, "stat tile %s missing from the digest" % label
+
+
+def test_manual_runs_only_email_when_asked():
+    """The digest gate: a scheduled run always mails, a manual run only when
+    its starter ticked the box, a baseline run never - and the box's flag is
+    consumed by the run it belongs to."""
+    import app as appmod
+    import mailer
+    con = db.connect()
+    con.execute("DELETE FROM runs")
+    rid = con.execute(
+        "INSERT INTO runs(started, finished, kind, total, ok, changed, errors)"
+        " VALUES('2026-09-06 01:00:00','2026-09-06 10:00:00','manual',"
+        " 3651, 3650, 0, 1)").lastrowid
+    # someone must be opted in, or every path is silent for the wrong reason
+    con.execute("UPDATE users SET email_opt_in=1, active=1"
+                " WHERE email<>'' AND id=(SELECT MIN(id) FROM users"
+                " WHERE email<>'')")
+    con.commit()
+    con.close()
+    sent = []
+    real_conf, real_send = mailer.configured, mailer.send
+    mailer.configured = lambda: True
+    mailer.send = lambda to, subj, html, text="": sent.append(to) or None
+    try:
+        db.set_setting("last_emailed_run", "")
+        # manual, box not ticked: silence
+        db.set_setting("email_after_manual_run", "")
+        appmod._email_after_run()
+        assert sent == [], "an unrequested manual run mailed people: %s" % sent
+        # manual, box ticked: mails, and eats the flag
+        db.set_setting("email_after_manual_run", "1")
+        appmod._email_after_run()
+        assert sent, "a requested manual digest never went out"
+        assert db.get_settings().get("email_after_manual_run") == "", \
+            "the one-run flag must be consumed"
+        # the once-per-run marker still holds afterwards
+        n = len(sent)
+        appmod._email_after_run()
+        assert len(sent) == n, "the same run emailed twice"
+        # baseline runs never mail, ticked or not
+        con = db.connect()
+        con.execute("UPDATE runs SET kind='baseline' WHERE id=?", (rid,))
+        con.commit(); con.close()
+        db.set_setting("last_emailed_run", "")
+        db.set_setting("email_after_manual_run", "1")
+        appmod._email_after_run()
+        assert len(sent) == n, "a baseline run mailed the team"
+    finally:
+        mailer.configured, mailer.send = real_conf, real_send
+        db.set_setting("email_after_manual_run", "")
 
 
 def test_email_alerts_toggle_flips_the_flag():

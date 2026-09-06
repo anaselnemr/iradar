@@ -580,6 +580,12 @@ def run_digest(con, run):
     ).fetchone()[0]
     d["pages"] = con.execute(
         "SELECT COUNT(*) FROM urls WHERE active=1").fetchone()[0]
+    # live = a visitor actually gets the page - the dashboard's own formula,
+    # so the email's number and the site's number can never disagree
+    d["live"] = con.execute(
+        "SELECT COUNT(*) FROM urls WHERE active=1"
+        " AND last_http IS NOT NULL AND last_http NOT IN (404, 410)"
+        " AND IFNULL(last_status,'') NOT IN ('blank','error')").fetchone()[0]
     d["errors_total"] = (d["notlive"] + d["blank"] + (d["errors"] or 0))
     d["by_component"] = _component_diffs(ch)
     # watched-pages delta against the previous check: extra pages since last
@@ -648,16 +654,17 @@ def _esc(s):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def _stat(label, value, colour, suffix=""):
+def _stat(label, value, colour, suffix="", width="16%"):
     """One tile. The label is ONE short word on purpose: a phone gives each of
-    four tiles about 70px, where "Pages watched" wraps to two lines and its
-    neighbours do not, so the row came out ragged. Any delta rides on the
-    label line - beside a 26px number it overflowed the tile."""
+    six tiles about 58px, where any two-word label wraps and the row comes out
+    ragged. Any delta rides on the label line - beside the big number it
+    overflowed the tile. Number sized for six across on a 375px phone; the
+    two thousands-sized numbers get wider cells than the small counts."""
     return (
-        '<td align="center" width="25%" style="padding:16px 4px;">'
-        '<div style="font:800 26px/1 ' + FONT + ';color:' + colour + ';'
+        '<td align="center" width="' + width + '" style="padding:16px 2px;">'
+        '<div style="font:800 20px/1 ' + FONT + ';color:' + colour + ';'
         'white-space:nowrap;">' + _esc(value) + '</div>'
-        '<div style="font:700 10px/1.4 ' + FONT + ';letter-spacing:.06em;'
+        '<div style="font:700 9px/1.4 ' + FONT + ';letter-spacing:.05em;'
         'text-transform:uppercase;color:' + _MUT + ';margin-top:7px;'
         'white-space:nowrap;">' + _esc(label) + suffix + '</div></td>')
 
@@ -830,14 +837,21 @@ def render_digest(d, base_url, when_label):
                 + ("+%d" % delta if delta > 0 else "\u2212%d" % -delta)
                 + '</span>')
     nl = d.get("notlive", 0)
-    # four numbers, four colours - the watched total and the content count
-    # both read as plain ink before, so the eye could not tell them apart
+    fu_n = d.get("file_updates", 0) or 0
+    # the same six numbers the dashboard's own bar carries, in the same
+    # colours, so the mail and the site read as one instrument - each number
+    # its own colour, so no two unrelated counts can be mistaken for a pair
     stats = (
-        _stat("Pages", "{:,}".format(d.get("pages", 0)), _INK, dsuf)
-        + _stat("Updated", n, _ACCENT)
+        _stat("Pages", "{:,}".format(d.get("pages", 0)), _INK, dsuf,
+              width="19%")
+        + _stat("Live", "{:,}".format(d.get("live", 0)),
+                "#16a34a" if d.get("live") else _FAINT, width="19%")
+        + _stat("Updated", n, _ACCENT, width="17%")
         + _stat("Content", d.get("content_updates", 0),
-                "#1ea896" if d.get("content_updates") else _FAINT)
-        + _stat("Offline", nl, _BAD if nl else _FAINT))
+                "#1ea896" if d.get("content_updates") else _FAINT,
+                width="17%")
+        + _stat("Files", fu_n, "#7c3aed" if fu_n else _FAINT, width="14%")
+        + _stat("Offline", nl, _BAD if nl else _FAINT, width="14%"))
 
     def _chart_img(title, data, footnote=""):
         if not data:
