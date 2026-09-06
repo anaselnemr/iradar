@@ -4434,6 +4434,17 @@ def _email_after_run():
                           " ORDER BY id DESC LIMIT 1").fetchone()
         if not run or (run["total"] or 0) < 50:
             return                       # token run, or nothing to summarise
+        # ONE BATCH PER RUN, EVER. The watcher fires on every running->False
+        # transition, and a run that is interrupted and resumed produces one
+        # per resume - the team got the same digest twice on 6 Sep because a
+        # disk-full death and its later resume were two transitions. A marker
+        # of the last run emailed makes the second and any later transition a
+        # no-op.
+        if str(db.get_settings().get("last_emailed_run") or "") == str(run["id"]):
+            print("[email] run %s already emailed - skipping" % run["id"],
+                  flush=True)
+            return
+        db.set_setting("last_emailed_run", str(run["id"]))
         recipients = con.execute(
             "SELECT email FROM users WHERE active=1 AND IFNULL(email_opt_in,0)=1"
             " AND email<>''").fetchall()
