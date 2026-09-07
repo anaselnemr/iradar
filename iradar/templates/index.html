@@ -47,8 +47,7 @@
     .report-stat .n { font-size:26px; line-height:1.2; font-weight:700;
                       font-variant-numeric:tabular-nums; }
     .report-stat .l { margin-top:3px; color:var(--muted); font-size:12.5px;
-                      font-weight:400; line-height:1.25; letter-spacing:.02em;
-                      text-transform:uppercase; }
+                      font-weight:400; line-height:1.25; letter-spacing:.02em; }
     .report-stat .detail { min-height:2.5em; margin-top:5px; color:var(--muted);
                            font-size:11.5px; line-height:1.25; }
     .report-stat .delta { margin-left:3px; font-size:12px; letter-spacing:0;
@@ -62,7 +61,7 @@
                   color:var(--muted); font-size:12.5px; }
     .next-check strong { display:block; color:var(--ink); font-size:15px;
                          line-height:1.4; }
-    .next-check .l { text-transform:uppercase; letter-spacing:.02em; }
+    .next-check .l { letter-spacing:.02em; }
     .run-actions { display:flex; align-items:center; justify-content:center;
                    gap:8px; flex-wrap:nowrap; white-space:nowrap; }
     .run-split { display:inline-flex; align-items:stretch; }
@@ -111,7 +110,7 @@
   <div class="summary-overview">
   <div class="report-stats" aria-label="iRadar page and update summary">
     <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages. The delta counts pages added or removed since the previous full check; pausing a page does not change it.">
-      <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' if pages_delta < 0 else 'var(--muted)' }}">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) if pages_delta < 0 else '±0' }}</span></div>
+      <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Total pages</div>
       <div class="detail">{{ '{:,}'.format(counts.checked or 0) }} captured</div>
     </a>
@@ -142,7 +141,7 @@
       <div class="detail">{{ '{:,}'.format(asset_open or 0) }} awaiting review</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="All pages answering HTTP 404 or 410, including paused pages. The run delta is newly offline pages minus pages that came back live.">
-      <div class="n" style="color:{{ 'var(--err)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}<span class="delta" style="color:var(--err)" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) if offline_delta < 0 else '±0' }}</span></div>
+      <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
       <div class="l">Total offline</div>
       <div class="detail">includes paused pages</div>
     </a>

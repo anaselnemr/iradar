@@ -221,23 +221,42 @@ def test_latest_report_with_no_finished_run_does_not_send():
         con.close()
 
 
-def test_offline_delta_is_red_beside_the_total_for_every_sign():
+def test_offline_delta_appears_only_when_it_changed_and_reads_by_direction():
+    """A delta is news or it is nothing. "+-0" sat on the bar every week
+    saying nothing happened - the one case worth no ink - and a badge that is
+    always there stops being read when it finally says something. The COUNT
+    stays plain ink: 682 pages have been offline for weeks, and painting a
+    standing fact red made it look like a fresh crisis every Sunday. Only the
+    movement is coloured, and by direction: red for more offline, green for
+    fewer."""
     from xml.etree import ElementTree
     original = app._bar_extras
+
+    def tile_for(delta, label_text):
+        app._bar_extras = lambda con, d=delta: (*original(con)[:4], d)
+        body = _ok("/").data.decode("utf-8")
+        tiles = [ElementTree.fromstring(markup) for markup in _re.findall(
+            r'<a class="report-stat"[^>]*>.*?</a>', body, _re.S)]
+        return next(t for t in tiles
+                    if t.find("div[@class='l']").text == label_text)
+
     try:
-        for delta, label in [(4, "+4"), (-4, "−4"), (0, "±0")]:
-            app._bar_extras = lambda con, d=delta: (*original(con)[:4], d)
-            body = _ok("/").data.decode("utf-8")
-            tiles = [ElementTree.fromstring(markup) for markup in _re.findall(
-                r'<a class="report-stat"[^>]*>.*?</a>', body, _re.S)]
-            tile = next(t for t in tiles
-                        if t.find("div[@class='l']").text == "Total offline")
+        for delta, label, colour in [(4, "+4", "var(--err)"),
+                                     (-4, "−4", "var(--ok)")]:
+            tile = tile_for(delta, "Total offline")
             inline = tile.find("div[@class='n']/span[@class='delta']")
             assert inline is not None, "offline delta must sit next to the total"
             assert inline.text == label
-            assert inline.get("style") == "color:var(--err)"
+            assert inline.get("style") == "color:" + colour,                 "%s should read %s" % (label, colour)
             assert inline.get("title") == "Change in offline pages this run"
             assert tile.find("div[@class='detail']").text == "includes paused pages"
+            # the standing count itself is ink, never an alarm colour
+            n = tile.find("div[@class='n']")
+            assert "var(--err)" not in (n.get("style") or ""),                 "the offline COUNT must not be red - only its change is"
+
+        # unchanged: no badge at all
+        tile = tile_for(0, "Total offline")
+        assert tile.find("div[@class='n']/span[@class='delta']") is None,             "an unchanged offline count must carry no delta badge"
     finally:
         app._bar_extras = original
 

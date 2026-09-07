@@ -25,3 +25,7 @@ iradar-*.tar.gz
 
 # local tooling config (editor / agent), never product code
 .claude/
+
+# Database backups: hundreds of MB, and they carry every account and its
+# password hash. Never in a repo - the Infineon mirror is readable by the team.
+local/backups/
