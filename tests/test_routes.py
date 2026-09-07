@@ -1105,3 +1105,48 @@ def test_the_preview_route_declares_webp():
         "a return in the preview route still declares image/png"
     assert src.count('mimetype="image/webp"') >= 2, \
         "both the cached and freshly-rendered returns must declare webp"
+
+
+def test_the_pages_export_carries_a_picture_of_each_page():
+    """A sheet of URLs and yes/nos makes you open the site to know what the
+    row even is. The screenshot we already hold goes in column B, beside the
+    URL, and the row is made tall enough that Excel does not stack them."""
+    import io
+    from pathlib import Path
+    from PIL import Image as PILImage
+    from openpyxl import load_workbook
+    # own its fixture: other tests in this file delete snapshots, and reusing
+    # whatever happens to be there made this pass alone and fail in the suite
+    d = Path(_D) / "shotdir"
+    d.mkdir(exist_ok=True)
+    PILImage.new("RGB", (300, 900), "white").save(
+        d / "shot.webp", "WEBP", lossless=True, method=0)
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_status)"
+                " VALUES(901, 'https://www.infineon.com/part/SHOT', 1,"
+                " 'Part', 'unchanged')"
+                " ON CONFLICT(id) DO UPDATE SET active=1")
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status, page_title)"
+                " VALUES(901, 'shot-ts', ?, 'ok', 'Shot page')", (str(d),))
+    con.commit()
+    con.close()
+
+    r = _client.get("/export/download?all=1")
+    assert r.status_code == 200, r.status_code
+    wb = load_workbook(io.BytesIO(r.data))
+    ws = wb["Pages"]
+    head = [c.value for c in ws[1]]
+    assert head[0] == "URL", head[:4]
+    assert head[1] == "Preview", "the picture column must sit beside the URL"
+    assert head[2] == "Page", head[:4]
+    assert ws._images, "no screenshot was embedded in the sheet"
+    # anchored into column B, and the row was given height to show it
+    anchor = ws._images[0].anchor
+    col = getattr(getattr(anchor, "_from", None), "col", None)
+    assert col == 1, "the picture is not in column B (got col %s)" % col
+    # check the row the picture is actually ON - pages sort, so it need not be
+    # row 2, and a row whose page has no capture keeps the default height
+    r0 = getattr(getattr(anchor, "_from", None), "row", None)
+    h = ws.row_dimensions[r0 + 1].height
+    assert h and h > 18, \
+        "row %s was not made tall enough for the picture (h=%s)" % (r0 + 1, h)

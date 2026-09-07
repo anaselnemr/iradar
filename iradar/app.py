@@ -7019,12 +7019,55 @@ def export_builder():
         shown=shown_total)
 
 
+PREVIEW_COL_PX = 150            # thumbnail width in the spreadsheet
+
+
+def _thumb_bytes(shot, px=PREVIEW_COL_PX):
+    """A small JPEG of a page's screenshot, for embedding in a spreadsheet.
+
+    JPEG rather than the stored webp: openpyxl will embed webp bytes happily,
+    but older Excel cannot draw them and the reader gets an empty frame with
+    no clue why. draft() lets the decoder skip most of the work by scaling as
+    it reads, which is what makes 4,300 pages about a minute rather than ten.
+    """
+    from PIL import Image as _Im
+    try:
+        im = _Im.open(shot)
+        im.draft("RGB", (px * 2, px * 2))
+        im = im.convert("RGB")
+        im.thumbnail((px, px * 4))       # tall pages keep their proportions
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=60, optimize=True)
+        buf.seek(0)
+        return buf, im.width, im.height
+    except Exception:
+        return None, 0, 0
+
+
+def _latest_shots(con):
+    """url_id -> path of its newest good screenshot, for the export preview."""
+    out = {}
+    for r in con.execute(
+            "SELECT s.url_id, s.dir FROM snapshots s"
+            " JOIN (SELECT url_id, MAX(id) mid FROM snapshots"
+            "       WHERE status='ok' AND dir<>'' GROUP BY url_id) m"
+            " ON s.id=m.mid"):
+        try:
+            p = db.shot_path(r["dir"])
+            if p.exists():
+                out[r["url_id"]] = p
+        except Exception:
+            pass
+    return out
+
+
 @app.route("/export/download")
 def export_builder_download():
     """The table you are looking at, as a spreadsheet - same code path, so the
     file can never disagree with the screen."""
     import tempfile
     from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as XLImage
     con = db.connect()
     levels = request.args.getlist("lv")
     cols = request.args.getlist("col")
@@ -7073,12 +7116,34 @@ def export_builder_download():
         rows, want_meta, want_comps, want_page = _export_rows(
             con, levels, cols, verbose=True)
         ws = wb.create_sheet("Pages")
+        # A PICTURE OF THE PAGE, second column. A row of URLs and yes/nos
+        # makes you open the site to know what you are even looking at; the
+        # screenshot we already hold answers that in the sheet itself. It sits
+        # beside the URL because those two together identify the row.
+        shots = _latest_shots(con)
+        ws.column_dimensions["B"].width = 24
         # URL first: it is the join key people paste into their own tools
-        ws.append(["URL", "Page", "Level", "Type"]
+        ws.append(["URL", "Preview", "Page", "Level", "Type"]
                   + _export_headers(want_meta, want_comps, want_page))
-        for r in rows:
-            ws.append([r["url"], r["title"], r["level"], r["ptype"]]
+        for i, r in enumerate(rows, start=2):
+            shot = shots.get(r["id"])
+            buf = None
+            if shot is not None:
+                buf, _w, h = _thumb_bytes(shot)
+            if buf is not None:
+                # the row has to be as tall as the picture or Excel overlaps
+                # them all into an unreadable stack (points = px * 0.75)
+                ws.row_dimensions[i].height = max(18, min(h, 300) * 0.75)
+            ws.append([r["url"], "", r["title"], r["level"], r["ptype"]]
                       + r["vals"])
+            if buf is not None:
+                try:
+                    img = XLImage(buf)
+                    img.width, img.height = _w, h
+                    img.anchor = "B%d" % i
+                    ws.add_image(img)
+                except Exception:
+                    pass
     con.close()
     f = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     f.close()
