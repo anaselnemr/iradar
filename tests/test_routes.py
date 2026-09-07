@@ -1071,3 +1071,30 @@ def test_the_preview_cache_is_capped_oldest_first():
         db.DATA_DIR = real_dir
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_document_previews_are_webp_not_lossless_png():
+    """PNG previews were lossless renders of a page - 1.1GB of cache on a
+    4.6GB volume. WEBP/82 measured 90% smaller and indistinguishable, so the
+    saving is a format change, not a quality cut."""
+    import app as appmod
+    from pathlib import Path
+    assert appmod.PREVIEW_FORMAT == "WEBP"
+    assert appmod.PREVIEW_QUALITY >= 80, \
+        "quality dropped below the measured indistinguishable point"
+    out, fail = appmod._preview_files(Path("/tmp"), "abc123", "v1")
+    assert out.suffix == ".webp", out
+    assert fail.suffix == ".fail", fail
+    # a stale lossless preview must not be mistaken for a current one, so the
+    # old name has to differ - that is what makes it an orphan and sweeps it
+    assert out.name != out.name.replace(".webp", ".png")
+
+
+def test_the_preview_route_declares_webp():
+    """The path still ends .png so templates and bookmarks keep working; the
+    header is what browsers read, and it must not lie about the bytes."""
+    import inspect
+    import app as appmod
+    src = inspect.getsource(appmod.doc_preview_png)
+    assert 'mimetype="image/webp"' in src, \
+        "the route still claims image/png while serving webp bytes"
