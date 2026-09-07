@@ -4142,7 +4142,7 @@ def settings_view():
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS,
                            picked_days=check_days(), schedule_hour=SCHEDULE_HOUR,
-                           guest_key=GUEST_KEY,
+                           guest_key=GUEST_KEY, base_url=_base_url(),
                            copy_limits=cmp.copy_limits(db.get_settings()),
                            guest_tot=guest_tot, **matrix_ctx)
 

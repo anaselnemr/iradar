@@ -926,11 +926,16 @@
      whose label had to say the OPPOSITE of the current state ("Turn off"
      when it is on), which is a sentence you have to parse before you dare
      click it. */
-  .sw { position: relative; display: inline-flex; align-items: center;
+  .sw, label.sw { position: relative; display: inline-flex; align-items: center;
         gap: 10px; cursor: pointer; }
   .sw input { position: absolute; inset: 0; width: 100%; height: 100%;
               opacity: 0; margin: 0; cursor: pointer; }
-  .sw-t { position: relative; width: 40px; height: 23px; flex-shrink: 0;
+  /* display is set EXPLICITLY on the parts. The track is a <span>, so width
+     and height do nothing while it is inline - and it was only ever blockified
+     by being a flex child, which any page-level `label { display: block }`
+     silently took away. It collapsed to a 0px track on the profile page. */
+  .sw-t { position: relative; display: inline-block; width: 40px; height: 23px;
+          flex-shrink: 0;
           background: var(--line); border-radius: 999px;
           transition: background .16s ease; }
   .sw-t::after { content: ""; position: absolute; top: 2.5px; left: 2.5px;
@@ -942,7 +947,7 @@
   .sw input:focus-visible ~ .sw-t { outline: 2px solid var(--accent);
                                     outline-offset: 3px; }
   .sw input:disabled ~ .sw-t { opacity: .5; cursor: default; }
-  .sw-l { font-size: 13.5px; font-weight: 600; }
+  .sw-l { display: inline-block; font-size: 13.5px; font-weight: 600; }
   @media (prefers-reduced-motion: reduce) {
     .sw-t, .sw-t::after { transition: none; }
   }

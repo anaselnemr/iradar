@@ -1332,3 +1332,25 @@ def test_clearing_a_copy_limit_means_no_limit_not_the_default_back():
     assert 'name="copy_about_chars"\n                       value=""' in body2 \
         or 'name="copy_about_chars" value=""' in body2 \
         or 'value=""' in body2, "0 should render as an empty box"
+
+
+def test_the_shared_link_is_offered_over_https():
+    """Behind Cloudflare the request root comes back as http://, so a link
+    built with _external=True handed people a plain-HTTP address for a site
+    that only serves HTTPS."""
+    was_owner, was_key = app.OWNER_EMAIL, app.GUEST_KEY
+    was_pub = os.environ.get("PUBLIC_URL")
+    app.OWNER_EMAIL = "routes@example.com"
+    app.GUEST_KEY = "shared-key-for-the-test"
+    os.environ["PUBLIC_URL"] = "https://iradar.net"
+    try:
+        body = _ok("/settings").data.decode("utf-8", "replace")
+        assert "https://iradar.net/?key=shared-key-for-the-test" in body, \
+            "the shared link is not the configured https address"
+        assert "http://localhost" not in body
+    finally:
+        app.OWNER_EMAIL, app.GUEST_KEY = was_owner, was_key
+        if was_pub is None:
+            os.environ.pop("PUBLIC_URL", None)
+        else:
+            os.environ["PUBLIC_URL"] = was_pub

@@ -180,8 +180,13 @@
         <div class="setrow setrow-wide">
           <div class="setrow-t"><label for="gl-url">The link</label></div>
           <div class="setrow-c copyrow">
+            {#- base_url, not url_for(_external=True): behind Cloudflare the
+                request root comes back as http://, so the link people were
+                handed downgraded them to plain HTTP on a site that only
+                serves HTTPS. PUBLIC_URL is the address this install is
+                actually reachable at. -#}
             <input type="text" id="gl-url" readonly
-                   value="{{ url_for('index', _external=True) }}?key={{ guest_key }}"
+                   value="{{ base_url }}/?key={{ guest_key }}"
                    onclick="this.select()">
             <button type="button" class="copybtn" id="glcopy">Copy</button>
           </div>

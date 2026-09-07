@@ -57,7 +57,9 @@
              padding: 2px 9px; border-radius: 999px;
              background: rgba(110,109,122,.16); color: var(--muted); }
   .pf-role.is-admin { background: rgba(94,106,210,.16); color: var(--accent); }
-  .pf label { display: block; font-size: 12px; font-weight: 600;
+  /* :not(.sw) - the switch is a label too, and blockifying it collapsed
+     its track to nothing */
+  .pf label:not(.sw) { display: block; font-size: 12px; font-weight: 600;
               color: var(--muted); margin: 0 0 6px; letter-spacing: .01em; }
   .pf .row { display: grid; grid-template-columns: 1fr auto; gap: 12px;
              align-items: end; }
