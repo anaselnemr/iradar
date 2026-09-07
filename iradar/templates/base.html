@@ -880,6 +880,19 @@
                  box-shadow: 0 14px 38px rgba(0,0,0,.20); }
   .acct-head { padding: 9px 10px 10px; border-bottom: 1px solid var(--line);
                margin-bottom: 6px; }
+  /* The identity block is the door to the profile, so it has to LOOK like a
+     target: the same hover as every row under it, the face beside the name,
+     and a chevron saying it goes somewhere. */
+  .acct-head-link { display: flex; align-items: center; gap: 10px;
+                    text-decoration: none; color: var(--ink);
+                    border-radius: 8px 8px 0 0; }
+  .acct-head-link:hover { background: var(--hover); }
+  .acct-head-av { width: 32px; height: 32px; font-size: 12px; flex-shrink: 0; }
+  .acct-head-txt { min-width: 0; flex: 1; }
+  .acct-head-txt .acct-id { display: flex; }
+  .acct-head-txt .acct-mail { display: block; }
+  .acct-head-go { width: 15px; height: 15px; flex-shrink: 0; color: var(--muted); }
+  .acct-head-link:hover .acct-head-go { color: var(--accent); }
   /* two lines, not three: the role is one word and belongs beside the name */
   .acct-id { display: flex; align-items: center; gap: 8px; }
   .acct-name { font-weight: 650; font-size: 13.5px; min-width: 0;
@@ -1151,6 +1164,17 @@
        class="{{ 'on' if request.endpoint == 'guide_page' }}">Help</a>
   </nav>
   <div class="hactions">
+    {#- Dark mode sits in the BAR, not inside the account menu. It is not an
+        account setting - a guest with no account still reads in the dark -
+        and it is the one control people reach for repeatedly, which is a poor
+        fit for something two clicks deep behind a face. -#}
+    <button type="button" class="hbtn icon-only" onclick="toggleTheme()"
+            title="Switch between light and dark" aria-label="Switch theme">
+      <svg class="themeicon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+      <svg class="themeicon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.3 8.3 0 1 0 20 14.5z"/></svg>
+    </button>
     {% if me %}
     <details class="acct">
       <summary title="{{ me['email'] }}" aria-label="Account menu">
@@ -1158,6 +1182,11 @@
         <span class="acct-who">{{ me['name'] or me['email'].split('@')[0] }}</span>
       </summary>
       <div class="panel">
+        {#- The identity block IS the way to the profile. It carries the face,
+            the name and the address already, so a separate "My profile" row
+            underneath was the same destination written twice. A guest has no
+            account, so theirs stays a plain block with nothing to open. -#}
+        {% if is_guest %}
         <div class="acct-head">
           <div class="acct-id">
             <div class="acct-name">{{ me['name'] or me['email'].split('@')[0] }}</div>
@@ -1165,35 +1194,29 @@
           </div>
           <div class="acct-mail">{{ me['email'] }}</div>
         </div>
-
-        {#- the theme toggle lives here now; it is a preference, not an action -#}
-        <button type="button" class="acct-item" onclick="toggleTheme()">
-          <svg class="themeicon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
-          <svg class="themeicon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.3 8.3 0 1 0 20 14.5z"/></svg>
-          <span class="themelabel-light">Dark mode</span>
-          <span class="themelabel-dark">Light mode</span>
-        </button>
+        {% else %}
+        <a class="acct-head acct-head-link" href="{{ url_for('account_password') }}">
+          <span class="av acct-head-av" style="--avatar:{{ me|avatar }}">{{ me|initials }}</span>
+          <span class="acct-head-txt">
+            <span class="acct-id">
+              <span class="acct-name">{{ me['name'] or me['email'].split('@')[0] }}</span>
+              <span class="acct-role {{ 'is-admin' if is_admin }}">{{ me['role'] }}</span>
+            </span>
+            <span class="acct-mail">{{ me['email'] }}</span>
+          </span>
+          <svg class="acct-head-go" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </a>
+        {% endif %}
 
         {#- Email alerts deliberately have NO menu entry: the toggle and the
             send-latest-report button live on the profile page, which the email
             footer's "Manage them here" links to. One home, not two. -#}
 
-        {#- A guest has no account, so there is no profile to open. -#}
-        {% if not is_guest %}
-        <a class="acct-item" href="{{ url_for('account_password') }}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          My profile
-        </a>
-        {% endif %}
-
         {#- Configuration lives with the person, not in the work navigation.
             Both are admin-only, so this is also the difference between an
             editor seeing them and getting 403, and never seeing them. -#}
         {% if is_admin %}
-        <div class="acct-sep">Admin</div>
         <a class="acct-item" href="{{ url_for('users_page') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -1205,14 +1228,6 @@
           Settings
         </a>
         {% endif %}
-
-        {%- if is_owner %}
-        <a class="acct-item" href="{{ url_for('guests_page') }}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
-          The shared link
-        </a>
-        {%- endif %}
 
         {#- A guest arrived by link, not by signing in, so the way OUT of the
             shared view is also the only way to an account. Without this the

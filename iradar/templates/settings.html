@@ -1,178 +1,286 @@
 {% extends "base.html" %}
 {% block title %}Settings — iRadar{% endblock %}
 {% block content %}
-{#- Centred on the page and no heading: the nav already says which page this
-    is, and a 680px form pinned to the left edge of a 1200px page reads as
-    something that failed to load the rest of itself. -#}
-<div class="card settingscard" style="max-width:680px; margin-left:auto; margin-right:auto">
-  {# segmented nav: one form, four panes - switching tabs never loses input #}
+{#- Centred and unheaded: the nav already says which page this is, and a form
+    pinned to the left edge of a 1200px page reads as something that failed to
+    load the rest of itself.
+
+    THE SHAPE OF THIS PAGE IS A LIST OF SETTINGS, not a stack of form fields.
+    Every row says what it controls and what it costs on the left, and carries
+    its control on the right, so the page can be SCANNED for the one thing you
+    came to change instead of read top to bottom. The old layout put a label,
+    then a paragraph, then a full-width box, three times over - which meant the
+    only way to find the capture depth was to read every word above it. -#}
+<div class="setwrap settingscard">
+
   <div class="seg" role="tablist">
     <button type="button" class="seg-b on" data-pane="schedule" onclick="segGo(this)">Schedule</button>
     <button type="button" class="seg-b" data-pane="sensitivity" onclick="segGo(this)">Sensitivity</button>
     <button type="button" class="seg-b" data-pane="components" onclick="segGo(this)">Components</button>
-    {#- Access held no settings - only a summary of things said better on the
-        People page and in Help, so it was a tab that could not be used.
-        Backends, the ignore lists and Backup are all set-up-once and now
-        share one. -#}
     <button type="button" class="seg-b" data-pane="advanced" onclick="segGo(this)">Advanced</button>
   </div>
 
-  <form method="post">
+  <form method="post" id="setform">
+
+    <!-- ============================ SCHEDULE ============================ -->
     <div class="pane on" id="pane-schedule">
-      <p class="muted">Next automatic check: <b>{{ next_run }}</b>. You can
-        start one yourself any time from the dashboard.</p>
-      <label>Check frequency
-        <select name="frequency">
-          <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
-          <option value="bidaily" {% if s.frequency=='bidaily' %}selected{% endif %}>Every 2 days</option>
-          <option value="weekly"  {% if s.frequency=='weekly' %}selected{% endif %}>Weekly</option>
-        </select>
-      </label>
-      <div class="grid2" style="margin-top:10px">
-        <label>Day (for weekly)
-          <select name="weekday">
-            {% for d in weekdays %}<option value="{{ d }}" {% if s.weekday==d %}selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
-          </select>
-        </label>
-        <label>Hour of day (0–23, local time)
-          <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}">
-        </label>
-      </div>
-      <label style="display:block; margin-top:16px">Parallel browser tabs
-        <span class="muted" style="font-weight:400">— 8 is the tested value.
-          Higher is faster, but pages start coming back half-read and nothing
-          says so.</span>
-        <input type="number" name="concurrency" min="1" max="12" value="{{ s.concurrency }}">
-      </label>
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>Automatic checks</h2>
+          <p>When iRadar walks the whole site by itself. Next one
+             <b>{{ next_run }}</b> — you can start one any time from the
+             dashboard.</p>
+        </div>
 
-      <label style="display:block; margin-top:16px">Captures kept per page
-        <span class="muted" style="font-weight:400">— older copies are
-          deleted after each check. A comparison only needs this capture and
-          the one before it, so 2 loses nothing and holds the disk near
-          2.7 GB.</span>
-        <input type="number" name="keep_snapshots" min="1" max="20"
-               value="{{ s.keep_snapshots }}">
-      </label>
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-freq">How often</label>
+            <p>Weekly matches how fast the site actually moves.</p>
+          </div>
+          <div class="setrow-c">
+            <select name="frequency" id="f-freq">
+              <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
+              <option value="bidaily" {% if s.frequency=='bidaily' %}selected{% endif %}>Every 2 days</option>
+              <option value="weekly"  {% if s.frequency=='weekly' %}selected{% endif %}>Weekly</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-day">Day and hour</label>
+            <p>Local time. The day applies to the weekly cadence only.</p>
+          </div>
+          <div class="setrow-c setrow-c-pair">
+            <select name="weekday" id="f-day">
+              {% for d in weekdays %}<option value="{{ d }}" {% if s.weekday==d %}selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
+            </select>
+            <div class="numwrap">
+              <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}"
+                     aria-label="Hour of day">
+              <span class="numsuf">:00</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>Capture</h2>
+          <p>How hard iRadar works while it runs, and how much it keeps.</p>
+        </div>
+
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-conc">Parallel browser tabs</label>
+            <p>8 is the tested value. Higher is faster, but pages start
+               coming back half-read and nothing says so.</p>
+          </div>
+          <div class="setrow-c">
+            <input type="number" name="concurrency" id="f-conc" min="1" max="12"
+                   class="num" value="{{ s.concurrency }}">
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-keep">Captures kept per page</label>
+            <p>A comparison needs this capture and the one before it, so 2
+               loses nothing. Older copies are deleted after each check.</p>
+          </div>
+          <div class="setrow-c">
+            <input type="number" name="keep_snapshots" id="f-keep" min="1" max="20"
+                   class="num" value="{{ s.keep_snapshots }}">
+          </div>
+        </div>
+      </section>
     </div>
 
+    <!-- =========================== SENSITIVITY ========================== -->
     <div class="pane" id="pane-sensitivity">
-      <p class="muted" style="margin-top:0">How different a page has to look
-        before it is worth your time, against its previous capture.</p>
-      <div class="grid2">
-        <label>Visual update threshold (% of pixels)
-          <input type="text" name="visual_threshold" value="{{ s.visual_threshold }}">
-        </label>
-        <label>Page height update threshold (px)
-          <input type="number" name="height_threshold" value="{{ s.height_threshold }}">
-        </label>
-      </div>
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>What counts as a change</h2>
+          <p>How different a page has to look from its previous capture before
+             it is worth your time.</p>
+        </div>
+
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-vis">Visual threshold</label>
+            <p>Share of pixels that must differ. Below this, the page is
+               treated as unchanged.</p>
+          </div>
+          <div class="setrow-c">
+            <div class="numwrap">
+              <input type="text" name="visual_threshold" id="f-vis"
+                     value="{{ s.visual_threshold }}">
+              <span class="numsuf">%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-hgt">Page height threshold</label>
+            <p>How much taller or shorter a page must get to count on its
+               own.</p>
+          </div>
+          <div class="setrow-c">
+            <div class="numwrap">
+              <input type="number" name="height_threshold" id="f-hgt"
+                     value="{{ s.height_threshold }}">
+              <span class="numsuf">px</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
+    <!-- ============================ ADVANCED ============================ -->
     <div class="pane" id="pane-advanced">
-      {#- Editorial limits. An editorial rule is an editorial decision, so the
-          numbers live here rather than in code. 0 = no bound, which switches a
-          rule off without removing the row. Only blocks a page actually has
-          are judged: a part page carries no overview and never should. -#}
-      <h3 style="margin:0 0 6px; font-size:15px">Copy limits</h3>
-      <p class="muted" style="margin-top:0">The longest a single block may be,
-        and how many of them there should be. <b>0 means no limit.</b> A page
-        is only judged on blocks it actually has &mdash; whether it
-        <i>should</i> have one is the Components grid's question.</p>
-      <div class="tablewrap">
-      <table style="white-space:nowrap; font-size:14px">
-        <tr><th style="text-align:left">Block</th>
-            <th>Longest block</th><th>At least</th><th>At most</th></tr>
-        {% for key, label, chars, lo, hi in copy_limits %}
-        <tr>
-          <td style="padding-right:14px">{{ label }}</td>
-          <td><input type="number" min="0" style="width:6.5em"
-                     name="copy_{{ key }}_chars" value="{{ chars }}"></td>
-          <td><input type="number" min="0" style="width:5em"
-                     name="copy_{{ key }}_min" value="{{ lo }}"></td>
-          <td><input type="number" min="0" style="width:5em"
-                     name="copy_{{ key }}_max" value="{{ hi }}"></td>
-        </tr>
-        {% endfor %}
-      </table>
-      </div>
-      <p class="muted" style="margin-top:8px">Changing these takes effect as
-        each page is next read. The Dashboard's <b>Content</b> dropdown has a
-        <b>&hellip; over its limit</b> entry per block to list who is over.</p>
 
-
-      {#- Whether the shared read-only link has been opened. OWNER only, not
-          admin: every account here is an admin, so admin-only would be the
-          whole team. A timestamp and nothing else - everyone arrives through
-          one link, so there is no "who" to show. -#}
+      {#- The shared link moved here from the account menu. It is not a
+          personal preference - it governs who can read the whole instance -
+          so it belongs with configuration, beside the other things that are
+          true of the install rather than of you. -#}
       {% if is_owner %}
-      <h3 style="margin:0 0 10px; font-size:15px">The shared link</h3>
-      <p class="muted" style="margin-top:0">
-        {% if not guest_link_on %}
-          <b>Off.</b> iRadar can only be opened by signing in.
-        {% elif guest_tot and guest_tot.v %}
-          <b>On.</b> <b>{{ guest_tot.v }}</b> visit{{ '' if guest_tot.v == 1 else 's' }},
-          <b>{{ guest_tot.h }}</b> page{{ '' if guest_tot.h == 1 else 's' }} read,
-          most recently <b>{{ guest_tot.l|localtime }}</b>.
-        {% else %}
-          <b>On.</b> Nobody has opened it yet.
-        {% endif %}
-        Anyone holding the link can read everything here; they cannot change
-        anything, reach these settings, or download the database.
-      </p>
-      <p style="margin-top:0"><a href="{{ url_for('guests_page') }}">See who
-        has opened it →</a></p>
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>The shared link</h2>
+          <p>Anyone holding it can read everything here. They cannot change
+             anything, reach these settings, or download the database.</p>
+        </div>
+        <div class="setrow setrow-state">
+          <div class="setrow-t">
+            <span class="statepill {{ 'on' if guest_link_on else 'off' }}">
+              {{ 'On' if guest_link_on else 'Off' }}</span>
+            <p>
+              {% if not guest_link_on %}
+                iRadar can only be opened by signing in.
+              {% elif guest_tot and guest_tot.v %}
+                <b>{{ guest_tot.v }}</b> visit{{ '' if guest_tot.v == 1 else 's' }},
+                <b>{{ guest_tot.h }}</b> page{{ '' if guest_tot.h == 1 else 's' }} read,
+                most recently {{ guest_tot.l|localtime }}.
+              {% else %}
+                Nobody has opened it yet.
+              {% endif %}
+            </p>
+          </div>
+          <div class="setrow-c">
+            <a class="setlink" href="{{ url_for('guests_page') }}">See who opened it</a>
+          </div>
+        </div>
+      </section>
       {% endif %}
-      <h3 style="margin:{% if is_owner %}18px{% else %}0{% endif %} 0 10px; font-size:15px">Where your assets live</h3>
-      <p class="muted" style="margin-top:0">Paste each system's <b>search
-        page URL</b> to make its badges clickable. <code>{q}</code> puts the
-        asset name into the search; without it, the name is copied for you to
-        paste.</p>
-      <label style="display:block">DAM search URL
-        <input type="text" name="dam_search_url" value="{{ s.dam_search_url }}"
-               placeholder="e.g. https://dam.infineon.com/search/?q={q}">
-      </label>
-      <label style="display:block; margin-top:10px">Windchill search URL
-        <input type="text" name="windchill_search_url" value="{{ s.windchill_search_url }}"
-               placeholder="e.g. https://windchill.infineon.com/…/search?keyword={q}">
-      </label>
-      <label style="display:block; margin-top:10px">AEM author URL (pages) — <code>{path}</code> = the page's public path
-        <input type="text" name="aem_author_url" value="{{ s.aem_author_url }}"
-               placeholder="https://author.infineon.com/editor.html/content/ifx/language-masters/en{path}.html">
-      </label>
-      <p class="muted" style="font-size:12.5px; margin-top:12px">
-        The AEM badge on a page opens it in the author editor. Part and
-        evaluation-board pages are generated rather than authored, so theirs
-        is greyed out.</p>
 
-      <h3 style="margin:26px 0 10px; font-size:15px; padding-top:20px;
-                 border-top:1px solid var(--line)">Backup</h3>
-      <p class="muted" style="margin-top:0">The server's disk is not backed
-        up by anything. This is the copy you keep.</p>
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>Copy limits</h2>
+          <p>The longest a single block may be, and how many there should be.
+             <b>0 means no limit.</b> A page is only judged on blocks it
+             actually has — whether it <i>should</i> have one is the
+             Components grid's question.</p>
+        </div>
+        <div class="tablewrap">
+          <table class="limits">
+            <thead>
+              <tr><th>Block</th><th>Longest</th><th>At least</th><th>At most</th></tr>
+            </thead>
+            <tbody>
+              {% for key, label, chars, lo, hi in copy_limits %}
+              <tr>
+                <td class="limits-n">{{ label }}</td>
+                <td><input type="number" min="0" name="copy_{{ key }}_chars" value="{{ chars }}"
+                           aria-label="{{ label }} longest block"></td>
+                <td><input type="number" min="0" name="copy_{{ key }}_min" value="{{ lo }}"
+                           aria-label="{{ label }} at least"></td>
+                <td><input type="number" min="0" name="copy_{{ key }}_max" value="{{ hi }}"
+                           aria-label="{{ label }} at most"></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="setnote">Changes take effect as each page is next read. The
+          dashboard's <b>Content</b> filter has an <b>… over its limit</b>
+          entry per block to list who is over.</p>
+      </section>
 
-      <div class="flagrow"><span>The database</span>
-        <span class="muted" style="font-size:13px">
-          {#- a plain link, not a form: this is a GET and it must not need the
-              CSRF token, or a scheduled fetch could never take one -#}
-          <a href="{{ url_for('settings_backup') }}" download>Download a copy →</a>
-        </span></div>
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>Where your assets live</h2>
+          <p>Paste each system's <b>search page URL</b> to make its badges
+             clickable. <code>{q}</code> puts the asset name into the search;
+             without it, the name is copied for you to paste.</p>
+        </div>
 
-      <p class="muted" style="font-size:12.5px; margin-top:12px">It holds
-        what cannot be rebuilt: the page list, who owns what, every update
-        anyone has reviewed, every note and every account. It is safe to take
-        while a check is running, and it arrives gzipped.
-        <b>Worth doing after every check</b>, and keep more than one.</p>
+        <div class="setrow setrow-wide">
+          <div class="setrow-t"><label for="f-dam">DAM search URL</label></div>
+          <div class="setrow-c">
+            <input type="text" name="dam_search_url" id="f-dam" value="{{ s.dam_search_url }}"
+                   placeholder="https://dam.infineon.com/search/?q={q}">
+          </div>
+        </div>
+        <div class="setrow setrow-wide">
+          <div class="setrow-t"><label for="f-wc">Windchill search URL</label></div>
+          <div class="setrow-c">
+            <input type="text" name="windchill_search_url" id="f-wc" value="{{ s.windchill_search_url }}"
+                   placeholder="https://windchill.infineon.com/…/search?keyword={q}">
+          </div>
+        </div>
+        <div class="setrow setrow-wide">
+          <div class="setrow-t">
+            <label for="f-aem">AEM author URL</label>
+            <p><code>{path}</code> is the page's public path. The AEM badge
+               opens a page in the author editor; part and evaluation-board
+               pages are generated rather than authored, so theirs is greyed
+               out.</p>
+          </div>
+          <div class="setrow-c">
+            <input type="text" name="aem_author_url" id="f-aem" value="{{ s.aem_author_url }}"
+                   placeholder="https://author.infineon.com/editor.html/content/ifx/language-masters/en{path}.html">
+          </div>
+        </div>
+      </section>
 
+      <section class="setsec">
+        <div class="setsec-h">
+          <h2>Backup</h2>
+          <p>The server's disk is not backed up by anything. This is the copy
+             you keep.</p>
+        </div>
+        <div class="setrow setrow-state">
+          <div class="setrow-t">
+            <label>The database</label>
+            <p>Everything that cannot be rebuilt: the page list, who owns
+               what, every update reviewed, every note and account. Safe to
+               take while a check is running, and it arrives gzipped.
+               <b>Worth doing after every check</b> — keep more than one.</p>
+          </div>
+          <div class="setrow-c">
+            {#- a plain link, not a form: this is a GET and must not need the
+                CSRF token, or a scheduled fetch could never take one -#}
+            <a class="setlink strong" href="{{ url_for('settings_backup') }}" download>Download a copy</a>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <div style="margin-top:18px" id="savebar"><button>Save settings</button></div>
+    {#- The save bar is pinned and wakes only when something has actually
+        changed. A permanently-lit Save on a page of settings says nothing
+        about whether you have unsaved work, which is the single thing it is
+        there to answer. -#}
+    <div class="savebar" id="savebar">
+      <span class="savebar-msg" id="savemsg">No changes yet</span>
+      <button id="savebtn" disabled>Save settings</button>
+    </div>
   </form>
 </div>
 
-{#- OUTSIDE the settings form and outside its 680px card, for two reasons: the
-    matrix carries its own forms and a form cannot be nested in another, and a
-    grid of 16 page types against 25 components does not fit a column sized for
-    reading. The tab switcher toggles every .pane on the document, so it does
-    not care that this one lives out here. -#}
+{#- OUTSIDE the form and its column: the matrix carries its own forms (a form
+    cannot nest), and a grid of 16 page shapes against 25 components does not
+    fit a column sized for reading. -#}
 <div class="pane matrixpane" id="pane-components">
   <p class="muted" style="max-width:70ch; margin:0 auto 16px">Which components
     each page shape should carry. The number in a cell is how many captured
@@ -182,29 +290,115 @@
 </div>
 
 <style>
-  /* auto margins, not justify-content: the pill is inline-flex, so it
-     shrinks to its buttons and sits at the start of the line - centring
-     its contents moved nothing, because they already fill it. */
+  .setwrap { max-width: 760px; margin: 0 auto; }
+
+  /* ---- tab pill ------------------------------------------------------- */
   .seg { display: flex; width: max-content; background: var(--hover);
          border: 1px solid var(--line); border-radius: 10px; padding: 3px;
-         gap: 2px; margin: 2px auto 18px; }
+         gap: 2px; margin: 2px auto 22px; }
   .seg-b { border: 0; background: none; color: var(--muted); padding: 7px 16px;
-           border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600; }
+           border-radius: 8px; cursor: pointer; font-size: 13.5px;
+           font-weight: 600; font-family: inherit; }
   .seg-b:hover { color: var(--ink); }
   .seg-b.on { background: var(--card); color: var(--ink);
               box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+
+  /* ---- a section is a card; a row inside it is not ---------------------
+     Border and fill say "separate object". Spending them on every row made
+     twelve identical boxes with no hierarchy between them, so the group is
+     the card and the rows are separated by a hairline instead. */
+  .setsec { background: var(--card); border: 1px solid var(--line);
+            border-radius: 12px; margin-bottom: 18px; overflow: hidden; }
+  .setsec-h { padding: 16px 20px 14px; border-bottom: 1px solid var(--line);
+              background: var(--hover); }
+  .setsec-h h2 { margin: 0; font-size: 14.5px; font-weight: 700;
+                 letter-spacing: -.01em; }
+  .setsec-h p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px;
+                line-height: 1.5; max-width: 62ch; }
+
+  /* the row: what it does on the left, the control on the right */
+  .setrow { display: grid; grid-template-columns: 1fr auto; gap: 16px 24px;
+            align-items: center; padding: 15px 20px;
+            border-top: 1px solid var(--line); }
+  .setsec-h + .setrow { border-top: 0; }
+  .setrow-t { min-width: 0; }
+  .setrow-t label, .setrow-t > .statepill { font-size: 13.5px; font-weight: 600;
+                                            display: inline-block; }
+  .setrow-t p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px;
+                line-height: 1.5; max-width: 58ch; }
+  .setrow-c { display: flex; align-items: center; gap: 8px;
+              justify-content: flex-end; }
+  .setrow-c-pair { gap: 8px; }
+  .setrow-c select { width: auto; min-width: 132px; }
+  /* a URL needs the width more than the label does, so it takes the row */
+  .setrow-wide { grid-template-columns: 1fr; gap: 8px; align-items: stretch; }
+  .setrow-wide .setrow-c { justify-content: stretch; }
+  .setrow-wide .setrow-c input { width: 100%; }
+  .setrow-state { align-items: start; }
+
+  /* numbers are numbers: narrow, right-aligned, aligned digits */
+  .setrow input.num, .numwrap input { width: 88px; text-align: right;
+                                      font-variant-numeric: tabular-nums; }
+  .numwrap { display: flex; align-items: center; gap: 6px; }
+  .numsuf { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+
+  .setlink { font-size: 13px; font-weight: 600; color: var(--accent);
+             text-decoration: none; white-space: nowrap; }
+  .setlink:hover { text-decoration: underline; }
+  .setlink.strong { border: 1px solid var(--line); border-radius: 8px;
+                    padding: 7px 12px; background: var(--bg); }
+  .setlink.strong:hover { border-color: var(--accent); text-decoration: none; }
+
+  /* state reads as a shape, not only as a word */
+  .statepill { font-size: 11px; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .05em; padding: 2px 9px; border-radius: 999px; }
+  .statepill.on { background: rgba(22,163,74,.14); color: var(--ok); }
+  .statepill.off { background: rgba(110,109,122,.16); color: var(--muted); }
+
+  .setnote { margin: 0; padding: 12px 20px 16px; color: var(--muted);
+             font-size: 12.5px; line-height: 1.5; }
+
+  /* ---- the limits table ------------------------------------------------ */
+  .setsec .tablewrap { padding: 4px 20px 0; }
+  table.limits { width: 100%; font-size: 13px; border-collapse: collapse; }
+  table.limits th { text-align: right; font-size: 11px; font-weight: 700;
+                    color: var(--muted); letter-spacing: .04em;
+                    padding: 8px 0 8px 12px; border-bottom: 1px solid var(--line); }
+  table.limits th:first-child { text-align: left; padding-left: 0; }
+  table.limits td { padding: 6px 0 6px 12px; border-bottom: 1px solid var(--line); }
+  table.limits tr:last-child td { border-bottom: 0; }
+  table.limits td:first-child { padding-left: 0; }
+  table.limits .limits-n { font-weight: 600; white-space: nowrap; }
+  table.limits input { width: 84px; text-align: right; padding: 6px 9px;
+                       font-variant-numeric: tabular-nums; }
+
+  /* ---- save bar -------------------------------------------------------- */
+  .savebar { position: sticky; bottom: 14px; z-index: 5;
+             display: flex; align-items: center; justify-content: flex-end;
+             gap: 14px; margin-top: 20px; padding: 11px 14px;
+             background: var(--panel); border: 1px solid var(--line);
+             border-radius: 12px; box-shadow: 0 8px 26px rgba(0,0,0,.13); }
+  .savebar-msg { color: var(--muted); font-size: 12.5px; margin-right: auto; }
+  .savebar.dirty { border-color: var(--accent); }
+  .savebar.dirty .savebar-msg { color: var(--ink); font-weight: 600; }
+  .savebar button[disabled] { opacity: .45; cursor: default; }
+
   .pane { display: none; }
   .pane.on { display: block; animation: paneIn .14s ease; }
-  /* the matrix breaks out of the settings column - it is a grid, not a form */
   .matrixpane { max-width: 1560px; margin: 0 auto; }
-  body:has(#pane-components.on) .settingscard { max-width: 1560px; }
+  body:has(#pane-components.on) .setwrap { max-width: 1560px; }
   .matrixpane.on { display: block; }
   @keyframes paneIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
-  /* width:max-content cannot shrink, so at 375px the fourth tab hung past
-     the screen edge. A 2x2 grid keeps all four visible and tappable. */
-  @media (max-width: 520px) {
+  @media (prefers-reduced-motion: reduce) { .pane.on { animation: none; } }
+
+  /* a phone has no room for two columns, and max-content cannot shrink */
+  @media (max-width: 620px) {
     .seg { display: grid; grid-template-columns: 1fr 1fr; width: auto; }
     .seg-b { padding: 9px 8px; }
+    .setrow { grid-template-columns: 1fr; gap: 10px; align-items: stretch; }
+    .setrow-c { justify-content: flex-start; }
+    .setsec-h, .setrow, .setnote, .setsec .tablewrap { padding-left: 15px;
+                                                       padding-right: 15px; }
   }
 </style>
 <script>
@@ -213,19 +407,40 @@
     document.querySelectorAll(".pane").forEach(function (p) {
       p.classList.toggle("on", p.id === "pane-" + btn.dataset.pane);
     });
-    // Save applies to the form fields (schedule + sensitivity); hide it on the
-    // info-only panes so it can't read as "save my access settings"
-    // the matrix saves itself, with its own button - the settings Save has
+    // the matrix saves itself with its own button; the settings Save has
     // nothing to do with it and reads as though it might
     var info = btn.dataset.pane === "components";
     document.getElementById("savebar").style.display = info ? "none" : "";
     location.hash = btn.dataset.pane;
   }
-  // deep-link: /settings#sensitivity opens that tab
   (function () {
     var h = location.hash.replace("#", "");
     var btn = document.querySelector('.seg-b[data-pane="' + h + '"]');
     if (btn) segGo(btn);
+  })();
+
+  // Save wakes only for real changes, and says how many - so the bar answers
+  // "do I have unsaved work" instead of just sitting there lit.
+  (function () {
+    var form = document.getElementById("setform");
+    if (!form) return;
+    var bar = document.getElementById("savebar");
+    var btn = document.getElementById("savebtn");
+    var msg = document.getElementById("savemsg");
+    var start = new Map();
+    form.querySelectorAll("input, select").forEach(function (el) {
+      if (el.name) start.set(el, el.value);
+    });
+    function check() {
+      var n = 0;
+      start.forEach(function (v, el) { if (el.value !== v) n++; });
+      bar.classList.toggle("dirty", n > 0);
+      btn.disabled = n === 0;
+      msg.textContent = n === 0 ? "No changes yet"
+        : n + (n === 1 ? " unsaved change" : " unsaved changes");
+    }
+    form.addEventListener("input", check);
+    form.addEventListener("change", check);
   })();
 </script>
 {% endblock %}
