@@ -6049,7 +6049,10 @@ def doc_preview_png(key):
     except Exception as exc:
         print(f"[preview] {key}: {type(exc).__name__}: {exc}"[:200], flush=True)
     if out.exists():
-        return send_file(out, mimetype="image/png")
+        # the freshly-rendered path serves the SAME webp bytes as the cached
+        # path above - it kept saying image/png and had to be caught by
+        # sniffing a live response instead of by the header
+        return send_file(out, mimetype="image/webp")
     abort(404)
 
 

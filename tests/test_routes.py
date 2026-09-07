@@ -1098,3 +1098,10 @@ def test_the_preview_route_declares_webp():
     src = inspect.getsource(appmod.doc_preview_png)
     assert 'mimetype="image/webp"' in src, \
         "the route still claims image/png while serving webp bytes"
+    # EVERY return, not just the cached one. The freshly-rendered path kept
+    # saying image/png and shipped: an "is webp mentioned anywhere" check
+    # passed it, and only sniffing a live response caught the lie.
+    assert 'mimetype="image/png"' not in src, \
+        "a return in the preview route still declares image/png"
+    assert src.count('mimetype="image/webp"') >= 2, \
+        "both the cached and freshly-rendered returns must declare webp"
