@@ -28,6 +28,24 @@ _SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script>", re.I | re.S)
 _CACHE = None
 
 
+def _launch(pw):
+    """Chromium, or a SKIP saying how to get one.
+
+    Playwright pins a browser build to its own version, so a machine that has
+    chromium-1234 while this Playwright wants 1228 fails with "Executable
+    doesn't exist" - eleven red tests that look like broken extraction and are
+    really one missing download. A skip that names the command is the honest
+    result: these tests need a browser, and nothing here is failing without it.
+    """
+    try:
+        return pw.chromium.launch()
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc) or "playwright install" in str(exc):
+            raise Skip("no browser for this Playwright build - run:"
+                       " python -m playwright install chromium-headless-shell")
+        raise
+
+
 def _extract_all():
     """Load every fixture's frozen DOM once, run the extractors, cache results.
     Scripts are stripped so the frozen DOM cannot mutate itself - the point is
@@ -69,7 +87,7 @@ def _extract_all():
     """
     out = {}
     with sync_playwright() as pw:
-        b = pw.chromium.launch()
+        b = _launch(pw)
         pg = b.new_page()
         for f in fixtures:
             html = _SCRIPT_RE.sub("", f.read_text(encoding="utf-8"))
@@ -254,7 +272,7 @@ def test_settle_promotes_lazy_images_and_waits():
       <img id="c" src="https://example.invalid/real-c.png">
     """
     with sync_playwright() as pw:
-        b = pw.chromium.launch()
+        b = _launch(pw)
         pg = b.new_page()
         # the host does not resolve, so every image ERRORS - which is the point:
         # settle waits for images to finish, not to succeed, and one dead URL
@@ -284,7 +302,7 @@ def test_settle_never_blocks_forever_on_a_wedged_image():
         raise Skip("playwright not installed")
     import time
     with sync_playwright() as pw:
-        b = pw.chromium.launch()
+        b = _launch(pw)
         pg = b.new_page()
         # a request that never answers: settle must give up on the cap
         pg.route("**/hang.png", lambda route: None)
