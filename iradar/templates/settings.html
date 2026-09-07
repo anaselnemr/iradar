@@ -27,52 +27,28 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>Automatic checks</h2>
-          <p>When iRadar walks the whole site by itself. Next one
-             <b>{{ next_run }}</b> — you can start one any time from the
-             dashboard.</p>
+          <p>Tick the days iRadar should walk the whole site by itself. It
+             always starts at <b>{{ '%02d:00'|format(schedule_hour) }}</b>, so
+             it has the night to finish in. Next one <b>{{ next_run }}</b> —
+             you can start one any time from the dashboard.</p>
         </div>
 
-        <div class="setrow">
+        <div class="setrow setrow-days">
           <div class="setrow-t">
-            <label for="f-freq">How often</label>
-            <p>Weekly matches how fast the site actually moves.</p>
+            <label>Days</label>
+            <p>Pick one for a weekly check, or several to check more often.
+               How many you tick <i>is</i> the cadence.</p>
           </div>
           <div class="setrow-c">
-            {#- radios, not a select: three options that fit on one line are
-                quicker to read and to hit than a menu you have to open, and
-                the current one is visible without any interaction. Radios
-                also submit the same "frequency" field with no JS at all. -#}
-            <div class="optseg" role="group" aria-label="Check frequency">
-              {% for val, lab in [('daily','Daily'), ('bidaily','Every 2 days'), ('weekly','Weekly')] %}
-              <label class="optseg-o">
-                <input type="radio" name="frequency" value="{{ val }}"
-                       {% if s.frequency==val %}checked{% endif %}>
-                <span>{{ lab }}</span>
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-
-        <div class="setrow">
-          <div class="setrow-t">
-            <label for="f-day">Day and hour</label>
-            <p>Local time. The day applies to the weekly cadence only.</p>
-          </div>
-          <div class="setrow-c setrow-c-pair">
-            <div class="daypick" role="group" aria-label="Day of week">
+            <div class="daypick daypick-multi" role="group" aria-label="Days to check">
               {% for d in weekdays %}
               <label class="daypick-d" title="{{ d|capitalize }}">
-                <input type="radio" name="weekday" value="{{ d }}"
-                       {% if s.weekday==d %}checked{% endif %}>
+                {#- checkboxes, not radios: several days is the point -#}
+                <input type="checkbox" name="check_days" value="{{ d }}"
+                       {% if d in picked_days %}checked{% endif %}>
                 <span>{{ d[0]|upper }}</span>
               </label>
               {% endfor %}
-            </div>
-            <div class="numwrap">
-              <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}"
-                     aria-label="Hour of day">
-              <span class="numsuf">:00</span>
             </div>
           </div>
         </div>
@@ -174,14 +150,11 @@
           <p>Anyone holding it can read everything here. They cannot change
              anything, reach these settings, or download the database.</p>
         </div>
-        <div class="setrow setrow-state">
+        <div class="setrow">
           <div class="setrow-t">
-            <span class="statepill {{ 'on' if guest_link_on else 'off' }}">
-              {{ 'On' if guest_link_on else 'Off' }}</span>
+            <label for="gl-on">Anyone with the link can read</label>
             <p>
-              {% if not guest_link_on %}
-                iRadar can only be opened by signing in.
-              {% elif guest_tot and guest_tot.v %}
+              {% if guest_tot and guest_tot.v %}
                 <b>{{ guest_tot.v }}</b> visit{{ '' if guest_tot.v == 1 else 's' }},
                 <b>{{ guest_tot.h }}</b> page{{ '' if guest_tot.h == 1 else 's' }} read,
                 most recently {{ guest_tot.l|localtime }}.
@@ -189,6 +162,35 @@
                 Nobody has opened it yet.
               {% endif %}
             </p>
+          </div>
+          <div class="setrow-c">
+            <label class="sw">
+              <input type="checkbox" name="guest_link_enabled" id="gl-on" value="1"
+                     {% if guest_link_on %}checked{% endif %}
+                     {% if not guest_key %}disabled{% endif %}>
+              <span class="sw-t"></span>
+              <span class="sw-l">{{ 'On' if guest_link_on else 'Off' }}</span>
+            </label>
+          </div>
+        </div>
+        {#- The link itself, because a share link you cannot see is a share
+            link you cannot share. Owner-only, and it is the same secret the
+            owner already holds - not a new one being revealed. -#}
+        {% if guest_key %}
+        <div class="setrow setrow-wide">
+          <div class="setrow-t"><label for="gl-url">The link</label></div>
+          <div class="setrow-c copyrow">
+            <input type="text" id="gl-url" readonly
+                   value="{{ url_for('index', _external=True) }}?key={{ guest_key }}"
+                   onclick="this.select()">
+            <button type="button" class="copybtn" id="glcopy">Copy</button>
+          </div>
+        </div>
+        {% endif %}
+        <div class="setrow setrow-state">
+          <div class="setrow-t">
+            <p style="margin:0">They cannot change anything, reach these
+              settings, or download the database.</p>
           </div>
           <div class="setrow-c">
             <a class="setlink" href="{{ url_for('guests_page') }}">See who opened it</a>
@@ -200,30 +202,40 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>Copy limits</h2>
-          <p>The longest a single block may be, and how many there should be.
-             <b>0 means no limit.</b> A page is only judged on blocks it
-             actually has — whether it <i>should</i> have one is the
-             Components grid's question.</p>
+          <p>The longest a single block may be, and how many there
+             should be. <b>Leave a box empty for no limit.</b> A page is only
+             judged on blocks it actually has — whether it <i>should</i> have
+             one is the Components grid's question.</p>
         </div>
-        <div class="tablewrap">
-          <table class="limits">
-            <thead>
-              <tr><th>Block</th><th>Longest</th><th>At least</th><th>At most</th></tr>
-            </thead>
-            <tbody>
-              {% for key, label, chars, lo, hi in copy_limits %}
-              <tr>
-                <td class="limits-n">{{ label }}</td>
-                <td><input type="number" min="0" name="copy_{{ key }}_chars" value="{{ chars }}"
-                           aria-label="{{ label }} longest block"></td>
-                <td><input type="number" min="0" name="copy_{{ key }}_min" value="{{ lo }}"
-                           aria-label="{{ label }} at least"></td>
-                <td><input type="number" min="0" name="copy_{{ key }}_max" value="{{ hi }}"
-                           aria-label="{{ label }} at most"></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        {#- A row per block instead of a spreadsheet. The table put three
+            bare numbers under three abbreviated headings, so every cell
+            needed the header read back to know what it meant, and "0" gave
+            no hint that it meant "no limit". Each row now says its own
+            sentence, and an empty box IS the no-limit case. -#}
+        <div class="limitlist">
+          {% for key, label, chars, lo, hi in copy_limits %}
+          <div class="limitrow">
+            <div class="limitrow-n">{{ label }}</div>
+            <div class="limitrow-f">
+              <label>
+                <span>Longest</span>
+                <input type="number" min="0" name="copy_{{ key }}_chars"
+                       value="{{ chars or '' }}" placeholder="any">
+                <em>chars</em>
+              </label>
+              <label>
+                <span>At least</span>
+                <input type="number" min="0" name="copy_{{ key }}_min"
+                       value="{{ lo or '' }}" placeholder="any">
+              </label>
+              <label>
+                <span>At most</span>
+                <input type="number" min="0" name="copy_{{ key }}_max"
+                       value="{{ hi or '' }}" placeholder="any">
+              </label>
+            </div>
+          </div>
+          {% endfor %}
         </div>
         <p class="setnote">Changes take effect as each page is next read. The
           dashboard's <b>Content</b> filter has an <b>… over its limit</b>
@@ -418,6 +430,29 @@
               font-weight: 700; font-variant-numeric: tabular-nums;
               color: var(--ink); }
 
+  /* a link you can see, select and copy in one action */
+  .copyrow { display: flex; gap: 8px; align-items: center; }
+  .copyrow input { flex: 1; min-width: 0; font-family: ui-monospace,
+                   SFMono-Regular, Menlo, Consolas, monospace;
+                   font-size: 12.5px; background: var(--bg); }
+  .copybtn { flex-shrink: 0; }
+  .copybtn.done { background: var(--ok); border-color: var(--ok); }
+
+  /* ---- copy limits: a row per block, each saying its own sentence ------ */
+  .limitlist { padding: 4px 20px 0; }
+  .limitrow { display: grid; grid-template-columns: 150px 1fr; gap: 14px;
+              align-items: center; padding: 11px 0;
+              border-bottom: 1px solid var(--line); }
+  .limitrow:last-child { border-bottom: 0; }
+  .limitrow-n { font-size: 13.5px; font-weight: 600; }
+  .limitrow-f { display: flex; gap: 16px; flex-wrap: wrap;
+                justify-content: flex-end; }
+  .limitrow-f label { display: inline-flex; align-items: center; gap: 7px;
+                      font-size: 12px; color: var(--muted); font-weight: 600; }
+  .limitrow-f input { width: 74px; text-align: right; padding: 6px 9px;
+                      font-variant-numeric: tabular-nums; }
+  .limitrow-f em { font-style: normal; font-size: 11.5px; color: var(--muted); }
+
   .setlink { font-size: 13px; font-weight: 600; color: var(--accent);
              text-decoration: none; white-space: nowrap; }
   .setlink:hover { text-decoration: underline; }
@@ -484,10 +519,10 @@
     /* all four limit columns fit rather than sliding the last one off the
        edge: a column you have to discover by scrolling is a column nobody
        edits. The boxes shrink; the numbers in them are 1-3 digits. */
-    table.limits { font-size: 12.5px; }
-    table.limits input { width: 58px; padding: 5px 7px; }
-    table.limits th, table.limits td { padding-left: 6px; }
-    table.limits th { font-size: 10px; }
+    .limitrow { grid-template-columns: 1fr; gap: 8px; }
+    .limitrow-f { justify-content: flex-start; gap: 10px; }
+    .limitrow-f input { width: 62px; }
+    .limitlist { padding-left: 15px; padding-right: 15px; }
   }
 </style>
 <script>
@@ -506,6 +541,22 @@
     var h = location.hash.replace("#", "");
     var btn = document.querySelector('.seg-b[data-pane="' + h + '"]');
     if (btn) segGo(btn);
+  })();
+
+  // Copy the shared link, and SAY that it copied - a button that does its job
+  // silently reads as a button that did nothing.
+  (function () {
+    var b = document.getElementById("glcopy"), f = document.getElementById("gl-url");
+    if (!b || !f) return;
+    b.addEventListener("click", function () {
+      f.select();
+      var done = function () {
+        b.textContent = "Copied"; b.classList.add("done");
+        setTimeout(function () { b.textContent = "Copy"; b.classList.remove("done"); }, 1600);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(f.value).then(done, done);
+      else { try { document.execCommand("copy"); } catch (e) {} done(); }
+    });
   })();
 
   // Save wakes only for real changes, and says how many - so the bar answers

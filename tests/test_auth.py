@@ -686,7 +686,12 @@ def test_a_signed_in_person_still_has_their_profile():
     c = _client()
     _signin(c, ADMIN, NEWPW)
     assert c.get("/account/password").status_code == 200
-    assert "My profile" in c.get("/").data.decode("utf-8", "replace")
+    # the profile is reached from the identity block at the top of the account
+    # menu now - it carries the face, the name and the address, so a separate
+    # "My profile" row underneath was the same destination written twice
+    body = c.get("/").data.decode("utf-8", "replace")
+    assert "acct-head-link" in body, "no way into the profile from the menu"
+    assert "/account/password" in body
 
 
 def test_every_visit_lands_in_the_register_and_pages_are_counted():

@@ -122,6 +122,22 @@ PUBLIC_ENDPOINTS = {"login", "static", "report_chart", "cron_run"}
 # way: signing in still works, and everyone who has an account keeps theirs.
 GUEST_KEY = os.environ.get("GUEST_KEY", "").strip()
 
+
+def guest_link_enabled():
+    """Is the shared read-only link switched ON?
+
+    The KEY still comes from the environment - a secret does not belong in a
+    database anyone with the file can read - but whether it currently works is
+    a setting, so the owner can close the door from the page they are already
+    on instead of editing an environment variable and waiting for a redeploy.
+    Unset means on, which is what every install had before the switch."""
+    try:
+        return db.get_settings().get("guest_link_enabled", "1") != "0"
+    except Exception:
+        return True
+
+
+
 # What templates render in place of a signed-in account. Item access only,
 # because that is all the templates use of `me`.
 GUEST_ME = {"id": 0, "name": "Guest", "email": "", "role": "viewer",
@@ -198,7 +214,7 @@ def guest_active():
     """
     if not hasattr(request, "_guest"):
         ok = False
-        if GUEST_KEY:
+        if GUEST_KEY and guest_link_enabled():
             sent = request.args.get("key", "")
             if sent and secrets.compare_digest(str(sent), GUEST_KEY):
                 session["guest"] = True
@@ -394,7 +410,8 @@ def _inject_user():
             alerts_on = False
     return {"me": me, "is_admin": is_admin(), "is_owner": is_owner(),
             "is_guest": guest, "email_alerts": alerts_on,
-            "mail_ready": mailer.configured(), "guest_link_on": bool(GUEST_KEY),
+            "mail_ready": mailer.configured(),
+            "guest_link_on": bool(GUEST_KEY) and guest_link_enabled(),
             "csrf_token": csrf_token}
 
 
@@ -718,26 +735,28 @@ DISPLAY_TZ = os.environ.get("IRADAR_TZ", "Europe/Berlin")
 def _report_when(run):
     """Human date for the run in the display zone, portable across OSes.
 
-    A weekly check is named for its CYCLE day, not the minute the machine
+    A check is named for its SCHEDULED day, not the minute the machine
     happened to finish: started early on the Saturday, or overrunning into
-    the Monday, it is still "the Sunday check". So on a weekly cadence the
-    label snaps to the configured weekday inside the run's own week."""
+    the Monday, it is still "the Sunday check". So the label snaps to the
+    nearest ticked day - with several days ticked, the one this run actually
+    belongs to, which is whichever is closest."""
     ts = run["finished"] or run["started"]
     if not ts:
         return ""
     dt = to_local(ts)
     try:
-        st = db.get_settings()
-        if (st.get("frequency") or "weekly") == "weekly":
-            names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-            want = names.index((st.get("weekday") or "mon").lower()[:3])
-            shift = want - dt.weekday()
-            # forward only for a check run EARLY (a day or two before its
-            # slot); a check that overran into the following days belongs to
-            # the cycle day behind it, not the one a week ahead
-            if shift > 2:
-                shift -= 7
-            dt = dt + timedelta(days=shift)
+        days = check_days()
+        # forward only for a check run EARLY (a day or two before its slot);
+        # one that overran into the following days belongs to the day behind
+        # it, not the one ahead. Of the ticked days, the nearest wins.
+        shifts = []
+        for d in days:
+            sh = WEEKDAYS.index(d) - dt.weekday()
+            if sh > 2:
+                sh -= 7
+            shifts.append(sh)
+        if shifts:
+            dt = dt + timedelta(days=min(shifts, key=abs))
     except Exception:
         pass
     return "%s, %d %s %d" % (dt.strftime("%A"), dt.day,
@@ -792,26 +811,67 @@ WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 # --------------------------------------------------------------------------
 # Scheduling
 # --------------------------------------------------------------------------
+# ONE CONSTANT HOUR. The hour was a setting nobody had a reason to move: any
+# time works as long as it is outside the day, and a check that starts at 03:00
+# has the night to finish in before anyone opens the dashboard. Making it a
+# field meant a number to choose, a number to get wrong, and a number every
+# other piece of code had to read.
+SCHEDULE_HOUR = 3
+
+
+def check_days(s=None):
+    """Which days the automatic check runs, as day keys in week order.
+
+    Replaces the old frequency/weekday pair. "Weekly on Sunday" and "daily"
+    were two different SHAPES of answer to one question - how often - and the
+    reader had to hold both to know what would happen. A set of days says it
+    once: pick Sunday, or pick Monday and Thursday, or pick all seven; the
+    cadence is however many you ticked.
+
+    Reads the old settings when the new one is unset, so an install that has
+    never opened this page keeps the schedule it already had."""
+    s = s or db.get_settings()
+    raw = (s.get("check_days") or "").strip()
+    if raw:
+        days = [d for d in (x.strip().lower()[:3] for x in raw.split(","))
+                if d in WEEKDAYS]
+        if days:
+            return [d for d in WEEKDAYS if d in days]
+    freq = (s.get("frequency") or "weekly").lower()
+    if freq == "daily":
+        return list(WEEKDAYS)
+    if freq == "bidaily":
+        return [d for d in WEEKDAYS if d in ("mon", "wed", "fri", "sun")]
+    wd = (s.get("weekday") or "mon").lower()[:3]
+    return [wd if wd in WEEKDAYS else "mon"]
+
+
+def cycle_hours(days=None):
+    """Half the gap between one scheduled check and the next, in hours.
+
+    The one-check-per-cycle guard needs to know how long a cycle is, and with
+    a free choice of days that is no longer a word like "weekly" - it is the
+    SHORTEST gap between two ticked days, wrapping around the end of the week.
+    One day a week gives 84h (half of seven days), all seven give 12h, which
+    is exactly what the old frequency table hard-coded."""
+    days = days or check_days()
+    idx = sorted(WEEKDAYS.index(d) for d in days)
+    if len(idx) < 2:
+        return 84.0
+    gaps = [b - a for a, b in zip(idx, idx[1:])] + [idx[0] + 7 - idx[-1]]
+    return min(gaps) * 24 / 2.0
+
+
 def reschedule():
     s = db.get_settings()
-    freq = s.get("frequency", "weekly")
-    hour = int(s.get("hour", 6))
-    weekday = s.get("weekday", "mon")
-    if weekday not in WEEKDAYS:
-        weekday = "mon"
+    days = check_days(s)
 
-    # tz=, not the machine's: "23:00" has to mean 23:00 to the people who set
-    # it, on whatever box this happens to be running on. Without it the
+    # tz=, not the machine's: 03:00 has to mean 03:00 to the people it runs
+    # for, on whatever box this happens to be running on. Without it the
     # schedule silently follows the container and a move to UTC would run the
-    # weekly check at 01:00 on Tuesday instead of 23:00 on Monday.
-    _tz = _DISPLAY_ZONE
-    if freq == "daily":
-        trigger = CronTrigger(hour=hour, minute=0, timezone=_tz)
-    elif freq == "bidaily":
-        trigger = CronTrigger(day="*/2", hour=hour, minute=0, timezone=_tz)
-    else:  # weekly
-        trigger = CronTrigger(day_of_week=weekday, hour=hour, minute=0,
-                              timezone=_tz)
+    # check at 01:00 on the wrong day.
+    trigger = CronTrigger(day_of_week=",".join(days), hour=SCHEDULE_HOUR,
+                          minute=0, timezone=_DISPLAY_ZONE)
 
     scheduler.add_job(_scheduled_check, trigger, id="check",
                       replace_existing=True, misfire_grace_time=3600 * 6)
@@ -829,7 +889,7 @@ def _scheduled_check(_retry=0):
     # on a weekly cadence means the last three and a half days.
     try:
         st = db.get_settings()
-        half = {"daily": 12, "bidaily": 24}.get(st.get("frequency"), 84)
+        half = cycle_hours()
         con = db.connect()
         last = con.execute(
             "SELECT finished FROM runs WHERE kind='scheduled'"
@@ -4034,14 +4094,31 @@ def settings_backup():
 @app.route("/settings", methods=["GET", "POST"])
 def settings_view():
     if request.method == "POST":
-        for key in ("frequency", "weekday", "hour", "concurrency",
+        # the day list arrives as repeated checkboxes; an empty tick set
+        # would silently mean "never run", so it falls back to what is stored
+        picked = [d for d in request.form.getlist("check_days") if d in WEEKDAYS]
+        if picked:
+            db.set_setting("check_days", ",".join(picked))
+        # an unticked checkbox sends NOTHING, so the switch is read as
+        # present-or-absent rather than by value
+        db.set_setting("guest_link_enabled",
+                       "1" if request.form.get("guest_link_enabled") else "0")
+        for key in ("concurrency",
                     "keep_snapshots",
                     "visual_threshold", "height_threshold", "ignore_patterns",
                     "ignore_image_patterns", "dam_search_url",
                     "windchill_search_url", "aem_author_url",
                     *[k for k, _d in cmp.COPY_SETTING_KEYS]):
             if key in request.form:
-                db.set_setting(key, request.form[key].strip())
+                val = request.form[key].strip()
+                # AN EMPTY LIMIT BOX MEANS "NO LIMIT", which is stored as 0.
+                # Storing the empty string instead would read back through
+                # copy_limits() as `"" or fallback` - the built-in default -
+                # so clearing a box would quietly restore the limit it was
+                # clearing. The box shows blank for 0, so this round-trips.
+                if key.startswith("copy_") and val == "":
+                    val = "0"
+                db.set_setting(key, val)
         reschedule()
         flash("Settings saved. Next automatic check: " + next_run_text())
         return redirect(url_for("settings_view"))
@@ -4064,6 +4141,8 @@ def settings_view():
             c2.close()
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS,
+                           picked_days=check_days(), schedule_hour=SCHEDULE_HOUR,
+                           guest_key=GUEST_KEY,
                            copy_limits=cmp.copy_limits(db.get_settings()),
                            guest_tot=guest_tot, **matrix_ctx)
 
@@ -7751,13 +7830,19 @@ def guide_page():
         h = spp * npages / 3600.0
         hours = ("about an hour" if h < 1.5
                  else "%.0f hours" % round(h))
-    every = {"daily": "every day", "bidaily": "every two days",
-             "weekly": "every %s" % _WEEKDAY_NAME.get(s.get("weekday", "mon"),
-                                                      "Monday")}.get(
-        s.get("frequency", "weekly"), s.get("frequency", "weekly"))
+    # said from the ticked days themselves: "every day", "every Sunday", or
+    # "every Monday and Thursday" - one sentence whatever the shape
+    _days = check_days(s)
+    _names = [_WEEKDAY_NAME.get(d, d.capitalize()) for d in _days]
+    if len(_names) == 7:
+        every = "every day"
+    elif len(_names) == 1:
+        every = "every %s" % _names[0]
+    else:
+        every = "every %s and %s" % (", ".join(_names[:-1]), _names[-1])
     return render_template(
         "guide.html", f=facts, s=s, every=every,
-        at_time="%02d:00" % int(s.get("hour", 23) or 0),
+        at_time="%02d:00" % SCHEDULE_HOUR,
         next_run=next_run_text(), run_hours=hours, last=last,
         whatsnew=WHATS_NEW)
 

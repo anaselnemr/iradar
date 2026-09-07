@@ -919,6 +919,34 @@
   .acct-out { margin-top: 4px; padding-top: 4px;
               border-top: 1px solid var(--line); }
 
+  /* ---- the switch -----------------------------------------------------
+     A real checkbox underneath, so it submits, focuses and reads to a screen
+     reader as the on/off control it is - the track and knob are only paint.
+     Used wherever a setting is genuinely two-state, in place of a button
+     whose label had to say the OPPOSITE of the current state ("Turn off"
+     when it is on), which is a sentence you have to parse before you dare
+     click it. */
+  .sw { position: relative; display: inline-flex; align-items: center;
+        gap: 10px; cursor: pointer; }
+  .sw input { position: absolute; inset: 0; width: 100%; height: 100%;
+              opacity: 0; margin: 0; cursor: pointer; }
+  .sw-t { position: relative; width: 40px; height: 23px; flex-shrink: 0;
+          background: var(--line); border-radius: 999px;
+          transition: background .16s ease; }
+  .sw-t::after { content: ""; position: absolute; top: 2.5px; left: 2.5px;
+                 width: 18px; height: 18px; border-radius: 50%;
+                 background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.34);
+                 transition: transform .16s ease; }
+  .sw input:checked ~ .sw-t { background: var(--accent); }
+  .sw input:checked ~ .sw-t::after { transform: translateX(17px); }
+  .sw input:focus-visible ~ .sw-t { outline: 2px solid var(--accent);
+                                    outline-offset: 3px; }
+  .sw input:disabled ~ .sw-t { opacity: .5; cursor: default; }
+  .sw-l { font-size: 13.5px; font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) {
+    .sw-t, .sw-t::after { transition: none; }
+  }
+
   /* ---- ONE search bar, used in all four places ------------------------
      The dashboard's page search, the content library and the hierarchy
      filter were three different boxes - different heights, borders

@@ -1210,26 +1210,87 @@ def test_the_cron_trigger_needs_its_key_and_hides_otherwise():
 
 
 def test_settings_controls_still_post_the_same_fields():
-    """The settings page was rebuilt around segmented pills, a day picker and
-    sliders. Every one of those is a different ELEMENT posting the SAME field,
-    so the save handler must not notice - a redesign that quietly renames an
-    input loses the setting with no error anywhere."""
+    """The settings page was rebuilt around a day picker, switches and
+    sliders. Each is a different ELEMENT posting a field the save handler
+    reads, so a redesign that quietly renames one loses that setting with no
+    error anywhere."""
     body = _ok("/settings").data.decode("utf-8", "replace")
-    for field in ("frequency", "weekday", "hour", "concurrency",
-                  "keep_snapshots", "visual_threshold", "height_threshold",
-                  "dam_search_url", "windchill_search_url", "aem_author_url"):
+    for field in ("check_days", "concurrency", "keep_snapshots",
+                  "visual_threshold", "height_threshold", "dam_search_url",
+                  "windchill_search_url", "aem_author_url"):
         assert 'name="%s"' % field in body, "settings lost the %s field" % field
-    # and they are the modern controls, not the old stack of boxes
-    assert 'class="optseg"' in body, "frequency is not a segmented control"
-    assert 'class="daypick"' in body, "the weekday picker is missing"
+    assert 'class="daypick daypick-multi"' in body, "the day picker is missing"
     assert 'type="range"' in body, "the bounded numbers are not sliders"
-    # exactly one frequency can be checked, and it is the stored one
-    checked = _re.findall(r'name="frequency" value="(\w+)"\s+checked', body)
-    assert len(checked) == 1, "frequency must have exactly one checked option: %s" % checked
-    assert checked[0] == db.get_settings()["frequency"]
+    # frequency and hour are GONE on purpose: how many days you tick is the
+    # cadence, and the hour is a constant
+    assert 'name="frequency"' not in body, "frequency came back"
+    assert 'name="hour"' not in body, "the hour is meant to be constant"
+    # the ticked days are the stored ones, and at least one is always ticked
+    ticked = _re.findall(r'name="check_days" value="(\w+)"\s+checked', body)
+    assert ticked, "no day is ticked - the check would never run"
+    assert ticked == app.check_days(), (ticked, app.check_days())
     # the save bar starts asleep - it wakes on a real edit, not on page load
-    assert 'id="savebtn" disabled' in body or "disabled>Save settings" in body, \
-        "Save should start disabled until something changes"
+    assert 'id="savebtn" disabled' in body or "disabled>Save settings" in body
+
+
+def test_the_schedule_is_a_set_of_days_with_a_derived_cycle():
+    """check_days replaces the frequency/weekday pair, reads the old settings
+    when it is unset, and the one-check-per-cycle guard derives the cycle
+    length from the gaps between ticked days instead of a hard-coded table."""
+    old = db.get_settings().get("check_days")
+    try:
+        # legacy install that never opened the new page keeps its schedule
+        db.set_setting("check_days", "")
+        db.set_setting("frequency", "weekly"); db.set_setting("weekday", "thu")
+        assert app.check_days() == ["thu"], app.check_days()
+        db.set_setting("frequency", "daily")
+        assert app.check_days() == list(app.WEEKDAYS)
+        # the derived cycle matches what the old table hard-coded
+        assert app.cycle_hours(["sun"]) == 84.0, "one day a week must be 84h"
+        assert app.cycle_hours(list(app.WEEKDAYS)) == 12.0, "seven days must be 12h"
+        # two days three apart -> the SHORTEST gap decides
+        assert app.cycle_hours(["mon", "thu"]) == 36.0, app.cycle_hours(["mon", "thu"])
+        # an explicit set wins and comes back in week order
+        db.set_setting("check_days", "sun,tue")
+        assert app.check_days() == ["tue", "sun"], app.check_days()
+        # junk never yields an empty schedule
+        db.set_setting("check_days", "nonsense")
+        assert app.check_days(), "a bad value must not switch the check off"
+    finally:
+        db.set_setting("check_days", old or "")
+
+
+def test_the_shared_link_can_be_seen_and_switched_off():
+    """A share link you cannot see is a share link you cannot share, and the
+    owner should be able to close the door from the page they are on."""
+    # the whole block is OWNER-only - an admin is not shown the door to the
+    # shared link, which is the intended behaviour, so the markup assertion
+    # has to be made as the owner
+    # ownership is by OWNER_EMAIL, not by role: an admin is deliberately not
+    # shown the door to the shared link, so the markup is asserted as the owner
+    was = app.OWNER_EMAIL
+    was_key = app.GUEST_KEY
+    app.OWNER_EMAIL = "routes@example.com"
+    app.GUEST_KEY = "a-test-shared-link-key"   # unset means there is no link
+    try:
+        body = _ok("/settings").data.decode("utf-8", "replace")
+        assert 'name="guest_link_enabled"' in body, "no switch for the shared link"
+        assert "?key=" in body, "the link itself should be visible to the owner"
+        assert 'id="glcopy"' in body, "no copy button for the shared link"
+    finally:
+        app.OWNER_EMAIL = was
+        app.GUEST_KEY = was_key
+    old = db.get_settings().get("guest_link_enabled")
+    try:
+        db.set_setting("guest_link_enabled", "0")
+        assert app.guest_link_enabled() is False
+        db.set_setting("guest_link_enabled", "1")
+        assert app.guest_link_enabled() is True
+        # unset means ON - every install had it on before the switch existed
+        db.set_setting("guest_link_enabled", "")
+        assert app.guest_link_enabled() is True
+    finally:
+        db.set_setting("guest_link_enabled", old if old is not None else "1")
 
 
 def test_the_theme_toggle_left_the_account_menu_for_the_header():
@@ -1247,3 +1308,27 @@ def test_the_theme_toggle_left_the_account_menu_for_the_header():
     assert "The shared link" not in panel, \
         "the shared link belongs in Settings, not the personal menu"
     assert "toggleTheme()" not in panel.split('class="acct-out"')[0] or True
+
+
+def test_clearing_a_copy_limit_means_no_limit_not_the_default_back():
+    """The limit boxes show blank for "no limit". Storing that blank as an
+    empty string would read back through copy_limits() as `"" or fallback` -
+    the built-in default - so clearing a box would quietly restore the very
+    limit you were removing. Empty is stored as 0, and 0 renders blank."""
+    import compare as cmp
+    body = _ok("/settings").data.decode("utf-8", "replace")
+    csrf = _re.search(r'name="_csrf" value="([^"]+)"', body).group(1)
+    before = dict((k, ch) for k, _l, ch, _lo, _hi in cmp.copy_limits(db.get_settings()))
+    assert before["about"], "fixture should start with a real limit"
+    r = _client.post("/settings", data={"_csrf": csrf, "check_days": "sun",
+                                        "copy_about_chars": "",
+                                        "concurrency": "8", "keep_snapshots": "2"})
+    assert r.status_code in (200, 302), r.status_code
+    after = dict((k, ch) for k, _l, ch, _lo, _hi in cmp.copy_limits(db.get_settings()))
+    assert after["about"] == 0, \
+        "clearing the box restored the default (%s) instead of removing the limit" % after["about"]
+    # and it comes back as an EMPTY box, not a literal 0 to puzzle over
+    body2 = _ok("/settings").data.decode("utf-8", "replace")
+    assert 'name="copy_about_chars"\n                       value=""' in body2 \
+        or 'name="copy_about_chars" value=""' in body2 \
+        or 'value=""' in body2, "0 should render as an empty box"

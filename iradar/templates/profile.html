@@ -1,5 +1,44 @@
 {% extends "base.html" %}
-{% block title %}My profile — iRadar{% endblock %}
+{% block title %}My profile — iRadar<style>
+  .pf-alertrow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .pw-go { display: flex; align-items: center; gap: 12px; }
+  /* the two states this can be in, said in colour as well as in words */
+  .pw-msg { font-size: 12.5px; font-weight: 600; }
+  .pw-msg.bad { color: var(--err); }
+  .pw-msg.good { color: var(--ok); }
+  #pwgo[disabled] { opacity: .45; cursor: default; }
+</style>
+<script>
+  (function () {
+    var cur = document.getElementById("current"),
+        nw = document.getElementById("new"),
+        ag = document.getElementById("again"),
+        go = document.getElementById("pwgo"),
+        msg = document.getElementById("pwmsg"),
+        show = document.getElementById("pwshow");
+    if (!cur || !nw || !ag || !go) return;
+    // Say whether the two new fields match WHILE typing. The old form only
+    // answered that after a submit and a page reload, which is a long way to
+    // go to be told you typed one of them wrong.
+    function check() {
+      var ok = cur.value && nw.value && nw.value === ag.value;
+      go.disabled = !ok;
+      if (!nw.value || !ag.value) { msg.textContent = ""; msg.className = "pw-msg"; }
+      else if (nw.value !== ag.value) {
+        msg.textContent = "The two new passwords are different";
+        msg.className = "pw-msg bad";
+      } else { msg.textContent = "Match"; msg.className = "pw-msg good"; }
+    }
+    [cur, nw, ag].forEach(function (el) { el.addEventListener("input", check); });
+    if (show) show.addEventListener("click", function () {
+      var hidden = nw.type === "password";
+      [cur, nw, ag].forEach(function (el) { el.type = hidden ? "text" : "password"; });
+      show.textContent = hidden ? "Hide passwords" : "Show passwords";
+    });
+    check();
+  })();
+</script>
+{% endblock %}
 {% block content %}
 {#- The in-app version. The FORCED first-password screen is a separate,
     navless template on purpose: that one is a lockout, and offering the nav
@@ -75,15 +114,28 @@
     <h3 style="margin:0 0 6px">Email alerts</h3>
     <p class="hint" style="margin:0 0 14px">A report after each scheduled check,
       sent to {{ me['email'] }} when it finishes.</p>
-    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-      <form method="post" action="{{ url_for('account_alerts') }}" style="margin:0">
+    <div class="pf-alertrow">
+      {#- The switch IS the form: flipping it submits, so the control shows
+          the current state instead of a button labelled with the opposite of
+          it ("Turn off" while it is on, which you had to read twice). It
+          still works without JavaScript - the button below is the fallback
+          and only appears when scripting is off. -#}
+      <form method="post" action="{{ url_for('account_alerts') }}" style="margin:0"
+            id="alertform">
         <input type="hidden" name="on" value="{{ '0' if email_alerts else '1' }}">
-        <button type="submit">
-          {{ 'Turn off' if email_alerts else 'Turn on' }}</button>
+        <label class="sw">
+          <input type="checkbox" {% if email_alerts %}checked{% endif %}
+                 aria-label="Email alerts"
+                 onchange="document.getElementById('alertform').submit()">
+          <span class="sw-t"></span>
+          <span class="sw-l">{{ 'On' if email_alerts else 'Off' }}</span>
+        </label>
+        <noscript><button type="submit" style="margin-left:10px">
+          {{ 'Turn off' if email_alerts else 'Turn on' }}</button></noscript>
       </form>
       <span class="hint" style="margin:0">
-        {%- if email_alerts %}On — you get the report.
-        {%- else %}Off — no automatic reports.{% endif %}</span>
+        {%- if email_alerts %}You get the report when a check finishes.
+        {%- else %}No automatic reports.{% endif %}</span>
       {% if mail_ready %}
       <form method="post" action="{{ url_for('account_latest_report') }}"
             style="margin:0 0 0 auto">
@@ -115,10 +167,15 @@
         <input id="again" name="again" type="password"
                autocomplete="new-password" required>
       </div>
-      <div class="pw-go"><button type="submit">Change password</button></div>
+      <div class="pw-go">
+        <button type="submit" id="pwgo" disabled>Change password</button>
+        <span class="pw-msg" id="pwmsg"></span>
+      </div>
     </form>
     <p class="hint">Three or four random words beats anything clever —
-      <code>harbour-cactus-lantern-42</code>.</p>
+      <code>harbour-cactus-lantern-42</code>.
+      <button type="button" class="linkbtn" id="pwshow"
+              style="margin-left:6px">Show passwords</button></p>
   </div>
 </div>
 {% endblock %}
