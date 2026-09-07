@@ -1418,6 +1418,42 @@ def test_the_people_page_keeps_every_action_behind_its_row_menu():
         "the add form should sit behind a button, not own the page"
 
 
+def test_pim_shows_on_every_page_and_does_not_depend_on_aem():
+    """PIM is where the product data behind EVERY page lives, so its badge
+    belongs on all of them - it used to be an else-arm of the AEM branch, so
+    it appeared only on part pages and only when an AEM address happened to be
+    set. The two are independent facts: AEM is where a page is authored (part
+    pages are not), PIM is where its data comes from (all of them are)."""
+    keep = {k: db.get_settings().get(k) for k in ("pim_url", "aem_author_url")}
+    con = db.connect()
+    was = con.execute("SELECT ptype FROM urls WHERE id=1").fetchone()[0]
+    try:
+        db.set_setting("pim_url", "https://pim.example.com/PIM_UI#home")
+        db.set_setting("aem_author_url", "https://author.example.com/x{path}.html")
+
+        def body_for(ptype):
+            c = db.connect()
+            c.execute("UPDATE urls SET ptype=? WHERE id=1", (ptype,))
+            c.commit(); c.close()
+            return _ok("/").data.decode("utf-8", "replace")
+
+        b = body_for("Application")
+        assert "pim.example.com" in b, "PIM is missing from a non-part page"
+        assert "author.example.com" in b, "AEM vanished from a page it authors"
+        b = body_for("Part")
+        assert "pim.example.com" in b, "PIM is missing from a part page"
+        assert "author.example.com" not in b,             "a part page has no AEM-authored page, so it must not link to one"
+        # and PIM does not need AEM to be configured at all
+        db.set_setting("aem_author_url", "")
+        assert "pim.example.com" in body_for("Application"),             "PIM disappeared because AEM was unset - they are independent"
+    finally:
+        for k, v in keep.items():
+            db.set_setting(k, v or "")
+        c = db.connect()
+        c.execute("UPDATE urls SET ptype=? WHERE id=1", (was,))
+        c.commit(); c.close()
+
+
 def test_the_pim_address_makes_the_part_badge_open_pim():
     """Part and evaluation-board pages are generated from PIM, not authored in
     AEM, so their badge was permanently greyed out. With an address set it
