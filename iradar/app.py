@@ -21,6 +21,7 @@ from urllib.parse import quote as urlquote, urlsplit
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from flask import (Flask, Response, abort, flash, jsonify, redirect,
                    render_template, request, send_file, session, url_for)
 from rapidfuzz import fuzz, process
@@ -745,6 +746,8 @@ def _report_when(run):
         return ""
     dt = to_local(ts)
     try:
+        if schedule_mode() == "interval":
+            raise ValueError("no weekday to snap to")
         days = check_days()
         # forward only for a check run EARLY (a day or two before its slot);
         # one that overran into the following days belongs to the day behind
@@ -816,20 +819,45 @@ WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 # has the night to finish in before anyone opens the dashboard. Making it a
 # field meant a number to choose, a number to get wrong, and a number every
 # other piece of code had to read.
-SCHEDULE_HOUR = 3
+SCHEDULE_MODES = ("days", "interval")
+
+
+def schedule_hour(s=None):
+    """The hour the automatic check starts, 0-23."""
+    s = s or db.get_settings()
+    try:
+        return max(0, min(23, int(str(s.get("hour", 3)).strip() or 3)))
+    except (TypeError, ValueError):
+        return 3
+
+
+def schedule_mode(s=None):
+    """"days" - specific weekdays - or "interval" - every N days."""
+    s = s or db.get_settings()
+    m = (s.get("schedule_mode") or "").strip().lower()
+    return m if m in SCHEDULE_MODES else "days"
+
+
+def interval_days(s=None):
+    """How many days between checks when the cadence is an interval.
+
+    An interval is the honest way to say "every three days" or "every other
+    week": a day-of-week list cannot express either, because neither lands on
+    the same weekday twice running."""
+    s = s or db.get_settings()
+    try:
+        return max(1, min(60, int(str(s.get("interval_days", 7)).strip() or 7)))
+    except (TypeError, ValueError):
+        return 7
 
 
 def check_days(s=None):
-    """Which days the automatic check runs, as day keys in week order.
+    """Which weekdays the automatic check runs, in week order.
 
-    Replaces the old frequency/weekday pair. "Weekly on Sunday" and "daily"
-    were two different SHAPES of answer to one question - how often - and the
-    reader had to hold both to know what would happen. A set of days says it
-    once: pick Sunday, or pick Monday and Thursday, or pick all seven; the
-    cadence is however many you ticked.
-
-    Reads the old settings when the new one is unset, so an install that has
-    never opened this page keeps the schedule it already had."""
+    Replaces the old frequency/weekday pair - "weekly on Sunday" and "daily"
+    were two shapes of answer to one question, and the reader had to hold both
+    to know what would happen. Reads the old settings when the new one is
+    unset, so an install that has never opened this page keeps its schedule."""
     s = s or db.get_settings()
     raw = (s.get("check_days") or "").strip()
     if raw:
@@ -846,15 +874,18 @@ def check_days(s=None):
     return [wd if wd in WEEKDAYS else "mon"]
 
 
-def cycle_hours(days=None):
+def cycle_hours(days=None, s=None):
     """Half the gap between one scheduled check and the next, in hours.
 
-    The one-check-per-cycle guard needs to know how long a cycle is, and with
-    a free choice of days that is no longer a word like "weekly" - it is the
-    SHORTEST gap between two ticked days, wrapping around the end of the week.
-    One day a week gives 84h (half of seven days), all seven give 12h, which
-    is exactly what the old frequency table hard-coded."""
-    days = days or check_days()
+    The one-check-per-cycle guard needs to know how long a cycle is. On an
+    interval that is simply the interval; on weekdays it is the SHORTEST gap
+    between two ticked days, wrapping around the end of the week. One day a
+    week gives 84h and all seven give 12h, which is what the old frequency
+    table hard-coded."""
+    s = s or db.get_settings()
+    if days is None and schedule_mode(s) == "interval":
+        return interval_days(s) * 24 / 2.0
+    days = days or check_days(s)
     idx = sorted(WEEKDAYS.index(d) for d in days)
     if len(idx) < 2:
         return 84.0
@@ -864,14 +895,27 @@ def cycle_hours(days=None):
 
 def reschedule():
     s = db.get_settings()
-    days = check_days(s)
+    hour = schedule_hour(s)
 
     # tz=, not the machine's: 03:00 has to mean 03:00 to the people it runs
     # for, on whatever box this happens to be running on. Without it the
     # schedule silently follows the container and a move to UTC would run the
     # check at 01:00 on the wrong day.
-    trigger = CronTrigger(day_of_week=",".join(days), hour=SCHEDULE_HOUR,
-                          minute=0, timezone=_DISPLAY_ZONE)
+    if schedule_mode(s) == "interval":
+        # IntervalTrigger, not cron: "every 3 days" and "every other week" are
+        # not expressible as a day-of-week list - neither lands on the same
+        # weekday twice running. Anchored at the next occurrence of the chosen
+        # hour so the first one is not "N days from whenever you pressed Save".
+        n = interval_days(s)
+        now = datetime.now(_DISPLAY_ZONE)
+        start = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if start <= now:
+            start += timedelta(days=1)
+        trigger = IntervalTrigger(days=n, start_date=start,
+                                  timezone=_DISPLAY_ZONE)
+    else:
+        trigger = CronTrigger(day_of_week=",".join(check_days(s)), hour=hour,
+                              minute=0, timezone=_DISPLAY_ZONE)
 
     scheduler.add_job(_scheduled_check, trigger, id="check",
                       replace_existing=True, misfire_grace_time=3600 * 6)
@@ -4096,14 +4140,21 @@ def settings_view():
     if request.method == "POST":
         # the day list arrives as repeated checkboxes; an empty tick set
         # would silently mean "never run", so it falls back to what is stored
+        mode = request.form.get("schedule_mode", "days")
+        db.set_setting("schedule_mode",
+                       mode if mode in SCHEDULE_MODES else "days")
         picked = [d for d in request.form.getlist("check_days") if d in WEEKDAYS]
         if picked:
             db.set_setting("check_days", ",".join(picked))
+        elif mode == "days":
+            # ticking nothing would mean "never run", which is not a schedule
+            # anyone chose on purpose - keep the days already stored
+            flash("Pick at least one day, or switch to an interval.")
         # an unticked checkbox sends NOTHING, so the switch is read as
         # present-or-absent rather than by value
         db.set_setting("guest_link_enabled",
                        "1" if request.form.get("guest_link_enabled") else "0")
-        for key in ("concurrency",
+        for key in ("hour", "interval_days", "concurrency",
                     "keep_snapshots",
                     "visual_threshold", "height_threshold", "ignore_patterns",
                     "ignore_image_patterns", "dam_search_url",
@@ -4141,7 +4192,10 @@ def settings_view():
             c2.close()
     return render_template("settings.html", s=db.get_settings(),
                            next_run=next_run_text(), weekdays=WEEKDAYS,
-                           picked_days=check_days(), schedule_hour=SCHEDULE_HOUR,
+                           picked_days=check_days(),
+                           schedule_hour=schedule_hour(),
+                           schedule_mode=schedule_mode(),
+                           interval_days=interval_days(),
                            guest_key=GUEST_KEY, base_url=_base_url(),
                            copy_limits=cmp.copy_limits(db.get_settings()),
                            guest_tot=guest_tot, **matrix_ctx)
@@ -7832,17 +7886,20 @@ def guide_page():
                  else "%.0f hours" % round(h))
     # said from the ticked days themselves: "every day", "every Sunday", or
     # "every Monday and Thursday" - one sentence whatever the shape
-    _days = check_days(s)
-    _names = [_WEEKDAY_NAME.get(d, d.capitalize()) for d in _days]
-    if len(_names) == 7:
-        every = "every day"
-    elif len(_names) == 1:
-        every = "every %s" % _names[0]
+    if schedule_mode(s) == "interval":
+        n = interval_days(s)
+        every = "every day" if n == 1 else "every %d days" % n
     else:
-        every = "every %s and %s" % (", ".join(_names[:-1]), _names[-1])
+        _names = [_WEEKDAY_NAME.get(d, d.capitalize()) for d in check_days(s)]
+        if len(_names) == 7:
+            every = "every day"
+        elif len(_names) == 1:
+            every = "every %s" % _names[0]
+        else:
+            every = "every %s and %s" % (", ".join(_names[:-1]), _names[-1])
     return render_template(
         "guide.html", f=facts, s=s, every=every,
-        at_time="%02d:00" % SCHEDULE_HOUR,
+        at_time="%02d:00" % schedule_hour(s),
         next_run=next_run_text(), run_hours=hours, last=last,
         whatsnew=WHATS_NEW)
 

@@ -1215,16 +1215,18 @@ def test_settings_controls_still_post_the_same_fields():
     reads, so a redesign that quietly renames one loses that setting with no
     error anywhere."""
     body = _ok("/settings").data.decode("utf-8", "replace")
-    for field in ("check_days", "concurrency", "keep_snapshots",
+    for field in ("check_days", "schedule_mode", "interval_days", "hour",
+                  "concurrency", "keep_snapshots",
                   "visual_threshold", "height_threshold", "dam_search_url",
                   "windchill_search_url", "aem_author_url"):
         assert 'name="%s"' % field in body, "settings lost the %s field" % field
     assert 'class="daypick daypick-multi"' in body, "the day picker is missing"
     assert 'type="range"' in body, "the bounded numbers are not sliders"
-    # frequency and hour are GONE on purpose: how many days you tick is the
-    # cadence, and the hour is a constant
+    # the old frequency menu is gone: the cadence is days or an interval
     assert 'name="frequency"' not in body, "frequency came back"
-    assert 'name="hour"' not in body, "the hour is meant to be constant"
+    # THE SAVE BAR MUST NOTICE A TICK. A checkbox's .value never changes, so
+    # comparing values left Save disabled and the schedule unsaveable.
+    assert "el.checked : el.value" in body,         "the dirty check compares .value on checkboxes again"
     # the ticked days are the stored ones, and at least one is always ticked
     ticked = _re.findall(r'name="check_days" value="(\w+)"\s+checked', body)
     assert ticked, "no day is ticked - the check would never run"
@@ -1354,3 +1356,35 @@ def test_the_shared_link_is_offered_over_https():
             os.environ.pop("PUBLIC_URL", None)
         else:
             os.environ["PUBLIC_URL"] = was_pub
+
+
+def test_an_interval_schedule_is_expressible_and_bounded():
+    """"Every 3 days" and "every other week" are not day-of-week lists -
+    neither lands on the same weekday twice running - so the schedule has an
+    interval mode, and the one-check-per-cycle guard follows it."""
+    keep = {k: db.get_settings().get(k)
+            for k in ("schedule_mode", "interval_days", "hour")}
+    try:
+        db.set_setting("schedule_mode", "interval")
+        db.set_setting("interval_days", "3")
+        assert app.schedule_mode() == "interval"
+        assert app.interval_days() == 3
+        assert app.cycle_hours() == 36.0, app.cycle_hours()
+        db.set_setting("interval_days", "14")
+        assert app.cycle_hours() == 168.0, "every other week is a 7-day half"
+        # nonsense never yields a schedule that runs constantly or never
+        for bad in ("", "abc", "0", "999"):
+            db.set_setting("interval_days", bad)
+            assert 1 <= app.interval_days() <= 60, (bad, app.interval_days())
+        # the hour is a real setting again, and stays in range
+        for bad in ("", "abc", "-4", "99"):
+            db.set_setting("hour", bad)
+            assert 0 <= app.schedule_hour() <= 23, (bad, app.schedule_hour())
+        db.set_setting("hour", "3")
+        assert app.schedule_hour() == 3
+        # an unknown mode falls back to days rather than scheduling nothing
+        db.set_setting("schedule_mode", "sideways")
+        assert app.schedule_mode() == "days"
+    finally:
+        for k, v in keep.items():
+            db.set_setting(k, v if v is not None else "")

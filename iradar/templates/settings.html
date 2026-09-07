@@ -27,23 +27,39 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>Automatic checks</h2>
-          <p>Tick the days iRadar should walk the whole site by itself. It
-             always starts at <b>{{ '%02d:00'|format(schedule_hour) }}</b>, so
-             it has the night to finish in. Next one <b>{{ next_run }}</b> —
-             you can start one any time from the dashboard.</p>
+          <p>Next one <b>{{ next_run }}</b>. You can start one any time from
+             the dashboard.</p>
         </div>
 
-        <div class="setrow setrow-days">
+        <div class="setrow">
+          <div class="setrow-t"><label>Repeat</label></div>
+          <div class="setrow-c">
+            <div class="optseg" role="group" aria-label="How the schedule repeats">
+              <label class="optseg-o">
+                <input type="radio" name="schedule_mode" value="days"
+                       {% if schedule_mode != 'interval' %}checked{% endif %}
+                       onchange="modeGo()">
+                <span>On set days</span>
+              </label>
+              <label class="optseg-o">
+                <input type="radio" name="schedule_mode" value="interval"
+                       {% if schedule_mode == 'interval' %}checked{% endif %}
+                       onchange="modeGo()">
+                <span>Every N days</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="setrow" id="row-days">
           <div class="setrow-t">
             <label>Days</label>
-            <p>Pick one for a weekly check, or several to check more often.
-               How many you tick <i>is</i> the cadence.</p>
+            <p>How many you tick is the cadence.</p>
           </div>
           <div class="setrow-c">
             <div class="daypick daypick-multi" role="group" aria-label="Days to check">
               {% for d in weekdays %}
               <label class="daypick-d" title="{{ d|capitalize }}">
-                {#- checkboxes, not radios: several days is the point -#}
                 <input type="checkbox" name="check_days" value="{{ d }}"
                        {% if d in picked_days %}checked{% endif %}>
                 <span>{{ d[0]|upper }}</span>
@@ -52,19 +68,46 @@
             </div>
           </div>
         </div>
+
+        <div class="setrow" id="row-interval">
+          <div class="setrow-t">
+            <label for="f-int">Every</label>
+            <p>2 for every other day, 14 for every other week.</p>
+          </div>
+          <div class="setrow-c">
+            <div class="numwrap">
+              <input type="number" name="interval_days" id="f-int" min="1" max="60"
+                     value="{{ interval_days }}">
+              <span class="numsuf">days</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setrow">
+          <div class="setrow-t">
+            <label for="f-hour">Start at</label>
+            <p>Overnight leaves the check the night to finish in.</p>
+          </div>
+          <div class="setrow-c">
+            <select name="hour" id="f-hour">
+              {% for h in range(24) %}
+              <option value="{{ h }}" {% if h == schedule_hour %}selected{% endif %}>{{ '%02d:00'|format(h) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
       </section>
 
       <section class="setsec">
         <div class="setsec-h">
           <h2>Capture</h2>
-          <p>How hard iRadar works while it runs, and how much it keeps.</p>
+          
         </div>
 
         <div class="setrow">
           <div class="setrow-t">
             <label for="f-conc">Parallel browser tabs</label>
-            <p>8 is the tested value. Higher is faster, but pages start
-               coming back half-read and nothing says so.</p>
+            <p>8 is tested. Higher is faster but pages come back half-read.</p>
           </div>
           <div class="setrow-c">
             {#- a slider for a small bounded range: the ends and the current
@@ -81,8 +124,7 @@
         <div class="setrow">
           <div class="setrow-t">
             <label for="f-keep">Captures kept per page</label>
-            <p>A comparison needs this capture and the one before it, so 2
-               loses nothing. Older copies are deleted after each check.</p>
+            <p>A comparison needs two, so 2 loses nothing.</p>
           </div>
           <div class="setrow-c">
             <div class="slider">
@@ -100,15 +142,13 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>What counts as a change</h2>
-          <p>How different a page has to look from its previous capture before
-             it is worth your time.</p>
+          <p>How different a page must look before it is worth your time.</p>
         </div>
 
         <div class="setrow">
           <div class="setrow-t">
             <label for="f-vis">Visual threshold</label>
-            <p>Share of pixels that must differ. Below this, the page is
-               treated as unchanged.</p>
+            <p>Share of pixels that must differ.</p>
           </div>
           <div class="setrow-c">
             <div class="numwrap">
@@ -122,8 +162,7 @@
         <div class="setrow">
           <div class="setrow-t">
             <label for="f-hgt">Page height threshold</label>
-            <p>How much taller or shorter a page must get to count on its
-               own.</p>
+            <p>How much taller or shorter it must get.</p>
           </div>
           <div class="setrow-c">
             <div class="numwrap">
@@ -147,21 +186,12 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>The shared link</h2>
-          <p>Anyone holding it can read everything here. They cannot change
-             anything, reach these settings, or download the database.</p>
+          <p>Read-only: they cannot change anything, reach these
+             settings, or download the database.</p>
         </div>
         <div class="setrow">
           <div class="setrow-t">
             <label for="gl-on">Anyone with the link can read</label>
-            <p>
-              {% if guest_tot and guest_tot.v %}
-                <b>{{ guest_tot.v }}</b> visit{{ '' if guest_tot.v == 1 else 's' }},
-                <b>{{ guest_tot.h }}</b> page{{ '' if guest_tot.h == 1 else 's' }} read,
-                most recently {{ guest_tot.l|localtime }}.
-              {% else %}
-                Nobody has opened it yet.
-              {% endif %}
-            </p>
           </div>
           <div class="setrow-c">
             <label class="sw">
@@ -173,34 +203,21 @@
             </label>
           </div>
         </div>
-        {#- The link itself, because a share link you cannot see is a share
-            link you cannot share. Owner-only, and it is the same secret the
-            owner already holds - not a new one being revealed. -#}
         {% if guest_key %}
         <div class="setrow setrow-wide">
           <div class="setrow-t"><label for="gl-url">The link</label></div>
           <div class="setrow-c copyrow">
             {#- base_url, not url_for(_external=True): behind Cloudflare the
-                request root comes back as http://, so the link people were
-                handed downgraded them to plain HTTP on a site that only
-                serves HTTPS. PUBLIC_URL is the address this install is
-                actually reachable at. -#}
+                request root comes back as http://, which handed people a
+                plain-HTTP link to an HTTPS-only site. -#}
             <input type="text" id="gl-url" readonly
                    value="{{ base_url }}/?key={{ guest_key }}"
                    onclick="this.select()">
             <button type="button" class="copybtn" id="glcopy">Copy</button>
+            <a class="setlink" href="{{ url_for('guests_page') }}">Who opened it</a>
           </div>
         </div>
         {% endif %}
-        <div class="setrow setrow-state">
-          <div class="setrow-t">
-            <p style="margin:0">They cannot change anything, reach these
-              settings, or download the database.</p>
-          </div>
-          <div class="setrow-c">
-            <a class="setlink" href="{{ url_for('guests_page') }}">See who opened it</a>
-          </div>
-        </div>
       </section>
       {% endif %}
 
@@ -287,8 +304,7 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>Backup</h2>
-          <p>The server's disk is not backed up by anything. This is the copy
-             you keep.</p>
+          <p>The server's disk is not backed up. This is the copy you keep.</p>
         </div>
         <div class="setrow setrow-state">
           <div class="setrow-t">
@@ -531,6 +547,16 @@
   }
 </style>
 <script>
+  // show only the row that belongs to the chosen cadence
+  function modeGo() {
+    var iv = document.querySelector('input[name=schedule_mode][value=interval]');
+    var on = iv && iv.checked;
+    var d = document.getElementById("row-days");
+    var i = document.getElementById("row-interval");
+    if (d) d.style.display = on ? "none" : "";
+    if (i) i.style.display = on ? "" : "none";
+  }
+
   function segGo(btn) {
     document.querySelectorAll(".seg-b").forEach(function (b) { b.classList.toggle("on", b === btn); });
     document.querySelectorAll(".pane").forEach(function (p) {
@@ -542,6 +568,8 @@
     document.getElementById("savebar").style.display = info ? "none" : "";
     location.hash = btn.dataset.pane;
   }
+  modeGo();
+
   (function () {
     var h = location.hash.replace("#", "");
     var btn = document.querySelector('.seg-b[data-pane="' + h + '"]');
@@ -574,11 +602,19 @@
     var msg = document.getElementById("savemsg");
     var start = new Map();
     form.querySelectorAll("input, select").forEach(function (el) {
-      if (el.name) start.set(el, el.value);
+      // A CHECKBOX'S .value NEVER CHANGES - it is the static attribute
+      // ("sun"), and only .checked moves. Comparing .value meant ticking a
+      // day never marked the form dirty, so Save stayed disabled and the
+      // schedule could not be saved at all.
+      if (el.name) start.set(el, el.type === "checkbox" || el.type === "radio"
+                                 ? el.checked : el.value);
     });
+    function cur(el) {
+      return el.type === "checkbox" || el.type === "radio" ? el.checked : el.value;
+    }
     function check() {
       var n = 0;
-      start.forEach(function (v, el) { if (el.value !== v) n++; });
+      start.forEach(function (v, el) { if (cur(el) !== v) n++; });
       bar.classList.toggle("dirty", n > 0);
       btn.disabled = n === 0;
       msg.textContent = n === 0 ? "No changes yet"
