@@ -27,8 +27,7 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>Automatic checks</h2>
-          <p>Next one <b>{{ next_run }}</b>. You can start one any time from
-             the dashboard.</p>
+          <p class="oneline">Next one <b>{{ next_run }}</b>. You can start one any time from the dashboard.</p>
         </div>
 
         <div class="setrow">
@@ -186,8 +185,7 @@
       <section class="setsec">
         <div class="setsec-h">
           <h2>The shared link</h2>
-          <p>Read-only: they cannot change anything, reach these
-             settings, or download the database.</p>
+          <p class="oneline">Read-only: they cannot change anything, reach these settings, or download the database.</p>
         </div>
         <div class="setrow">
           <div class="setrow-t">
@@ -370,7 +368,7 @@
   .setsec-h h2 { margin: 0; font-size: 14.5px; font-weight: 700;
                  letter-spacing: -.01em; }
   .setsec-h p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px;
-                line-height: 1.5; max-width: 62ch; }
+                line-height: 1.55; }
 
   /* the row: what it does on the left, the control on the right */
   .setrow { display: grid; grid-template-columns: 1fr auto; gap: 16px 24px;
@@ -381,7 +379,7 @@
   .setrow-t label, .setrow-t > .statepill { font-size: 13.5px; font-weight: 600;
                                             display: inline-block; }
   .setrow-t p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px;
-                line-height: 1.5; max-width: 58ch; }
+                line-height: 1.55; }
   .setrow-c { display: flex; align-items: center; gap: 8px;
               justify-content: flex-end; }
   .setrow-c-pair { gap: 8px; }
@@ -486,6 +484,13 @@
                letter-spacing: .05em; padding: 2px 9px; border-radius: 999px; }
   .statepill.on { background: rgba(22,163,74,.14); color: var(--ok); }
   .statepill.off { background: rgba(110,109,122,.16); color: var(--muted); }
+
+  /* the two lines that are short enough to stay whole */
+  .setsec-h p.oneline { white-space: nowrap; overflow: hidden;
+                        text-overflow: ellipsis; }
+  @media (max-width: 700px) {
+    .setsec-h p.oneline { white-space: normal; overflow: visible; }
+  }
 
   .setnote { margin: 0; padding: 12px 20px 16px; color: var(--muted);
              font-size: 12.5px; line-height: 1.5; }
