@@ -3164,11 +3164,23 @@ def change_view(change_id):
         if not c["visual_changed"] and cmp._shot_rev(od) != cmp._shot_rev(nd):
             renorm.append("screenshot")
 
-    art = {"boxed": False, "regions": [], "legacy": False}
+    art = {"boxed": False, "regions": [], "legacy": False,
+           "old_boxed": "", "new_boxed": ""}
     if c["dir"] and Path(c["dir"]).exists():
         d = Path(c["dir"])
-        art["boxed"] = (d / "old_boxed.png").exists() and (d / "new_boxed.png").exists()
-        art["regions"] = sorted(p.name for p in d.glob("region_*.png"))
+        # webp first, png second: the pictures became webp on 6 Sep 2026 and
+        # every stored one was converted, but a change directory the migration
+        # could not read must still show its evidence rather than nothing
+        for ext in ("webp", "png"):
+            o, n = d / ("old_boxed." + ext), d / ("new_boxed." + ext)
+            if o.exists() and n.exists():
+                art["boxed"] = True
+                art["old_boxed"], art["new_boxed"] = o.name, n.name
+                break
+        art["regions"] = sorted(
+            p.name for p in d.iterdir()
+            if p.name.startswith("region_")
+            and p.suffix.lower() in (".webp", ".png"))
         art["legacy"] = (d / "visual_diff.png").exists()
     lib_diff = {}
     if old_snap and new_snap and old_snap["dir"] and new_snap["dir"]:
@@ -3186,7 +3198,7 @@ def change_view(change_id):
                            notes_label=(u["url"] if u else ""))
 
 
-ART_NAME_RE = re.compile(r"^[a-z0-9_]+\.png$")
+ART_NAME_RE = re.compile(r"^[a-z0-9_]+\.(?:png|webp)$")
 
 
 @app.route("/change/<int:change_id>/art/<name>")
@@ -3201,7 +3213,8 @@ def change_art(change_id, name):
     p = Path(c["dir"]) / name
     if not p.exists():
         abort(404)
-    return send_file(p, mimetype="image/png")
+    return send_file(p, mimetype="image/webp" if p.suffix == ".webp"
+                     else "image/png")
 
 
 @app.route("/change/<int:change_id>/review", methods=["POST"])
@@ -3564,7 +3577,7 @@ def snapshot_screenshot(snap_id):
     con.close()
     if not s or not s["dir"]:
         abort(404)
-    p = Path(s["dir"]) / "shot.png"
+    p = db.shot_path(s["dir"])
     if not p.exists():
         abort(404)
     return send_file(p, mimetype="image/png")
@@ -3585,7 +3598,7 @@ def snapshot_thumb(snap_id):
     con.close()
     if not s or not s["dir"]:
         abort(404)
-    full = Path(s["dir"]) / "shot.png"
+    full = db.shot_path(s["dir"])
     if not full.exists():
         abort(404)
     thumb = Path(s["dir"]) / "thumb.jpg"

@@ -712,3 +712,54 @@ def test_a_nonsense_setting_falls_back_instead_of_crashing():
     got = cmp.copy_findings(_copy(subheadline=[{"title": "s" * 200}]),
                             {"copy_subheadline_chars": "not a number"})
     assert got["subheadline"] == "200 over 150"
+
+
+def test_storing_screenshots_as_webp_does_not_change_the_verdict():
+    """Screenshots became lossless WEBP to reclaim 1.19GB. They are an INPUT
+    to the pixel diff, so the only acceptable saving is one the diff cannot
+    perceive: same percentage, same regions, and an unchanged page still
+    exactly 0. A lossy format would fail this test, which is the point."""
+    import tempfile
+    from pathlib import Path
+    from PIL import Image, ImageDraw
+    import db
+    tmp = Path(tempfile.mkdtemp())
+    a = Image.new("RGB", (500, 700), "white")
+    d = ImageDraw.Draw(a)
+    for y in range(0, 700, 20):
+        d.text((15, y), "antialiased text row %d" % y, fill="black")
+    b = a.copy()
+    ImageDraw.Draw(b).rectangle([300, 200, 420, 250], fill="red")
+
+    def run(fmt):
+        o, n = tmp / (fmt + "o"), tmp / (fmt + "n")
+        o.mkdir(parents=True, exist_ok=True), n.mkdir(parents=True, exist_ok=True)
+        if fmt == "png":
+            a.save(o / "shot.png"), b.save(n / "shot.png")
+        else:
+            a.save(o / "shot.webp", "WEBP", lossless=True, method=4)
+            b.save(n / "shot.webp", "WEBP", lossless=True, method=4)
+        c = tmp / (fmt + "c"); c.mkdir(exist_ok=True)
+        return cmp.visual_diff(str(o), str(n), str(c)), c
+
+    (pct_p, _, n_p), _ = run("png")
+    (pct_w, _, n_w), cdir = run("webp")
+    assert (pct_p, n_p) == (pct_w, n_w), \
+        "webp storage moved the verdict: png=%s webp=%s" % (pct_p, pct_w)
+
+    # an identical page must read exactly zero, not "nearly" zero
+    s1, s2 = tmp / "s1", tmp / "s2"
+    s1.mkdir(exist_ok=True), s2.mkdir(exist_ok=True)
+    a.save(s1 / "shot.webp", "WEBP", lossless=True, method=4)
+    a.save(s2 / "shot.webp", "WEBP", lossless=True, method=4)
+    pct0, _, n0 = cmp.visual_diff(str(s1), str(s2), str(tmp / "s3"))
+    assert pct0 == 0.0 and n0 == 0, "webp invented a change: %s%%" % pct0
+
+    # reviewer-facing art is webp (lossy is fine there - never read back)
+    names = sorted(p.name for p in cdir.iterdir())
+    assert "old_boxed.webp" in names and "new_boxed.webp" in names, names
+    assert not any(x.endswith(".png") for x in names), \
+        "a diff picture is still PNG: %s" % names
+    # the resolver prefers webp but still finds a pre-migration png
+    assert db.shot_path(tmp / "webpo").name == "shot.webp"
+    assert db.shot_path(tmp / "pngo").name == "shot.png"

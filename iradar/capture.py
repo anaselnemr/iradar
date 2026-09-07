@@ -2632,20 +2632,33 @@ async def capture_one(browser, url, out_dir):
         # coordinates into THIS image, and leaving them at full-page scale
         # would put every mask in the wrong place - quietly unmasking the very
         # feeds they exist to hide, which reads as the flapping coming back.
+        #
+        # STORED AS LOSSLESS WEBP, not PNG. Same pixels exactly - the decode
+        # is bit-identical, which the pixel diff above depends on - but 42%
+        # smaller, measured over the real archive: 1.19 GB of screenshots on
+        # a 5 GB volume, on a disk that had already hit 100% once and killed
+        # a run. Lossy would be smaller again and is not an option here, for
+        # the reason in the paragraph above.
+        try:
+            png_p = out_dir / "shot.png"
+            shot_p = out_dir / "shot.webp"
+            with Image.open(png_p) as im:
+                im = im.convert("RGB")
+                if SHOT_SCALE != 1.0:
+                    im = im.resize(
+                        (max(1, int(im.width * SHOT_SCALE)),
+                         max(1, int(im.height * SHOT_SCALE))),
+                        Image.Resampling.LANCZOS)
+                if SHOT_COLORS:
+                    im = im.convert("P", palette=Image.Palette.ADAPTIVE,
+                                    colors=SHOT_COLORS)
+                im.convert("RGB").save(shot_p, "WEBP", lossless=True, method=4)
+            png_p.unlink(missing_ok=True)
+        except Exception as exc:
+            if INJECT_JS:
+                print(f"  [shot] webp conversion skipped: {exc}")
         if SHOT_SCALE != 1.0 or SHOT_COLORS:
             try:
-                shot_p = out_dir / "shot.png"
-                with Image.open(shot_p) as im:
-                    im = im.convert("RGB")
-                    if SHOT_SCALE != 1.0:
-                        im = im.resize(
-                            (max(1, int(im.width * SHOT_SCALE)),
-                             max(1, int(im.height * SHOT_SCALE))),
-                            Image.Resampling.LANCZOS)
-                    if SHOT_COLORS:
-                        im = im.convert("P", palette=Image.Palette.ADAPTIVE,
-                                        colors=SHOT_COLORS)
-                    im.save(shot_p, "PNG", optimize=True)
                 shot_ignore = [{k: (int(v * SHOT_SCALE) if k in ("x", "y", "w", "h")
                                     else v) for k, v in r.items()}
                                for r in (shot_ignore or [])]

@@ -166,13 +166,13 @@
   <div class="shots shots2">
     <figure>
       <figcaption>BEFORE ({{ old_snap.ts|localtime if old_snap else '' }})</figcaption>
-      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name='old_boxed.png') }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name='old_boxed.png') }}"></a>
+      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name=art.old_boxed) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=art.old_boxed) }}"></a>
       {% elif old_snap and old_snap.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=old_snap.id) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=old_snap.id) }}"></a>
       {% else %}<p class="muted">not available</p>{% endif %}
     </figure>
     <figure>
       <figcaption>AFTER ({{ new_snap.ts|localtime if new_snap else '' }})</figcaption>
-      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name='new_boxed.png') }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name='new_boxed.png') }}"></a>
+      {% if art.boxed %}<a href="{{ url_for('change_art', change_id=c.id, name=art.new_boxed) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('change_art', change_id=c.id, name=art.new_boxed) }}"></a>
       {% elif new_snap and new_snap.dir %}<a href="{{ url_for('snapshot_screenshot', snap_id=new_snap.id) }}" target="_blank" title="Open full size"><img loading="lazy" src="{{ url_for('snapshot_screenshot', snap_id=new_snap.id) }}"></a>
       {% else %}<p class="muted">not available</p>{% endif %}
     </figure>

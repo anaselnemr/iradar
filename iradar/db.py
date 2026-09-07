@@ -12,6 +12,23 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 SNAP_DIR = DATA_DIR / "snapshots"
+
+
+def shot_path(snap_dir):
+    """The screenshot inside a snapshot directory, whatever format it is in.
+
+    Screenshots are WEBP (lossless) since 6 Sep 2026 - PNG kept 1.19 GB of
+    palette-quantised pixels on a 5 GB volume for no gain, and lossless webp
+    of the same pixels is 42% smaller with a bit-identical decode, which the
+    pixel diff requires: a lossy format would move the pixel ratio for reasons
+    that have nothing to do with the page. Every stored .png was converted,
+    but the fallback stays - it costs one stat() and it is what makes a run
+    that is mid-flight during a deploy, or a directory the migration could not
+    read, compare correctly instead of silently scoring 100% changed."""
+    from pathlib import Path as _P
+    d = _P(snap_dir)
+    webp = d / "shot.webp"
+    return webp if webp.exists() else d / "shot.png"
 CHANGE_DIR = DATA_DIR / "changes"
 DB_PATH = DATA_DIR / "watch.db"
 

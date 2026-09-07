@@ -113,7 +113,11 @@ def test_the_close_up_strip_shows_the_same_spot():
     b = _snap(t, "b", edited)
     change = Path(t) / "chg"
     cmp.visual_diff(a, b, change_dir=str(change))
-    strips = sorted(change.glob("region_*.png"))
+    # webp since 6 Sep 2026 (reviewer-facing art, never re-compared), png
+    # before it - the assertion is about the crop, not the container
+    strips = sorted(p for p in change.iterdir()
+                    if p.name.startswith("region_")
+                    and p.suffix.lower() in (".webp", ".png"))
     assert strips, "no close-up strips were written"
     # judge each strip's FRAME - the rows around the change, which are
     # unchanged content and so must agree between the halves. Under the old
