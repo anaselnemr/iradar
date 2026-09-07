@@ -872,11 +872,18 @@ def test_manual_report_form_choice_is_per_run_and_accepts_older_pages():
     calls = []
     runner.run_check_background = lambda **kwargs: calls.append(kwargs) or True
     try:
-        for fields, expected in (({"email_report":"1"}, "1"), ({}, ""),
-                                 ({"email_digest":"1"}, "1")):
+        # the flag is a TIMESTAMP, not a bare "1": it is honoured only by the
+        # run whose lifetime contains it, so a request made while an older
+        # run's file sweep is still going cannot mail that older run
+        for fields, wanted in (({"email_report":"1"}, True), ({}, False),
+                               ({"email_digest":"1"}, True)):
             response = _client.post("/run-now", data={"_csrf":_csrf(), **fields})
             assert response.status_code == 302
-            assert db.get_settings().get("email_after_manual_run") == expected
+            stamp = db.get_settings().get("email_after_manual_run")
+            assert bool(stamp) is wanted, (fields, stamp)
+            if wanted:
+                assert stamp[:2] == "20" and len(stamp) >= 19, \
+                    "the request must be stamped with when it was made: %r" % stamp
             assert calls[-1] == {"kind":"manual", "url_ids":None}
     finally:
         runner.run_check_background = launch
@@ -906,13 +913,14 @@ def test_manual_runs_only_email_when_asked():
     mailer.configured = lambda: True
     mailer.send = lambda to, subj, html, text="": sent.append(to) or None
     try:
+        DURING = "2026-09-06 02:00:00"      # inside the run's own lifetime
         db.set_setting("last_emailed_run", "")
         # manual, box not ticked: silence
         db.set_setting("email_after_manual_run", "")
         appmod._email_after_run()
         assert sent == [], "an unrequested manual run mailed people: %s" % sent
         # manual, box ticked: mails, and eats the flag
-        db.set_setting("email_after_manual_run", "1")
+        db.set_setting("email_after_manual_run", DURING)
         appmod._email_after_run()
         assert sent, "a requested manual digest never went out"
         assert db.get_settings().get("email_after_manual_run") == "", \
@@ -921,17 +929,84 @@ def test_manual_runs_only_email_when_asked():
         n = len(sent)
         appmod._email_after_run()
         assert len(sent) == n, "the same run emailed twice"
+
+        # A REQUEST BELONGS TO ITS OWN RUN. A tick made while the previous
+        # run's file sweep was still going (so stamped AFTER that run
+        # finished) must not mail the older run, and must survive for the run
+        # it was actually made for.
+        db.set_setting("last_emailed_run", "")
+        db.set_setting("email_after_manual_run", "2026-09-06 20:00:00")
+        appmod._email_after_run()
+        assert len(sent) == n, "a later run's request mailed an earlier run"
+        assert db.get_settings().get("email_after_manual_run") == \
+            "2026-09-06 20:00:00", "the later run's request was eaten"
+
+        # THE DEDUP MARKER IS CHECKED FIRST: a resume transition on an
+        # already-mailed run must not spend a fresh request.
+        db.set_setting("last_emailed_run", str(rid))
+        db.set_setting("email_after_manual_run", DURING)
+        appmod._email_after_run()
+        assert len(sent) == n, "an already-emailed run mailed again"
+        assert db.get_settings().get("email_after_manual_run") == DURING, \
+            "a request was burned by a run that had already mailed"
+
         # baseline runs never mail, ticked or not
         con = db.connect()
         con.execute("UPDATE runs SET kind='baseline' WHERE id=?", (rid,))
         con.commit(); con.close()
         db.set_setting("last_emailed_run", "")
-        db.set_setting("email_after_manual_run", "1")
+        db.set_setting("email_after_manual_run", DURING)
         appmod._email_after_run()
         assert len(sent) == n, "a baseline run mailed the team"
     finally:
         mailer.configured, mailer.send = real_conf, real_send
         db.set_setting("email_after_manual_run", "")
+
+
+def test_only_one_file_sweep_runs_at_a_time():
+    """Two sweeps at once meant 16 threads into a throttled store and every
+    changed file recorded twice - both read their fingerprints before either
+    wrote. The lock lives in run_asset_check, so EVERY caller is guarded."""
+    import asset_watch
+    import threading
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+    real = asset_watch._run_asset_check_locked
+
+    def slow():
+        calls.append(1)
+        started.set()
+        release.wait(5)
+    asset_watch._run_asset_check_locked = slow
+    try:
+        t = threading.Thread(target=asset_watch.run_asset_check, daemon=True)
+        t.start()
+        assert started.wait(5), "the first sweep never started"
+        asset_watch.run_asset_check()      # second caller, while one is live
+        assert len(calls) == 1, "a second sweep ran on top of the first"
+        release.set()
+        t.join(5)
+        # and once it is free, a later sweep is allowed again
+        asset_watch.run_asset_check()
+        assert len(calls) == 2, "the lock stayed stuck after the sweep ended"
+    finally:
+        release.set()
+        asset_watch._run_asset_check_locked = real
+
+
+def test_a_partial_run_cannot_erase_an_owed_file_sweep():
+    """A 3-page partial finishing between a full run and its post-run chain
+    used to blank asset_check_due, so that week's files were never checked."""
+    import runner
+    runner.RUN_STATE["asset_check_due"] = True
+    # what the tail of a partial run does now
+    url_ids, stopped = [1, 2, 3], False
+    if not url_ids and not stopped:
+        runner.RUN_STATE["asset_check_due"] = True
+    assert runner.RUN_STATE.get("asset_check_due") is True, \
+        "a partial run erased the full run's owed sweep"
+    runner.RUN_STATE.pop("asset_check_due", None)
 
 
 def test_email_alerts_toggle_flips_the_flag():

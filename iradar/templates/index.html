@@ -296,7 +296,7 @@
       <div id="seg-held" title="Held — waiting for the second capture (reconfirming)"></div>
       <div id="seg-err"  title="Blocked or failed to load — retried twice before it counts"></div>
     </div>
-    <div class="rp-chips">
+    <div class="rp-chips" id="rp-chips">
       <span class="c"><span class="sw" style="background:#16a34a"></span><b id="chip-ok">0</b> no update</span>
       <span class="c"><span class="sw" style="background:#ea580c"></span><b id="chip-upd">0</b> updated</span>
       <span class="c"><span class="sw" style="background:#7c3aed"></span><b id="chip-held">0</b> reconfirming updates</span>
@@ -1010,9 +1010,12 @@ async function poll() {
               : (phase === 'files' ? 'done' : 'skip'));
       setStep('step-files',   phase === 'files' ? 'on' : '');
       // the file sweep has no pause/resume - hide the run controls under it
+      // the sweep has no pause or stop. Restored to inline-flex, not '': the
+      // span declares that inline, so clearing it left the buttons stacked
       const runCtl = document.getElementById('run-pause');
       if (runCtl && runCtl.parentElement)
-        runCtl.parentElement.style.display = phase === 'files' ? 'none' : '';
+        runCtl.parentElement.style.display =
+          phase === 'files' ? 'none' : 'inline-flex';
       const retryLbl = document.getElementById('step-retry');
       if (retryLbl && phase === 'retry' && s.round)
         retryLbl.lastChild.textContent = 'Retry blocked · round ' + s.round + ' of 2';
@@ -1036,12 +1039,23 @@ async function poll() {
         document.getElementById('seg-err').style.width = w(errs);
         document.getElementById('chip-wait').textContent = wait;
       } else {
-        // previous server build: plain fill, green
+        // plain fill, green - the file sweep, or a previous server build.
+        // The other three MUST be cleared: left alone they kept the page
+        // run's widths, so the sweep's bar showed the finished run's orange
+        // and red beside a green bar counting files.
         document.getElementById('seg-ok').style.width =
           (s.total ? Math.round(100 * s.done / s.total) : 0) + '%';
+        document.getElementById('seg-upd').style.width = '0%';
+        document.getElementById('seg-held').style.width = '0%';
+        document.getElementById('seg-err').style.width = '0%';
         document.getElementById('chip-wait').textContent =
           Math.max(0, (s.total || 0) - (s.done || 0));
       }
+      // the chips count PAGES; during the file sweep there are no pages in
+      // flight, and showing the finished run's tallies under a files bar read
+      // as though those pages were being worked on again
+      const chips = document.getElementById('rp-chips');
+      if (chips) chips.style.display = phase === 'files' ? 'none' : '';
       document.getElementById('chip-ok').textContent = noUpd;
       document.getElementById('chip-upd').textContent = upd;
       document.getElementById('chip-held').textContent = held;

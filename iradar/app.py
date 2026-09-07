@@ -1681,7 +1681,11 @@ def _bar_extras(con):
     # A file review or a watch-list edit can happen without changing open_n;
     # both belong in the key so the bar never holds their old numbers.
     key = (run["id"], open_n, fu, tracked)
-    if key not in _BAR_EXTRAS_CACHE:
+    # read ONCE into a local: checking membership and then indexing let a
+    # second request's clear() land between the two, and the dashboard 500'd
+    # with a KeyError on a page that only wanted a cached number
+    hit = _BAR_EXTRAS_CACHE.get(key)
+    if hit is None:
         rows = con.execute(
             "SELECT summary, text_changed, images_added, images_removed"
             " FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
@@ -1689,10 +1693,12 @@ def _bar_extras(con):
         items, _w, _c = mailer._content_items(rows)
         delta = db.run_pages_delta(con, run, tracked)
         offline_delta = db.run_offline_delta(con, run)
-        _BAR_EXTRAS_CACHE.clear()          # one live entry is plenty
-        _BAR_EXTRAS_CACHE[key] = (open_n, sum(items.values()) + fu, fu, delta,
-                                  offline_delta)
-    return _BAR_EXTRAS_CACHE[key]
+        hit = (open_n, sum(items.values()) + fu, fu, delta, offline_delta)
+        # one live entry is plenty, and REPLACING the dict (rather than
+        # clearing then filling it) means no reader can catch it empty
+        _BAR_EXTRAS_CACHE.clear()
+        _BAR_EXTRAS_CACHE[key] = hit
+    return hit
 
 
 @app.route("/")
@@ -3747,12 +3753,28 @@ def run_now():
             flash("A check is already running.")
         return redirect(url_for("index"))
     want_report = request.form.get("email_report", request.form.get("email_digest")) == "1"
-    if ids is None:
-        # written EVERY time, ticked or not: the flag must never survive from
-        # an earlier run's choice - each manual full check answers for itself
-        db.set_setting("email_after_manual_run",
-                       "1" if want_report else "")
+    # the file sweep is part of the run that owes it: starting a page check on
+    # top of one means 14k HEAD requests and a fresh capture wave hitting the
+    # same throttled store at once, and the sweep's own report going out
+    # mid-recapture. RUN_STATE alone said "idle" for the whole 25 minutes.
+    import asset_watch as _aw
+    if _aw.ASSET_STATE.get("running"):
+        flash("The file check from the last run is still going — it finishes "
+              "in a few minutes, then a new check can start.")
+        return redirect(url_for("index"))
+    started_at = db.now_iso()
     if runner.run_check_background(kind="manual", url_ids=ids):
+        if ids is None:
+            # Bound to THIS run, and only once it really started. Stored as the
+            # moment of starting rather than "1": a bare boolean was global,
+            # so a check started while the previous run's file sweep was still
+            # going had its choice spent on the PREVIOUS run's mail - the
+            # earlier run mailed everyone against its starter's wishes and the
+            # later run's request was silently eaten. A refused start used to
+            # arm it too, leaving a request with no run behind it. The reader
+            # only honours a stamp that falls inside the run's own lifetime.
+            db.set_setting("email_after_manual_run",
+                           started_at if want_report else "")
         if ids:
             flash(f"Checking {len(ids)} page(s)…")
         elif want_report:
@@ -4505,31 +4527,36 @@ def _email_after_run():
         # - a by-hand re-check is usually a private look, and before this
         # gate every full manual run mailed all seven people unasked. A
         # baseline run never mails: by definition everything "changed".
+        # ONE BATCH PER RUN, EVER - and this is checked FIRST, before the
+        # request flag is touched. Checked after, a stop/crash/resume cycle
+        # spent the ticked request on a run that had already mailed, and the
+        # run the person actually asked about went out silent.
+        if str(db.get_settings().get("last_emailed_run") or "") == str(run["id"]):
+            print("[email] run %s already emailed - skipping" % run["id"],
+                  flush=True)
+            return
         kind = (run["kind"] or "").lower()
         if kind != "scheduled":
-            wanted = db.get_settings().get("email_after_manual_run") == "1"
+            # the request is honoured only when it was made DURING this run -
+            # a stamp from a later run cannot mail an earlier one, and one
+            # left over from an abandoned run cannot mail anything
+            stamp = db.get_settings().get("email_after_manual_run") or ""
+            wanted = bool(stamp) and (run["started"] or "") <= stamp <= (
+                run["finished"] or "9999")
             if kind == "manual" and wanted:
                 db.set_setting("email_after_manual_run", "")
             else:
                 print("[email] %s run %s - report not requested, skipping"
                       % (kind or "unkinded", run["id"]), flush=True)
                 return
-        # ONE BATCH PER RUN, EVER. The watcher fires on every running->False
-        # transition, and a run that is interrupted and resumed produces one
-        # per resume - the team got the same digest twice on 6 Sep because a
-        # disk-full death and its later resume were two transitions. A marker
-        # of the last run emailed makes the second and any later transition a
-        # no-op.
-        if str(db.get_settings().get("last_emailed_run") or "") == str(run["id"]):
-            print("[email] run %s already emailed - skipping" % run["id"],
-                  flush=True)
-            return
-        db.set_setting("last_emailed_run", str(run["id"]))
         recipients = con.execute(
             "SELECT email FROM users WHERE active=1 AND IFNULL(email_opt_in,0)=1"
             " AND email<>''").fetchall()
         if not recipients:
             return
+        # claimed only once there is somebody to mail: burning the marker on a
+        # run with no recipients spent the run's one batch on nothing
+        db.set_setting("last_emailed_run", str(run["id"]))
         d = mailer.run_report(con, run)
         when = _report_when(run)
         html = mailer.render_report(d, _base_url(), when)

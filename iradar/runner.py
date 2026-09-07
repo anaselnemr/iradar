@@ -1155,7 +1155,11 @@ def _run_check_inner(kind, url_ids, baseline=False):
     # chain - visible on the progress bar, finished before the mail - so this
     # only records that the sweep is due. Partial runs skip it (a 3-page poke
     # should not fire 14k HEAD requests), as does an early stop.
-    RUN_STATE["asset_check_due"] = bool(not url_ids and not stopped)
+    # OR, never plain assignment: a 3-page partial run finishing between a
+    # full run and its post-run chain used to erase the full run's owed sweep,
+    # and that week's file changes were never looked for at all
+    if not url_ids and not stopped:
+        RUN_STATE["asset_check_due"] = True
 
     RUN_STATE.update(changed=changed, errors=errors, last_finished=db.now_iso(),
                      message=f"stopped early - {ok + errors} of {len(urls)} captured"

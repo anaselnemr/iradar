@@ -641,7 +641,10 @@ _BAD = "#dc2626"
 
 
 def _esc(s):
-    return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
+    # `s or ""` turned the integer 0 into an empty string, so a quiet week
+    # shipped BLANK stat tiles where "0" belonged - only None and "" are empty
+    s = "" if s is None else str(s)
+    return (s.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 

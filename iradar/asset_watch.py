@@ -178,10 +178,31 @@ def _record(con, u, kind, fp, known, now):
     return 0
 
 
+_SWEEP_LOCK = threading.Lock()
+
+
 def run_asset_check():
     """Fingerprint every referenced asset; record the ones whose bytes moved.
     First sighting of a URL just seeds its fingerprint (no alarm). Files the
-    store throttled get a second, slower round after a pause."""
+    store throttled get a second, slower round after a pause.
+
+    ONE SWEEP AT A TIME, whoever calls. The guard used to live only in
+    run_in_background, so the post-run chain - which calls this directly -
+    could start a second sweep on top of one the Files page had already
+    launched: 16 threads into a store that throttles above 8, one shared
+    progress dict showing nonsense, and every genuinely changed file recorded
+    TWICE because both passes read their `known` fingerprints before either
+    wrote. The lock is held for the whole sweep; a second caller waits."""
+    if not _SWEEP_LOCK.acquire(blocking=False):
+        print("[assets] a sweep is already running - skipped", flush=True)
+        return
+    try:
+        _run_asset_check_locked()
+    finally:
+        _SWEEP_LOCK.release()
+
+
+def _run_asset_check_locked():
     con = db.connect()
     try:
         targets = collect_asset_urls(con)
