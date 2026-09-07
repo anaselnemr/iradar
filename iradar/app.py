@@ -4157,7 +4157,7 @@ def settings_view():
         for key in ("hour", "interval_days", "concurrency",
                     "keep_snapshots",
                     "visual_threshold", "height_threshold", "ignore_patterns",
-                    "ignore_image_patterns", "dam_search_url",
+                    "ignore_image_patterns", "dam_search_url", "pim_url",
                     "windchill_search_url", "aem_author_url",
                     *[k for k, _d in cmp.COPY_SETTING_KEYS]):
             if key in request.form:

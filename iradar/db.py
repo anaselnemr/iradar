@@ -63,6 +63,9 @@ DEFAULT_SETTINGS = {
     # backend search pages: '{q}' marks where the asset name goes. Editable
     # in Settings -> Backends so a changed link is a ten-second fix.
     "dam_search_url": "",
+    # Part and evaluation-board pages are generated from PIM, not authored in
+    # AEM - so their badge points here instead of at the author editor.
+    "pim_url": "",
     "windchill_search_url": "",
     # AEM author editor: '{path}' = the page's public path (after /en), the
     # editor wants a trailing .html - all of it editable in Settings

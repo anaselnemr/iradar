@@ -1388,3 +1388,54 @@ def test_an_interval_schedule_is_expressible_and_bounded():
     finally:
         for k, v in keep.items():
             db.set_setting(k, v if v is not None else "")
+
+
+def test_the_people_page_keeps_every_action_behind_its_row_menu():
+    """The list was twenty-one permanent buttons for three rare actions, with
+    the destructive one no quieter than the rest. They moved into a per-row
+    menu - so every action must still be reachable, and a person must still be
+    unable to suspend or delete themselves."""
+    import auth
+    con = db.connect()
+    row = con.execute("SELECT id FROM users WHERE email='second@example.com'").fetchone()
+    con.close()
+    if not row:
+        auth.create_user("second@example.com", "Second", "editor")
+    body = _ok("/users").data.decode("utf-8", "replace")
+    urls = set(_re.findall(r'action="(/users[^"]*)"', body))
+    assert "/users/add" in urls, "no way to add anyone"
+    for verb in ("role", "reset", "active", "delete"):
+        assert any(u.endswith("/" + verb) for u in urls), \
+            "the %s action vanished with the buttons" % verb
+    # you cannot suspend or delete yourself - only reset your own password
+    assert "/users/%d/delete" % _uid not in urls, "self-delete is offered"
+    assert "/users/%d/active" % _uid not in urls, "self-suspend is offered"
+    assert "/users/%d/reset" % _uid in urls, "cannot reset your own password"
+    # the destructive one is the only coloured item in the menu
+    assert "u-item danger" in body, "delete is not visually demoted"
+    # adding is folded away: the list is the page
+    assert "u-addbtn" in body and "u-addpanel" in body, \
+        "the add form should sit behind a button, not own the page"
+
+
+def test_the_pim_address_makes_the_part_badge_open_pim():
+    """Part and evaluation-board pages are generated from PIM, not authored in
+    AEM, so their badge was permanently greyed out. With an address set it
+    opens PIM instead."""
+    import app as appmod
+    old = db.get_settings().get("pim_url")
+    con = db.connect()
+    con.execute("UPDATE urls SET ptype='Part' WHERE id=1")
+    con.commit(); con.close()
+    try:
+        db.set_setting("aem_author_url", "https://author.example.com/x{path}.html")
+        db.set_setting("pim_url", "")
+        body = _ok("/").data.decode("utf-8", "replace")
+        assert "aem-off" in body, "with no PIM address the badge stays greyed"
+        db.set_setting("pim_url", "https://pim.example.com/webui/PIM_UI#screen=homepage")
+        body = _ok("/").data.decode("utf-8", "replace")
+        assert "https://pim.example.com/webui/PIM_UI#screen=homepage" in body, \
+            "the PIM badge does not carry the configured address"
+        assert 'name="pim_url"' in _ok("/settings").data.decode("utf-8", "replace")
+    finally:
+        db.set_setting("pim_url", old or "")

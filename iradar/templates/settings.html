@@ -278,6 +278,18 @@
           </div>
         </div>
         <div class="setrow setrow-wide">
+          <div class="setrow-t">
+            <label for="f-pim">PIM</label>
+            <p>Part and evaluation-board pages are generated from PIM, not
+               authored in AEM — set this and their <b>PIM</b> badge opens it
+               instead of sitting greyed out.</p>
+          </div>
+          <div class="setrow-c">
+            <input type="text" name="pim_url" id="f-pim" value="{{ s.pim_url }}"
+                   placeholder="https://infineon-prod.mdm.stibosystems.com/webui/PIM_UI#contextID=English_Context&workspaceID=Main&screen=homepage">
+          </div>
+        </div>
+        <div class="setrow setrow-wide">
           <div class="setrow-t"><label for="f-wc">Windchill search URL</label></div>
           <div class="setrow-c">
             <input type="text" name="windchill_search_url" id="f-wc" value="{{ s.windchill_search_url }}"

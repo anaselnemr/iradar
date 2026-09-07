@@ -2,208 +2,270 @@
 {% block title %}People — iRadar{% endblock %}
 {% block content %}
 {#- Admin-only: the route is in ADMIN_ONLY_VIEWS and every POST here is
-    admin-only by default, so an editor cannot reach this page or its actions. -#}
-<style>
-  .u-wrap { max-width: 880px; margin: 0 auto; }
+    admin-only by default, so an editor cannot reach this page or its actions.
 
-  /* One row of fields with the button on the end. The label sits in the grid
-     cell with its input rather than floating above the row, so the three
-     labels share a baseline and the three controls share theirs - which is
-     what stops the row looking assembled out of mismatched parts. */
+    THE LIST IS THE PAGE. Adding someone happens a handful of times in the life
+    of an install; reading who has access happens every time anyone opens this.
+    The form used to own the top of the screen permanently for the rarer job,
+    so it folds away behind a button and the people come first.
+
+    And the three actions per person - reset, suspend, delete - are all rare,
+    which is exactly what a row of permanent buttons is bad at: twenty-one
+    buttons shouting at once, the destructive one no quieter than the others.
+    They live in a per-row menu, so a row is a PERSON rather than a toolbar. -#}
+<div class="u-wrap">
+
+  <section class="usec">
+    <div class="usec-h">
+      <div>
+        <h2>People <span class="u-count">{{ users|length }}</span></h2>
+        <p><b>Editors</b> review updates and edit page details. <b>Admins</b> can also manage people, settings, the page list and runs.</p>
+      </div>
+      <details class="u-addwrap" {% if error %}open{% endif %}>
+        <summary class="u-addbtn">Add someone</summary>
+        <div class="u-addpanel">
+          <form method="post" action="{{ url_for('users_add') }}" class="u-add">
+            <div>
+              <label for="ue">Email</label>
+              <input id="ue" type="email" name="email" required
+                     placeholder="name@infineon.com">
+            </div>
+            <div>
+              <label for="un">Name <span>(optional)</span></label>
+              <input id="un" type="text" name="name" placeholder="Full name">
+            </div>
+            <div>
+              <label for="ur">Role</label>
+              <select id="ur" name="role">
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="u-go"><button type="submit">Add</button></div>
+          </form>
+          <p class="u-seed">They start on <b>{{ seed_password }}</b> and choose
+            their own password the first time they sign in.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="u-head">
+      <span>Person</span>
+      <span>Role</span>
+      <span class="u-when-h" title="When they last used iRadar — not when they last typed their password, which a long session never updates">Last active</span>
+      <span></span>
+    </div>
+
+    {% for u in users %}
+    <div class="u-row {{ 'u-off' if not u['active'] }}">
+      <div class="u-who">
+        <span class="av u-av {{ 'av-off' if not u['active'] }}"
+              style="--avatar:{{ u|avatar }}">{{ u|initials }}</span>
+        <div class="u-id">
+          {#- name alone on its line: a badge beside it used to push it around
+              and wrap long names onto two rows -#}
+          <div class="u-name">{{ u['name'] or u['email'].split('@')[0] }}</div>
+          <div class="u-sub">
+            <span class="u-mail">{{ u['email'] }}</span>
+            {% if u['id'] == me['id'] %}<span class="u-me">you</span>{% endif %}
+            {% if not u['active'] %}<span class="u-tag u-tag-off"
+                title="Cannot sign in. Nothing they wrote is deleted.">suspended</span>{% endif %}
+            {% if not u['last_login'] %}<span class="u-tag"
+                title="Has never signed in, so is still on the shared starting password.">never signed in</span>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="u-role">
+        <form method="post" action="{{ url_for('users_role', user_id=u['id']) }}"
+              class="roleform">
+          <select name="role" onchange="this.form.submit()"
+                  aria-label="Role for {{ u['email'] }}">
+            <option value="editor" {% if u['role']=='editor' %}selected{% endif %}>Editor</option>
+            <option value="admin"  {% if u['role']=='admin'  %}selected{% endif %}>Admin</option>
+          </select>
+        </form>
+      </div>
+
+      {#- last_seen, not last_login: a session lasts days, so somebody can open
+          the dashboard every morning for a week and still show a week-old
+          "last sign-in". Falls back for rows written before last_seen. -#}
+      {% set seen = u['last_seen'] or u['last_login'] %}
+      <div class="u-when">{{ seen|localtime if seen else '—' }}</div>
+
+      <div class="u-acts">
+        <details class="u-menu">
+          <summary title="Actions for {{ u['email'] }}" aria-label="Actions">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>
+          </summary>
+          <div class="u-menupanel">
+            <form method="post" action="{{ url_for('users_reset', user_id=u['id']) }}"
+                  onsubmit="return confirm('Put this account back on {{ seed_password }}? They will choose a new password at their next sign-in.')">
+              <button type="submit" class="u-item"
+                      title="Put them back on the starting password, {{ seed_password }}. Use when someone is locked out.">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+                Reset password
+              </button>
+            </form>
+            {% if u['id'] != me['id'] %}
+            <form method="post" action="{{ url_for('users_active', user_id=u['id']) }}">
+              <input type="hidden" name="active" value="{{ 0 if u['active'] else 1 }}">
+              <button type="submit" class="u-item"
+                      title="{{ 'Let them sign in again.' if not u['active'] else 'Block them from signing in, without deleting anything. Their notes and decisions stay, and it can be undone.' }}">
+                {% if u['active'] %}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+                Suspend
+                {% else %}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                Restore
+                {% endif %}
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('users_delete', user_id=u['id']) }}"
+                  onsubmit="return confirm('Delete {{ u['email'] }} for good?\n\nSuspend keeps their history and can be undone. Deleting cannot.')">
+              <button type="submit" class="u-item danger"
+                      title="Delete the account permanently. Suspend instead if you might want them back.">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                Delete
+              </button>
+            </form>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+</div>
+
+<style>
+  .u-wrap { max-width: 900px; margin: 0 auto; }
+
+  /* the section is the card; the rows inside are hairlines, same as Settings */
+  .usec { background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; overflow: visible; }
+  .usec-h { display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 20px; padding: 16px 20px 14px; background: var(--hover);
+            border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; }
+  .usec-h h2 { margin: 0; font-size: 14.5px; font-weight: 700;
+               letter-spacing: -.01em; }
+  .usec-h p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px;
+              line-height: 1.55; }
+  .u-count { display: inline-block; margin-left: 4px; padding: 1px 8px;
+             border-radius: 999px; background: var(--line); color: var(--muted);
+             font-size: 11.5px; font-weight: 700; vertical-align: 2px; }
+
+  /* ---- add someone: folded away until wanted --------------------------- */
+  .u-addwrap { position: relative; flex-shrink: 0; }
+  .u-addbtn { list-style: none; cursor: pointer; white-space: nowrap;
+              padding: 8px 15px; border-radius: 8px; font-size: 13px;
+              font-weight: 600; color: #fff; background: var(--accent);
+              border: 1px solid var(--accent); }
+  .u-addbtn::-webkit-details-marker { display: none; }
+  .u-addbtn::before { content: "+ "; }
+  .u-addwrap[open] .u-addbtn::before { content: "× "; }
+  .u-addwrap[open] .u-addbtn { background: var(--card); color: var(--muted);
+                               border-color: var(--line); }
+  .u-addpanel { position: absolute; z-index: 30; right: 0; top: calc(100% + 8px);
+                width: min(660px, 86vw); padding: 16px;
+                background: var(--panel); border: 1px solid var(--line);
+                border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.20); }
   .u-add { display: grid; grid-template-columns: 1.7fr 1.3fr auto auto;
            gap: 12px; align-items: end; }
-  @media (max-width: 760px) { .u-add { grid-template-columns: 1fr 1fr; }
-                              .u-add .u-go { grid-column: 1 / -1; } }
-  @media (max-width: 460px) { .u-add { grid-template-columns: 1fr; }
-                              .u-add .u-go button { width: 100%; } }
-  @media (max-width: 620px) {
-    table.u-list, table.u-list tbody { display: block; width: 100%; }
-    table.u-list thead { display: none; }
-    table.u-list tr { display: flex; flex-wrap: wrap; align-items: center;
-                      gap: 8px 12px; padding: 13px 0;
-                      border-bottom: 1px solid var(--line); }
-    table.u-list tr:last-child { border-bottom: 0; }
-    table.u-list td { display: block; padding: 0; border: 0; width: auto; }
-    /* who they are takes the whole first line */
-    table.u-list td:first-child { flex: 1 1 100%; }
-    .roleform select { width: auto; }
-    .u-acts { justify-content: flex-start; }
-    .u-acts button { padding: 8px 13px; font-size: 13px; }
-  }
   .u-add label { display: block; font-size: 12px; font-weight: 600;
-                 color: var(--muted); margin-bottom: 6px;
-                 letter-spacing: .01em; }
+                 color: var(--muted); margin-bottom: 6px; }
   .u-add label span { font-weight: 400; opacity: .75; }
-  /* A select renders 2px taller than a text input and a button 1px shorter,
-     which is enough to knock their labels off the shared baseline. Pinning one
-     height across all three is the only thing that actually lines the row up. */
+  /* a select renders 2px taller than a text input and a button 1px shorter,
+     which is enough to knock their labels off the shared baseline */
   .u-add input, .u-add select, .u-add button { height: 39px; }
-  .u-add select { min-width: 118px; }
+  .u-add select { min-width: 112px; }
   .u-add .u-go button { padding: 0 20px; white-space: nowrap; }
+  .u-seed { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; }
 
-  /* Fixed column widths. Left to itself the browser gave the actions whatever
-     was spare, so the buttons wrapped onto a second line and every row was a
-     different height. The name column takes the slack instead. */
-  table.u-list { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  table.u-list th { text-align: left; font-size: 11.5px; color: var(--muted);
-                    font-weight: 600; letter-spacing: .04em;
-                    text-transform: uppercase; padding: 0 10px 10px;
-                    border-bottom: 1px solid var(--line); }
-  table.u-list td { padding: 12px 10px; border-bottom: 1px solid var(--line);
-                    vertical-align: middle; }
-  table.u-list tr:last-child td { border-bottom: 0; }
-  table.u-list tbody tr:hover { background: var(--hover); }
-  .col-role { width: 118px; }
-  .col-when { width: 118px; }
-  .col-acts { width: 236px; }
-  @media (max-width: 760px) { .col-when, table.u-list td.u-when { display: none; } }
+  /* ---- the list -------------------------------------------------------- */
+  .u-head, .u-row { display: grid;
+                    grid-template-columns: 1fr 118px 116px 44px;
+                    gap: 16px; align-items: center; padding: 0 20px; }
+  .u-head { padding-top: 11px; padding-bottom: 11px; font-size: 11px;
+            font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+            color: var(--muted); border-bottom: 1px solid var(--line); }
+  .u-row { padding-top: 11px; padding-bottom: 11px;
+           border-bottom: 1px solid var(--line); }
+  .u-row:last-child { border-bottom: 0; }
+  .u-row:hover { background: var(--hover); }
+  .u-off { opacity: .62; }
 
-  .u-acts { display: flex; gap: 6px; justify-content: flex-end;
-            flex-wrap: nowrap; }
-  .u-acts form { display: inline; margin: 0; }
-  .u-acts button { white-space: nowrap; padding: 4px 9px; font-size: 12px; }
-
-  .u-av { width: 34px; height: 34px; font-size: 12.5px; }
   .u-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .u-av { width: 34px; height: 34px; font-size: 12.5px; flex-shrink: 0; }
   .u-id { min-width: 0; }
-  /* name on its own line so a badge can never push it around or wrap it */
   .u-name { font-weight: 600; font-size: 13.5px; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis; }
   .u-sub { display: flex; align-items: center; gap: 7px; margin-top: 2px;
            min-width: 0; }
   .u-mail { color: var(--muted); font-size: 12px; overflow: hidden;
             text-overflow: ellipsis; white-space: nowrap; }
-  .u-off .u-name, .u-off .u-mail { opacity: .5; }
-  .u-me { font-size: 10px; font-weight: 700; color: var(--accent);
-          background: rgba(94,106,210,.14); padding: 1px 6px;
-          border-radius: 999px; text-transform: uppercase;
-          letter-spacing: .05em; flex-shrink: 0; }
-  .u-tag { font-size: 10px; font-weight: 600; padding: 1px 6px;
-           border-radius: 999px; white-space: nowrap; flex-shrink: 0;
-           background: rgba(234,88,12,.13); color: var(--warn); }
-  .u-tag-off { background: rgba(220,38,38,.13); color: var(--err); }
+  .u-me, .u-tag { flex-shrink: 0; font-size: 10px; font-weight: 700;
+                  text-transform: uppercase; letter-spacing: .04em;
+                  padding: 1px 6px; border-radius: 999px; }
+  .u-me { background: rgba(94,106,210,.16); color: var(--accent); }
+  .u-tag { background: rgba(110,109,122,.15); color: var(--muted); }
+  .u-tag-off { background: rgba(234,88,12,.15); color: var(--warn); }
+  .u-role select { width: 100%; }
   .roleform { margin: 0; }
-  .roleform select { padding: 5px 26px 5px 9px; font-size: 12.5px;
-                     width: 100%; }
-  .u-when { font-size: 12.5px; color: var(--muted);
+  .u-when { color: var(--muted); font-size: 12.5px;
             font-variant-numeric: tabular-nums; }
+
+  /* ---- per-row actions ------------------------------------------------- */
+  .u-acts { display: flex; justify-content: flex-end; }
+  .u-menu { position: relative; }
+  .u-menu > summary { list-style: none; cursor: pointer; width: 30px;
+                      height: 30px; display: grid; place-items: center;
+                      border-radius: 8px; color: var(--muted); }
+  .u-menu > summary::-webkit-details-marker { display: none; }
+  .u-menu > summary:hover { background: var(--line); color: var(--ink); }
+  .u-menu > summary svg { width: 17px; height: 17px; }
+  .u-menupanel { position: absolute; z-index: 30; right: 0;
+                 top: calc(100% + 6px); min-width: 194px; padding: 5px;
+                 background: var(--panel); border: 1px solid var(--line);
+                 border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.22); }
+  .u-menupanel form { margin: 0; }
+  .u-item { display: flex; align-items: center; gap: 9px; width: 100%;
+            padding: 8px 10px; border: 0; border-radius: 7px; background: none;
+            color: var(--ink); font-size: 13px; font-family: inherit;
+            text-align: left; cursor: pointer; }
+  .u-item:hover { background: var(--hover); filter: none; }
+  .u-item svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--muted); }
+  /* the destructive one is the only coloured thing in the menu */
+  .u-item.danger, .u-item.danger svg { color: var(--err); }
+  .u-item.danger:hover { background: rgba(220,38,38,.10); }
+
+  @media (max-width: 760px) {
+    .u-head, .u-row { grid-template-columns: 1fr 108px 44px; }
+    .u-head .u-when-h, .u-row .u-when { display: none; }
+    .u-add { grid-template-columns: 1fr 1fr; }
+    .u-add .u-go { grid-column: 1 / -1; }
+    .u-add .u-go button { width: 100%; }
+  }
+  @media (max-width: 520px) {
+    .usec-h { flex-direction: column; }
+    .u-addpanel { width: min(420px, 90vw); }
+    .u-add { grid-template-columns: 1fr; }
+    .u-head, .u-row { grid-template-columns: 1fr 44px; padding: 11px 15px; }
+    .u-head span:nth-child(2), .u-row .u-role { display: none; }
+  }
 </style>
-
-<div class="u-wrap">
-  <div class="card">
-    <h3 style="margin:0 0 4px">Add someone</h3>
-    <p class="muted" style="margin:0 0 16px; font-size:13px">
-      They start on <b>{{ seed_password }}</b> and must choose their own password
-      the first time they sign in.
-    </p>
-    <form method="post" action="{{ url_for('users_add') }}" class="u-add">
-      <div>
-        <label for="ue">Email</label>
-        <input id="ue" type="email" name="email" required
-               placeholder="name@infineon.com">
-      </div>
-      <div>
-        <label for="un">Name <span>(optional)</span></label>
-        <input id="un" type="text" name="name" placeholder="Full name">
-      </div>
-      <div>
-        <label for="ur">Role</label>
-        <select id="ur" name="role">
-          <option value="editor">Editor</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="u-go"><button type="submit">Add</button></div>
-    </form>
-    <p class="muted" style="margin:14px 0 0; font-size:12.5px; line-height:1.5">
-      <b>Editors</b> review updates, accept or reject them, and edit page details.
-      <b>Admins</b> can also manage people, settings, the page list and capture runs.
-    </p>
-  </div>
-
-  <div class="card" style="margin-top:16px">
-    <h3 style="margin:0 0 12px">People <span class="muted"
-        style="font-weight:400; font-size:13px">({{ users|length }})</span></h3>
-    <table class="u-list">
-      <thead>
-        <tr><th>Person</th><th class="col-role">Role</th>
-            <th class="col-when" title="When they last used iRadar — not when they last typed their password, which a long session never updates">Last active</th><th class="col-acts"></th></tr>
-      </thead>
-      <tbody>
-      {% for u in users %}
-        <tr class="{{ 'u-off' if not u['active'] }}">
-          <td>
-            <div class="u-who">
-              <span class="av u-av {{ 'av-off' if not u['active'] }}"
-                    style="--avatar:{{ u|avatar }}">{{ u|initials }}</span>
-              <div class="u-id">
-                {#- name alone on its line: a badge beside it used to push it
-                    around and wrap long names onto two rows -#}
-                <div class="u-name">{{ u['name'] or u['email'].split('@')[0] }}</div>
-                <div class="u-sub">
-                  <span class="u-mail">{{ u['email'] }}</span>
-                  {% if u['id'] == me['id'] %}<span class="u-me">you</span>{% endif %}
-                  {% if not u['active'] %}<span class="u-tag u-tag-off"
-                      title="Cannot sign in. Nothing they wrote is deleted.">suspended</span>{% endif %}
-                  {#- one badge, not two. It used to fire on must_change_pw
-                      while reading "not signed in yet", which is a different
-                      fact and was shown beside the time they signed in. The
-                      condition is the plain one now; and whether they are
-                      still on the starting password is a second badge that
-                      crowded the row without telling anyone anything the
-                      first one did not imply. -#}
-                  {% if not u['last_login'] %}<span class="u-tag"
-                      title="Has never signed in, so is still on the shared starting password.">never signed in</span>{% endif %}
-                </div>
-              </div>
-            </div>
-          </td>
-          <td>
-            <form method="post" action="{{ url_for('users_role', user_id=u['id']) }}"
-                  class="roleform">
-              <select name="role" onchange="this.form.submit()">
-                <option value="editor" {% if u['role']=='editor' %}selected{% endif %}>Editor</option>
-                <option value="admin"  {% if u['role']=='admin'  %}selected{% endif %}>Admin</option>
-              </select>
-            </form>
-          </td>
-          <td class="u-when">
-            {#- last_seen, not last_login: a session lasts days, so somebody
-                can open the dashboard every morning for a week and still show
-                a week-old "last sign-in". Falls back for rows written before
-                last_seen existed. -#}
-            {% set seen = u['last_seen'] or u['last_login'] %}
-            {{ seen|localtime if seen else '—' }}
-          </td>
-          <td>
-            {#- short labels, each with a title that says what it really does:
-                three full sentences wrapped onto a second line and made every
-                row a different height -#}
-            <div class="u-acts">
-              <form method="post" action="{{ url_for('users_reset', user_id=u['id']) }}"
-                    onsubmit="return confirm('Put this account back on {{ seed_password }}? They will choose a new password at their next sign-in.')">
-                <button type="submit" class="btn-ghost btn-sm"
-                        title="Put them back on the starting password, {{ seed_password }}. Use when someone is locked out.">Reset</button>
-              </form>
-              {% if u['id'] != me['id'] %}
-              <form method="post" action="{{ url_for('users_active', user_id=u['id']) }}">
-                <input type="hidden" name="active" value="{{ 0 if u['active'] else 1 }}">
-                <button type="submit" class="btn-ghost btn-sm"
-                        title="{{ 'Let them sign in again.' if not u['active'] else 'Block them from signing in, without deleting anything. Their notes and decisions stay, and it can be undone. Use when someone leaves the team.' }}">
-                  {{ 'Restore' if not u['active'] else 'Suspend' }}</button>
-              </form>
-              <form method="post" action="{{ url_for('users_delete', user_id=u['id']) }}"
-                    onsubmit="return confirm('Delete {{ u['email'] }} for good?\n\nSuspend keeps their history and can be undone. Deleting cannot.')">
-                <button type="submit" class="btn-reject btn-sm"
-                        title="Delete the account permanently. Suspend instead if you might want them back.">Delete</button>
-              </form>
-              {% endif %}
-            </div>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+<script>
+  // one menu at a time, and Escape closes it - a page of details elements
+  // otherwise leaves a trail of open panels behind you
+  document.addEventListener("click", function (e) {
+    document.querySelectorAll(".u-menu[open], .u-addwrap[open]").forEach(function (d) {
+      if (!d.contains(e.target)) d.removeAttribute("open");
+    });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape")
+      document.querySelectorAll(".u-menu[open], .u-addwrap[open]")
+        .forEach(function (d) { d.removeAttribute("open"); });
+  });
+</script>
 {% endblock %}

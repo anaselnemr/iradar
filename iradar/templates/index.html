@@ -611,7 +611,7 @@
         </div>
         <div class="uline">
         <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
-        {% if settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %}<span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open">PIM</span>{% elif aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
+        {% if settings.aem_author_url %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if u.ptype == 'Part' %}{% if settings.pim_url %}<a class="badge b-sys" href="{{ settings.pim_url }}" target="_blank" rel="noopener" title="Part and evaluation-board pages are generated from PIM product data, not authored in AEM — open PIM">PIM</a>{% else %}<span class="badge b-sys aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open. Add the PIM address in Settings to make this open it.">PIM</span>{% endif %}{% elif aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}
         </div>
       </td>
       <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
