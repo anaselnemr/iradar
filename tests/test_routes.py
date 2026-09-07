@@ -1036,3 +1036,38 @@ def test_report_charts_keep_inline_email_images_and_legacy_urls_working():
     assert len(attachments) == 2
     assert 'src="cid:chart1"' in converted and 'src="cid:chart2"' in converted
     assert "http" not in converted
+
+
+def test_the_preview_cache_is_capped_oldest_first():
+    """The thumbnail cache only dropped orphans, so it grew with the catalogue
+    - 1.1GB in a day on a 4.6GB volume, after a full disk had already killed a
+    run. Capped now, evicting least-recently-used."""
+    import app as appmod
+    import os
+    import tempfile
+    import time as _t
+    from pathlib import Path
+    real_dir = db.DATA_DIR
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "previews").mkdir()
+    try:
+        db.DATA_DIR = tmp
+        cache = tmp / "previews"
+        now = _t.time()
+        for i in range(10):
+            f = cache / ("f%d.png" % i)
+            f.write_bytes(b"x" * 1000)
+            os.utime(f, (now - (10 - i) * 3600, now))   # f0 oldest
+        appmod._cap_preview_cache(limit=5000)
+        left = sorted(p.name for p in cache.glob("*.png"))
+        assert sum(p.stat().st_size for p in cache.glob("*.png")) <= 5000, left
+        assert "f9.png" in left, "the most recently used preview was evicted"
+        assert "f0.png" not in left, "the oldest preview survived the cap"
+        # under the cap it must not touch anything
+        before = sorted(p.name for p in cache.glob("*.png"))
+        appmod._cap_preview_cache(limit=10 ** 9)
+        assert sorted(p.name for p in cache.glob("*.png")) == before
+    finally:
+        db.DATA_DIR = real_dir
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)

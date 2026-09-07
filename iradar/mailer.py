@@ -467,17 +467,24 @@ def _file_types(con, started):
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
-def run_report(con, run):
+def run_report(con, run, since=None):
     """The facts worth putting in front of a person after a check.
 
     Not just the four counters - the reviewer already sees those on the bar.
     What a report is for is the SHAPE of the week: how much of it is losses
     (the expensive kind), what the biggest changes are by name, what came in
-    new, and what is quietly wrong (ownership, errors). Everything is scoped
-    to the changes THIS run opened - ts on or after the run started - so a
-    resumed or re-run week does not re-announce last week's queue.
+    new, and what is quietly wrong (ownership, errors).
+
+    `since` is where the reported window OPENS, defaulting to this run's own
+    start. The caller passes the last REPORTED run's start instead, because
+    scoping to this run alone left a hole: a manual check that found changes
+    but was not asked to mail them opened changes that the next weekly report
+    - scoped to its own later start - could never mention. Those pages sat in
+    the review queue while every email said the week was quiet. Reviewed
+    changes are still excluded, so a wider window cannot re-announce work
+    somebody has already dealt with.
     """
-    started = run["started"]
+    started = since or run["started"]
     d = {"run": run, "started": started}
 
     ch = con.execute(

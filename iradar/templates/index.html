@@ -1002,13 +1002,25 @@ async function poll() {
       const phase = phaseOf(s);
 
       // ---- stepper: where the run is, where it has been -------------------
+      // A step reads 'done' only if it actually RAN. Marking everything
+      // behind the current phase done claimed a partial run had reconfirmed
+      // and retried when neither pass happened - the stepper has to describe
+      // this run, not the shape of a typical one. The server says which
+      // passes ran (verify_ran / retry_ran); without them fall back to
+      // whether anything was ever held or errored.
+      const ranVerify = s.verify_ran != null ? s.verify_ran
+                        : !!(s.held || s.suspects);
+      const ranRetry  = s.retry_ran  != null ? s.retry_ran
+                        : !!s.errors;
+      const past = ph => ['capture', 'verify', 'retry', 'files'].indexOf(ph)
+                       < ['capture', 'verify', 'retry', 'files'].indexOf(phase);
       setStep('step-capture', phase === 'capture' ? 'on' : 'done');
       setStep('step-verify',  phase === 'verify' ? 'on'
-              : ((phase === 'retry' || phase === 'files') ? 'done'
-                 : ((s.held || s.suspects) ? '' : 'skip')));
+              : (past('verify') ? (ranVerify ? 'done' : 'skip') : ''));
       setStep('step-retry',   phase === 'retry' ? 'on'
-              : (phase === 'files' ? 'done' : 'skip'));
-      setStep('step-files',   phase === 'files' ? 'on' : '');
+              : (past('retry') ? (ranRetry ? 'done' : 'skip') : 'skip'));
+      setStep('step-files',   phase === 'files' ? 'on'
+              : (s.sweep_due === false ? 'skip' : ''));
       // the file sweep has no pause/resume - hide the run controls under it
       // the sweep has no pause or stop. Restored to inline-flex, not '': the
       // span declares that inline, so clearing it left the buttons stacked

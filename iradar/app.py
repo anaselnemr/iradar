@@ -3832,6 +3832,11 @@ def status():
                 "total": a.get("total", 0), "phase_done": a.get("done", 0),
                 "phase_total": a.get("total", 0),
                 "changed": a.get("changed", 0), "pages_total": 0,
+                # carried from the page run that owed this sweep: without
+                # them the stepper forgets which passes ran and repaints the
+                # finished phases the moment the sweep starts
+                "verify_ran": s.get("verify_ran"),
+                "retry_ran": s.get("retry_ran"), "sweep_due": True,
                 "message": a.get("message", "")})
     if s.get("running") and s.get("started"):
         # How many are actually committed to the database so far - counted
@@ -4394,6 +4399,7 @@ def _housekeeping(why):
     _sweep_hero_flags()        # a placeholder hero is not a real hero
     _refresh_item_index(why)   # substring search index, after the rewrites
     _prune_history()           # cap the archive: N captures per page, no more
+    _cap_preview_cache()       # the document thumbnails are not allowed to grow forever
     try:
         _AGG_CACHE.pop("generic_images", None)
         n = len(_generic_images())
@@ -4401,6 +4407,51 @@ def _housekeeping(why):
               f" ({n} site-wide images)", flush=True)
     except Exception as e:
         print(f"[housekeeping] {why}: {e}", flush=True)
+
+
+PREVIEW_CACHE_CAP = 400 * 1024 ** 2        # 400 MB
+
+
+def _cap_preview_cache(limit=PREVIEW_CACHE_CAP):
+    """Hold the document-thumbnail cache under a ceiling, oldest first.
+
+    The cache only ever dropped ORPHANS - previews whose document had moved on
+    - so its floor was "one image per document in the corpus" and it grew with
+    the catalogue: cleared to nothing on 6 Sep, it was back to 1.1 GB inside a
+    day and helped push a 4.6 GB volume to 94%, having already killed one run
+    outright when the disk hit 100%. Every file here is regenerable on demand,
+    so the only real cost of evicting one is re-rendering it if somebody asks.
+    Least-recently-used goes first, which keeps whatever people actually open.
+    """
+    try:
+        cache = db.DATA_DIR / "previews"
+        if not cache.exists():
+            return
+        files = []
+        for f in cache.glob("*.*"):
+            try:
+                st = f.stat()
+                files.append((st.st_atime, st.st_size, f))
+            except OSError:
+                continue
+        total = sum(f[1] for f in files)
+        if total <= limit:
+            return
+        files.sort()                        # oldest access first
+        freed = 0
+        for _atime, size, f in files:
+            if total - freed <= limit:
+                break
+            try:
+                f.unlink()
+                freed += size
+            except OSError:
+                pass
+        print("[housekeeping] preview cache %.0f MB -> %.0f MB (freed %.0f MB)"
+              % (total / 1024 ** 2, (total - freed) / 1024 ** 2,
+                 freed / 1024 ** 2), flush=True)
+    except Exception as e:
+        print("[housekeeping] preview cap skipped: %s" % e, flush=True)
 
 
 def _prune_history():
@@ -4554,10 +4605,19 @@ def _email_after_run():
             " AND email<>''").fetchall()
         if not recipients:
             return
+        # READ THE PREVIOUS MARKER FIRST - it is overwritten a line below, and
+        # reading it after would only ever hand back this run's own start.
+        # The window opens where the last REPORTED run opened, not where this
+        # one did: a manual check nobody asked to mail still opens changes,
+        # and scoped to this run alone they would never appear in any report.
+        prev = con.execute(
+            "SELECT started FROM runs WHERE id=?",
+            (db.get_settings().get("last_emailed_run") or -1,)).fetchone()
+        since = prev["started"] if prev else None
         # claimed only once there is somebody to mail: burning the marker on a
         # run with no recipients spent the run's one batch on nothing
         db.set_setting("last_emailed_run", str(run["id"]))
-        d = mailer.run_report(con, run)
+        d = mailer.run_report(con, run, since=since)
         when = _report_when(run)
         html = mailer.render_report(d, _base_url(), when)
         subj = "iRadar report — %s" % (

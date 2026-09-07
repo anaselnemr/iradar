@@ -743,6 +743,19 @@ def _run_check_inner(kind, url_ids, baseline=False):
         # in normal mode would compare against old-method captures
         if (resumable["kind"] or "") == "baseline":
             baseline = True
+        # THE WEEKLY CHECK KEEPS ITS NAME EVEN WHEN IT ADOPTS SOMEONE ELSE'S
+        # ROW. The scheduler resuming an abandoned manual run inherited the
+        # row's kind, and the report gate mails only a 'scheduled' run - so
+        # the week's report would have gone out to nobody, silently, with
+        # nothing in any log saying why. The work being done IS the weekly
+        # check; the row is relabelled to match. A baseline row is left alone:
+        # it is not a comparison run and must never be mailed.
+        elif kind == "scheduled" and (resumable["kind"] or "") != "scheduled":
+            con.execute("UPDATE runs SET kind='scheduled' WHERE id=?", (run_id,))
+            con.commit()
+            print("[resume] adopted the %s run %s as this week's scheduled"
+                  " check" % (resumable["kind"] or "unkinded", run_id),
+                  flush=True)
         suspects, requeue = _rebuild_suspects(con, run_id)
         keep_pending = {s["new1_id"] for s in suspects}
         # THE RETRY DEBT SURVIVES THE RESTART. A page that fails its first
@@ -871,6 +884,10 @@ def _run_check_inner(kind, url_ids, baseline=False):
                      # the runner is the authority on WHERE the run is - the
                      # page renders these instead of guessing from messages
                      phase="capture", round=0, phase_total=pages_total,
+                     # the stepper says 'done' only for a pass that RAN;
+                     # these start false and each pass stamps its own
+                     verify_ran=False, retry_ran=False,
+                     sweep_due=bool(not url_ids),
                      phase_done=already, held=len(suspects),
                      pages_total=max(pages_total, len(urls) + len(suspects)))
     if not urls and not suspects:
@@ -1023,7 +1040,7 @@ def _run_check_inner(kind, url_ids, baseline=False):
         retry_label = f"{ts_label}-retry{rnd}"
         retry_urls, transient = transient, []
         RUN_STATE["total"] += len(retry_urls)
-        RUN_STATE.update(phase="retry", round=rnd,
+        RUN_STATE.update(phase="retry", round=rnd, retry_ran=True,
                          phase_total=len(retry_urls), phase_done=0)
         RUN_STATE["message"] = (f"retrying {len(retry_urls)} blocked page(s), "
                                 f"round {rnd} of 2…")
@@ -1743,6 +1760,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
         RUN_STATE["total"] += len(suspects)
     RUN_STATE["suspects"] = 0     # the debt is folded into total now
     RUN_STATE.update(phase=phase, phase_total=len(suspects), phase_done=0)
+    if phase == "verify":
+        RUN_STATE["verify_ran"] = True
     ts2 = ts_label + "-verify"
     vjobs = [(s["row"]["url"], str(_snapshot_dir(s["row"]["id"], ts2)))
              for s in suspects]
