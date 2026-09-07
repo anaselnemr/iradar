@@ -1150,3 +1150,41 @@ def test_the_pages_export_carries_a_picture_of_each_page():
     h = ws.row_dimensions[r0 + 1].height
     assert h and h > 18, \
         "row %s was not made tall enough for the picture (h=%s)" % (r0 + 1, h)
+
+
+def test_the_cron_trigger_needs_its_key_and_hides_otherwise():
+    """The weekly check is started from outside now, so the app may sleep.
+    The key is the whole authentication, and a wrong one must not even
+    confirm the endpoint exists."""
+    import app as appmod
+    old = os.environ.get("CRON_KEY")
+    started = []
+    real = appmod._scheduled_check
+    appmod._scheduled_check = lambda *a, **k: started.append(1)
+    try:
+        # unset: the feature is dark, not open
+        os.environ.pop("CRON_KEY", None)
+        assert _client.get("/cron/run").status_code == 404
+        os.environ["CRON_KEY"] = "a-long-random-cron-key-2026"
+        assert _client.get("/cron/run").status_code == 404, "no key got in"
+        assert _client.get("/cron/run?key=wrong").status_code == 404, \
+            "a wrong key got in"
+        assert started == [], "a check was started without the key"
+        r = _client.get("/cron/run?key=a-long-random-cron-key-2026")
+        assert r.status_code == 200, r.status_code
+        r2 = _client.get("/cron/run",
+                         headers={"X-Cron-Key": "a-long-random-cron-key-2026"})
+        assert r2.status_code == 200, "the header form must work too"
+        # POST is accepted without a CSRF token: a cron has no session
+        r3 = _client.post("/cron/run",
+                          headers={"X-Cron-Key": "a-long-random-cron-key-2026"})
+        assert r3.status_code == 200, "POST was blocked by CSRF"
+        import time as _t
+        _t.sleep(0.3)
+        assert len(started) == 3, "the check was not started: %s" % started
+    finally:
+        appmod._scheduled_check = real
+        if old is None:
+            os.environ.pop("CRON_KEY", None)
+        else:
+            os.environ["CRON_KEY"] = old

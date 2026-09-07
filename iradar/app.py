@@ -100,7 +100,7 @@ GUEST_MAY_POST = {"logout"}
 # admin-only page is a team-wide page; these are refused to anyone else.
 OWNER_ONLY_VIEWS = {"guests_page", "guests_delete", "guests_clear"}
 # Reachable without signing in.
-PUBLIC_ENDPOINTS = {"login", "static", "report_chart"}
+PUBLIC_ENDPOINTS = {"login", "static", "report_chart", "cron_run"}
 
 # --- the shared read-only link ---------------------------------------------
 # UNSET, WHICH IS THE DEFAULT AND WHAT EVERY EXISTING INSTALL HAS, means none
@@ -289,6 +289,12 @@ def _require_login():
     # CSRF first, and it covers sign-in too: the token is issued when the login
     # page renders, so a POST that never loaded the page is refused.
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        # The external cron carries its own secret and has no session to hold
+        # a CSRF token in - a machine calling a URL on a schedule is not a
+        # browser being tricked into anything, which is the only thing CSRF
+        # defends against. Its own key is checked in the view.
+        if ep == "cron_run":
+            return None
         sent = (request.form.get("_csrf")
                 or request.headers.get("X-CSRF-Token") or "")
         have = session.get("_csrf") or ""
@@ -850,6 +856,40 @@ def _scheduled_check(_retry=0):
     t = threading.Timer(900, _scheduled_check, kwargs={"_retry": _retry + 1})
     t.daemon = True
     t.start()
+
+
+@app.route("/cron/run", methods=["GET", "POST"])
+def cron_run():
+    """Start the weekly check from OUTSIDE the container.
+
+    The scheduler that fires this normally lives inside the app, which is fine
+    for a process that runs 24/7 and useless for one that is allowed to sleep:
+    a sleeping app fires nothing, and Sunday simply never happens. Measured on
+    6 Sep 2026, the container costs about $10.81 a month sitting idle against
+    roughly $3 of actual work - it does nine hours of checking a week and is
+    billed for all 168. So the app is left free to sleep and an external clock
+    (a GitHub Actions cron) wakes it with this request.
+
+    GET as well as POST on purpose: the wake-up is the request itself, and a
+    scheduler that can only manage a plain GET should still be able to drive
+    it. The key is the whole authentication, so it must be long and random.
+
+    This is deliberately a thin trigger - it hands straight to the same
+    _scheduled_check the internal cron calls, so the one-check-per-cycle
+    guard, the retry, and every log line behave identically no matter which
+    clock started the run. An unknown key gets 404 rather than 403: there is
+    no reason to confirm the endpoint exists to somebody guessing.
+    """
+    key = os.environ.get("CRON_KEY", "")
+    sent = (request.headers.get("X-Cron-Key")
+            or request.args.get("key", ""))
+    if not key or not secrets.compare_digest(sent, key):
+        abort(404)
+    threading.Thread(target=_scheduled_check, daemon=True).start()
+    print("[cron] external trigger accepted", flush=True)
+    return jsonify({"ok": True,
+                    "note": "weekly check triggered; the cycle guard decides"
+                            " whether it actually runs"})
 
 
 def next_run_text():

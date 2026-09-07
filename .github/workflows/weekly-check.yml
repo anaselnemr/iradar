@@ -1,0 +1,54 @@
+# The clock for iRadar's weekly check.
+#
+# The schedule used to live inside the app, which only works for a process
+# that runs all week. Measured on 6 Sep 2026, that idle time was about $10.81
+# of a ~$14 monthly bill for nine hours of actual work - so the container is
+# now allowed to SLEEP, and something outside it has to do the waking. That is
+# this file. The request both wakes the app and starts the check.
+#
+# Setup (once, in the repo's Settings -> Secrets and variables -> Actions):
+#   IRADAR_URL       https://iradar.net
+#   IRADAR_CRON_KEY  the same value as the CRON_KEY variable on Railway
+#
+# GitHub runs scheduled workflows in UTC and may start them a few minutes
+# late; the check does not care about the minute. 01:00 UTC is 03:00 in
+# Berlin, which is the slot the app has always used.
+name: Weekly check
+
+on:
+  schedule:
+    - cron: "0 1 * * 0"        # Sunday 01:00 UTC = 03:00 Europe/Berlin
+  workflow_dispatch:            # and a button, for running it by hand
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake iRadar and start the weekly check
+        env:
+          URL: ${{ secrets.IRADAR_URL }}
+          KEY: ${{ secrets.IRADAR_CRON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "IRADAR_URL or IRADAR_CRON_KEY is not set in repo secrets."
+            exit 1
+          fi
+          # A sleeping service can answer the FIRST request with a 502 while
+          # it cold-boots, so this retries rather than reporting a failure
+          # that is really just the app waking up.
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' \
+                     --max-time 60 \
+                     -H "X-Cron-Key: $KEY" \
+                     "$URL/cron/run" || echo 000)
+            echo "attempt $attempt -> HTTP $code"
+            cat /tmp/body || true
+            echo
+            if [ "$code" = "200" ]; then
+              echo "Weekly check triggered."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Could not reach iRadar after 6 attempts."
+          exit 1
