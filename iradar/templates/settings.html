@@ -38,11 +38,19 @@
             <p>Weekly matches how fast the site actually moves.</p>
           </div>
           <div class="setrow-c">
-            <select name="frequency" id="f-freq">
-              <option value="daily"   {% if s.frequency=='daily' %}selected{% endif %}>Daily</option>
-              <option value="bidaily" {% if s.frequency=='bidaily' %}selected{% endif %}>Every 2 days</option>
-              <option value="weekly"  {% if s.frequency=='weekly' %}selected{% endif %}>Weekly</option>
-            </select>
+            {#- radios, not a select: three options that fit on one line are
+                quicker to read and to hit than a menu you have to open, and
+                the current one is visible without any interaction. Radios
+                also submit the same "frequency" field with no JS at all. -#}
+            <div class="optseg" role="group" aria-label="Check frequency">
+              {% for val, lab in [('daily','Daily'), ('bidaily','Every 2 days'), ('weekly','Weekly')] %}
+              <label class="optseg-o">
+                <input type="radio" name="frequency" value="{{ val }}"
+                       {% if s.frequency==val %}checked{% endif %}>
+                <span>{{ lab }}</span>
+              </label>
+              {% endfor %}
+            </div>
           </div>
         </div>
 
@@ -52,9 +60,15 @@
             <p>Local time. The day applies to the weekly cadence only.</p>
           </div>
           <div class="setrow-c setrow-c-pair">
-            <select name="weekday" id="f-day">
-              {% for d in weekdays %}<option value="{{ d }}" {% if s.weekday==d %}selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
-            </select>
+            <div class="daypick" role="group" aria-label="Day of week">
+              {% for d in weekdays %}
+              <label class="daypick-d" title="{{ d|capitalize }}">
+                <input type="radio" name="weekday" value="{{ d }}"
+                       {% if s.weekday==d %}checked{% endif %}>
+                <span>{{ d[0]|upper }}</span>
+              </label>
+              {% endfor %}
+            </div>
             <div class="numwrap">
               <input type="number" name="hour" min="0" max="23" value="{{ s.hour }}"
                      aria-label="Hour of day">
@@ -77,8 +91,14 @@
                coming back half-read and nothing says so.</p>
           </div>
           <div class="setrow-c">
-            <input type="number" name="concurrency" id="f-conc" min="1" max="12"
-                   class="num" value="{{ s.concurrency }}">
+            {#- a slider for a small bounded range: the ends and the current
+                position are visible at once, which a bare number box never
+                shows. The readout carries the value so nothing is guessed. -#}
+            <div class="slider">
+              <input type="range" name="concurrency" id="f-conc" min="1" max="12"
+                     value="{{ s.concurrency }}" oninput="this.nextElementSibling.textContent=this.value">
+              <output class="slider-v">{{ s.concurrency }}</output>
+            </div>
           </div>
         </div>
 
@@ -89,8 +109,11 @@
                loses nothing. Older copies are deleted after each check.</p>
           </div>
           <div class="setrow-c">
-            <input type="number" name="keep_snapshots" id="f-keep" min="1" max="20"
-                   class="num" value="{{ s.keep_snapshots }}">
+            <div class="slider">
+              <input type="range" name="keep_snapshots" id="f-keep" min="1" max="20"
+                     value="{{ s.keep_snapshots }}" oninput="this.nextElementSibling.textContent=this.value">
+              <output class="slider-v">{{ s.keep_snapshots }}</output>
+            </div>
           </div>
         </div>
       </section>
@@ -341,6 +364,59 @@
                                       font-variant-numeric: tabular-nums; }
   .numwrap { display: flex; align-items: center; gap: 6px; }
   .numsuf { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+
+  /* ---- segmented choice ------------------------------------------------
+     The radio itself is hidden but still focusable and still the thing being
+     checked, so this works with the keyboard and without any JavaScript. */
+  .optseg { display: inline-flex; background: var(--hover);
+            border: 1px solid var(--line); border-radius: 9px; padding: 3px;
+            gap: 2px; }
+  .optseg-o { position: relative; }
+  .optseg-o input { position: absolute; inset: 0; opacity: 0; margin: 0;
+                    cursor: pointer; }
+  .optseg-o span { display: block; padding: 6px 13px; border-radius: 7px;
+                   font-size: 13px; font-weight: 600; color: var(--muted);
+                   white-space: nowrap; transition: background .12s, color .12s; }
+  .optseg-o:hover span { color: var(--ink); }
+  .optseg-o input:checked + span { background: var(--card); color: var(--ink);
+                                   box-shadow: 0 1px 3px rgba(15,23,42,.14); }
+  .optseg-o input:focus-visible + span { outline: 2px solid var(--accent);
+                                         outline-offset: 1px; }
+
+  /* ---- day picker: seven initials, the chosen one filled ---------------- */
+  .daypick { display: inline-flex; gap: 3px; }
+  .daypick-d { position: relative; }
+  .daypick-d input { position: absolute; inset: 0; opacity: 0; margin: 0;
+                     cursor: pointer; }
+  .daypick-d span { display: grid; place-items: center; width: 30px;
+                    height: 30px; border-radius: 8px; font-size: 12px;
+                    font-weight: 700; color: var(--muted);
+                    border: 1px solid var(--line); background: var(--card);
+                    transition: background .12s, color .12s, border-color .12s; }
+  .daypick-d:hover span { color: var(--ink); border-color: var(--muted); }
+  .daypick-d input:checked + span { background: var(--accent); color: #fff;
+                                    border-color: var(--accent); }
+  .daypick-d input:focus-visible + span { outline: 2px solid var(--accent);
+                                          outline-offset: 2px; }
+
+  /* ---- slider: the ends and the position visible at once ---------------- */
+  .slider { display: flex; align-items: center; gap: 12px; }
+  .slider input[type=range] { width: 148px; height: 4px; padding: 0;
+                              -webkit-appearance: none; appearance: none;
+                              background: var(--line); border-radius: 999px;
+                              border: 0; cursor: pointer; }
+  .slider input[type=range]::-webkit-slider-thumb { -webkit-appearance: none;
+       appearance: none; width: 17px; height: 17px; border-radius: 50%;
+       background: var(--accent); border: 2px solid var(--card);
+       box-shadow: 0 1px 4px rgba(15,23,42,.3); cursor: pointer; }
+  .slider input[type=range]::-moz-range-thumb { width: 15px; height: 15px;
+       border-radius: 50%; background: var(--accent); border: 2px solid var(--card);
+       box-shadow: 0 1px 4px rgba(15,23,42,.3); cursor: pointer; }
+  .slider input[type=range]:focus-visible { outline: 2px solid var(--accent);
+                                            outline-offset: 4px; }
+  .slider-v { min-width: 30px; text-align: right; font-size: 14px;
+              font-weight: 700; font-variant-numeric: tabular-nums;
+              color: var(--ink); }
 
   .setlink { font-size: 13px; font-weight: 600; color: var(--accent);
              text-decoration: none; white-space: nowrap; }

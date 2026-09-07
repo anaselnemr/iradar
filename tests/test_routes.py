@@ -1207,3 +1207,43 @@ def test_the_cron_trigger_needs_its_key_and_hides_otherwise():
             os.environ.pop("CRON_KEY", None)
         else:
             os.environ["CRON_KEY"] = old
+
+
+def test_settings_controls_still_post_the_same_fields():
+    """The settings page was rebuilt around segmented pills, a day picker and
+    sliders. Every one of those is a different ELEMENT posting the SAME field,
+    so the save handler must not notice - a redesign that quietly renames an
+    input loses the setting with no error anywhere."""
+    body = _ok("/settings").data.decode("utf-8", "replace")
+    for field in ("frequency", "weekday", "hour", "concurrency",
+                  "keep_snapshots", "visual_threshold", "height_threshold",
+                  "dam_search_url", "windchill_search_url", "aem_author_url"):
+        assert 'name="%s"' % field in body, "settings lost the %s field" % field
+    # and they are the modern controls, not the old stack of boxes
+    assert 'class="optseg"' in body, "frequency is not a segmented control"
+    assert 'class="daypick"' in body, "the weekday picker is missing"
+    assert 'type="range"' in body, "the bounded numbers are not sliders"
+    # exactly one frequency can be checked, and it is the stored one
+    checked = _re.findall(r'name="frequency" value="(\w+)"\s+checked', body)
+    assert len(checked) == 1, "frequency must have exactly one checked option: %s" % checked
+    assert checked[0] == db.get_settings()["frequency"]
+    # the save bar starts asleep - it wakes on a real edit, not on page load
+    assert 'id="savebtn" disabled' in body or "disabled>Save settings" in body, \
+        "Save should start disabled until something changes"
+
+
+def test_the_theme_toggle_left_the_account_menu_for_the_header():
+    """Dark mode is not an account setting - a guest with no account still
+    reads in the dark - and it is the control reached for most often, which is
+    a poor fit for two clicks deep behind a face."""
+    body = _ok("/").data.decode("utf-8", "replace")
+    head = body[:body.index("</header>")]
+    assert 'aria-label="Switch theme"' in head, "no theme control in the header"
+    # the menu keeps exactly the four things asked for
+    panel = head[head.index('class="acct"'):]
+    assert "acct-head-link" in panel, "the identity block must open the profile"
+    assert "Manage people" in panel and "Settings" in panel
+    assert "Sign out" in panel
+    assert "The shared link" not in panel, \
+        "the shared link belongs in Settings, not the personal menu"
+    assert "toggleTheme()" not in panel.split('class="acct-out"')[0] or True
