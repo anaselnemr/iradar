@@ -7900,8 +7900,7 @@ def guide_page():
     return render_template(
         "guide.html", f=facts, s=s, every=every,
         at_time="%02d:00" % schedule_hour(s),
-        next_run=next_run_text(), run_hours=hours, last=last,
-        whatsnew=WHATS_NEW)
+        next_run=next_run_text(), run_hours=hours, last=last)
 
 
 # What changed, newest first. Here rather than in the template because it is
@@ -7914,40 +7913,6 @@ def guide_page():
 # Dates come from when the work actually landed, not from when it was
 # written up: the logo, dark mode and the Help rewrite are all the 28th, and
 # accounts and notes are the 27th - the 20th was nothing but a guess.
-WHATS_NEW = [
-    {"on": "2026-09-04", "what": [
-        "The close-ups follow moved content: each BEFORE|AFTER strip now "
-        "shows the same content on both sides even when the page grew, with "
-        "the changed area outlined in amber.",
-        "The products table is watched as a shape: the page's own product "
-        "count and its columns. A column re-ordered is layout; a column "
-        "gone is an update.",
-        "Filter the dashboard by Business line and Product line, and by "
-        "whether an eval board is linked.",
-        "Copy limits: how long each text block may be is editable under "
-        "Settings → Advanced, pages over a limit wear an amber flag beside "
-        "the block, and each block has its own dashboard filter.",
-        "A read-only shared link can open iRadar without an account - ask "
-        "Anas. Guests can look at everything and touch nothing.",
-    ]},
-    {"on": "2026-07-28", "what": [
-        "Pages are photographed only once their fonts have arrived — before, "
-        "the same text wrapping differently read as a change.",
-        "Times on screen are local, not the server's.",
-        "A restart no longer ends a check — it carries on by itself.",
-        "Bugs and suggestions moved to Notes.",
-        "Admins can download a copy of the database under Settings.",
-        "Dark mode reworked; cards lift off the page instead of sitting flat.",
-        "iRadar has a logo, and everyone has their own avatar colour.",
-        "Help rewritten, with pictures.",
-    ]},
-    {"on": "2026-07-27", "what": [
-        "Accounts, roles and sign-in; iRadar moved to iradar.net.",
-        "Notes on every page, item and update.",
-    ]},
-]
-
-
 _WEEKDAY_NAME = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday",
                  "thu": "Thursday", "fri": "Friday", "sat": "Saturday",
                  "sun": "Sunday"}
