@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block title %}My profile — iRadar<style>
-  .pf-alertrow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .pf-alertrow { display: flex; gap: 14px; align-items: center; }
+  .pf-alerttxt { min-width: 0; flex: 1; line-height: 1.4; }
+  .pf-alerttxt b { font-size: 13.5px; }
+  .pf-alerttxt span { display: block; color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 560px) {
+    .pf-alertrow { flex-wrap: wrap; }
+    .pf-alerttxt { flex: 1 1 100%; order: 3; }
+  }
   .pw-go { display: flex; align-items: center; gap: 12px; }
   /* the two states this can be in, said in colour as well as in words */
   .pw-msg { font-size: 12.5px; font-weight: 600; }
@@ -20,14 +27,33 @@
     // Say whether the two new fields match WHILE typing. The old form only
     // answered that after a submit and a page reload, which is a long way to
     // go to be told you typed one of them wrong.
+    var bar = document.querySelector(".pw-meter"),
+        stx = document.getElementById("pwstrength");
+    // Length first, variety second - that IS the order that matters, and a
+    // meter that rewards punctuation over length teaches the wrong habit.
+    function strength(v) {
+      if (!v) return 0;
+      var kinds = (/[a-z]/.test(v) ? 1 : 0) + (/[A-Z]/.test(v) ? 1 : 0)
+                + (/[0-9]/.test(v) ? 1 : 0) + (/[^A-Za-z0-9]/.test(v) ? 1 : 0);
+      var words = v.trim().split(/[\s\-_.]+/).filter(Boolean).length;
+      var s = 1;
+      if (v.length >= 12 || words >= 3) s = 2;
+      if (v.length >= 16 || (words >= 3 && v.length >= 14)) s = 3;
+      if ((v.length >= 20 || words >= 4) && kinds >= 2) s = 4;
+      return s;
+    }
+    var WORDS = ["", "Short", "Getting there", "Good", "Strong"];
     function check() {
       var ok = cur.value && nw.value && nw.value === ag.value;
       go.disabled = !ok;
+      var s = strength(nw.value);
+      if (bar) bar.className = "pw-meter" + (s ? " s" + s : "");
+      if (stx) stx.textContent = nw.value ? WORDS[s] : "";
       if (!nw.value || !ag.value) { msg.textContent = ""; msg.className = "pw-msg"; }
       else if (nw.value !== ag.value) {
-        msg.textContent = "The two new passwords are different";
+        msg.textContent = "The two do not match";
         msg.className = "pw-msg bad";
-      } else { msg.textContent = "Match"; msg.className = "pw-msg good"; }
+      } else { msg.textContent = "They match"; msg.className = "pw-msg good"; }
     }
     [cur, nw, ag].forEach(function (el) { el.addEventListener("input", check); });
     if (show) show.addEventListener("click", function () {
@@ -72,10 +98,26 @@
              border: 1px solid rgba(220,38,38,.25); border-radius: 9px;
              padding: 9px 12px; font-size: 13.5px; margin-bottom: 14px; }
   .pf-namemenu { padding: 12px; min-width: 270px; }
-  .pw { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
-        align-items: end; }
-  .pw .pw-go { grid-column: 1 / -1; margin-top: 4px; }
-  @media (max-width: 620px) { .pw { grid-template-columns: 1fr; } }
+  /* one field per line, at a readable width - a password field is not a
+     column in a table */
+  .pw { display: flex; flex-direction: column; gap: 14px; max-width: 420px; }
+  .pw-f label { display: block; font-size: 12px; font-weight: 600;
+                color: var(--muted); margin-bottom: 6px; }
+  .pw-f input { width: 100%; }
+  /* the meter is four segments, not a percentage: a bar that creeps invites
+     gaming the number instead of picking better words */
+  .pw-meter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+              margin-top: 8px; height: 4px; }
+  .pw-meter span { grid-column: 1 / -1; height: 100%; border-radius: 999px;
+                   background: var(--line); transition: none; }
+  .pw-meter.s1 span { grid-column: 1 / 2; background: var(--err); }
+  .pw-meter.s2 span { grid-column: 1 / 3; background: var(--warn); }
+  .pw-meter.s3 span { grid-column: 1 / 4; background: #eab308; }
+  .pw-meter.s4 span { grid-column: 1 / -1; background: var(--ok); }
+  .pw-meter { background: var(--line); border-radius: 999px; }
+  .pw-strength { font-size: 12px; font-weight: 600; margin-top: 6px;
+                 color: var(--muted); min-height: 1em; }
+  .pw-go { display: flex; align-items: center; gap: 14px; margin-top: 2px; }
 </style>
 
 <div class="pf">
@@ -113,15 +155,11 @@
   </div>
 
   <div class="card" style="margin-top:16px">
-    <h3 style="margin:0 0 6px">Email alerts</h3>
-    <p class="hint" style="margin:0 0 14px">A report after each scheduled check,
-      sent to {{ me['email'] }} when it finishes.</p>
+    {#- One line: the switch says the state, the sentence beside it says what
+        that means, and the action sits at the end. It was four stacked rows -
+        heading, explanation, switch, then the same fact repeated in words -
+        for a single on/off. -#}
     <div class="pf-alertrow">
-      {#- The switch IS the form: flipping it submits, so the control shows
-          the current state instead of a button labelled with the opposite of
-          it ("Turn off" while it is on, which you had to read twice). It
-          still works without JavaScript - the button below is the fallback
-          and only appears when scripting is off. -#}
       <form method="post" action="{{ url_for('account_alerts') }}" style="margin:0"
             id="alertform">
         <input type="hidden" name="on" value="{{ '0' if email_alerts else '1' }}">
@@ -130,17 +168,19 @@
                  aria-label="Email alerts"
                  onchange="document.getElementById('alertform').submit()">
           <span class="sw-t"></span>
-          <span class="sw-l">{{ 'On' if email_alerts else 'Off' }}</span>
         </label>
-        <noscript><button type="submit" style="margin-left:10px">
+        <noscript><button type="submit">
           {{ 'Turn off' if email_alerts else 'Turn on' }}</button></noscript>
       </form>
-      <span class="hint" style="margin:0">
-        {%- if email_alerts %}You get the report when a check finishes.
-        {%- else %}No automatic reports.{% endif %}</span>
+      <div class="pf-alerttxt">
+        <b>Email alerts</b>
+        <span>{% if email_alerts %}A report to {{ me['email'] }} when each
+          scheduled check finishes.{% else %}Off &mdash; no report when a check
+          finishes.{% endif %}</span>
+      </div>
       {% if mail_ready %}
       <form method="post" action="{{ url_for('account_latest_report') }}"
-            style="margin:0 0 0 auto">
+            style="margin:0">
         <button type="submit" class="linkbtn">Send latest report</button>
       </form>
       {% endif %}
@@ -148,36 +188,39 @@
   </div>
 
   <div class="card" style="margin-top:16px">
-    <h3 style="margin:0 0 14px">Password</h3>
+    <h3 style="margin:0 0 4px">Password</h3>
+    <p class="hint" style="margin:0 0 16px">Three or four random words beats
+      anything clever &mdash; <code>harbour-cactus-lantern-42</code>.</p>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
-    {#- three fields of the same kind get the same width. "Current" used to
-        run the whole card while the two below it were half that, which read
-        as one important field and two afterthoughts. -#}
+    {#- A stack, not three columns. Passwords are typed one after another and
+        the third only makes sense once the second exists; side by side they
+        read as three unrelated boxes and the confirmation lost its meaning.
+        The meter and the match line answer WHILE typing rather than after a
+        submit and a reload. -#}
     <form method="post" action="{{ url_for('account_password') }}" class="pw">
-      <div>
-        <label for="current">Current</label>
+      <div class="pw-f">
+        <label for="current">Current password</label>
         <input id="current" name="current" type="password"
                autocomplete="current-password" required>
       </div>
-      <div>
-        <label for="new">New</label>
+      <div class="pw-f">
+        <label for="new">New password</label>
         <input id="new" name="new" type="password"
                autocomplete="new-password" required>
+        <div class="pw-meter" aria-hidden="true"><span id="pwbar"></span></div>
+        <div class="pw-strength" id="pwstrength"></div>
       </div>
-      <div>
-        <label for="again">New again</label>
+      <div class="pw-f">
+        <label for="again">Repeat it</label>
         <input id="again" name="again" type="password"
                autocomplete="new-password" required>
+        <div class="pw-msg" id="pwmsg"></div>
       </div>
       <div class="pw-go">
         <button type="submit" id="pwgo" disabled>Change password</button>
-        <span class="pw-msg" id="pwmsg"></span>
+        <button type="button" class="linkbtn" id="pwshow">Show passwords</button>
       </div>
     </form>
-    <p class="hint">Three or four random words beats anything clever —
-      <code>harbour-cactus-lantern-42</code>.
-      <button type="button" class="linkbtn" id="pwshow"
-              style="margin-left:6px">Show passwords</button></p>
   </div>
 </div>
 {% endblock %}

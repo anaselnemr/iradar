@@ -44,14 +44,14 @@
       <td><b>{{ r.hits }}</b></td>
       <td>{{ r.agent or '—' }}</td>
       <td style="white-space:normal"><span class="muted">{{ r.last_path }}</span></td>
-      <td><form method="post"
+      <td>{% if is_owner %}<form method="post"
                 action="{{ url_for('guests_delete', vid=r.id) }}"
                 onsubmit="return confirm('Forget this visit?
 
 It only removes the line. If they are still reading, they come back as a new one.')">
         <button type="submit" class="btn-reject btn-sm"
                 title="Take this visit off the register">Forget</button>
-      </form></td>
+      </form>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>
@@ -61,6 +61,7 @@ It only removes the line. If they are still reading, they come back as a new one
     {{ tot.v }}.</p>
   {% endif %}
 
+  {% if is_owner %}
   <form method="post" action="{{ url_for('guests_clear') }}"
         style="margin-top:16px"
         onsubmit="return confirm('Clear the whole register?
@@ -68,6 +69,7 @@ It only removes the line. If they are still reading, they come back as a new one
 All {{ tot.v }} visits are forgotten. Anyone still reading reappears as a new line on their next page.')">
     <button type="submit" class="btn-reject btn-sm">Clear the register</button>
   </form>
+  {% endif %}
   {% endif %}
 </div>
 {% endblock %}

@@ -222,7 +222,7 @@
                    value="{{ base_url }}/?key={{ guest_key }}"
                    onclick="this.select()">
             <button type="button" class="copybtn" id="glcopy">Copy</button>
-            {% if is_owner %}<a class="setlink" href="{{ url_for('guests_page') }}">Who opened it</a>{% endif %}
+            <a class="setlink" href="{{ url_for('guests_page') }}">Who opened it</a>
           </div>
         </div>
         {% endif %}

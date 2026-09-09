@@ -1477,7 +1477,7 @@ def test_the_pim_address_makes_the_part_badge_open_pim():
         db.set_setting("pim_url", old or "")
 
 
-def test_every_admin_sees_the_shared_link_but_only_the_owner_sees_who_opened_it():
+def test_every_admin_sees_the_shared_link_and_the_register():
     """The link is how the team hands iRadar to someone without an account, so
     an admin has to be able to see whether it is on and switch it. WHO opened
     it is a different question and stays the owner's."""
@@ -1490,9 +1490,9 @@ def test_every_admin_sees_the_shared_link_but_only_the_owner_sees_who_opened_it(
         assert "The shared link" in body, "an admin cannot see the shared link"
         assert 'name="guest_link_enabled"' in body, "an admin gets no switch"
         assert "?key=a-shared-link-key" in body, "an admin cannot read the link"
-        assert "Who opened it" not in body, \
-            "the visitor register is the owner's, not every admin's"
-        # the owner gets the register too
+        assert "Who opened it" in body, \
+            "an admin cannot reach the register - it holds nothing private"
+        # and so does the owner
         app.OWNER_EMAIL = "routes@example.com"
         body = _ok("/settings").data.decode("utf-8", "replace")
         assert "Who opened it" in body, "the owner lost the visitor register"
@@ -1524,3 +1524,29 @@ def test_saving_settings_cannot_silently_close_the_shared_link():
         assert app.guest_link_enabled() is True
     finally:
         db.set_setting("guest_link_enabled", keep if keep is not None else "1")
+
+
+def test_any_admin_can_read_the_visitor_register_but_only_the_owner_erases_it():
+    """The register holds a visit id, times, a hit count, a user agent and a
+    last path - no name, deliberately no address - so there is nothing private
+    for an admin not to see. Erasing it destroys the record of who has been
+    reading, and stays the owner's."""
+    con = db.connect()
+    con.execute("INSERT OR IGNORE INTO guest_visits(visit, first_seen, last_seen,"
+                " hits, agent, last_path) VALUES('v-reg','2026-09-01 10:00:00',"
+                "'2026-09-08 12:00:00', 7, 'Chrome on Windows', '/')")
+    con.commit(); con.close()
+    was = app.OWNER_EMAIL
+    try:
+        app.OWNER_EMAIL = "someone.else@example.com"      # a plain admin
+        r = _client.get("/guests")
+        assert r.status_code == 200, "an admin cannot read the register"
+        body = r.data.decode("utf-8", "replace")
+        assert "Chrome on Windows" in body, "the register rendered empty"
+        assert "Clear the register" not in body, "an admin is offered the wipe"
+        assert "/guests/clear" not in body
+        app.OWNER_EMAIL = "routes@example.com"            # the owner
+        body = _client.get("/guests").data.decode("utf-8", "replace")
+        assert "Clear the register" in body, "the owner lost the wipe"
+    finally:
+        app.OWNER_EMAIL = was

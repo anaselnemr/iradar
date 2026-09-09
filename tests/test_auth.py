@@ -734,8 +734,11 @@ def test_the_register_never_stores_an_address():
         assert not any(banned in c.lower() for c in cols),             "guest_visits grew a %s column" % banned
 
 
-def test_the_register_is_the_owners_and_not_every_admins():
-    """Every account here is an admin, so admin-only would be team-wide."""
+def test_the_register_is_readable_by_admins_and_erasable_only_by_the_owner():
+    """The register holds a visit id, times, a hit count, a user agent and a
+    last path - no name and deliberately no address - so any admin may read
+    it. ERASING it destroys the record of who has been reading, and is still
+    the owner's alone."""
     _reset()
     old_owner = appmod.OWNER_EMAIL
     try:
@@ -746,7 +749,18 @@ def test_the_register_is_the_owners_and_not_every_admins():
         appmod.OWNER_EMAIL = "someone.else@example.com"
         d = _client()
         _signin(d, ADMIN, NEWPW)
-        assert d.get("/guests").status_code == 403,             "an admin who is not the owner reached the register"
+        assert d.get("/guests").status_code == 200,             "an admin cannot read the register"
+        # Refused outright, not merely hidden in the template - and with a REAL
+        # token, or the CSRF check answers 400 first and the owner gate behind
+        # it is never the thing being tested.
+        import re as _re2
+        tok = _re2.search(r'name="_csrf" value="([^"]+)"',
+                          d.get("/guests").data.decode("utf-8", "replace"))
+        wipe = d.post("/guests/clear",
+                      data={"_csrf": tok.group(1) if tok else ""})
+        assert wipe.status_code == 403, (
+            "an admin who is not the owner erased the register (got %s)"
+            % wipe.status_code)
     finally:
         appmod.OWNER_EMAIL = old_owner
 

@@ -84,7 +84,12 @@ EDITOR_MAY_POST = {
 }
 # Pages an editor cannot even look at (they configure the system).
 ADMIN_ONLY_VIEWS = {"settings_view", "settings_components", "users_page",
-                    "settings_backup"}
+                    "settings_backup",
+                    # readable by any admin, but never by a guest: taking it
+                    # out of OWNER_ONLY_VIEWS left it in no gate at all, and a
+                    # guest holding the shared link could read the register of
+                    # everyone else holding it
+                    "guests_page"}
 # Endpoints that are ABOUT an account, so there is nothing for a guest to see:
 # they read the signed-in person off the session and a guest is not one. Left
 # reachable, "My profile" answered a guest with a 500 rather than a refusal -
@@ -99,7 +104,11 @@ ACCOUNT_ONLY_VIEWS = {"account_password", "account_name"}
 GUEST_MAY_POST = {"logout"}
 # Pages only the owner may see. Every account here is an admin, so an
 # admin-only page is a team-wide page; these are refused to anyone else.
-OWNER_ONLY_VIEWS = {"guests_page", "guests_delete", "guests_clear"}
+# Reading the register is open to any admin: it holds a visit id, times,
+# a hit count, a user agent and a last path - no name and deliberately no
+# address, so there is nothing private in it to protect. ERASING it stays
+# the owner's, because that destroys the record of who has been reading.
+OWNER_ONLY_VIEWS = {"guests_delete", "guests_clear"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static", "report_chart", "cron_run"}
 
@@ -7519,7 +7528,7 @@ def history():
 
 @app.route("/guests")
 def guests_page():
-    """Who has opened the shared link. Owner only - see OWNER_ONLY_VIEWS.
+    """Who has opened the shared link. Any admin may read it.
 
     One row per visit rather than per page view, so this reads as a list of
     people who came rather than a server log. There is no name to show and
