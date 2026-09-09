@@ -1722,3 +1722,39 @@ def test_the_resections_selector_takes_tabbed_pages_with_those_sections():
     assert 920 in got
     assert 921 not in got, "an untabbed page was swept into the re-read"
     assert 922 not in got, "a tabbed page with no such section was swept in"
+
+
+def test_a_run_can_be_asked_for_named_pages_and_ignores_the_rest():
+    """For the handful you already know about - a page whose price widget had
+    not loaded when it was captured. Stale or paused ids are dropped rather
+    than obeyed, and a request naming nothing live starts no run."""
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active) VALUES"
+                "(930, 'https://www.infineon.com/named-a', 1)")
+    con.execute("INSERT INTO urls(id, url, active) VALUES"
+                "(931, 'https://www.infineon.com/named-paused', 0)")
+    con.commit()
+    want = [930, 931, 99999]
+    rows = con.execute(
+        "SELECT id FROM urls WHERE active=1 AND id IN (?,?,?)", want).fetchall()
+    con.close()
+    got = [r["id"] for r in rows]
+    assert got == [930], got            # paused and unknown ids fall away
+
+    # the parse takes every number in the string, so spaces, commas and
+    # newlines are all the same thing to it
+    import re
+    assert sorted({int(x) for x in re.findall(r"\d+", "1041, 1191\n 930")}) \
+        == [930, 1041, 1191]
+
+
+def test_a_run_for_named_pages_never_arms_the_report_email():
+    """Only a run over EVERY page can arm it - the marker is set inside the
+    `ids is None` branch. A targeted re-read is repair work, not a bulletin."""
+    import inspect
+    src = inspect.getsource(app.run_now)
+    marker = src.index('db.set_setting("email_after_manual_run"')
+    guard = src.rindex("if ids is None:", 0, marker)
+    assert guard < marker
+    # ...and the guard is the innermost thing between them
+    assert "ids is None" in src[guard:marker]

@@ -3926,6 +3926,25 @@ def run_now():
         if not ids:
             flash("Every priced part already carries its volume range.")
             return redirect(url_for("index"))
+    elif (request.form.get("ids") or request.args.get("ids")):
+        # NAMED PAGES, nothing else. Every other selector here describes a
+        # population; this one is for the handful you already know about -
+        # two evaluation boards whose price widget had not loaded when they
+        # were captured, say. Parsed as "every number in the string" so a
+        # list pasted with spaces, commas or newlines all work, and matched
+        # against active pages so a stale id is dropped rather than obeyed.
+        import re as _re
+        want = sorted({int(x) for x in
+                       _re.findall(r"\d+", request.form.get("ids")
+                                   or request.args.get("ids") or "")})[:500]
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls WHERE active=1 AND id IN (%s)"
+            % ",".join("?" * len(want)), want)] if want else []
+        con.close()
+        if not ids:
+            flash("No live page matches those ids.")
+            return redirect(url_for("index"))
     elif (request.form.get("resections") == "1"
           or request.args.get("resections") == "1"):
         # Pages whose Key features / Benefits may have been swept out of their
