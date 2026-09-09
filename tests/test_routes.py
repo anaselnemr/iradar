@@ -1550,3 +1550,34 @@ def test_any_admin_can_read_the_visitor_register_but_only_the_owner_erases_it():
         assert "Clear the register" in body, "the owner lost the wipe"
     finally:
         app.OWNER_EMAIL = was
+
+
+def test_no_page_smuggles_a_stylesheet_or_a_script_through_its_title():
+    """A <title> is character data, so anything parseable put there is inert.
+
+    The profile page did exactly that: its stylesheet and the script that
+    enables the Change password button both sat inside {% block title %}. The
+    button ships disabled and only that script re-enables it, so for two days
+    nobody could change their password and the page looked fine while doing
+    it. Nothing in a template test caught it because the HTML was all present
+    - just in the one element that swallows it.
+    """
+    import re
+    for path in ("/", "/assets", "/notes", "/settings", "/account/password",
+                 "/export", "/guide", "/sentiment"):
+        body = _ok(path).data.decode("utf-8", "replace")
+        title = re.search(r"<title>(.*?)</title>", body, re.S)
+        assert title, f"{path} has no title"
+        assert "<" not in title.group(1), \
+            f"{path} put markup inside its <title>: {title.group(1)[:70]!r}"
+
+
+def test_the_change_password_button_has_the_script_that_enables_it():
+    # disabled in the markup, enabled by script once the fields agree - so the
+    # script has to reach the browser, and after the button it acts on
+    body = _ok("/account/password").data.decode("utf-8", "replace")
+    button = body.index('id="pwgo"')
+    assert "disabled" in body[button:button + 60]
+    assert body.index('getElementById("pwgo")') > button, \
+        "the script that enables the button runs before the button exists"
+    assert 'class="pw-meter"' in body and "function strength" in body

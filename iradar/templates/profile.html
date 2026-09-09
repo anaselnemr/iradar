@@ -1,70 +1,5 @@
 {% extends "base.html" %}
-{% block title %}My profile — iRadar<style>
-  .pf-alertrow { display: flex; gap: 14px; align-items: center; }
-  .pf-alerttxt { min-width: 0; flex: 1; line-height: 1.4; }
-  .pf-alerttxt b { font-size: 13.5px; }
-  .pf-alerttxt span { display: block; color: var(--muted); font-size: 12.5px; }
-  @media (max-width: 560px) {
-    .pf-alertrow { flex-wrap: wrap; }
-    .pf-alerttxt { flex: 1 1 100%; order: 3; }
-  }
-  .pw-go { display: flex; align-items: center; gap: 12px; }
-  /* the two states this can be in, said in colour as well as in words */
-  .pw-msg { font-size: 12.5px; font-weight: 600; }
-  .pw-msg.bad { color: var(--err); }
-  .pw-msg.good { color: var(--ok); }
-  #pwgo[disabled] { opacity: .45; cursor: default; }
-</style>
-<script>
-  (function () {
-    var cur = document.getElementById("current"),
-        nw = document.getElementById("new"),
-        ag = document.getElementById("again"),
-        go = document.getElementById("pwgo"),
-        msg = document.getElementById("pwmsg"),
-        show = document.getElementById("pwshow");
-    if (!cur || !nw || !ag || !go) return;
-    // Say whether the two new fields match WHILE typing. The old form only
-    // answered that after a submit and a page reload, which is a long way to
-    // go to be told you typed one of them wrong.
-    var bar = document.querySelector(".pw-meter"),
-        stx = document.getElementById("pwstrength");
-    // Length first, variety second - that IS the order that matters, and a
-    // meter that rewards punctuation over length teaches the wrong habit.
-    function strength(v) {
-      if (!v) return 0;
-      var kinds = (/[a-z]/.test(v) ? 1 : 0) + (/[A-Z]/.test(v) ? 1 : 0)
-                + (/[0-9]/.test(v) ? 1 : 0) + (/[^A-Za-z0-9]/.test(v) ? 1 : 0);
-      var words = v.trim().split(/[\s\-_.]+/).filter(Boolean).length;
-      var s = 1;
-      if (v.length >= 12 || words >= 3) s = 2;
-      if (v.length >= 16 || (words >= 3 && v.length >= 14)) s = 3;
-      if ((v.length >= 20 || words >= 4) && kinds >= 2) s = 4;
-      return s;
-    }
-    var WORDS = ["", "Short", "Getting there", "Good", "Strong"];
-    function check() {
-      var ok = cur.value && nw.value && nw.value === ag.value;
-      go.disabled = !ok;
-      var s = strength(nw.value);
-      if (bar) bar.className = "pw-meter" + (s ? " s" + s : "");
-      if (stx) stx.textContent = nw.value ? WORDS[s] : "";
-      if (!nw.value || !ag.value) { msg.textContent = ""; msg.className = "pw-msg"; }
-      else if (nw.value !== ag.value) {
-        msg.textContent = "The two do not match";
-        msg.className = "pw-msg bad";
-      } else { msg.textContent = "They match"; msg.className = "pw-msg good"; }
-    }
-    [cur, nw, ag].forEach(function (el) { el.addEventListener("input", check); });
-    if (show) show.addEventListener("click", function () {
-      var hidden = nw.type === "password";
-      [cur, nw, ag].forEach(function (el) { el.type = hidden ? "text" : "password"; });
-      show.textContent = hidden ? "Hide passwords" : "Show passwords";
-    });
-    check();
-  })();
-</script>
-{% endblock %}
+{% block title %}My profile — iRadar{% endblock %}
 {% block content %}
 {#- The in-app version. The FORCED first-password screen is a separate,
     navless template on purpose: that one is a lockout, and offering the nav
@@ -118,6 +53,19 @@
   .pw-strength { font-size: 12px; font-weight: 600; margin-top: 6px;
                  color: var(--muted); min-height: 1em; }
   .pw-go { display: flex; align-items: center; gap: 14px; margin-top: 2px; }
+  .pf-alertrow { display: flex; gap: 14px; align-items: center; }
+  .pf-alerttxt { min-width: 0; flex: 1; line-height: 1.4; }
+  .pf-alerttxt b { font-size: 13.5px; }
+  .pf-alerttxt span { display: block; color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 560px) {
+    .pf-alertrow { flex-wrap: wrap; }
+    .pf-alerttxt { flex: 1 1 100%; order: 3; }
+  }
+  /* the two states this can be in, said in colour as well as in words */
+  .pw-msg { font-size: 12.5px; font-weight: 600; }
+  .pw-msg.bad { color: var(--err); }
+  .pw-msg.good { color: var(--ok); }
+  #pwgo[disabled] { opacity: .45; cursor: default; }
 </style>
 
 <div class="pf">
@@ -223,4 +171,53 @@
     </form>
   </div>
 </div>
+<script>
+  (function () {
+    var cur = document.getElementById("current"),
+        nw = document.getElementById("new"),
+        ag = document.getElementById("again"),
+        go = document.getElementById("pwgo"),
+        msg = document.getElementById("pwmsg"),
+        show = document.getElementById("pwshow");
+    if (!cur || !nw || !ag || !go) return;
+    // Say whether the two new fields match WHILE typing. The old form only
+    // answered that after a submit and a page reload, which is a long way to
+    // go to be told you typed one of them wrong.
+    var bar = document.querySelector(".pw-meter"),
+        stx = document.getElementById("pwstrength");
+    // Length first, variety second - that IS the order that matters, and a
+    // meter that rewards punctuation over length teaches the wrong habit.
+    function strength(v) {
+      if (!v) return 0;
+      var kinds = (/[a-z]/.test(v) ? 1 : 0) + (/[A-Z]/.test(v) ? 1 : 0)
+                + (/[0-9]/.test(v) ? 1 : 0) + (/[^A-Za-z0-9]/.test(v) ? 1 : 0);
+      var words = v.trim().split(/[\s\-_.]+/).filter(Boolean).length;
+      var s = 1;
+      if (v.length >= 12 || words >= 3) s = 2;
+      if (v.length >= 16 || (words >= 3 && v.length >= 14)) s = 3;
+      if ((v.length >= 20 || words >= 4) && kinds >= 2) s = 4;
+      return s;
+    }
+    var WORDS = ["", "Short", "Getting there", "Good", "Strong"];
+    function check() {
+      var ok = cur.value && nw.value && nw.value === ag.value;
+      go.disabled = !ok;
+      var s = strength(nw.value);
+      if (bar) bar.className = "pw-meter" + (s ? " s" + s : "");
+      if (stx) stx.textContent = nw.value ? WORDS[s] : "";
+      if (!nw.value || !ag.value) { msg.textContent = ""; msg.className = "pw-msg"; }
+      else if (nw.value !== ag.value) {
+        msg.textContent = "The two do not match";
+        msg.className = "pw-msg bad";
+      } else { msg.textContent = "They match"; msg.className = "pw-msg good"; }
+    }
+    [cur, nw, ag].forEach(function (el) { el.addEventListener("input", check); });
+    if (show) show.addEventListener("click", function () {
+      var hidden = nw.type === "password";
+      [cur, nw, ag].forEach(function (el) { el.type = hidden ? "text" : "password"; });
+      show.textContent = hidden ? "Hide passwords" : "Show passwords";
+    });
+    check();
+  })();
+</script>
 {% endblock %}
