@@ -167,7 +167,13 @@
            gap: 10px; margin-bottom: 3px; }
   .xhead h3 { margin: 0; font-size: 14px; }
   /* ignores the selection, so it sits apart from the two that use it */
+  /* the whole-workbook downloads ignore every choice on this page, so they
+     sit apart from Build table - the first one takes the auto margin and the
+     second follows it. On a phone that staggered them down the right edge
+     like a dropped hand of cards, so there they line up left instead. */
   .xevery { margin-left: auto; }
+  .xevery ~ .xevery { margin-left: 0; }
+  @media (max-width: 560px) { .xevery, .xevery ~ .xevery { margin-left: 0; } }
   @media (pointer: coarse) {
     .xopt { padding: 9px 7px; }
     .xopt input { width: 18px; height: 18px; }
