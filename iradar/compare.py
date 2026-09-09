@@ -1137,6 +1137,32 @@ def _blocks(sections, key):
     return out
 
 
+# A spec row ends in a bare Yes or No - "DSP Functionality Yes", "External
+# Bus Interface No". Marketing copy does not end that way, which makes this a
+# cheap and exact test.
+_PARAM_ROW = re.compile(r"(?:^|\s)(Yes|No)$")
+# ...applied to Key features ONLY. Some part pages put the parameter table
+# under a Features heading, so the capture files it as features and the rule
+# then judges "Flash 576 kByte" as an over-long marketing bullet. Benefits and
+# Overview keep their rules whatever they look like: those are written by a
+# person on every page that has them, and a rule that switches itself off is
+# worse than one that occasionally complains.
+_TABLE_EXEMPT = {"features"}
+
+
+def is_parameter_table(blocks):
+    """True when this block is a parameter table wearing a Features heading.
+
+    Two rows ending in a bare Yes/No is the whole test. Across every page with
+    a features block it matches 7 - the XMC5000 part pages, which carry 25-26
+    parameter rows each - and nothing else. Deliberately not "is this a part
+    page": part pages carry real feature bullets too ("Very low power
+    consumption"), and judging them by their page type would have switched the
+    rule off on a hundred pages that need it.
+    """
+    return sum(1 for b in blocks if _PARAM_ROW.search(b)) >= 2
+
+
 def copy_detail(snap_dir, settings=None):
     """Every measured block on this capture, with the TEXT that was judged.
 
@@ -1163,6 +1189,8 @@ def copy_detail(snap_dir, settings=None):
         blocks = _blocks(sec, key)
         n = len(blocks)
         if n == 0:
+            continue
+        if key in _TABLE_EXEMPT and is_parameter_table(blocks):
             continue
         problems = []
         if lo and n < lo:

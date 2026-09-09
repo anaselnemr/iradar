@@ -796,3 +796,40 @@ def test_copy_detail_keeps_blocks_that_are_within_their_limits():
     assert d["features"]["blocks"] == ["fine", "also"]
     # ...and a block the page does not have stays absent, as ever
     assert "overview" not in d
+
+
+def test_a_parameter_table_under_a_features_heading_is_not_judged_as_copy():
+    """Some part pages put the spec table under a Features heading, so the
+    capture files it as features and the 40-character rule starts reporting
+    "Flash 576 kByte" as an over-long marketing bullet."""
+    import compare as cmp
+    table = [{"title": "CAN Nodes 3"},
+             {"title": "CPU ARM Cortex-M4F"},
+             {"title": "DMA Channels 3 DMA controllers with 216 channels"},
+             {"title": "DSP Functionality Yes"},
+             {"title": "External Bus Interface No"}]
+    assert cmp.copy_findings(_copy(features=table)) == {}
+    assert "features" not in cmp.copy_detail(_copy(features=table))
+
+
+def test_the_test_is_the_block_not_the_page_type():
+    """Part pages carry real feature bullets too - judging by page type would
+    have switched the rule off on a hundred pages that need it."""
+    import compare as cmp
+    real = [{"title": "Very low power consumption"},
+            {"title": "A bullet that runs a long way past the forty limit"}]
+    assert cmp.copy_findings(_copy(features=real))["features"] == "50 over 40"
+    # one stray Yes is a sentence, not a table: two rows is the threshold
+    one = real + [{"title": "Hardware crypto Yes"}]
+    assert "features" in cmp.copy_findings(_copy(features=one))
+
+
+def test_benefits_keep_their_rule_whatever_they_look_like():
+    """Anas's call, and the right one: benefits are written by a person on
+    every page that has them, and a rule that switches itself off is worse
+    than one that occasionally complains."""
+    import compare as cmp
+    shaped = [{"title": "Integrated gate driver Yes"},
+              {"title": "Hardware protection to avoid damage in the lab No"},
+              {"title": "Safe operating voltage"}]
+    assert "benefits" in cmp.copy_findings(_copy(benefits=shaped))

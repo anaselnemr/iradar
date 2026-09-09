@@ -7606,7 +7606,7 @@ def export_copy_limits():
             " WHERE status='ok' AND dir<>'' AND rejected=0 GROUP BY url_id)"):
         dirs[r["url_id"]] = r["dir"]
 
-    rows, unread, tally, overage = [], 0, {}, {}
+    rows, unread, stale, tally, overage = [], 0, 0, {}, {}
     for u in con.execute(
             "SELECT id, url, label, ptype, level FROM urls WHERE active=1"
             " AND IFNULL(copy_flags,'') NOT IN ('', '{}', '[]')"
@@ -7614,10 +7614,15 @@ def export_copy_limits():
         det = cmp.copy_detail(dirs.get(u["id"], ""), sset)
         bad = {k: d for k, d in det.items() if d["problems"]}
         if not bad:
-            # flagged when it was captured, but the capture is gone from disk
-            # (pruned) or no longer breaks the rule - not a row, and not a
-            # silent drop either
-            unread += 1
+            # Two different things, and the summary says which: the capture is
+            # gone from disk (pruned, so there is nothing to quote), or it read
+            # fine and the page no longer breaks the rule - a stored flag from
+            # before a limit moved or a rule learned to skip parameter tables.
+            # Neither is a row here, and neither is a silent drop.
+            if det:
+                stale += 1
+            else:
+                unread += 1
             continue
         for k, d in bad.items():
             tally[k] = tally.get(k, 0) + 1
@@ -7672,7 +7677,8 @@ def export_copy_limits():
                     tally.get(k, 0), med, max(ov) if ov else ""])
     ws2.append([])
     ws2.append(["Pages on this sheet", len(rows)])
-    ws2.append(["Flagged but their capture could not be read", unread])
+    ws2.append(["Flagged, but nothing is over any more (re-measured now)", stale])
+    ws2.append(["Flagged, but their capture is no longer on disk", unread])
     ws2.append(["Limits are set in", "Settings -> Advanced -> Editorial limits"])
     for i, w in enumerate([22, 13, 15, 12, 18, 18], start=1):
         ws2.column_dimensions[get_column_letter(i)].width = w
