@@ -308,6 +308,8 @@
       {#- the whole-workbook download is an action on this page like the
           other two, so it sits with them - pushed right, because it
           ignores everything you picked -#}
+      <a class="btn xevery" href="{{ url_for('export_copy_limits') }}"
+         title="Only the pages whose copy breaks an editorial limit - too long, or too many bullets - with the offending text in the cell to be rewritten. Limits are set in Settings.">Copy over its limits</a>
       <a class="btn xevery" href="{{ url_for('export_xlsx') }}"
          title="One workbook: every page with all of its content, then a sheet per kind of content with its own data and every page it is assigned to">Export everything</a>
     </div>
@@ -375,6 +377,8 @@
       {#- the whole-workbook download is an action on this page like the
           other two, so it sits with them - pushed right, because it
           ignores everything you picked -#}
+      <a class="btn xevery" href="{{ url_for('export_copy_limits') }}"
+         title="Only the pages whose copy breaks an editorial limit - too long, or too many bullets - with the offending text in the cell to be rewritten. Limits are set in Settings.">Copy over its limits</a>
       <a class="btn xevery" href="{{ url_for('export_xlsx') }}"
          title="One workbook: every page with all of its content, then a sheet per kind of content with its own data and every page it is assigned to">Export everything</a>
     </div>

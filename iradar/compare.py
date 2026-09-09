@@ -1137,6 +1137,46 @@ def _blocks(sections, key):
     return out
 
 
+def copy_detail(snap_dir, settings=None):
+    """Every measured block on this capture, with the TEXT that was judged.
+
+    copy_findings answers "is this page over?" in four words, which is all a
+    badge needs. Fixing the copy needs the copy: which bullet is 58 characters
+    long, and what the other eleven say, because a set of feature bullets is
+    rewritten as a set. So this returns, per block:
+
+        {"blocks": [...],      every block, in page order
+         "over":   [i, ...],   indices of the ones past the character limit
+         "problems": [...],    the breaches, in the words the badge uses
+         "chars"/"lo"/"hi"}    the limits that were applied
+
+    A BLOCK THE PAGE DOES NOT HAVE IS ABSENT, not empty - same rule as
+    copy_findings, and for the same reason: a part page owes nobody a feature
+    list, and reporting 2,819 of 2,820 pages for not having one is not a
+    report.
+    """
+    sec = _load_sections(snap_dir)
+    out = {}
+    if not sec:
+        return out
+    for key, label, chars, lo, hi in copy_limits(settings):
+        blocks = _blocks(sec, key)
+        n = len(blocks)
+        if n == 0:
+            continue
+        problems = []
+        if lo and n < lo:
+            problems.append("%d, needs %d%s" % (n, lo, "-%d" % hi if hi else "+"))
+        elif hi and n > hi:
+            problems.append("%d, allows %d-%d" % (n, lo or 1, hi))
+        over = [i for i, b in enumerate(blocks) if chars and len(b) > chars]
+        if over:
+            problems.append("%d over %d" % (max(len(b) for b in blocks), chars))
+        out[key] = {"label": label, "blocks": blocks, "over": over,
+                    "problems": problems, "chars": chars, "lo": lo, "hi": hi}
+    return out
+
+
 def copy_findings(snap_dir, settings=None):
     """Which editorial limits this capture breaks, keyed by the block.
 
@@ -1144,30 +1184,14 @@ def copy_findings(snap_dir, settings=None):
     than a flat list so the dashboard can filter on one block ("Overview over
     its limit") and the page can put the flag beside the block it belongs to.
 
-    A BLOCK THAT IS NOT THERE AT ALL IS NOT A BREACH. Most of what this app
-    watches are part pages, and a part page carries no marketing overview or
-    feature bullets - it never should. Judging them for its absence flagged
-    2,819 of 2,820 measured pages, which is not a report. Whether a page OUGHT
-    to carry a block is the component matrix's question, per page type, and
-    that is where it belongs.
+    Derived from copy_detail so the badge and the export can never disagree
+    about what is over. A block that breaks BOTH of its rules now says both;
+    it used to report only the length, because the second verdict overwrote
+    the first in the dict.
     """
-    sec = _load_sections(snap_dir)
-    if not sec:
-        return {}
-    out = {}
-    for key, label, chars, lo, hi in copy_limits(settings):
-        blocks = _blocks(sec, key)
-        n = len(blocks)
-        if n == 0:
-            continue
-        if lo and n < lo:
-            out[key] = "%d, needs %d%s" % (n, lo, "-%d" % hi if hi else "+")
-        elif hi and n > hi:
-            out[key] = "%d, allows %d-%d" % (n, lo or 1, hi)
-        longest = max((len(b) for b in blocks), default=0)
-        if chars and longest > chars:
-            out[key] = "%d over %d" % (longest, chars)
-    return out
+    return {k: "; ".join(d["problems"])
+            for k, d in copy_detail(snap_dir, settings).items()
+            if d["problems"]}
 
 
 def _table_state(d):

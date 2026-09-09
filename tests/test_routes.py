@@ -1581,3 +1581,85 @@ def test_the_change_password_button_has_the_script_that_enables_it():
     assert body.index('getElementById("pwgo")') > button, \
         "the script that enables the button runs before the button exists"
     assert 'class="pw-meter"' in body and "function strength" in body
+
+
+def _seed_over_limit_page():
+    """A page flagged over its limits, with a capture on disk to quote from."""
+    import json as _json
+    d = _D / "snapshots" / "overlimit"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "sections.json").write_text(_json.dumps({
+        "features": [{"title": "A bullet that runs well past the forty "
+                               "character line limit"},
+                     {"title": "Short one"}],
+        "meta_description": "m" * 200,
+    }), encoding="utf-8")
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, label, copy_flags)"
+                " VALUES(910, 'https://www.infineon.com/over', 1, 'Product',"
+                " 'Over the line', ?)",
+                (_json.dumps({"features": "68 over 40",
+                              "meta_description": "200 over 150"}),))
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+                " VALUES(910, 't', ?, 'ok', 0)", (str(d),))
+    # ...and one page measured with nothing wrong, which is stored as '{}'
+    con.execute("INSERT INTO urls(id, url, active, ptype, copy_flags)"
+                " VALUES(911, 'https://www.infineon.com/clean', 1, 'Product', '{}')")
+    con.commit()
+    con.close()
+
+
+def test_the_over_limit_export_carries_the_text_that_broke_the_rule():
+    """The sheet exists so copy can be rewritten in bulk. A row that says
+    "68 over 40" without the sentence is a to-do list, not a working file."""
+    import io
+    from openpyxl import load_workbook
+    _seed_over_limit_page()
+    r = _ok("/export/copy.xlsx")
+    wb = load_workbook(io.BytesIO(r.data))
+    ws = wb["Over limit"]
+    head = [c.value for c in ws[1]]
+    assert head[:5] == ["ID", "Page title", "Page URL", "Page type",
+                        "Blocks over"]
+    row = [r for r in ws.iter_rows(min_row=2, values_only=True)
+           if r[0] == 910]
+    assert row, "the flagged page is not on the sheet"
+    row = row[0]
+    cells = dict(zip(head, row))
+    assert "over 40" in cells["Features - what is over"]
+    assert "1 of 2 lines over 40 (line 1), longest" in cells["Features - what is over"]
+    assert "1. A bullet that runs well past" in cells["Features"]
+    assert "2. Short one" in cells["Features"], "the clean bullets come too"
+    assert cells["Meta description"] == "m" * 200
+    # a block this page does not have is left blank, not reported as empty
+    # (openpyxl reads a written empty string back as None, so: falsy)
+    assert not cells["Benefits"] and not cells["Benefits - what is over"]
+    # and the page with nothing wrong is not on the sheet at all
+    assert 911 not in [r[0] for r in ws.iter_rows(min_row=2, values_only=True)]
+
+
+def test_the_over_limit_export_summarises_what_it_would_take_to_fix():
+    import io
+    from openpyxl import load_workbook
+    _seed_over_limit_page() if not db.connect().execute(
+        "SELECT 1 FROM urls WHERE id=910").fetchone() else None
+    wb = load_workbook(io.BytesIO(_ok("/export/copy.xlsx").data))
+    ws = wb["Summary"]
+    rows = {r[0]: r for r in ws.iter_rows(min_row=2, values_only=True)}
+    # 200 against a 150 limit is 50 over - the number that says whether this
+    # is a rewrite or a limit that is set too tight
+    assert rows["Meta description"][4] == 50, rows["Meta description"]
+    assert rows["Meta description"][3] >= 1
+
+
+def test_copy_within_limits_and_over_limits_agree_with_what_is_stored():
+    """The runner stores the findings dict, so a clean page is '{}'. Both
+    filters were written against '[]', which nothing has ever written: "over
+    its limits" counted every clean page (3,625 of them where 2,357 were
+    over) and "within its limits" matched nothing at all."""
+    _seed_over_limit_page() if not db.connect().execute(
+        "SELECT 1 FROM urls WHERE id=910").fetchone() else None
+    over = _ok("/?attr=copyover").data.decode("utf-8", "replace")
+    assert "/over" in over and "/clean" not in over
+    ok = _ok("/?attr=copyok").data.decode("utf-8", "replace")
+    assert "/clean" in ok and "/over" not in ok

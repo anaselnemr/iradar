@@ -763,3 +763,36 @@ def test_storing_screenshots_as_webp_does_not_change_the_verdict():
     # the resolver prefers webp but still finds a pre-migration png
     assert db.shot_path(tmp / "webpo").name == "shot.webp"
     assert db.shot_path(tmp / "pngo").name == "shot.png"
+
+
+def test_copy_detail_carries_the_text_that_broke_the_rule():
+    """A badge says "58 over 40". Rewriting needs the bullet that is 58 long,
+    and the other eleven, because a feature list is rewritten as a set."""
+    import compare as cmp
+    d = cmp.copy_detail(_copy(features=[{"title": "f" * 55},
+                                        {"title": "short"},
+                                        {"title": "g" * 44}]))["features"]
+    assert d["blocks"] == ["f" * 55, "short", "g" * 44]
+    assert d["over"] == [0, 2], d["over"]          # by index, so "line 1, 3"
+    assert d["problems"] == ["55 over 40"]
+    assert (d["chars"], d["lo"], d["hi"]) == (40, 2, 12)
+
+
+def test_a_block_breaking_both_of_its_rules_now_says_both():
+    """The verdicts used to be assigned into one dict slot, so a list that was
+    too long AND had an over-long bullet reported only the bullet - and the
+    editor fixed the wording, re-ran, and was told about the count."""
+    import compare as cmp
+    got = cmp.copy_findings(_copy(features=[{"title": "f" * 55}] * 13))
+    assert got["features"] == "13, allows 2-12; 55 over 40", got
+
+
+def test_copy_detail_keeps_blocks_that_are_within_their_limits():
+    """Same reason: the sheet shows all twelve bullets, not the two that are
+    over, so it has to hold a clean block too - with no problems against it."""
+    import compare as cmp
+    d = cmp.copy_detail(_copy(features=[{"title": "fine"}, {"title": "also"}]))
+    assert d["features"]["problems"] == []
+    assert d["features"]["blocks"] == ["fine", "also"]
+    # ...and a block the page does not have stays absent, as ever
+    assert "overview" not in d

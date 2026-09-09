@@ -1197,9 +1197,16 @@ ATTR_FILTERS["noeval"] = ("No eval board linked",
                           _KNOWN_GOOD + " AND NOT " + _EVAL_SQL)
 
 # EDITORIAL LIMITS. copy_flags is '' until the page has been read under the
-# rules, '[]' once it has and nothing is over. "Within limits" therefore has
-# to be guarded on the column being non-empty, or every page nobody has
+# rules, and the JSON of the findings once it has. "Within limits" therefore
+# has to be guarded on the column being non-empty, or every page nobody has
 # measured yet would be reported as passing.
+#
+# CLEAN IS '{}'. The findings are a dict keyed by block, so a page with
+# nothing wrong stores '{}' - never '[]', which these two filters were
+# written against and which nothing has ever stored. "Copy over its limits"
+# therefore counted every clean page as an offender (3,625 where 2,357 are
+# over) and "Copy within its limits" matched nothing at all. Both empty
+# spellings are accepted now so neither can come back.
 # ...and one per block, because "something on this page is too long" is not
 # the question anyone actually asks. The finding is stored keyed by block, so
 # each of these looks for its own key.
@@ -1208,11 +1215,13 @@ for _k, _lbl, _c, _lo, _hi in cmp.COPY_LIMITS:
         _lbl + " over its limit",
         "(instr(IFNULL(u.copy_flags,''), '\"%s\":') > 0)" % _k)
 
+_COPY_EMPTY = "('', '{}', '[]')"
 ATTR_FILTERS["copyover"] = (
     "Copy over its limits",
-    "(u.copy_flags IS NOT NULL AND u.copy_flags NOT IN ('', '[]'))")
+    "(IFNULL(u.copy_flags,'') NOT IN " + _COPY_EMPTY + ")")
 ATTR_FILTERS["copyok"] = (
-    "Copy within its limits", "(IFNULL(u.copy_flags,'') = '[]')")
+    "Copy within its limits",
+    "(IFNULL(u.copy_flags,'') IN ('{}', '[]'))")
 
 # price is captured text on component pages; "no price" only means something
 # once the page has been through component detection ('' = not measured yet)
@@ -7513,6 +7522,163 @@ def export_xlsx():
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     name = f"infineonwatch-everything-{stamp}.xlsx"
+    out = Path(tempfile.gettempdir()) / name
+    wb.save(out)
+    return send_file(out, as_attachment=True, download_name=name)
+
+
+# The blocks in the order an editor reads a page, which is also the order Anas
+# asked for: what the page claims, then what it says, then what search sees.
+_COPY_SHEET_ORDER = ["features", "benefits", "about", "overview",
+                     "subheadline", "meta_description"]
+
+
+def _copy_cell(det):
+    """One block's text, as it goes in the cell.
+
+    Numbered for a list, because the flag beside it says WHICH lines are over
+    and a number is how you find line 7 of 14. Bare for a single block, so the
+    cell holds exactly the sentence to be rewritten and nothing to strip out.
+    """
+    blocks = det["blocks"]
+    if len(blocks) == 1 and not det["hi"]:
+        return blocks[0][:_CELL_CAP]
+    return chr(10).join("%d. %s" % (i + 1, b)
+                        for i, b in enumerate(blocks))[:_CELL_CAP]
+
+
+def _copy_flag(det):
+    """What is wrong with this block, in the words the page badge uses, plus
+    the part a rewriter needs: how many lines are over, and WHICH.
+
+    The badge can afford "68 over 40" because it sits beside the block. A
+    spreadsheet cell cannot: against thirteen bullets that does not say which
+    one to shorten, and how many are over is the difference between a
+    five-minute edit and an afternoon.
+    """
+    bits = [b for b in det["problems"] if " over " not in b]   # the count rule
+    over = det["over"]
+    if over:
+        longest = max(len(det["blocks"][i]) for i in over)
+        n = len(det["blocks"])
+        if n == 1:
+            bits.append("%d over %d" % (longest, det["chars"]))
+        else:
+            bits.append("%d of %d line%s over %d (line%s %s), longest %d"
+                        % (len(over), n, "s" if n != 1 else "", det["chars"],
+                           "s" if len(over) != 1 else "",
+                           ", ".join(str(i + 1) for i in over), longest))
+    return "; ".join(bits)
+
+
+@app.route("/export/copy.xlsx")
+@app.route("/export/overlimit")
+def export_copy_limits():
+    """The pages whose copy breaks an editorial limit, WITH the copy.
+
+    The dashboard can already filter to "Features over its limit" and the page
+    itself carries a badge, but neither hands you the words. Rewriting is done
+    to the text, in bulk, usually by somebody who is not going to open 2,357
+    pages one at a time - so this is one row per page, a column per block, and
+    the offending block's own text sitting in the cell to be edited.
+
+    A BLOCK THAT IS FINE IS LEFT BLANK. Filling every cell would bury the
+    handful of pages with a real problem under a page of correct copy, and the
+    point of this sheet is that everything visible in it is something to fix.
+    """
+    import tempfile
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
+
+    sset = db.get_settings()
+    limits = {k: (lbl, chars, lo, hi)
+              for k, lbl, chars, lo, hi in cmp.copy_limits(sset)}
+    order = [k for k in _COPY_SHEET_ORDER if k in limits]
+
+    con = db.connect()
+    # the capture the flag was computed from: latest settled, same pick as the
+    # page itself makes, so the sheet and the badge quote the same words
+    dirs = {}
+    for r in con.execute(
+            "SELECT url_id, dir FROM snapshots WHERE status='ok' AND dir<>''"
+            " AND rejected=0 AND id IN (SELECT MAX(id) FROM snapshots"
+            " WHERE status='ok' AND dir<>'' AND rejected=0 GROUP BY url_id)"):
+        dirs[r["url_id"]] = r["dir"]
+
+    rows, unread, tally, overage = [], 0, {}, {}
+    for u in con.execute(
+            "SELECT id, url, label, ptype, level FROM urls WHERE active=1"
+            " AND IFNULL(copy_flags,'') NOT IN ('', '{}', '[]')"
+            " ORDER BY IFNULL(ptype,''), IFNULL(label,''), id"):
+        det = cmp.copy_detail(dirs.get(u["id"], ""), sset)
+        bad = {k: d for k, d in det.items() if d["problems"]}
+        if not bad:
+            # flagged when it was captured, but the capture is gone from disk
+            # (pruned) or no longer breaks the rule - not a row, and not a
+            # silent drop either
+            unread += 1
+            continue
+        for k, d in bad.items():
+            tally[k] = tally.get(k, 0) + 1
+            if d["over"]:
+                worst = max(len(d["blocks"][i]) for i in d["over"])
+                overage.setdefault(k, []).append(worst - d["chars"])
+        rows.append((u, bad))
+    con.close()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Over limit"
+    head = ["ID", "Page title", "Page URL", "Page type", "Blocks over"]
+    for k in order:
+        head += [limits[k][0] + " - what is over", limits[k][0]]
+    ws.append(head)
+    for u, bad in rows:
+        line = [u["id"], u["label"] or "", u["url"], u["ptype"] or "",
+                len(bad)]
+        for k in order:
+            d = bad.get(k)
+            line += [_copy_flag(d), _copy_cell(d)] if d else ["", ""]
+        ws.append(line)
+
+    # readable without touching a single column width: the text columns are
+    # the whole point of the sheet and they hold paragraphs
+    ws.freeze_panes = "B2"
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    widths = [7, 38, 52, 12, 11] + [26, 60] * len(order)
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    for row in ws.iter_rows(min_row=2):
+        for c in row:
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+
+    # The second sheet is the one that decides what to DO. 2,274 meta
+    # descriptions over 150 is either a fortnight of rewriting or a setting
+    # that is 10 characters too tight, and the median overage is what tells
+    # you which.
+    ws2 = wb.create_sheet("Summary")
+    ws2.append(["Block", "Limit: chars", "Blocks allowed", "Pages over",
+                "Median chars over", "Worst chars over"])
+    for c in ws2[1]:
+        c.font = Font(bold=True)
+    for k in order:
+        lbl, chars, lo, hi = limits[k]
+        ov = sorted(overage.get(k, []))
+        med = ov[len(ov) // 2] if ov else ""
+        ws2.append([lbl, chars or "no limit",
+                    ("%d-%d" % (lo, hi)) if hi else ("%d+" % lo if lo else "any"),
+                    tally.get(k, 0), med, max(ov) if ov else ""])
+    ws2.append([])
+    ws2.append(["Pages on this sheet", len(rows)])
+    ws2.append(["Flagged but their capture could not be read", unread])
+    ws2.append(["Limits are set in", "Settings -> Advanced -> Editorial limits"])
+    for i, w in enumerate([22, 13, 15, 12, 18, 18], start=1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    name = "infineonwatch-over-limit-%s.xlsx" % stamp
     out = Path(tempfile.gettempdir()) / name
     wb.save(out)
     return send_file(out, as_attachment=True, download_name=name)
