@@ -29,3 +29,6 @@ iradar-*.tar.gz
 # Database backups: hundreds of MB, and they carry every account and its
 # password hash. Never in a repo - the Infineon mirror is readable by the team.
 local/backups/
+
+# generated copy audits and rewrites (regenerate from /export/copy.xlsx)
+reports/
