@@ -1475,3 +1475,52 @@ def test_the_pim_address_makes_the_part_badge_open_pim():
         assert 'name="pim_url"' in _ok("/settings").data.decode("utf-8", "replace")
     finally:
         db.set_setting("pim_url", old or "")
+
+
+def test_every_admin_sees_the_shared_link_but_only_the_owner_sees_who_opened_it():
+    """The link is how the team hands iRadar to someone without an account, so
+    an admin has to be able to see whether it is on and switch it. WHO opened
+    it is a different question and stays the owner's."""
+    was_owner, was_key = app.OWNER_EMAIL, app.GUEST_KEY
+    app.GUEST_KEY = "a-shared-link-key"
+    try:
+        # a plain admin - NOT the owner
+        app.OWNER_EMAIL = "someone.else@example.com"
+        body = _ok("/settings").data.decode("utf-8", "replace")
+        assert "The shared link" in body, "an admin cannot see the shared link"
+        assert 'name="guest_link_enabled"' in body, "an admin gets no switch"
+        assert "?key=a-shared-link-key" in body, "an admin cannot read the link"
+        assert "Who opened it" not in body, \
+            "the visitor register is the owner's, not every admin's"
+        # the owner gets the register too
+        app.OWNER_EMAIL = "routes@example.com"
+        body = _ok("/settings").data.decode("utf-8", "replace")
+        assert "Who opened it" in body, "the owner lost the visitor register"
+    finally:
+        app.OWNER_EMAIL, app.GUEST_KEY = was_owner, was_key
+
+
+def test_saving_settings_cannot_silently_close_the_shared_link():
+    """An unticked checkbox sends nothing - and so does a form that never
+    rendered one. Reading the second as "off" meant any admin pressing Save
+    closed the shared link without touching it."""
+    keep = db.get_settings().get("guest_link_enabled")
+    try:
+        db.set_setting("guest_link_enabled", "1")
+        body = _ok("/settings").data.decode("utf-8", "replace")
+        csrf = _re.search(r'name="_csrf" value="([^"]+)"', body).group(1)
+        base = {"_csrf": csrf, "schedule_mode": "days", "check_days": "sun",
+                "hour": "3", "concurrency": "8", "keep_snapshots": "2"}
+        # a form WITHOUT the switch must leave it exactly as it was
+        _client.post("/settings", data=dict(base))
+        assert app.guest_link_enabled() is True, \
+            "a form that never showed the switch turned it off"
+        # a form WITH the switch, unticked, really does turn it off
+        _client.post("/settings", data=dict(base, guest_link_shown="1"))
+        assert app.guest_link_enabled() is False, "the switch stopped working"
+        # and ticked turns it back on
+        _client.post("/settings", data=dict(base, guest_link_shown="1",
+                                            guest_link_enabled="1"))
+        assert app.guest_link_enabled() is True
+    finally:
+        db.set_setting("guest_link_enabled", keep if keep is not None else "1")

@@ -4150,10 +4150,13 @@ def settings_view():
             # ticking nothing would mean "never run", which is not a schedule
             # anyone chose on purpose - keep the days already stored
             flash("Pick at least one day, or switch to an interval.")
-        # an unticked checkbox sends NOTHING, so the switch is read as
-        # present-or-absent rather than by value
-        db.set_setting("guest_link_enabled",
-                       "1" if request.form.get("guest_link_enabled") else "0")
+        # An unticked checkbox sends NOTHING, so the switch is read as
+        # present-or-absent - but so does a form that never RENDERED it, and
+        # reading that as "off" silently closed the shared link every time a
+        # non-owner admin pressed Save. The hidden marker separates the two.
+        if request.form.get("guest_link_shown"):
+            db.set_setting("guest_link_enabled",
+                           "1" if request.form.get("guest_link_enabled") else "0")
         for key in ("hour", "interval_days", "concurrency",
                     "keep_snapshots",
                     "visual_threshold", "height_threshold", "ignore_patterns",

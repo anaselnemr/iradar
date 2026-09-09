@@ -181,7 +181,12 @@
           personal preference - it governs who can read the whole instance -
           so it belongs with configuration, beside the other things that are
           true of the install rather than of you. -#}
-      {% if is_owner %}
+      {#- EVERY ADMIN, not only the owner: the link is how the team hands
+          iRadar to somebody without an account, and an admin who cannot see
+          whether it is on cannot answer for it either. The visitor REGISTER
+          stays the owner's - who opened it is a different question from
+          whether it is open. -#}
+      {% if is_admin %}
       <section class="setsec">
         <div class="setsec-h">
           <h2>The shared link</h2>
@@ -192,6 +197,11 @@
             <label for="gl-on">Anyone with the link can read</label>
           </div>
           <div class="setrow-c">
+            {#- the marker says "this form carried the switch". Without it a
+                form that never rendered the checkbox - any admin's, before
+                this section opened to them - submitted no value, which the
+                save read as OFF and silently closed the link. -#}
+            <input type="hidden" name="guest_link_shown" value="1">
             <label class="sw">
               <input type="checkbox" name="guest_link_enabled" id="gl-on" value="1"
                      {% if guest_link_on %}checked{% endif %}
@@ -212,7 +222,7 @@
                    value="{{ base_url }}/?key={{ guest_key }}"
                    onclick="this.select()">
             <button type="button" class="copybtn" id="glcopy">Copy</button>
-            <a class="setlink" href="{{ url_for('guests_page') }}">Who opened it</a>
+            {% if is_owner %}<a class="setlink" href="{{ url_for('guests_page') }}">Who opened it</a>{% endif %}
           </div>
         </div>
         {% endif %}
