@@ -1663,3 +1663,62 @@ def test_copy_within_limits_and_over_limits_agree_with_what_is_stored():
     assert "/over" in over and "/clean" not in over
     ok = _ok("/?attr=copyok").data.decode("utf-8", "replace")
     assert "/clean" in ok and "/over" not in ok
+
+
+def test_a_bullet_carries_its_own_length_when_it_is_over():
+    """"54 over 40" on the heading says the worst bullet exists. In a list of
+    twenty-three it does not say WHICH, and that is the whole question."""
+    import json as _json
+    d = _D / "snapshots" / "overline"
+    d.mkdir(parents=True, exist_ok=True)
+    long_one = "Very accurate distance measurements with high FPDR sensitivity"
+    (d / "sections.json").write_text(_json.dumps({
+        "features": [{"title": "Short bullet"}, {"title": long_one}],
+    }), encoding="utf-8")
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype)"
+                " VALUES(915, 'https://www.infineon.com/overline', 1, 'Part')")
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+                " VALUES(915, 't', ?, 'ok', 0)", (str(d),))
+    con.execute("INSERT INTO items(url_id, category, title, item_key)"
+                " VALUES(915, 'features', 'Short bullet', 'kshort')")
+    con.execute("INSERT INTO items(url_id, category, title, item_key)"
+                " VALUES(915, 'features', ?, 'klong')", (long_one,))
+    con.commit()
+    con.close()
+    body = _ok("/url/915").data.decode("utf-8", "replace")
+    assert "%d / 40" % len(long_one) in body, "the over-long bullet is unmarked"
+    assert "12 / 40" not in body, "a bullet within the limit was marked"
+
+
+def test_the_resections_selector_takes_tabbed_pages_with_those_sections():
+    """The precondition for the tab-escape bug, not its symptom: which pages
+    escaped cannot be known from a stored capture, only by reading again. So
+    the selector is "tabbed AND carries one of those sections", and a page
+    without tabs - a product page - is never swept up by it."""
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, detail_tabs)"
+                " VALUES(920, 'https://www.infineon.com/tabbed', 1, 'Part',"
+                " '[\"Overview\",\"Features\"]')")
+    con.execute("INSERT INTO items(url_id, category, title, item_key)"
+                " VALUES(920, 'features', 'A bullet', 'k920')")
+    # same sections, no tabs: the walk never had a pane to escape from
+    con.execute("INSERT INTO urls(id, url, active, ptype, detail_tabs)"
+                " VALUES(921, 'https://www.infineon.com/untabbed', 1,"
+                " 'Product', '[]')")
+    con.execute("INSERT INTO items(url_id, category, title, item_key)"
+                " VALUES(921, 'features', 'A bullet', 'k921')")
+    # tabbed, but carries neither section: nothing to re-read it for
+    con.execute("INSERT INTO urls(id, url, active, ptype, detail_tabs)"
+                " VALUES(922, 'https://www.infineon.com/tabsonly', 1, 'Part',"
+                " '[\"Overview\"]')")
+    con.commit()
+    got = [r["id"] for r in con.execute(
+        "SELECT id FROM urls u WHERE u.active=1"
+        " AND IFNULL(u.detail_tabs,'') NOT IN ('', '[]')"
+        " AND EXISTS (SELECT 1 FROM items i WHERE i.url_id=u.id"
+        "             AND i.category IN ('features','benefits'))")]
+    con.close()
+    assert 920 in got
+    assert 921 not in got, "an untabbed page was swept into the re-read"
+    assert 922 not in got, "a tabbed page with no such section was swept in"

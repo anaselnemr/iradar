@@ -180,6 +180,10 @@
      from that blue to separate at a glance, and solid enough not to be
      mistaken for the light status pills further along the row. */
   .b-pim      { background: #0f766e; color: #fff; }
+  /* An amber count, not a red error: the line is too long, which is a thing
+     to shorten, not a thing that is broken. It carries its own number so the
+     answer is "48 of 40" rather than "somewhere in this list". */
+  .b-over     { background: #b45309; color: #fff; font-variant-numeric: tabular-nums; }
   /* answered, but nothing on the page - not the green of a good
      page nor the red of a dead one */
   .b-empty    { background: #ffedd5; color: #9a3412; }
@@ -1100,6 +1104,7 @@
   [data-theme="dark"] .b-type      { background: rgba(129,140,248,.16); color: #a5b4fc; }
   [data-theme="dark"] .b-sys       { background: rgba(2,132,199,.3); color: #7dd3fc; border: 1px solid rgba(125,211,252,.35); }
   [data-theme="dark"] .b-pim       { background: rgba(13,148,136,.3); color: #5eead4; border: 1px solid rgba(94,234,212,.35); }
+  [data-theme="dark"] .b-over      { background: rgba(180,83,9,.32); color: #fcd34d; border: 1px solid rgba(252,211,77,.35); }
   [data-theme="dark"] .b-redir     { background: rgba(251,191,36,.16); color: #fbbf24; }
   [data-theme="dark"] .b-new       { background: rgba(154,154,154,.16); color: #bdbdbd; }
   [data-theme="dark"] .notice      { background: rgba(251,191,36,.09);

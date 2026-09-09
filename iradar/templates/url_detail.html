@@ -313,7 +313,11 @@
       {#- one row per item. The title opens the item's OWN page (every page it
           is assigned to); when the item is itself a page we track, it opens
           that page's library instead, which is the more useful destination. -#}
-      {% macro libitem(it) %}
+      {#- overchars: the per-line character limit in force for the section
+          this item belongs to, or 0 where there is none. Passed in rather
+          than looked up, because the macro renders images and documents too
+          and those have no editorial limit. -#}
+      {% macro libitem(it, overchars=0) %}
       <li>
         {% if it.page_id %}
           <a href="{{ url_for('url_detail', url_id=it.page_id) }}" title="Open our captured content for this page">{{ it.title or it.url }}</a>
@@ -324,6 +328,13 @@
         {% if it.bsearch %}<a class="badge b-sys" href="{{ it.bsearch }}" target="_blank" data-aname="{{ it.aname }}" title="Opens {{ it.backend }} search and copies the asset name — just paste">{{ it.backend }}</a>{% elif it.backend %}<span class="badge b-sys" title="Where this asset lives in your backend">{{ it.backend }}</span>{% endif %}
         {% if 'missing-product-images' in (it.url or '') %}<span class="badge b-off" title="Infineon serves its default placeholder here (missing-product-images) — the product has no image of its own">default image</span>{% endif %}
         {% if it.is_main %}<span class="badge b-newpg" title="The page's main / banner image (hero)">★ main</span>{% endif %}
+        {#- WHICH line is too long. The summary already says "54 over 40",
+            which tells you the worst one exists without saying where it is -
+            in a list of twenty-three bullets that is a hunt. -#}
+        {% if overchars and (it.title or '')|length > overchars %}
+        <span class="badge b-over"
+              title="This line is {{ (it.title or '')|length }} characters; the limit for this section is {{ overchars }}, set in Settings → Advanced.">{{ (it.title or '')|length }} / {{ overchars }}</span>
+        {% endif %}
         {% if it.meta %}<span class="muted"> — {{ it.meta }}</span>{% endif %}
       </li>
       {% endmacro %}
@@ -463,12 +474,15 @@
           {% for gname, gitems in cat['groups'] %}
           <h4 class="libgroup">{{ gname }} <span class="muted">({{ gitems|length }})</span></h4>
           <ul class="liblist">
-            {% for it in gitems %}{{ libitem(it) }}{% endfor %}
+            {% for it in gitems %}{{ libitem(it, copy_chars.get(cat['cat'], 0)) }}{% endfor %}
           </ul>
           {% endfor %}
         {% else %}
         <ul class="liblist">
-          {% for it in cat['items'] %}{% if cat['cat'] in ('overview', 'subheadline') %}<li>{{ it.title }}</li>{% else %}{{ libitem(it) }}{% endif %}{% endfor %}
+          {%- set lim = copy_chars.get(cat['cat'], 0) -%}
+          {% for it in cat['items'] %}{% if cat['cat'] in ('overview', 'subheadline') %}<li>{{ it.title }}{#-
+            -#}{% if lim and (it.title or '')|length > lim %} <span class="badge b-over"
+              title="This block is {{ (it.title or '')|length }} characters; the limit for this section is {{ lim }}, set in Settings → Advanced.">{{ (it.title or '')|length }} / {{ lim }}</span>{% endif %}</li>{% else %}{{ libitem(it, lim) }}{% endif %}{% endfor %}
         </ul>
         {% endif %}
       </details>

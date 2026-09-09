@@ -3109,8 +3109,16 @@ def url_detail(url_id):
     # the block it is about rather than in a list at the bottom that nobody
     # reads. Measured live from the capture on screen, not from the stored
     # column, so an edited limit shows the moment it is saved.
-    copy_flags = cmp.copy_findings(latest["dir"], db.get_settings()) if latest else {}
+    copy_detail = cmp.copy_detail(latest["dir"], db.get_settings()) if latest else {}
+    copy_flags = {k: "; ".join(d["problems"]) for k, d in copy_detail.items()
+                  if d["problems"]}
     copy_labels = {k: l for k, l, _c, _lo, _hi in cmp.COPY_LIMITS}
+    # The per-line limit for each section that HAS one on this capture, so a
+    # bullet can carry its own length. "54 over 40" on the heading says the
+    # worst one exists without saying which of twenty-three it is. Built from
+    # copy_detail, so a block the rules skip - a parameter table under a
+    # Features heading - is not marked up line by line either.
+    copy_chars = {k: d["chars"] for k, d in copy_detail.items() if d["chars"]}
 
     cat_tree = _category_tree(sections.get("categories", []) if sections else [])
 
@@ -3271,6 +3279,7 @@ def url_detail(url_id):
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
                            copy_flags=copy_flags, copy_labels=copy_labels,
+                           copy_chars=copy_chars,
                            components=comp_rows, price=(u["price"] or ""),
                            settings=_settings_now, level_names=LEVEL_NAMES,
                            meta_fields=_mfields, meta_labels=META_LABELS,
@@ -3916,6 +3925,30 @@ def run_now():
         con.close()
         if not ids:
             flash("Every priced part already carries its volume range.")
+            return redirect(url_for("index"))
+    elif (request.form.get("resections") == "1"
+          or request.args.get("resections") == "1"):
+        # Pages whose Key features / Benefits may have been swept out of their
+        # own tab. The walk up from those headings used to escape a .tab-pane
+        # into .tab-content, which holds every OTHER pane, so the parametric
+        # table landed in the section - 38 "benefits" on CY8C6316BZI-BLF03.
+        #
+        # THE PRECONDITION, not the symptom: the page is tabbed AND carries one
+        # of those sections. That is 602 pages where 24 show the damage
+        # outright (the two sections sharing lines, or one of them past 15
+        # entries). Which of the rest escaped cannot be known from the stored
+        # capture - only from reading the page again - so the superset is what
+        # gets re-read. A page that was already right re-reads to the same
+        # thing and costs one capture.
+        con = db.connect()
+        ids = [r["id"] for r in con.execute(
+            "SELECT id FROM urls u WHERE u.active=1"
+            " AND IFNULL(u.detail_tabs,'') NOT IN ('', '[]')"
+            " AND EXISTS (SELECT 1 FROM items i WHERE i.url_id=u.id"
+            "             AND i.category IN ('features','benefits'))")]
+        con.close()
+        if not ids:
+            flash("No tabbed page carries a features or benefits section.")
             return redirect(url_for("index"))
     # baseline=1: fresh-start run after a detection-method change - every ok
     # capture becomes the page's baseline, nothing is compared or flagged
