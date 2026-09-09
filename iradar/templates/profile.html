@@ -57,9 +57,12 @@
   .pf-alerttxt { min-width: 0; flex: 1; line-height: 1.4; }
   .pf-alerttxt b { font-size: 13.5px; }
   .pf-alerttxt span { display: block; color: var(--muted); font-size: 12.5px; }
+  /* On a phone the action drops to its own line - sending the switch's
+     LABEL down instead put "Send latest report" beside the switch, so the
+     toggle appeared to be the thing that sends. */
   @media (max-width: 560px) {
-    .pf-alertrow { flex-wrap: wrap; }
-    .pf-alerttxt { flex: 1 1 100%; order: 3; }
+    .pf-alertrow { flex-wrap: wrap; row-gap: 10px; }
+    .pf-alertgo { flex: 1 1 100%; }
   }
   /* the two states this can be in, said in colour as well as in words */
   .pw-msg { font-size: 12.5px; font-weight: 600; }
@@ -128,7 +131,7 @@
       </div>
       {% if mail_ready %}
       <form method="post" action="{{ url_for('account_latest_report') }}"
-            style="margin:0">
+            class="pf-alertgo" style="margin:0">
         <button type="submit" class="linkbtn">Send latest report</button>
       </form>
       {% endif %}
