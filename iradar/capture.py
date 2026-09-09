@@ -1366,7 +1366,19 @@ SECTIONS_JS = r"""
     ['features', /^(key )?features?( (&|and) benefits?)?$/i],
     ['benefits', /^benefits?$/i],
   ];
+  // A TAB PANE IS THE SECTION, and climbing out of one is always wrong: the
+  // parent is .tab-content, which holds every OTHER pane as well. On a part
+  // page the Benefits pane often has a single bullet, which failed the ">= 2
+  // list items" test below, so the walk went up one level and swept in the
+  // whole parametric table plus the Features bullets - 38 "benefits" on
+  // CY8C6316BZI-BLF03 reading "BLE Power Output 4 dBm", and 26 "features" on
+  // the XMC5000 parts. A pane with one bullet has one bullet; a pane with
+  // none means the page does not carry that section at all.
+  const SECTION_PANE = '.tab-pane, [role="tabpanel"], .accordion-collapse,' +
+                       ' .accordion-body';
   const featContainer = (h) => {
+    const pane = h.closest(SECTION_PANE);
+    if (pane) return pane;
     let el = h;
     for (let i = 0; i < 5 && el.parentElement; i++) {
       el = el.parentElement;

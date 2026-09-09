@@ -430,3 +430,120 @@ def test_a_wandered_page_is_an_error_and_our_own_clicks_are_not():
         res = {"status": "error", "error": str(exc)}
         assert R._transient_failure(res, {"last_status": "unchanged"}), \
             "a wander must land in the retry rounds, not as a final state"
+
+
+def _sections_of(html):
+    """Run the real SECTIONS_JS against a DOM built here, offline."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        raise Skip("playwright not installed")
+    with sync_playwright() as pw:
+        b = _launch(pw)
+        pg = b.new_page()
+        pg.set_content(html, wait_until="load")
+        out = pg.evaluate(C.SECTIONS_JS)
+        b.close()
+    return out
+
+
+# The shape of an Infineon part page: one .tab-content holding a pane per tab.
+# The first pane is the parameter table; Features and Benefits are panes of
+# their own, and Benefits carries a single bullet.
+_TABBED = """
+<div class="tab-content">
+  <div class="tab-pane show active">
+    <ul>
+      <li>ADC (#, Max. Resolution @ Sample Rate) SAR (1, 12-bit @ 1 msps)</li>
+      <li>BLE Power Output 4 dBm</li>
+      <li>Flash 512 kByte</li>
+      <li>Operating Temperature range -40 &deg;C to 85 &deg;C</li>
+    </ul>
+  </div>
+  <div class="tab-pane">
+    <h2>Features</h2>
+    <ul><li>150-MHz Arm Cortex-M4F (CM4) CPU</li>
+        <li>100-MHz Cortex-M0+ (CM0+) CPU</li></ul>
+  </div>
+  <div class="tab-pane">
+    <h2>Benefits</h2>
+    <ul><li>Support fast time-to-market</li></ul>
+  </div>
+</div>
+"""
+
+
+def test_a_tab_pane_is_the_section_and_the_walk_never_leaves_it():
+    """CY8C6316BZI-BLF03 stored 38 benefits, of which 37 were the parameter
+    table and the features bullets from neighbouring panes. The Benefits pane
+    holds ONE bullet, which failed the "container needs 2 list items" test, so
+    the walk went up to .tab-content - the box that holds every other tab."""
+    sec = _sections_of(_TABBED)
+    ben = [b["title"] for b in sec["benefits"]]
+    feat = [f["title"] for f in sec["features"]]
+    assert ben == ["Support fast time-to-market"], ben
+    assert feat == ["150-MHz Arm Cortex-M4F (CM4) CPU",
+                    "100-MHz Cortex-M0+ (CM0+) CPU"], feat
+    # the parameter table belongs to neither, and lands in neither
+    assert not [b for b in ben + feat if "BLE Power Output" in b]
+
+
+def test_an_empty_tab_means_the_page_has_no_such_section():
+    """The XMC5000 parts have a Features tab with nothing in it; the walk used
+    to climb out and return the 26-row parameter table instead. No bullets in
+    the pane is not a reason to go looking somewhere else."""
+    sec = _sections_of("""
+      <div class="tab-content">
+        <div class="tab-pane show active">
+          <ul><li>CAN Nodes 3</li><li>CPU ARM Cortex-M4F</li>
+              <li>DSP Functionality Yes</li><li>Flash 576 kByte</li></ul>
+        </div>
+        <div class="tab-pane"><h2>Key features</h2></div>
+      </div>""")
+    assert sec["features"] == [], sec["features"]
+
+
+def test_an_untabbed_page_still_finds_its_list_by_walking_up():
+    """Product pages are not tabbed - the walk up is still how those work.
+
+    The filler is not decoration. The walk stops climbing once a container
+    passes a third of the page, so on a page that IS little more than this
+    section the guard fires immediately and nothing is found. Real pages carry
+    thousands of characters around the section, so this one has to as well.
+    """
+    filler = "<p>%s</p>" % ("Infineon page text. " * 300)
+    sec = _sections_of("""
+      <section><h2>Key features</h2>
+        <div><ul><li>Exceptional small form factor</li>
+                 <li>High accuracy CO2 level readings</li></ul></div>
+      </section>""" + filler)
+    assert [f["title"] for f in sec["features"]] == [
+        "Exceptional small form factor", "High accuracy CO2 level readings"]
+
+
+def test_the_one_third_guard_is_measured_against_the_page_a_reader_sees():
+    """It is measured against document.body.textContent, which counts the
+    text inside every <script> tag. On a real part page that is 495,145
+    characters where the readable page is 8,727 - so the guard sits at 168,349
+    and can never fire, on any section, on any page.
+
+    Nothing depends on it any more for tabbed pages (a pane is the section),
+    but the number is wrong and this test says so out loud rather than leaving
+    it to be rediscovered.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        raise Skip("playwright not installed")
+    blob = '{"x":"%s"}' % ("y" * 5000)
+    with sync_playwright() as pw:
+        b = _launch(pw)
+        pg = b.new_page()
+        pg.set_content("<p>Short visible page.</p>"
+                       "<script type=\"application/json\">%s</script>" % blob,
+                       wait_until="load")
+        seen, real = pg.evaluate(
+            "() => [document.body.textContent.length,"
+            "       document.body.innerText.length]")
+        b.close()
+    assert seen > real * 50, (seen, real)
