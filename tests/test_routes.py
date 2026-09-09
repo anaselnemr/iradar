@@ -1758,3 +1758,70 @@ def test_a_run_for_named_pages_never_arms_the_report_email():
     assert guard < marker
     # ...and the guard is the innermost thing between them
     assert "ids is None" in src[guard:marker]
+
+
+def test_rejecting_a_superseded_update_does_not_rewind_the_library():
+    """A reject rewinds the page's library to the older of the two captures it
+    compares. That is right while the newer one is still current, and wrong the
+    moment a THIRD capture exists - the rewind would throw away a reading
+    nobody objected to. All 127 updates left from the 5 September check were in
+    that state after the 9 September re-read: rejecting one would have restored
+    its 5 September library, tab-escape bug and all."""
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active) VALUES"
+                "(940, 'https://www.infineon.com/superseded', 1)")
+    old_id = con.execute(
+        "INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+        " VALUES(940, '2026-09-01', 'old', 'ok', 0)").lastrowid
+    mid_id = con.execute(
+        "INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+        " VALUES(940, '2026-09-05', 'mid', 'ok', 0)").lastrowid
+    new_id = con.execute(
+        "INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+        " VALUES(940, '2026-09-09', 'new', 'ok', 0)").lastrowid
+    cid = con.execute(
+        "INSERT INTO changes(url_id, ts, old_snapshot_id, new_snapshot_id,"
+        " summary, reviewed) VALUES(940, '2026-09-05', ?, ?, 'x', 0)",
+        (old_id, mid_id)).lastrowid
+    con.commit()
+    con.close()
+
+    tok = _csrf()
+    r = _client.post("/change/%d/resolve" % cid,
+                     data={"resolution": "reject", "_csrf": tok})
+    assert r.status_code in (302, 303), r.status_code
+    con = db.connect()
+    ch = con.execute("SELECT * FROM changes WHERE id=?", (cid,)).fetchone()
+    snaps = {s["id"]: s["rejected"] for s in con.execute(
+        "SELECT id, rejected FROM snapshots WHERE url_id=940")}
+    con.close()
+    assert ch["reviewed"] == 1 and ch["resolution"] == "reject"
+    # the capture it objected to is NOT struck out, because a later one is
+    # what the page actually holds now
+    assert snaps[mid_id] == 0, "a superseded capture was rejected anyway"
+    assert snaps[new_id] == 0, "the current capture was touched"
+
+
+def test_rejecting_a_current_update_still_rewinds_as_it_always_did():
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active) VALUES"
+                "(941, 'https://www.infineon.com/current', 1)")
+    old_id = con.execute(
+        "INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+        " VALUES(941, '2026-09-01', 'old', 'ok', 0)").lastrowid
+    new_id = con.execute(
+        "INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+        " VALUES(941, '2026-09-05', 'new', 'ok', 0)").lastrowid
+    cid = con.execute(
+        "INSERT INTO changes(url_id, ts, old_snapshot_id, new_snapshot_id,"
+        " summary, reviewed) VALUES(941, '2026-09-05', ?, ?, 'x', 0)",
+        (old_id, new_id)).lastrowid
+    con.commit()
+    con.close()
+    _client.post("/change/%d/resolve" % cid,
+                 data={"resolution": "reject", "_csrf": _csrf()})
+    con = db.connect()
+    rej = con.execute("SELECT rejected FROM snapshots WHERE id=?",
+                      (new_id,)).fetchone()[0]
+    con.close()
+    assert rej == 1, "the newest capture should still be struck out"

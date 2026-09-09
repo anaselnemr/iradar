@@ -930,3 +930,22 @@ def test_a_first_visit_is_not_accused_of_blocking_cookies():
     c = _client()
     body = c.get("/login").data.decode("utf-8", "replace")
     assert "not keeping" not in body, "a first-time visitor was shown the warning"
+
+
+def test_a_new_account_is_signed_up_for_the_weekly_report():
+    """Adding somebody IS the act of putting them on the report. The column
+    defaults to 0 and create_user never set it, so two people added in
+    September were quietly signed out of the very thing they were added for -
+    and nothing anywhere said so. Turning it off is one switch on their own
+    profile; never being told it was off is not recoverable."""
+    uid, err = auth.create_user("weekly@example.com", "Weekly", "admin")
+    assert err is None, err
+    con = db.connect()
+    row = con.execute("SELECT email_opt_in FROM users WHERE id=?",
+                      (uid,)).fetchone()
+    recipients = [r["email"] for r in con.execute(
+        "SELECT email FROM users WHERE active=1 AND IFNULL(email_opt_in,0)=1")]
+    con.close()
+    assert row["email_opt_in"] == 1
+    assert "weekly@example.com" in recipients, \
+        "a new account is not among the people the report would go to"

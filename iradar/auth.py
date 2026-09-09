@@ -160,9 +160,15 @@ def create_user(email, name="", role="editor", password=None, con=None):
         if con.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
             return None, "An account with that email already exists."
         pw = password or SEED_PASSWORD
+        # OPTED IN, because that is why somebody was added. The column defaults
+        # to 0 and nothing in the add-a-person flow ever set it, so every
+        # account created after the weekly report existed was quietly signed
+        # out of it - two people were added in September and neither would have
+        # received a single report. Turning it off is one switch on their own
+        # profile; never being told it was off is not recoverable.
         cur = con.execute(
             "INSERT INTO users(email, name, pw_hash, role, active,"
-            " must_change_pw, created) VALUES(?,?,?,?,1,?,?)",
+            " must_change_pw, created, email_opt_in) VALUES(?,?,?,?,1,?,?,1)",
             (email, (name or "").strip(), generate_password_hash(pw), role,
              1 if FORCE_CHANGE_ON_FIRST_LOGIN else 0, _now()))
         con.commit()

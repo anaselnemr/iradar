@@ -3399,7 +3399,23 @@ def change_resolve(change_id):
         abort(404)
     con.execute("UPDATE changes SET reviewed=1, resolution=? WHERE id=?",
                 (resolution, change_id))
-    if resolution == "reject":
+    # HAS THE PAGE BEEN READ AGAIN SINCE? A change compares two captures, and
+    # a reject rewinds the library to the older of them. That is right while
+    # the newer one is still what the page currently holds - and wrong the
+    # moment a THIRD capture exists, because the rewind would then throw away
+    # a reading nobody has objected to. All 127 updates left over from the 5
+    # September check were in exactly that state after the pages were read
+    # again on the 9th: rejecting one would have restored its 5 September
+    # library, tab-escape bug and all.
+    current = con.execute(
+        "SELECT id FROM snapshots WHERE url_id=? AND status='ok' AND dir<>''"
+        " AND rejected=0 ORDER BY id DESC LIMIT 1", (c["url_id"],)).fetchone()
+    superseded = bool(current and current["id"] != c["new_snapshot_id"])
+    if resolution == "reject" and superseded:
+        flash("Filed as rejected. The page has been read again since this "
+              "update, so nothing was rolled back - the newer capture stays "
+              "current.")
+    elif resolution == "reject":
         # Reject means one thing: do not adopt THIS capture as the baseline.
         # The old snapshot stays the current version and this one is never
         # compared against again.
@@ -3415,6 +3431,9 @@ def change_resolve(change_id):
             runner.index_items(con, c["url_id"], old["dir"])
         flash("Rejected — this capture will not be used as the baseline. "
               "The old version stays current.")
+    elif superseded:
+        flash("Approved. The page has been read again since this update, so "
+              "the newer capture is the current one.")
     else:
         flash("Approved — this is now the current version.")
     # Either way the page is DEALT WITH and goes back to normal. Reject used to
