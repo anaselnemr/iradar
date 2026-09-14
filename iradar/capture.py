@@ -1674,11 +1674,16 @@ SECTIONS_JS = r"""
       if (m && m[1]) { heroSrc = m[1]; break; }
     }
   }
-  // A hero served from Infineon's own placeholder set (…/missing-product-
-  // images/…) is the DEFAULT image, not a page-specific one - the folder name
-  // matches none of default/placeholder/fallback, so it had to be named.
+  // A hero served from Infineon's own placeholder set is the DEFAULT image,
+  // not a page-specific one. THREE spellings are in use and none of them
+  // matches default/placeholder/fallback on its own, so each had to be named:
+  //   /assets/row/public/images/missing-product-images/…   (137 EB pages)
+  //   /assets/web/dummy-images/…-dummy-default.svg          (20 EB pages)
+  //   /assets/row/public/images/packages/dummy-chip-packages.svg
+  // The last one carries no "default" anywhere and was read as a real hero on
+  // CYW43907 until "dumm" was added here.
   const heroDefault = !!heroSrc &&
-    /default|placeholder|fallback|no-?image|missing-product-images/i.test(heroSrc);
+    /default|placeholder|fallback|no-?image|missing-product-images|dumm/i.test(heroSrc);
   out.flags.hero_image = {exists: !!heroSrc,
                           has_content: !!heroSrc && !heroDefault,
                           src: (heroSrc || '').slice(0, 400)};

@@ -6366,6 +6366,7 @@ def item_detail(key):
         args = (ident["title"], ident["item_url"], *sorted(NON_ASSET_CATS))
     rows = con.execute("""
         SELECT i.*, u.url AS page_url, u.ptype, u.level, u.label, u.last_status,
+               u.flags AS page_flags,
                (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
                  AND s.status='ok' AND s.page_title<>''
                  ORDER BY s.id DESC LIMIT 1) AS page_title,
@@ -6409,11 +6410,25 @@ def item_detail(key):
         if r["url_id"] in _seen_pg:      # same asset twice on one page
             continue
         _seen_pg.add(r["url_id"])
+        # IS THIS IMAGE THE PAGE'S HERO, or just an image that sits on it?
+        # The whole point of the question somebody arrives here with. A search
+        # for "dummy" lists every page CARRYING a placeholder anywhere - a
+        # related-board tile, a tool icon - and two of those pages were read
+        # as "the hero is a dummy" when their hero was a real board photo.
+        hero = ""
+        if first["category"] == "images":
+            try:
+                hero = ((json.loads(r["page_flags"] or "{}").get("hero_image")
+                         or {}).get("src") or "")
+            except Exception:
+                hero = ""
         pages.append({"id": r["url_id"], "url": r["page_url"],
                       "title": r["page_title"] or r["label"] or "",
                       "ptype": r["ptype"] or "", "grp": r["grp"] or "",
                       "level": r["level"] or "", "snap_id": r["snap_id"],
-                      "status": r["last_status"] or ""})
+                      "status": r["last_status"] or "",
+                      "is_hero": bool(hero) and _same_asset(hero,
+                                                            first["item_url"])})
     by_type = {}
     for p in pages:
         by_type.setdefault(p["ptype"] or "Other", []).append(p)
@@ -6421,6 +6436,7 @@ def item_detail(key):
     tid, tlabel = item_target(key)
     notes, _n, n_open = _notes_for("item", tid)
     return render_template("item.html", item=item, pages=pages, item_key=key,
+                           hero_on=sum(1 for p in pages if p["is_hero"]),
                            by_type=sorted(by_type.items()),
                            notes=notes, notes_open=n_open, notes_kind="item",
                            notes_target=tid, notes_label=tlabel,
@@ -7899,8 +7915,25 @@ def _normalize_urls():
     con.close()
 
 
+# MUST stay in step with the same test inside SECTIONS_JS - a page read
+# before the two agreed keeps its old verdict until this sweep runs over
+# it. test_hero_default_test_is_the_same_on_both_sides pins them together.
+def _same_asset(a, b):
+    """Two image addresses pointing at the same asset.
+
+    Scene7 serves the same picture under a query string ("?$ifx_...") and
+    either protocol, so a plain string compare answers no to two spellings of
+    one file.
+    """
+    def k(u):
+        u = (u or "").split("?")[0].split("#")[0].rstrip("/").lower()
+        return re.sub(r"^https?://", "", u)
+    return bool(a) and bool(b) and k(a) == k(b)
+
+
 _HERO_DEFAULT_RE = re.compile(
-    r"default|placeholder|fallback|no-?image|missing-product-images", re.I)
+    r"default|placeholder|fallback|no-?image|missing-product-images|dumm",
+    re.I)
 
 
 def _sweep_hero_flags():

@@ -40,6 +40,7 @@ try:
     _con.commit()
     _con.close()
     import app                                     # noqa: E402
+    import capture as C_capture                    # noqa: E402
     import auth                                    # noqa: E402
     # every page needs a signed-in person now, so these render as an admin
     _PW = "route-test-password-2026"
@@ -1825,3 +1826,66 @@ def test_rejecting_a_current_update_still_rewinds_as_it_always_did():
                       (new_id,)).fetchone()[0]
     con.close()
     assert rej == 1, "the newest capture should still be struck out"
+
+
+def test_the_hero_default_test_is_the_same_on_both_sides():
+    """The browser decides it at capture time, the boot sweep recomputes it
+    from the stored src. If the two ever disagree, a page keeps whichever
+    verdict it was read under and nothing says so."""
+    import re as _re
+    js = _re.search(r"const heroDefault = !!heroSrc &&\s*\n\s*/([^/]+)/i",
+                    C_capture.SECTIONS_JS)
+    assert js, "could not find the hero test in SECTIONS_JS"
+    assert js.group(1) == app._HERO_DEFAULT_RE.pattern.replace("\n", "").replace(
+        "    ", ""), (js.group(1), app._HERO_DEFAULT_RE.pattern)
+
+
+def test_a_placeholder_that_never_says_default_is_still_a_placeholder():
+    """Three spellings are in use on infineon.com and only two of them carry
+    the word "default". CYW43907's hero is packages/dummy-chip-packages.svg -
+    read as a real product photo until "dumm" was added to the test."""
+    for src in ("https://www.infineon.com/assets/row/public/images/"
+                "missing-product-images/part8/optiga-trust-ch-eval-kit.svg",
+                "https://www.infineon.com/assets/web/dummy-images/"
+                "evaluation-boards-dummy-default.svg",
+                "https://www.infineon.com/assets/row/public/images/packages/"
+                "dummy-chip-packages.svg"):
+        assert app._HERO_DEFAULT_RE.search(src), src
+    # ...and a real board photo is not swept up with them
+    for src in ("https://assets.infineon.com/is/image/infineon/"
+                "kit-psc3m5-cc1-main-image-kit-psc3m5-cc1.png",
+                "https://assets.infineon.com/is/image/infineon/psc3-pfc1-kit.jpeg"):
+        assert not app._HERO_DEFAULT_RE.search(src), src
+
+
+def test_an_image_says_whether_it_is_the_hero_or_just_present():
+    """Searching the library for "dummy" lists every page CARRYING one - a
+    related-board tile, a tool icon. KIT-PSC3-PFC1 carries the evaluation-board
+    placeholder in a tile while its own hero is a real photo, and it was
+    reported as a dummy-hero page on the strength of the search."""
+    import json as _json
+    con = db.connect()
+    hero = "https://assets.infineon.com/is/image/infineon/psc3-pfc1-kit.jpeg"
+    dummy = ("https://www.infineon.com/assets/web/dummy-images/"
+             "evaluation-boards-dummy-default.svg")
+    con.execute("INSERT INTO urls(id, url, active, ptype, level, flags)"
+                " VALUES(950, 'https://www.infineon.com/evaluation-board/PFC1',"
+                " 1, 'Part', 'EB', ?)",
+                (_json.dumps({"hero_image": {"exists": True, "has_content": True,
+                                             "src": hero}}),))
+    con.execute("INSERT INTO items(url_id, category, title, item_url, item_key)"
+                " VALUES(950, 'images', 'KIT_PSC3_PFC1', ?, 'kh')", (hero,))
+    con.execute("INSERT INTO items(url_id, category, title, item_url, item_key)"
+                " VALUES(950, 'images', 'USB0010', ?, 'kd')", (dummy,))
+    con.commit()
+    con.close()
+    import re as _re
+
+    def flat(r):                      # the sentence wraps in the template
+        return _re.sub(r"\s+", " ", r.data.decode("utf-8", "replace"))
+
+    assert "Used as the <b>hero image</b> on 1 of these 1 page" in \
+        flat(_ok("/item/kh"))
+    assert "<b>Not the hero image</b> on any of these 1 page" in \
+        flat(_ok("/item/kd")), \
+        "a placeholder sitting in a tile is claiming to be the hero"

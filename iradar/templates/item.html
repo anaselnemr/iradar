@@ -136,6 +136,20 @@
   {#- Same cards as the content library, so a page looks the same wherever you
       meet it. Collapsed by type: an item on forty pages should open as a list
       you can read, not forty cards you have to scroll past. -#}
+  {#- The question people actually arrive with. Searching the library for
+      "dummy" lists every page that CARRIES one anywhere - a related-board
+      tile, a tool icon - which is not the same as "this page's hero is a
+      placeholder", and two pages were reported as the latter on the strength
+      of the former. -#}
+  {% if item.category == 'images' %}
+  <p class="muted" style="margin:0 0 12px">
+    {% if hero_on %}Used as the <b>hero image</b> on {{ hero_on }} of these
+      {{ pages|length }} page{{ 's' if pages|length != 1 }}.
+    {% else %}<b>Not the hero image</b> on any of these
+      {{ pages|length }} page{{ 's' if pages|length != 1 }} &mdash; it appears
+      somewhere else on them.{% endif %}
+  </p>
+  {% endif %}
   {% for ptype, plist in by_type %}
     <details class="asn" {% if by_type|length == 1 and plist|length <= 4 %}open{% endif %}>
       <summary>{{ ptype }} <span class="n">{{ plist|length }}</span></summary>
@@ -148,7 +162,8 @@
             <img class="pageshot" loading="lazy" alt=""
                  src="{{ url_for('snapshot_thumb', snap_id=p.snap_id) }}">
             {% endif %}
-            <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ (p.title|clean_title) or p.url }}</div>
+            <div class="pagecard-title">{% if p.level %}<span class="lvl lvl-{{ p.level|lower }}">{{ p.level }}</span> {% endif %}{{ (p.title|clean_title) or p.url }}{#-
+              -#}{% if p.is_hero %} <span class="badge b-newpg" title="This image IS this page's hero - the big picture at the top">hero</span>{% endif %}</div>
           </a>
           {#- its own link, so the live page is one click and not two -#}
           <a class="pagecard-url" href="{{ p.url }}" target="_blank" rel="noopener"
