@@ -962,11 +962,20 @@ def enrich_pending(limit=0, con=None):
     own = con is None
     con = con or db.connect()
     try:
+        # sources this machine cannot read, skipped rather than attempted.
+        # reddit answers 403 to anything that is not a browser, and youtube
+        # 429s a datacentre address on the first request and never relents -
+        # so from Railway, without a key, every youtube row would burn its
+        # full backoff and still come back empty. Trying anyway would spend
+        # an afternoon proving something already known.
+        skip = ["reddit"]
+        if not os.environ.get("YT_API_KEY", ""):
+            skip.append("youtube")
         rows = con.execute(
             "SELECT id, source, url FROM mentions"
-            " WHERE IFNULL(fulltext,'')='' AND source<>'reddit'"
-            " ORDER BY id DESC"
-            + ("" if not limit else " LIMIT %d" % int(limit))).fetchall()
+            " WHERE IFNULL(fulltext,'')='' AND source NOT IN (%s)"
+            " ORDER BY id DESC" % ",".join("?" * len(skip))
+            + ("" if not limit else " LIMIT %d" % int(limit)), skip).fetchall()
         if not rows:
             return 0
         SENT_STATE["message"] = "reading %d page(s)…" % len(rows)
@@ -1137,9 +1146,14 @@ def score_pending(limit=200):
             "- Mixed mentions: score the overall lean, and tag each aspect"
             " with its own sign.\n"
             "- Tags: 1-3 from docs, tooling, hardware, price, availability,"
-            " performance, support, question, praise - each suffixed + or -"
-            " when it has a direction (docs-, performance+), bare when"
+            " performance, support, question, praise, vendor - each suffixed"
+            " + or - when it has a direction (docs-, performance+), bare when"
             " neutral (question).\n"
+            "- 'vendor' means the post is INFINEON'S OWN: a company blog, a"
+            " knowledge-base article, a published code example, an official"
+            " announcement. Tag every one of them, because a vendor's own"
+            " marketing is not evidence of what customers think and a reader"
+            " must be able to take it back out.\n"
             "Examples of the judgement wanted:\n"
             "  'Ten minutes from unboxing to blink, impressed' ->"
             " {\"score\": 0.8, \"topics\": [\"tooling+\", \"praise\"]}\n"
