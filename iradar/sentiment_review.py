@@ -4,15 +4,19 @@ from functools import lru_cache
 from urllib.parse import urlsplit
 
 # Generic product categories and the assigned family are NOT proof of ownership.
-BRANDS = ('psoc', 'aurix', 'optiga', 'airoc', 'traveo', 'xensiv', 'coolmos',
+BRANDS = ('optiga', 'airoc', 'traveo', 'xensiv', 'coolmos',
           'coolgan', 'coolsic', 'easypim', 'hybridpack', 'modustoolbox', 'secora',
           'imotion', 'eicedriver', 'optimos', 'strongirfet', 'motix', 'profet',
           'litix', 'hitfet', 'coolset', 'trenchstop', 'cipos', 'ez-usb', 'ez-pd',
           'optireg', 'easypack', 'econopack', 'econodual', 'cipurse')
 _BRAND = re.compile(r'(?<![a-z0-9])(?:' + '|'.join(BRANDS) + r')(?![a-z])', re.I)
 _TECH = re.compile(r'\b(?:infineon|semiconductor|chip|mcu|microcontroller|firmware|'
-                   r'amplifier|mosfet|smartcard|smart card|javacard|nfc|transistor|wiced|dave|pwm|gpio)\b', re.I)
-_AMBIGUOUS = re.compile(r'\b(?:cypress|calypso|merus|tricore|xmc\d*)\b', re.I)
+                   r'amplifier|mosfet|smartcard|smart card|javacard|nfc|transistor|wiced|dave|pwm|gpio|'
+                   r'timer|toolchain|capsense|modustoolbox|ble|deep sleep|adc|dma|spi|i2c|'
+                   r'tc[234]\d\w*|cy8c\d\w*)\b', re.I)
+# AURIX also names financial projects; PSOC also means power-system operation
+# and control. Require chip-specific context, not the shared name alone.
+_AMBIGUOUS = re.compile(r'\b(?:psoc\d*|aurix|cypress|calypso|merus|tricore|xmc\d*)\b', re.I)
 _PART = re.compile(r'\b(?:CY8C\d+[a-z0-9-]*|CYW\d{3,}[a-z0-9-]*|XMC[14]\d{3}[a-z0-9-]*)\b', re.I)
 _HEALTH = re.compile(r'\b(?:pcos|ovarian|ovaries|metformin|menstrual|fertility|insulin|diagnosis)\b', re.I)
 

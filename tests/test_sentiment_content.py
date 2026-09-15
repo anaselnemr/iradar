@@ -38,6 +38,9 @@ def test_company_gate_requires_evidence_not_an_assigned_family():
              ('PSOC insulin resistance', '', '', 'https://reddit.com/r/PCOS', 0),
              ('Cypress tree pruning', '', '', '', 0),
              ('Cypress MCU firmware', '', '', '', 1),
+             ('Upgrade Aurix platform with gold-backed trading and vault features', '', '', '', 0),
+             ('PSOC Important Questions | Power system operation and control | Semester Exam', '', '', '', 0),
+             ('AURIX TC375 lockstep trap', '', '', '', 1),
              ('New device', '', 'Infineon CoolSiC works well', '', 1),
              ('Solved question', '', '', 'https://community.infineon.com/t5/x', 1),
              ('CY8C4247 deep sleep', '', '', '', 1)]

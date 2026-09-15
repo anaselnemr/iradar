@@ -1916,7 +1916,7 @@ def _seed_mentions():
                 "INSERT OR IGNORE INTO mentions(entity, source, url, title,"
                 " body, posted, fetched, score) VALUES(?,?,?,?,'',?,?,0.5)",
                 (entity, "hn", "https://example.invalid/%d" % i,
-                 "%s post" % entity,
+                 "%s MCU post" % entity,
                  (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S"),
                  now.strftime("%Y-%m-%d %H:%M:%S")))
         con.commit()
@@ -2155,7 +2155,7 @@ def test_an_unscored_mention_sorts_last_not_as_zero():
     for i, score in ((90, -0.9), (91, None), (92, 0.8)):
         con.execute("INSERT OR IGNORE INTO mentions(entity, source, url, title,"
                     " body, posted, fetched, score) VALUES('PSOC','hn',?,?,'',?,?,?)",
-                    ("https://example.invalid/s%d" % i, "PSOC s%d post" % i, now, now,
+                    ("https://example.invalid/s%d" % i, "PSOC MCU s%d post" % i, now, now,
                      score))
     con.commit()
     con.close()
