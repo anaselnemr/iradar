@@ -2097,3 +2097,40 @@ def test_the_scorer_is_configured_for_opus_at_a_sane_effort():
     assert '"role": "assistant"' not in src
     # a refusal is a stop_reason, not an exception - it must not be read as text
     assert 'stop_reason == "refusal"' in src
+
+
+def test_a_custom_date_range_narrows_to_those_days():
+    """"Last quarter" is not the question when somebody wants the fortnight
+    around a launch or everything before a recall."""
+    _seed_mentions()
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    day = lambda n: (now - timedelta(days=n)).strftime("%Y-%m-%d")
+    # /1 is 200 days old, /0 and /2 are 3 days old
+    old_only = _ok("/sentiment?from=%s&to=%s" % (day(220), day(150))
+                   ).data.decode("utf-8", "replace")
+    assert "example.invalid/1" in old_only
+    assert "example.invalid/0" not in old_only, "a recent mention leaked in"
+    # an open end is a real question on its own
+    since = _ok("/sentiment?from=%s" % day(10)).data.decode("utf-8", "replace")
+    assert "example.invalid/0" in since and "example.invalid/1" not in since
+
+
+def test_a_date_that_is_not_a_date_is_ignored_rather_than_queried():
+    """The two values reach SQL. Anything that is not YYYY-MM-DD came from a
+    typed URL, not from the date picker."""
+    _seed_mentions()
+    body = _ok("/sentiment?from=' OR 1=1 --").data.decode("utf-8", "replace")
+    assert "example.invalid/0" in body, "a junk date should filter nothing"
+    assert "OR 1=1" not in body
+
+
+def test_the_custom_range_beats_a_named_period():
+    """Somebody who typed a date meant it."""
+    _seed_mentions()
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    day = lambda n: (now - timedelta(days=n)).strftime("%Y-%m-%d")
+    both = _ok("/sentiment?period=30d&from=%s&to=%s" % (day(220), day(150))
+               ).data.decode("utf-8", "replace")
+    assert "example.invalid/1" in both, "the dates should win over 30d"

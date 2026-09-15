@@ -3567,6 +3567,11 @@ def sentiment_page():
     q = (request.args.get("q") or "").strip()
     period = request.args.get("period", "")
     sort = request.args.get("sort", "")
+    # YYYY-MM-DD or nothing: anything else is a typed URL, not a date picker,
+    # and it must not reach the query
+    _date = lambda v: v if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v or "") else ""
+    d_from = _date(request.args.get("from", ""))
+    d_to = _date(request.args.get("to", ""))
     sel_pl = request.args.get("pl", "")
     origin = request.args.get("origin", "")
     # Which terms belong to the chosen product line, and which to the chosen
@@ -3607,11 +3612,23 @@ def sentiment_page():
     # posted is what the market said WHEN; fetched is only when we heard it,
     # and a mention with no posted date would otherwise drop out of every
     # window the moment a collection ran.
-    days = sn.period_days(period)
-    if days:
+    # A named window, or two dates. Dates win when either is given, because
+    # somebody who typed one meant it - and either end alone is a valid
+    # question ("everything since the launch", "everything before the recall").
+    if d_from or d_to:
+        if d_from:
+            where.append("COALESCE(NULLIF(posted,''), fetched) >= ?")
+            args.append(d_from + " 00:00:00")
+        if d_to:
+            # inclusive of the whole closing day, which is what a person
+            # picking 30 September means by "to 30 September"
+            where.append("COALESCE(NULLIF(posted,''), fetched) <= ?")
+            args.append(d_to + " 23:59:59")
+    elif sn.period_days(period):
         where.append("COALESCE(NULLIF(posted,''), fetched) >= ?")
         args.append((datetime.now(timezone.utc)
-                     - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S"))
+                     - timedelta(days=sn.period_days(period))
+                     ).strftime("%Y-%m-%d %H:%M:%S"))
     if want is not None:
         if not want:
             where.append("1=0")          # a line with no terms has no mentions
@@ -3689,6 +3706,7 @@ def sentiment_page():
                            lines=lines, periods=sn.PERIODS,
                            sel_period=period, sel_pl=sel_pl,
                            sel_sort=sort, sorts=SENT_SORTS,
+                           sel_from=d_from, sel_to=d_to,
                            sel_origin=origin, pl_options=pl_options,
                            origin_options=origin_options,
                            sstate=sn.SENT_STATE,

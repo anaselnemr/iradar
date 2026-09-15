@@ -118,6 +118,9 @@
                          row out of alignment with the others */
                       white-space: nowrap; }
   .sn-filters select { height: 32px; font-size: 13px; padding: 0 8px; }
+  .sn-filters input[type=date] { height: 32px; font-size: 13px; padding: 0 8px; }
+  #snrange { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #snrange[hidden] { display: none; }
   @media (max-width: 560px) {
     .sn-filters label { flex: 1 1 100%; }
     .sn-filters select { flex: 1; min-width: 0; }
@@ -165,6 +168,17 @@
   .tt-off .tt-name { opacity: .55; text-decoration: line-through; }
   @media (max-width: 620px) { .tt-o { display: none; } }
 </style>
+<script>
+// "Custom range" is the only period that does not answer immediately - it
+// needs two dates first, so it reveals them instead of submitting an empty
+// range and showing everything.
+function snRange(sel) {
+  var box = document.getElementById('snrange');
+  if (!box) return;
+  box.hidden = sel.value !== 'custom';
+  if (!box.hidden) { var i = box.querySelector('input'); if (i) i.focus(); }
+}
+</script>
 
 <div class="sn-wrap">
   <div class="card">
@@ -275,13 +289,23 @@
           gets used half as often. -#}
       <div class="sn-filters">
         <label>Period
-          <select name="period" onchange="this.form.requestSubmit()">
+          <select name="period" id="snperiod"
+                  onchange="snRange(this); if (this.value !== 'custom') this.form.requestSubmit()">
             <option value="">All time</option>
             {% for key, label, _d in periods %}
             <option value="{{ key }}" {{ 'selected' if sel_period == key }}>{{ label }}</option>
             {% endfor %}
+            <option value="custom" {{ 'selected' if sel_from or sel_to }}>Custom range…</option>
           </select>
         </label>
+        {#- shown only once a range is being asked for: two date boxes sitting
+            permanently beside a dropdown nobody set is three controls to read
+            where one would do -#}
+        <span id="snrange" {% if not (sel_from or sel_to) %}hidden{% endif %}>
+          <label>From <input type="date" name="from" value="{{ sel_from }}"></label>
+          <label>To <input type="date" name="to" value="{{ sel_to }}"></label>
+          <button type="submit" class="linkbtn">Apply</button>
+        </span>
         {% if pl_options %}
         <label>Product line
           <select name="pl" onchange="this.form.requestSubmit()">
@@ -425,7 +449,8 @@
       {%- set keep = {'entity': sel_entity or none, 'q': q or none,
                       'period': sel_period or none, 'pl': sel_pl or none,
                       'origin': sel_origin or none,
-                      'sort': sel_sort or none} -%}
+                      'sort': sel_sort or none,
+                      'from': sel_from or none, 'to': sel_to or none} -%}
       <a class="chip {{ 'chip-on' if not sel_source }}"
          href="{{ url_for('sentiment_page', **keep) }}">Everything</a>
       {% for s in sources %}{% set c = src_totals.get(s.key) %}{% if c %}
