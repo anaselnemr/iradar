@@ -2082,13 +2082,14 @@ def test_an_unscored_mention_sorts_last_not_as_zero():
     assert seen.index("90") < seen.index("91"), "the -0.9 must come first"
 
 
-def test_the_scorer_is_configured_for_opus_at_max_effort():
-    """Judging whether a forum post is annoyed or merely asking - and whether
-    "great, another silent errata" is praise - is what effort buys."""
+def test_the_scorer_is_configured_for_opus_at_a_sane_effort():
+    """Opus for the judgement, the model's own default effort for the cost.
+    Max was tried and rejected - 7,370 short forum posts is high-volume
+    classification, the shape of work that repays effort least."""
     import sentiment as sn
     import inspect
     assert sn.SCORE_MODEL == "claude-opus-5"
-    assert sn.SCORE_EFFORT == "max"
+    assert sn.SCORE_EFFORT in ("low", "medium", "high")
     src = inspect.getsource(sn.score_pending)
     assert "output_config" in src and '"effort": SCORE_EFFORT' in src
     # budget_tokens is a 400 on this model, and prefill is gone
