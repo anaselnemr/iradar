@@ -102,16 +102,25 @@
     .mn-score { grid-column: 1; grid-row: auto; }
   }
 
+  /* figures and actions share one line: the five numbers read left to right
+     and the run controls close the row, so the card opens with one band of
+     information instead of three stacked ones. */
+  .sn-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .sn-head .statrow { flex: 1 1 420px; justify-content: flex-start; gap: 4px; }
+  .sn-head .stat { padding: 6px 10px; }
   .sn-actions { display: flex; gap: 10px; align-items: center;
-                flex-wrap: wrap; margin-top: 12px; }
+                flex-wrap: wrap; margin-left: auto; }
   .sn-empty { text-align: center; padding: 30px 16px; color: var(--muted); }
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
-  .sn-search { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
-  /* the filter row sits under the search bar and takes the full width, so
-     the three questions read left to right instead of crowding the box */
-  .sn-filters { display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
-                flex: 1 1 100%; margin-top: 2px; }
+  .sn-search { display: flex; gap: 10px; margin: 0; flex-wrap: wrap;
+               align-items: center; }
+  /* search and filters share one line. The box is allowed to shrink to a
+     third of the row so the four questions fit beside it; below 1100px the
+     filters wrap underneath on their own rather than squeezing it away. */
+  .sn-search .grow { flex: 1 1 260px; max-width: 420px; }
+  .sn-filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+                flex: 1 1 auto; }
   .sn-filters label { display: flex; align-items: center; gap: 7px;
                       font-size: 12.5px; font-weight: 600; color: var(--muted);
                       /* "Product line" broke over two lines and dragged the
@@ -199,7 +208,8 @@ function snRange(sel) {
         action at its right end, the progress underneath. Same .stat
         classes from base.html, so the two screens are one design. No
         heading - the nav already says where you are. -#}
-    <div class="statrow">
+    <div class="sn-head">
+      <div class="statrow">
       <div class="stat"><div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
         <div class="l">Mentions</div></div>
       <div class="stat"><div class="n">{{ per_entity|length }}</div>
@@ -221,10 +231,10 @@ function snRange(sel) {
         <div class="l">Last collected (auto after checks)</div></div>
     </div>
 
-    {#- the actions used to sit inside the figure row as one more .stat, but
-        .stat centres its contents and the key hint is a sentence, so that one
-        cell grew wider than the other five put together and shoved the whole
-        row out of line. They are their own bar now. -#}
+      {#- the actions used to sit inside the figure row as one more .stat, but
+          .stat centres its contents and the key hint is a sentence, so that
+          one cell grew wider than the other five put together and shoved the
+          row out of line. They ride at the end of the same line instead. -#}
     {% if is_admin %}
     <div class="sn-actions">
       {% if total %}
@@ -256,6 +266,7 @@ function snRange(sel) {
       </form>
     </div>
     {% endif %}
+    </div>
 
     <div id="snprog" class="{{ 'snp-live' if sstate.running }}"
          style="margin:14px 0 0">
