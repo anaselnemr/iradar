@@ -167,6 +167,19 @@
   .tt-act form { display: inline; margin: 0; }
   .tt-off .tt-name { opacity: .55; text-decoration: line-through; }
   @media (max-width: 620px) { .tt-o { display: none; } }
+  /* the run/score bar: primary action at the right end, the quieter scoring
+     links to its left, and both on one line until the screen is too narrow
+     to hold them - then the links drop below the button, not through it. */
+  .sn-actions { display: flex; align-items: center; justify-content: flex-end;
+                gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+  .sn-actions form { margin: 0; }
+  .sn-scoring { display: flex; align-items: center; gap: 8px;
+                flex-wrap: wrap; }
+  .sn-dot { color: var(--line); }
+  .sn-need { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  @media (max-width: 620px) {
+    .sn-actions { justify-content: space-between; }
+  }
 </style>
 <script>
 // "Custom range" is the only period that does not answer immediately - it
@@ -206,42 +219,43 @@ function snRange(sel) {
       <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">
           {{ last_collected|localtime if last_collected else '—' }}</div>
         <div class="l">Last collected (auto after checks)</div></div>
-      {% if is_admin %}
-      <div class="stat" style="padding-top:8px; text-align:right">
-        <form method="post" action="{{ url_for('sentiment_collect') }}"
-              style="display:inline">
-          <button type="submit">&#9654; Collect mentions</button>
+    </div>
+
+    {#- the actions used to sit inside the figure row as one more .stat, but
+        .stat centres its contents and the key hint is a sentence, so that one
+        cell grew wider than the other five put together and shoved the whole
+        row out of line. They are their own bar now. -#}
+    {% if is_admin %}
+    <div class="sn-actions">
+      {% if total %}
+      <div class="sn-scoring">
+        <form method="post" action="{{ url_for('sentiment_score') }}">
+          <button type="submit" class="linkbtn"
+                  {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
+            Score the tone</button>
         </form>
-        {% if total %}
-        <div style="margin-top:6px">
-          <form method="post" action="{{ url_for('sentiment_score') }}"
-                style="display:inline">
-            <button type="submit" class="linkbtn"
-                    {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
-              Score the tone</button>
-          </form>
-          {#- the whole backlog, in the background. Scoring 7,000 mentions is
-              hours of work, so it is a different button from "score the next
-              page of them" rather than the same one with a surprise. -#}
-          {% if unscored %}
-          <form method="post" action="{{ url_for('sentiment_score') }}"
-                style="display:inline">
-            <input type="hidden" name="all" value="1">
-            <button type="submit" class="linkbtn"
-                    title="Score every unscored mention. Runs in the background.">
-              Score all {{ '{:,}'.format(unscored) }}</button>
-          </form>
-          {% endif %}
-          {% if not has_llm_key %}
-          <span class="muted" style="font-size:12px">— scoring needs
-            <code>ANTHROPIC_API_KEY</code> in the environment; collection and
-            browsing work without it</span>
-          {% endif %}
-        </div>
+        {#- the whole backlog, in the background. Scoring 7,000 mentions is
+            hours of work, so it is a different button from "score the next
+            page of them" rather than the same one with a surprise. -#}
+        {% if unscored %}
+        <span class="sn-dot">·</span>
+        <form method="post" action="{{ url_for('sentiment_score') }}">
+          <input type="hidden" name="all" value="1">
+          <button type="submit" class="linkbtn"
+                  title="Score every unscored mention. Runs in the background.">
+            Score all {{ '{:,}'.format(unscored) }}</button>
+        </form>
+        {% endif %}
+        {% if not has_llm_key %}
+        <span class="sn-need">needs <code>ANTHROPIC_API_KEY</code></span>
         {% endif %}
       </div>
       {% endif %}
+      <form method="post" action="{{ url_for('sentiment_collect') }}">
+        <button type="submit">&#9654; Collect mentions</button>
+      </form>
     </div>
+    {% endif %}
 
     <div id="snprog" class="{{ 'snp-live' if sstate.running }}"
          style="margin:14px 0 0">
