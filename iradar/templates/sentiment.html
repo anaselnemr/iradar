@@ -118,7 +118,7 @@
   /* search and filters share one line. The box is allowed to shrink to a
      third of the row so the four questions fit beside it; below 1100px the
      filters wrap underneath on their own rather than squeezing it away. */
-  .sn-search .grow { flex: 1 1 300px; min-width: 240px; max-width: 420px; }
+  .sn-search .grow { flex: 1 1 300px; min-width: 240px; }
   .sn-filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
                 flex: 1 1 auto; }
   .sn-filters label { display: flex; align-items: center; gap: 7px;
@@ -276,7 +276,7 @@ function snRange(sel) {
     <div id="snprog" class="{{ 'snp-live' if sstate.running }}"
          style="margin:14px 0 0">
       {% set _pct = (sstate.done * 100 / sstate.total)|round|int if sstate.running and sstate.total else 0 %}
-      <div class="snp-row">
+      <div class="snp-row" {% if not sstate.running %}hidden{% endif %}>
         <div class="snp-track"><div class="snp-fill" id="snpfill"
              style="width:{{ _pct }}%"></div></div>
         <span class="snp-pct" id="snppct">{{ _pct ~ '%' if sstate.running else '0%' }}</span>
@@ -516,6 +516,9 @@ function snRange(sel) {
   var prog = document.getElementById('snprog');
   if (prog) {
     var wasRunning = prog.classList.contains('snp-live');
+    // the track is hidden while nothing is running, so the poll has to bring
+    // it back the moment a collection starts
+    var row = prog.querySelector('.snp-row');
     var fill = document.getElementById('snpfill');
     var pctEl = document.getElementById('snppct');
     var textEl = document.getElementById('snptext');
@@ -526,6 +529,7 @@ function snRange(sel) {
           if (s.running) {
             wasRunning = true;
             prog.classList.add('snp-live');
+            row.hidden = false;
             var pct = s.total ? Math.round(s.done * 100 / s.total) : 0;
             fill.style.width = pct + '%';
             pctEl.textContent = pct + '%';
@@ -538,6 +542,7 @@ function snRange(sel) {
           if (wasRunning) { location.reload(); return; }
           // idle: keep the label true as the world changes under the page
           prog.classList.remove('snp-live');
+          row.hidden = true;
           fill.style.width = '0%';
           pctEl.textContent = '0%';
           // back to the idle sentence, not to nothing: blanking it left the
