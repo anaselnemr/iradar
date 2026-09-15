@@ -6571,7 +6571,7 @@ def _all_page_columns():
     return cols
 
 
-def _export_rows(con, levels, cols, verbose=False):
+def _export_rows(con, levels, cols, verbose=False, ids=None):
     """One row per page: its identity, then whichever columns were ticked.
 
     Component presence comes from the same resolver the page view uses, so a
@@ -6602,7 +6602,14 @@ def _export_rows(con, levels, cols, verbose=False):
          "    ORDER BY s.id DESC LIMIT 1)) AS title"
          " FROM urls u WHERE u.active=1")
     args = []
-    if levels:
+    # A NAMED SET BEATS A FILTER. Ticking rows on the dashboard and asking for
+    # those is not the same question as "every EB page" - it is the answer to
+    # a conversation somebody is already having, and rebuilding it out of
+    # level and type filters usually cannot be done at all.
+    if ids:
+        q += " AND u.id IN (" + ",".join("?" * len(ids)) + ")"
+        args += list(ids)
+    elif levels:
         q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
         args += levels
     q += " ORDER BY u.level, lower(COALESCE(NULLIF(u.title_override,''), u.url))"
@@ -6688,8 +6695,19 @@ def _export_rows(con, levels, cols, verbose=False):
                     lines = texts.get((p["id"], cat_of[k]), [])
                     row["vals"].append(chr(10).join(lines)[:_CELL_CAP] or word)
                 elif k == "hero_image":
-                    row["vals"].append((flags.get("hero_image") or {}).get("src", "")
-                                       or word)
+                    # TWO cells: the verdict, then the link behind it. A
+                    # column of addresses cannot be sorted or counted - you
+                    # cannot see how many boards are on a placeholder without
+                    # reading 229 URLs - and the address alone does not say,
+                    # because two of the three placeholder paths are named
+                    # after the product rather than after being a placeholder.
+                    h = flags.get("hero_image") or {}
+                    src = h.get("src", "") or ""
+                    row["vals"].append(
+                        "no image" if not h.get("exists")
+                        else ("real image" if h.get("has_content")
+                              else "placeholder"))
+                    row["vals"].append(src or word)
                 else:
                     # a nav label: a link, so present or not is all there is
                     row["vals"].append(word)
@@ -6715,13 +6733,50 @@ def _xl_link(ws, text, url):
     return c
 
 
-def _export_headers(want_meta, want_comps, want_page=()):
+def _wanted_ids():
+    """The page ids asked for by name, or None for "no such request".
+
+    None and empty are different answers: no ids means the level filters
+    decide, an ids list that resolves to nothing means the caller asked for
+    pages that are not here and should get an empty sheet rather than all
+    4,348 of them.
+
+    "Select all matching" is answered the way the bulk actions answer it - by
+    re-running the dashboard's own filter - so Export covers the same rows the
+    other buttons on that bar would act on rather than only the ticked page.
+    """
+    if request.form.get("all_matching") == "1":
+        wsql, params = _url_filter(request.form.get("q", "").strip(),
+                                   request.form.getlist("status"),
+                                   request.form.getlist("ptype"),
+                                   request.form.getlist("attr"),
+                                   request.form.getlist("bl"),
+                                   request.form.getlist("pl"))
+        con = db.connect()
+        try:
+            return [r["id"] for r in
+                    con.execute("SELECT u.id FROM urls u " + wsql, params)]
+        finally:
+            con.close()
+    raw = " ".join(request.form.getlist("ids")) or request.args.get("ids") or ""
+    if not raw.strip():
+        return None
+    return sorted({int(x) for x in re.findall(r"\d+", raw)})[:5000]
+
+
+def _export_headers(want_meta, want_comps, want_page=(), verbose=False):
     labels = dict(_export_meta_cols())
     plabels = dict(PAGE_FIELDS)
     clabels = {k: l for k, l, _k2, _a in _all_components()}
-    return ([labels[k] for k in want_meta]
-            + [plabels[k] for k in want_page]
-            + [clabels.get(k, k) for k in want_comps])
+    out = [labels[k] for k in want_meta] + [plabels[k] for k in want_page]
+    for k in want_comps:
+        # hero_image writes its verdict and its link as two cells in verbose
+        # mode, so the header has to agree or every column after it shifts
+        if k == "hero_image" and verbose:
+            out += ["Hero image", "Hero image link"]
+            continue
+        out.append(clabels.get(k, k))
+    return out
 
 
 # Page facts that are not components and not ownership - the dashboard columns.
@@ -7382,7 +7437,7 @@ def _latest_shots(con):
     return out
 
 
-@app.route("/export/download")
+@app.route("/export/download", methods=["GET", "POST"])
 def export_builder_download():
     """The table you are looking at, as a spreadsheet - same code path, so the
     file can never disagree with the screen."""
@@ -7435,7 +7490,7 @@ def export_builder_download():
         # verbose: the sheet carries what is on the page, not a yes/no you would
         # then have to open the page to resolve
         rows, want_meta, want_comps, want_page = _export_rows(
-            con, levels, cols, verbose=True)
+            con, levels, cols, verbose=True, ids=_wanted_ids())
         ws = wb.create_sheet("Pages")
         # A PICTURE OF THE PAGE, second column. A row of URLs and yes/nos
         # makes you open the site to know what you are even looking at; the
@@ -7445,7 +7500,8 @@ def export_builder_download():
         ws.column_dimensions["B"].width = 24
         # URL first: it is the join key people paste into their own tools
         ws.append(["URL", "Preview", "Page", "Level", "Type"]
-                  + _export_headers(want_meta, want_comps, want_page))
+                  + _export_headers(want_meta, want_comps, want_page,
+                                    verbose=True))
         for i, r in enumerate(rows, start=2):
             shot = shots.get(r["id"])
             buf = None

@@ -498,6 +498,8 @@
     <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)">Approve updates</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('pause', this)">Pause</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('resume', this)">Resume</button>
+    <button class="btn-ghost btn-sm" onclick="exportSel()"
+            title="The selected pages as a spreadsheet — one row each, with every document, component, the main image and its owners spelled out">Export</button>
     <button class="btn-ghost btn-sm act" style="color:#dc2626" onclick="bulk('delete', this)">Remove</button>
     <button class="btn-ghost btn-sm" onclick="clearSel()" title="Clear the selection (Esc)">Done</button>
   </div>
@@ -914,6 +916,20 @@ function bulk(action, btn) {
   stageSel();
   document.getElementById('bulk-action').value = action;
   document.getElementById('bulkform').submit();
+}
+// The same sheet as "Download everything per page", for the rows you ticked.
+// It borrows the bulk form because that form already carries the selection,
+// the filters behind "select all matching", and the CSRF field - then puts
+// the action back, since the download leaves the page where it was.
+function exportSel() {
+  const n = allMatching() ? TOTAL_MATCH : selected();
+  if (!n) { alert('Tick at least one page first.'); return; }
+  stageSel();
+  const f = document.getElementById('bulkform');
+  const was = f.getAttribute('action');
+  f.setAttribute('action', '{{ url_for('export_builder_download') }}?mode=pages&go=1&all=1');
+  f.submit();
+  setTimeout(() => f.setAttribute('action', was), 0);
 }
 function fmtEta(sec) {
   if (sec == null) return '';

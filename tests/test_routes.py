@@ -1978,3 +1978,70 @@ def test_the_filters_survive_clicking_a_source():
     assert chips, "no source chips rendered"
     for href in chips:
         assert "period=30d" in href and "pl=92" in href, href
+
+
+def test_the_per_page_export_can_be_asked_for_named_pages():
+    """Ticking rows and asking for those is not "every EB page" - it is the
+    answer to a conversation somebody is already having, and usually cannot
+    be rebuilt out of the level and type filters at all."""
+    import io
+    from openpyxl import load_workbook
+    con = db.connect()
+    for uid in (975, 976, 977):
+        con.execute("INSERT OR IGNORE INTO urls(id, url, active, ptype, level)"
+                    " VALUES(?, ?, 1, 'Part', 'PTP')",
+                    (uid, "https://www.infineon.com/part/NAMED%d" % uid))
+    con.commit()
+    con.close()
+    r = _client.post("/export/download?mode=pages&go=1&all=1",
+                     data={"ids": ["975", "976"], "_csrf": _csrf()})
+    assert r.status_code == 200, r.status_code
+    ws = load_workbook(io.BytesIO(r.data))["Pages"]
+    urls = {r0[0] for r0 in ws.iter_rows(values_only=True)}
+    assert "https://www.infineon.com/part/NAMED975" in urls
+    assert "https://www.infineon.com/part/NAMED976" in urls
+    assert "https://www.infineon.com/part/NAMED977" not in urls, \
+        "a page that was not asked for came along"
+    # and asking for a page that is not here gives an empty sheet, never all
+    empty = _client.post("/export/download?mode=pages&go=1&all=1",
+                         data={"ids": "99999", "_csrf": _csrf()})
+    ws2 = load_workbook(io.BytesIO(empty.data))["Pages"]
+    assert len(list(ws2.iter_rows(values_only=True))) == 1, "header only"
+
+
+def test_the_per_page_export_says_hero_image_before_it_says_where():
+    """A column of addresses cannot be sorted or counted - you cannot see how
+    many boards are on a placeholder without reading 229 URLs, and the address
+    alone does not say, because two of the three placeholder paths are named
+    after the product rather than after being a placeholder."""
+    import io, json as _json
+    from openpyxl import load_workbook
+    con = db.connect()
+    hero = "https://assets.infineon.com/is/image/infineon/real-board.png"
+    dummy = ("https://www.infineon.com/assets/row/public/images/"
+             "missing-product-images/part8/x.svg")
+    for uid, src, has in ((970, hero, True), (971, dummy, False)):
+        con.execute("INSERT INTO urls(id, url, active, ptype, level, flags)"
+                    " VALUES(?, ?, 1, 'Part', 'EB', ?)",
+                    (uid, "https://www.infineon.com/evaluation-board/H%d" % uid,
+                     _json.dumps({"hero_image": {"exists": True,
+                                                 "has_content": has,
+                                                 "src": src}})))
+    con.execute("INSERT INTO urls(id, url, active, ptype, level, flags)"
+                " VALUES(972, 'https://www.infineon.com/evaluation-board/H972',"
+                " 1, 'Part', 'EB', '{}')")
+    con.commit()
+    con.close()
+    r = _client.post("/export/download?mode=pages&go=1&all=1",
+                     data={"ids": "970 971 972", "_csrf": _csrf()})
+    ws = load_workbook(io.BytesIO(r.data))["Pages"]
+    rows = list(ws.iter_rows(values_only=True))
+    head = list(rows[0])
+    assert "Hero image" in head and "Hero image link" in head, head
+    v, link = head.index("Hero image"), head.index("Hero image link")
+    assert v == link - 1, "the verdict must come before the address"
+    by_url = {r0[0]: r0 for r0 in rows[1:]}
+    assert by_url["https://www.infineon.com/evaluation-board/H970"][v] == "real image"
+    assert by_url["https://www.infineon.com/evaluation-board/H971"][v] == "placeholder"
+    assert by_url["https://www.infineon.com/evaluation-board/H972"][v] == "no image"
+    assert by_url["https://www.infineon.com/evaluation-board/H971"][link] == dummy
