@@ -2045,3 +2045,54 @@ def test_the_per_page_export_says_hero_image_before_it_says_where():
     assert by_url["https://www.infineon.com/evaluation-board/H971"][v] == "placeholder"
     assert by_url["https://www.infineon.com/evaluation-board/H972"][v] == "no image"
     assert by_url["https://www.infineon.com/evaluation-board/H971"][link] == dummy
+
+
+def test_the_feed_can_be_read_oldest_first_and_by_score():
+    """Newest first is the pulse check. Oldest first is how you read a story
+    forward, and the two score orders are "show me the complaints" and "show
+    me what is working" - the question a sentiment feed exists to answer."""
+    _seed_mentions()
+    import re as _re
+    def order(url):
+        b = _ok(url).data.decode("utf-8", "replace")
+        return _re.findall(r"example\.invalid/(\d)", b)
+    # 0 = PSOC 3 days ago, 1 = PSOC 200 days ago, 2 = OPTIGA 3 days ago
+    assert order("/sentiment")[0] != "1", "newest first put the oldest on top"
+    assert order("/sentiment?sort=oldest")[0] == "1"
+    assert order("/sentiment") != order("/sentiment?sort=oldest")
+
+
+def test_an_unscored_mention_sorts_last_not_as_zero():
+    """A mention nobody has judged is not neutral - reading it as 0 would put
+    7,370 unscored rows in the middle of "most negative"."""
+    from datetime import datetime, timezone
+    con = db.connect()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    for i, score in ((90, -0.9), (91, None), (92, 0.8)):
+        con.execute("INSERT OR IGNORE INTO mentions(entity, source, url, title,"
+                    " body, posted, fetched, score) VALUES('PSOC','hn',?,?,'',?,?,?)",
+                    ("https://example.invalid/s%d" % i, "s%d post" % i, now, now,
+                     score))
+    con.commit()
+    con.close()
+    import re as _re
+    body = _ok("/sentiment?sort=worst").data.decode("utf-8", "replace")
+    seen = _re.findall(r"example\.invalid/s(9\d)", body)
+    assert seen, "the seeded rows are not on the page"
+    assert seen.index("90") < seen.index("91"), "the -0.9 must come first"
+
+
+def test_the_scorer_is_configured_for_opus_at_max_effort():
+    """Judging whether a forum post is annoyed or merely asking - and whether
+    "great, another silent errata" is praise - is what effort buys."""
+    import sentiment as sn
+    import inspect
+    assert sn.SCORE_MODEL == "claude-opus-5"
+    assert sn.SCORE_EFFORT == "max"
+    src = inspect.getsource(sn.score_pending)
+    assert "output_config" in src and '"effort": SCORE_EFFORT' in src
+    # budget_tokens is a 400 on this model, and prefill is gone
+    assert "budget_tokens" not in src
+    assert '"role": "assistant"' not in src
+    # a refusal is a stop_reason, not an exception - it must not be read as text
+    assert 'stop_reason == "refusal"' in src

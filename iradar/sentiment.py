@@ -37,7 +37,12 @@ UA = ("iRadar/1.0 (private change monitor; sentiment layer; "
       "contact: local)")
 
 SENT_STATE = {"running": False, "message": "", "done": 0, "total": 0,
-              "found": 0, "new": 0}
+              "found": 0, "new": 0,
+              # scoring runs on its own clock, and for long enough
+              # that the page has to be able to watch it
+              "scoring": False, "scored": 0, "to_score": 0,
+              "stop_scoring": False,
+              "tokens_in": 0, "tokens_out": 0}
 
 # family names that are distinctive enough to search bare; everything else
 # gets an "infineon" qualifier so generic names ("Contactless memories")
@@ -934,21 +939,55 @@ def run_collect_background():
 
 # --- LLM scoring (needs ANTHROPIC_API_KEY; everything works unscored) -------
 
-SCORE_MODEL = "claude-haiku-4-5-20251001"
+SCORE_MODEL = "claude-opus-5"
+# Effort is the quality lever inside one model. Judging whether a forum post is
+# annoyed or merely asking - and whether "great, another silent errata" is
+# praise - is exactly the kind of call that repays thinking, and the whole
+# point of the feed is that somebody trusts the number without reading the
+# post. Thinking is on by default on this model; budget_tokens is a 400.
+SCORE_EFFORT = "max"
+# room for the reasoning AND the JSON: thinking is billed against max_tokens,
+# and a truncated answer costs the whole batch
+SCORE_MAX_TOKENS = 16000
+
+
+def _client():
+    """The Anthropic client, or None when no key is configured."""
+    if not os.environ.get("ANTHROPIC_API_KEY", ""):
+        return None
+    try:
+        import anthropic
+    except ImportError:
+        print("[sentiment] anthropic SDK not installed - scoring is off",
+              flush=True)
+        return None
+    return anthropic.Anthropic()
 
 
 def score_pending(limit=200):
     """Score unscored mentions -1..+1 with topic tags. Returns how many were
-    scored, or -1 when no key is configured."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key:
+    scored, or -1 when no key is configured.
+
+    limit=0 means every unscored mention, which is what the "score everything"
+    run wants; anything else is a page at a time.
+    """
+    client = _client()
+    if client is None:
         return -1
     con = db.connect()
     rows = con.execute("SELECT id, entity, title, body, reason FROM mentions"
-                       " WHERE score IS NULL ORDER BY id DESC LIMIT ?",
-                       (limit,)).fetchall()
+                       " WHERE score IS NULL ORDER BY id DESC"
+                       + ("" if not limit else " LIMIT %d" % int(limit))
+                       ).fetchall()
     scored = 0
+    SENT_STATE.update(scoring=True, scored=0, to_score=len(rows),
+                      tokens_in=0, tokens_out=0,
+                      message="scoring %d mention(s) with %s…"
+                              % (len(rows), SCORE_MODEL))
     for i in range(0, len(rows), 20):
+        if SENT_STATE.get("stop_scoring"):
+            SENT_STATE["message"] = "scoring stopped"
+            break
         batch = rows[i:i + 20]
         listing = "\n".join(
             f'{r["id"]}: [{r["entity"]}] {r["title"]} — {(r["body"] or "")[:160]}'
@@ -987,17 +1026,22 @@ def score_pending(limit=200):
             " [{\"id\": n, \"score\": x, \"topics\": [\"...\"],"
             " \"why\": \"<8 words\"}]\n\n" + listing)
         try:
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                method="POST",
-                headers={"content-type": "application/json",
-                         "x-api-key": key,
-                         "anthropic-version": "2023-06-01"},
-                data=json.dumps({"model": SCORE_MODEL, "max_tokens": 1500,
-                                 "messages": [{"role": "user",
-                                               "content": prompt}]}).encode())
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                txt = json.loads(resp.read())["content"][0]["text"]
+            # streamed: max_tokens is large enough that a non-streaming call
+            # can outlive the HTTP timeout on a slow batch
+            with client.messages.stream(
+                    model=SCORE_MODEL,
+                    max_tokens=SCORE_MAX_TOKENS,
+                    output_config={"effort": SCORE_EFFORT},
+                    messages=[{"role": "user", "content": prompt}]) as stream:
+                msg = stream.get_final_message()
+            if msg.stop_reason == "refusal":
+                print("[sentiment] batch declined, skipping", flush=True)
+                continue
+            txt = "".join(b.text for b in msg.content if b.type == "text")
+            SENT_STATE["tokens_in"] = (SENT_STATE.get("tokens_in", 0)
+                                       + msg.usage.input_tokens)
+            SENT_STATE["tokens_out"] = (SENT_STATE.get("tokens_out", 0)
+                                        + msg.usage.output_tokens)
             m = re.search(r"\[.*\]", txt, re.S)
             for v in json.loads(m.group(0)) if m else []:
                 con.execute(
@@ -1009,6 +1053,21 @@ def score_pending(limit=200):
             con.commit()
         except Exception as exc:
             print(f"[sentiment] scoring stopped: {exc}", flush=True)
+            SENT_STATE["message"] = "scoring stopped: %s" % str(exc)[:120]
             break
+        SENT_STATE.update(scored=scored,
+                          message="scored %d of %d" % (scored, len(rows)))
     con.close()
+    SENT_STATE.update(scoring=False, stop_scoring=False)
     return scored
+
+
+def score_background(limit=0):
+    """Score in a thread. 7,370 mentions at max effort is hours, not a
+    request - the page polls /sentiment/status for the count."""
+    if SENT_STATE.get("scoring"):
+        return False
+    SENT_STATE.update(scoring=True, stop_scoring=False, scored=0,
+                      message="starting…")
+    threading.Thread(target=score_pending, args=(limit,), daemon=True).start()
+    return True

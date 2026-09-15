@@ -287,7 +287,14 @@
           </select>
         </label>
         {% endif %}
-        {% if sel_period or sel_pl or sel_origin %}
+        <label>Sort
+          <select name="sort" onchange="this.form.requestSubmit()">
+            {% for key, label in sorts %}
+            <option value="{{ key }}" {{ 'selected' if sel_sort == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if sel_period or sel_pl or sel_origin or sel_sort %}
         <a class="linkbtn" href="{{ url_for('sentiment_page',
              entity=sel_entity or none, source=sel_source or none,
              q=q or none) }}">Clear filters</a>
@@ -400,7 +407,8 @@
     <div class="sn-chips">
       {%- set keep = {'entity': sel_entity or none, 'q': q or none,
                       'period': sel_period or none, 'pl': sel_pl or none,
-                      'origin': sel_origin or none} -%}
+                      'origin': sel_origin or none,
+                      'sort': sel_sort or none} -%}
       <a class="chip {{ 'chip-on' if not sel_source }}"
          href="{{ url_for('sentiment_page', **keep) }}">Everything</a>
       {% for s in sources %}{% set c = src_totals.get(s.key) %}{% if c %}

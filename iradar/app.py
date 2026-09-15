@@ -3553,6 +3553,12 @@ def mark_filter(text, entity):
     return markupsafe.Markup(rx.sub(r"<b>\1</b>", escaped))
 
 
+# The orders a pulse feed is read in. Newest first stays the default: the
+# question is almost always "what is being said NOW".
+SENT_SORTS = (("", "Newest first"), ("oldest", "Oldest first"),
+              ("worst", "Most negative"), ("best", "Most positive"))
+
+
 @app.route("/sentiment")
 def sentiment_page():
     import sentiment as sn
@@ -3560,6 +3566,7 @@ def sentiment_page():
     src = request.args.get("source", "")
     q = (request.args.get("q") or "").strip()
     period = request.args.get("period", "")
+    sort = request.args.get("sort", "")
     sel_pl = request.args.get("pl", "")
     origin = request.args.get("origin", "")
     # Which terms belong to the chosen product line, and which to the chosen
@@ -3624,7 +3631,18 @@ def sentiment_page():
                " (SELECT MIN(id) " + base + " GROUP BY url)")
     filtered_total = con.execute(
         "SELECT COUNT(*) FROM (" + sql + ")", args).fetchone()[0]
-    sql += " ORDER BY COALESCE(NULLIF(posted,''), fetched) DESC, id DESC"
+    # WHEN it was said, or how it was said. Newest first is the pulse check;
+    # oldest first is how you read a story forward; the two score orders are
+    # "show me the complaints" and "show me what is working", which is the
+    # question a sentiment feed exists to answer and could not be asked.
+    # A mention with no score sorts last either way rather than counting as 0.
+    sql += {
+        "oldest": " ORDER BY COALESCE(NULLIF(posted,''), fetched) ASC, id ASC",
+        "worst": " ORDER BY score IS NULL, score ASC,"
+                 " COALESCE(NULLIF(posted,''), fetched) DESC",
+        "best": " ORDER BY score IS NULL, score DESC,"
+                " COALESCE(NULLIF(posted,''), fetched) DESC",
+    }.get(sort, " ORDER BY COALESCE(NULLIF(posted,''), fetched) DESC, id DESC")
     sql += " LIMIT 200"
     rows = con.execute(sql, args).fetchall()
     total = con.execute("SELECT COUNT(*) FROM mentions").fetchone()[0]
@@ -3667,6 +3685,7 @@ def sentiment_page():
                            sel_entity=ent, sel_source=src, q=q,
                            lines=lines, periods=sn.PERIODS,
                            sel_period=period, sel_pl=sel_pl,
+                           sel_sort=sort, sorts=SENT_SORTS,
                            sel_origin=origin, pl_options=pl_options,
                            origin_options=origin_options,
                            sstate=sn.SENT_STATE,
@@ -3764,6 +3783,17 @@ def sentiment_collect():
 @app.route("/sentiment/score", methods=["POST"])
 def sentiment_score():
     import sentiment as sn
+    # all=1 scores every unscored mention, in the background: at max effort
+    # that is hours of work and nobody is holding a request open for it
+    if request.form.get("all") == "1" or request.args.get("all") == "1":
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            flash("No ANTHROPIC_API_KEY configured.")
+        elif sn.score_background(0):
+            flash("Scoring every unscored mention with %s. The bar shows how "
+                  "far it has got." % sn.SCORE_MODEL)
+        else:
+            flash("Scoring is already running.")
+        return redirect(url_for("sentiment_page"))
     n = sn.score_pending()
     if n < 0:
         flash("No ANTHROPIC_API_KEY configured — set it in the environment "
