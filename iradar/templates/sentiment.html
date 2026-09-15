@@ -100,6 +100,11 @@
   /* the classes the score was filed under, under the number itself */
   .mn-topics { display: block; margin-top: 2px; font-weight: 500;
                font-size: 11px; color: var(--muted); white-space: nowrap; }
+  /* what became of the post - "SOLVED · 3 replies", "closed · 7 comments".
+     Answered gets a green pill, because an answered question reads as a
+     complaint in every list that does not say otherwise. */
+  .mn-ctx { font-weight: 600; }
+  .mn-ctx.is-solved { color: #16a34a; }
   /* why it got that number, in the same words it was scored in */
   .mn-why { grid-column: 1; font-size: 12px; color: var(--muted);
             margin-top: 4px; padding-left: 9px;

@@ -610,6 +610,15 @@ def init_db():
     # decides DAM vs Windchill, kept as its own field rather than parsed back
     # out of the meta string
     _ensure_column(con, "items", "doc_type", "TEXT DEFAULT ''")
+    # what the page ACTUALLY says, fetched from the source's own API rather
+    # than from the link list we found it in. A third of mentions arrive with
+    # no body - a community thread on a product page is a title and a date -
+    # and a tone read off a forum title alone is always negative, because a
+    # forum title IS a problem statement. `context` holds the thread's own
+    # verdict ("SOLVED · 3 replies", "closed · 7 comments"), which is often
+    # the whole story: asked Monday, answered Tuesday, marked accepted.
+    _ensure_column(con, "mentions", "fulltext", "TEXT DEFAULT ''")
+    _ensure_column(con, "mentions", "context", "TEXT DEFAULT ''")
     con.execute("CREATE INDEX IF NOT EXISTS idx_items_key ON items(item_key)")
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (k, v))

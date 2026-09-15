@@ -19,9 +19,15 @@
       {% if m.topics %}<span class="mn-topics">{{ m.topics }}</span>{% endif %}
     </div>
     {% endif %}
-    {% if m.body %}<div class="mn-body">{{ m.body[:220]|evmark(m.entity, m.reason) }}</div>{% endif %}
+    {#- the post's own words. What the page actually says when we could read
+        it, the collected snippet when we could not. -#}
+    {% set said = m.fulltext or m.body %}
+    {% if said %}<div class="mn-body">{{ said[:220]|evmark(m.entity, m.reason) }}</div>{% endif %}
     {% if m.reason %}<div class="mn-why">{{ m.reason }}</div>{% endif %}
     <div class="mn-meta">
+      {#- what became of it. A question that was answered is not a complaint,
+          and this is the line that says so. -#}
+      {% if m.context %}<span class="mn-ctx{{ ' is-solved' if 'SOLVED' in m.context or 'ACCEPTED' in m.context }}">{{ m.context }}</span> ·{% endif %}
       {% if not sel_entity %}<a href="{{ url_for('sentiment_page', entity=m.entity) }}"
          style="color:var(--muted); font-weight:600">{{ m.entity }}</a> ·{% endif %}
       {% if m.author %}<span>{{ m.author }}</span> ·{% endif %}

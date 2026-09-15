@@ -924,6 +924,12 @@ def run_collect():
         con.commit()
         print(f"[sentiment] collected: {SENT_STATE['found']} mention(s) seen,"
               f" {new} new", flush=True)
+        # and now go read them. A collected mention is a link; scoring one on
+        # its title is scoring a headline.
+        try:
+            enrich_pending(con=con)
+        except Exception as exc:
+            print("[sentiment] enrich failed: %s" % str(exc)[:120], flush=True)
     finally:
         SENT_STATE.update(running=False, message="")
         con.close()
@@ -935,6 +941,99 @@ def run_collect_background():
     t = threading.Thread(target=run_collect, daemon=True)
     t.start()
     return True
+
+
+# --- reading the page behind the link ---------------------------------------
+
+def enrich_pending(limit=0, con=None):
+    """Fetch the real text for mentions that arrived as a bare link.
+
+    Runs before scoring, and scoring is the only reason it exists: a title is
+    not an opinion. The community threads are the whole of the problem - they
+    come off a product page's widget with no body at all - but every source
+    gains something, not least whether the question got answered.
+
+    Costs nothing but time, and is skipped for anything already read, so it
+    is safe to run after every collection. Returns how many were filled in.
+    """
+    import mention_text as mt
+    from concurrent.futures import ThreadPoolExecutor
+
+    own = con is None
+    con = con or db.connect()
+    try:
+        rows = con.execute(
+            "SELECT id, source, url FROM mentions"
+            " WHERE IFNULL(fulltext,'')='' AND source<>'reddit'"
+            " ORDER BY id DESC"
+            + ("" if not limit else " LIMIT %d" % int(limit))).fetchall()
+        if not rows:
+            return 0
+        SENT_STATE["message"] = "reading %d page(s)…" % len(rows)
+        done = [0]
+
+        def save(mid, got):
+            text, ctx, author, posted = got
+            # never overwrite what collection already knew about the author or
+            # the date with an empty string from a source that omits them
+            con.execute(
+                "UPDATE mentions SET fulltext=?, context=?,"
+                " author=CASE WHEN author='' THEN ? ELSE author END,"
+                " posted=CASE WHEN posted='' THEN ? ELSE posted END"
+                " WHERE id=?",
+                (text or "", ctx or "", author or "", posted or "", mid))
+            done[0] += 1
+
+        # community: 40 threads per call, and one thread often explains many
+        # mentions - the same thread is cited on every product page it touches
+        by_thread = {}
+        for r in rows:
+            if r["source"] != "community":
+                continue
+            m = mt.THREAD_ID.search(r["url"] or "")
+            if m:
+                by_thread.setdefault(m.group(1), []).append(r["id"])
+        keys = list(by_thread)
+        for i in range(0, len(keys), 40):
+            try:
+                got = mt.community_batch(keys[i:i + 40])
+            except Exception as exc:
+                print("[sentiment] community batch failed: %s" % str(exc)[:90],
+                      flush=True)
+                continue
+            for key, val in got.items():
+                for mid in by_thread.get(key, ()):
+                    save(mid, val)
+            con.commit()
+            SENT_STATE["message"] = ("reading community %d/%d"
+                                     % (min(i + 40, len(keys)), len(keys)))
+
+        # the rest, a few at a time: polite to the far end, and 2,000 pages
+        # one after another is half an hour of waiting on the network
+        singles = [r for r in rows if r["source"] in mt.FETCHERS]
+        if singles:
+            lock = threading.Lock()
+
+            def job(r):
+                got = mt.fetch_one(r["source"], r["url"])
+                if got:
+                    with lock:
+                        save(r["id"], got)
+                        if done[0] % 50 == 0:
+                            con.commit()
+                            SENT_STATE["message"] = ("reading pages %d/%d"
+                                                     % (done[0], len(rows)))
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                list(ex.map(job, singles))
+            con.commit()
+
+        print("[sentiment] read %d of %d page(s)" % (done[0], len(rows)),
+              flush=True)
+        return done[0]
+    finally:
+        SENT_STATE["message"] = ""
+        if own:
+            con.close()
 
 
 # --- LLM scoring (needs ANTHROPIC_API_KEY; everything works unscored) -------
@@ -967,6 +1066,25 @@ def _client():
     return anthropic.Anthropic()
 
 
+# how much of a thread the scorer is shown. Enough for the complaint and the
+# answer to it; past this a thread is restating itself and the tokens buy
+# nothing. The outcome line comes FIRST because it is frequently decisive.
+PROMPT_CHARS = 1200
+
+
+def _for_prompt(r):
+    """One mention as the scorer should see it: title, what happened to it,
+    then as much of what was actually written as fits."""
+    keys = r.keys() if hasattr(r, "keys") else r
+    ctx = (r["context"] if "context" in keys else "") or ""
+    text = ((r["fulltext"] if "fulltext" in keys else "") or r["body"] or "")
+    text = " ".join(text.split())
+    line = "%s: [%s] %s" % (r["id"], r["entity"], r["title"])
+    if ctx:
+        line += " <%s>" % ctx
+    return line + (" — " + text[:PROMPT_CHARS] if text else "")
+
+
 def score_pending(limit=200):
     """Score unscored mentions -1..+1 with topic tags. Returns how many were
     scored, or -1 when no key is configured.
@@ -978,8 +1096,9 @@ def score_pending(limit=200):
     if client is None:
         return -1
     con = db.connect()
-    rows = con.execute("SELECT id, entity, title, body, reason FROM mentions"
-                       " WHERE score IS NULL ORDER BY id DESC"
+    rows = con.execute("SELECT id, entity, title, body, reason,"
+                       " IFNULL(fulltext,'') fulltext, IFNULL(context,'') context"
+                       " FROM mentions WHERE score IS NULL ORDER BY id DESC"
                        + ("" if not limit else " LIMIT %d" % int(limit))
                        ).fetchall()
     scored = 0
@@ -992,9 +1111,7 @@ def score_pending(limit=200):
             SENT_STATE["message"] = "scoring stopped"
             break
         batch = rows[i:i + 20]
-        listing = "\n".join(
-            f'{r["id"]}: [{r["entity"]}] {r["title"]} — {(r["body"] or "")[:160]}'
-            for r in batch)
+        listing = "\n".join(_for_prompt(r) for r in batch)
         # Few-shot with an aspect-signed tag set: the 2025-26 evaluations
         # of LLM sentiment all land on the same two findings - examples in
         # the prompt beat any zero-shot wording, and a single number hides
@@ -1008,6 +1125,13 @@ def score_pending(limit=200):
             "Rules:\n"
             "- A neutral how-do-I question is 0. A question that reports a"
             " defect ('why does X crash') leans negative.\n"
+            "- <angle brackets> hold what BECAME of the post: 'SOLVED',"
+            " '4 replies', 'ACCEPTED', 'closed'. Weigh it. A problem that"
+            " was answered is support working, not a grievance - score it"
+            " nearer 0 than the complaint alone would read, and a thread"
+            " marked SOLVED with a helpful answer can be positive.\n"
+            "- Judge the OPENING post's sentiment, not the replies'; the"
+            " replies are there to tell you how it turned out.\n"
             "- Sarcasm scores as MEANT: 'great, another silent errata' is"
             " negative.\n"
             "- Mixed mentions: score the overall lean, and tag each aspect"

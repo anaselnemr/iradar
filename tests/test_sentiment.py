@@ -3,7 +3,9 @@ source parsers. Pure functions over canned API payloads: no network, no key,
 no live database (entities() is exercised only where a db exists in the
 repo checkout; parser tests always run).
 """
+import json
 import sys
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -323,3 +325,97 @@ def test_evidence_html_escapes_first_and_never_marks_its_own_tags():
 def test_evidence_html_without_a_reason_only_escapes():
     assert sn.evidence_html("a & b", {"PSOC"}, "") == "a &amp; b"
     assert sn.evidence_html(None, {"PSOC"}, "why") == ""
+
+
+# --- reading the page behind the link ---------------------------------------
+
+import mention_text as mt   # noqa: E402
+
+
+def test_thread_id_covers_every_khoros_permalink_shape():
+    for shape, want in (("td-p", "277154"), ("ba-p", "12"), ("ta-p", "34"),
+                        ("m-p", "56"), ("bc-p", "78"), ("cp-p", "90")):
+        u = "https://community.infineon.com/t5/PSoC/Fail/%s/%s#M1" % (shape, want)
+        assert mt.THREAD_ID.search(u).group(1) == want
+    # the widget's own "ask a question" button is not a thread
+    assert mt.THREAD_ID.search(
+        "https://community.infineon.com/t5/forums/postpage/choose-node/true") is None
+
+
+def test_detag_reads_like_the_page_not_like_the_markup():
+    html = ("<div><script>var x='<b>no</b>';</script>"
+            "<p>Board won&#39;t enumerate</p><p>Fixed: bad&nbsp;cable</p>"
+            "<ul><li>one</li><li>two</li></ul></div>")
+    out = mt.detag(html)
+    assert "var x" not in out and "<" not in out      # script and tags gone
+    assert "Board won't enumerate" in out             # entities decoded
+    assert "bad cable" in out                         # nbsp is a space
+    # block ends became line breaks, so two sentences never run together
+    assert "enumerate\nFixed" in out
+    assert "one\ntwo" in out
+
+
+def test_community_batch_reads_the_outcome_not_just_the_body(monkeypatch):
+    payload = {"data": {"items": [{
+        "id": 277154, "subject": "Fail message", "body": "<p>PSoC Creator <b>fails</b></p>",
+        "post_time": "2021-03-04T11:22:33+00:00", "author": {"login": "asker"},
+        "conversation": {"solved": True}, "replies": {"count": 3},
+        "board": {"title": "PSoC Creator"}}]}}
+    seen = {}
+
+    def fake_get(url, accept="", timeout=0):
+        seen["url"] = url
+        return json.dumps(payload)
+
+    monkeypatch.setattr(mt, "get", fake_get)
+    got = mt.community_batch(["277154"])
+    text, ctx, author, posted = got["277154"]
+    assert text == "PSoC Creator fails"
+    # the outcome, in the order that makes it readable at a glance
+    assert ctx == "SOLVED · 3 replies · board: PSoC Creator"
+    assert author == "asker" and posted == "2021-03-04T11:22:33"
+    # one call, ids inlined - 873 threads must not become 873 requests
+    assert "id%20IN%20%28%27277154%27%29" in seen["url"].replace("+", "%20")
+
+
+def test_community_batch_always_states_a_limit(monkeypatch):
+    # LiQL defaults to 25 rows and does not say so: without an explicit
+    # LIMIT, asking for 40 threads silently returns 25 and loses the rest
+    asked = {}
+
+    def fake_get(url, accept="", timeout=0):
+        asked["url"] = urllib.parse.unquote(url)
+        return json.dumps({"data": {"items": []}})
+
+    monkeypatch.setattr(mt, "get", fake_get)
+    mt.community_batch([str(n) for n in range(40)])
+    assert asked["url"].endswith("LIMIT 40")
+
+
+def test_fetch_one_never_raises_on_a_bad_page(monkeypatch):
+    monkeypatch.setattr(mt, "get", lambda *a, **k: (_ for _ in ()).throw(IOError("nope")))
+    assert mt.fetch_one("blog", "https://example.com/x") is None
+    assert mt.fetch_one("reddit", "https://reddit.com/x") is None   # never tried
+    assert mt.fetch_one("blog", "") is None
+
+
+def test_prompt_line_leads_with_the_outcome_and_prefers_the_full_text():
+    row = {"id": 7, "entity": "PSOC", "title": "Fail message",
+           "body": "short snippet from the link list",
+           "fulltext": "the whole thread, as written", "context": "SOLVED · 3 replies"}
+    line = sn._for_prompt(row)
+    assert line.startswith("7: [PSOC] Fail message <SOLVED · 3 replies> — ")
+    assert "the whole thread, as written" in line
+    assert "short snippet" not in line          # fulltext wins when present
+    # and without it, the collected snippet is still used
+    row["fulltext"] = ""
+    assert "short snippet" in sn._for_prompt(row)
+    # a mention with neither has no dash dangling off the end
+    row["body"] = ""
+    assert sn._for_prompt(row) == "7: [PSOC] Fail message <SOLVED · 3 replies>"
+
+
+def test_prompt_line_caps_what_it_shows():
+    row = {"id": 1, "entity": "X", "title": "t", "body": "",
+           "fulltext": "word " * 2000, "context": ""}
+    assert len(sn._for_prompt(row)) <= sn.PROMPT_CHARS + 40
