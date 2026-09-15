@@ -22,6 +22,8 @@
     --bg: #fafafc; --card: #ffffff; --ink: #1c1b22; --muted: #6e6d7a;
     --accent: #5e6ad2; --ok: #16a34a; --warn: #ea580c; --err: #dc2626;
     --line: #e4e4eb; --hover: #f4f4f8; --panel: #ffffff;
+    /* the ground behind a <mark>: what a score was read from */
+    --hl: #fdf0c3;
     /* filled buttons only. A TOKEN, not a darker selector: the dark theme used
        to restate this as [data-theme="dark"] button, which outranks .iconbtn
        and .linkbtn and painted every one of them solid indigo. */
@@ -42,6 +44,9 @@
     --bg: #0e0e13; --card: #16161d; --ink: #e9e9f0; --muted: #9b9aa8;
     --accent: #818cf8; --ok: #4ade80; --warn: #fb923c; --err: #f87171;
     --line: #272730; --hover: #1e1e27; --panel: #1a1a22;
+    /* amber at a quarter, so the lit words read as lit and the text
+       under them stays legible on the dark ground */
+    --hl: rgba(250, 204, 21, .22);
     /* the light accent is too pale to carry white text, so filled buttons keep
        the deeper indigo while everything else uses the brighter --accent */
     --btn: #5e6ad2; --btn-ink: #ffffff;

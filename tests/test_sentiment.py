@@ -276,3 +276,50 @@ def test_negative_context_rejects_the_other_psoc():
     # and the real thing still passes clean
     assert sn._relevant({"title": "PSoC 6 CapSense tuning", "body": "",
                          "url": "https://community.infineon.com/x"}, "PSOC")
+
+
+# --- the evidence behind a score --------------------------------------------
+
+def test_evidence_terms_are_the_reason_plus_the_cues():
+    t = sn.evidence_terms("radar sensors giving eyes to things")
+    # content words of the reason
+    assert {"radar", "sensors", "giving", "eyes", "things"} <= t
+    # the stop list keeps the connective tissue out
+    assert "to" not in t and "the" not in t
+    # and the fixed cue list is always present
+    assert "vulnerable" in t and "incredible" in t
+    # an empty reason still gets the cues, never an empty pattern
+    assert len(sn.evidence_terms("")) > 50
+    assert len(sn.evidence_terms(None)) > 50
+
+
+def test_evidence_skips_the_words_my_own_reasons_lean_on():
+    # "passing mention" says nothing about the source, so it must not light up
+    t = sn.evidence_terms("a passing mention, unrelated listing")
+    for w in ("passing", "mention", "unrelated", "listing"):
+        assert w not in t
+
+
+def test_evidence_html_marks_the_family_and_the_evidence():
+    out = sn.evidence_html("Infineon XENSIV radar sensors - giving eyes to things",
+                           {"XENSIV", "infineon"},
+                           "radar sensors giving eyes to things")
+    assert "<b>Infineon</b>" in out and "<b>XENSIV</b>" in out
+    # one span, not five: the run is joined across the small words
+    assert out.count("<mark>") == 1
+    assert "radar sensors - giving eyes to things" in out
+
+
+def test_evidence_html_escapes_first_and_never_marks_its_own_tags():
+    out = sn.evidence_html("<script>alert(1)</script> PSOC works great",
+                           {"PSOC"}, "works great")
+    assert "<script>" not in out and "&lt;script&gt;" in out
+    assert "<b>PSOC</b>" in out
+    assert out.count("<mark>") == 1 and "works great" in out
+    # the words inside the tags it wrote are not themselves marked
+    assert "<<mark>" not in out and "<mark><mark>" not in out
+
+
+def test_evidence_html_without_a_reason_only_escapes():
+    assert sn.evidence_html("a & b", {"PSOC"}, "") == "a &amp; b"
+    assert sn.evidence_html(None, {"PSOC"}, "why") == ""

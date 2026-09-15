@@ -3526,6 +3526,7 @@ def assets_run():
 # collect waits its turn. Both POSTs are admin-only via the default-deny rule.
 
 _MARK_CACHE = {}
+_FAM_CACHE = {}
 
 
 @app.template_filter("mark")
@@ -3551,6 +3552,24 @@ def mark_filter(text, entity):
         _MARK_CACHE[entity] = rx
     escaped = str(markupsafe.escape(text or ""))
     return markupsafe.Markup(rx.sub(r"<b>\1</b>", escaped))
+
+
+@app.template_filter("evmark")
+def evmark_filter(text, entity, reason):
+    """The family name in bold and the words the score was read from lit up.
+
+    The marking itself lives in sentiment.evidence_html, where it can be
+    tested without standing up Flask; this end knows only which terms name
+    the family - the same set the relevance gate uses, so what kept a
+    mention is exactly what stays bold inside it."""
+    import markupsafe
+    import sentiment as sn
+    fam = _FAM_CACHE.get(entity)
+    if fam is None:
+        fam = {entity, "infineon"} | set(sn._ALIASES.get(entity, ()))
+        fam |= {w for w in entity.split() if len(w) > 3}
+        _FAM_CACHE[entity] = fam
+    return markupsafe.Markup(sn.evidence_html(text, fam, reason))
 
 
 # The orders a pulse feed is read in. Newest first stays the default: the

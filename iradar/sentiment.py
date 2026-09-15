@@ -1074,3 +1074,114 @@ def score_background(limit=0):
                       message="starting…")
     threading.Thread(target=score_pending, args=(limit,), daemon=True).start()
     return True
+
+
+# ---------------------------------------------------------------- evidence
+#
+# A score on its own is an assertion. Beside every one the feed prints the
+# reason it was given, and inside the mention it lights up the words that
+# reason was read from - so a reader can check the judgement instead of
+# taking it.
+#
+# The words come from two places: the content words of the reason itself
+# (it paraphrases the source, so what they share IS the evidence), and a
+# fixed list of the terms that carry tone in this corpus. Runs of marked
+# words a word or two apart are then joined, so the page shows a phrase -
+# "giving eyes to things" - rather than three scattered flecks.
+
+_EV_STOP = {
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
+    "has", "have", "how", "in", "into", "is", "it", "its", "of", "on", "one",
+    "or", "that", "the", "their", "them", "there", "they", "this", "to",
+    "was", "were", "what", "when", "which", "who", "why", "with", "not",
+    "you", "your", "our", "his", "her", "been", "than", "then", "will",
+    "would", "can", "could", "may", "might", "must", "shall", "should",
+    "about", "after", "again", "all", "also", "any", "because", "before",
+    "being", "between", "both", "each", "more", "most", "other", "over",
+    "same", "some", "such", "only", "own", "too", "very", "just", "now",
+    # words my own reasons lean on that say nothing about the source
+    "passing", "mention", "question", "listing", "unrelated", "same", "name",
+    "called", "asks", "wanted", "another", "several", "every", "does", "did",
+}
+
+# the terms that actually carry tone here. Kept short and specific: a long
+# list would light up half of every sentence and mean nothing.
+_EV_CUES = {
+    # praise
+    "incredible", "excellent", "fantastic", "great", "best", "impressed",
+    "impressive", "leader", "leadership", "leading", "first", "world's",
+    "record", "breakthrough", "revolutionary", "revolutionize", "gamechanger",
+    "game-changer", "undisputed", "superior", "powerful", "seamless",
+    "award", "winner", "milestone", "pioneering", "unmatched", "flawless",
+    "love", "loves", "loved", "awesome", "brilliant", "perfect", "smarter",
+    "works", "working", "stable", "stability", "reliable", "robust",
+    "efficient", "efficiency", "accurate", "accuracy", "fast", "faster",
+    # trouble
+    "fail", "fails", "failed", "failure", "failing", "broken", "breaks",
+    "bug", "bugs", "buggy", "error", "errors", "crash", "crashes", "crashed",
+    "hang", "hangs", "hung", "stuck", "unable", "cannot", "can't", "won't",
+    "doesn't", "does't", "not working", "problem", "problems", "issue",
+    "issues", "wrong", "incorrect", "invalid", "corrupt", "corruption",
+    "missing", "deprecated", "discontinued", "unsupported", "unreliable",
+    "vulnerable", "vulnerability", "flaw", "flaws", "attack", "exploit",
+    "insecure", "hacked", "leak", "leaked", "backdoor", "factorizable",
+    "expensive", "pricey", "cost", "costs", "delay", "delayed", "shortage",
+    "frustrating", "frustrated", "terrible", "awful", "nasty", "useless",
+    "stupid", "avoid", "beware", "warning", "stay away", "complain",
+    "recall", "layoff", "layoffs", "fined", "fine", "lawsuit",
+}
+
+_EV_WORD = re.compile(r"[A-Za-z][A-Za-z0-9'’\-]*")
+
+
+def evidence_terms(reason):
+    """The words to light up for one mention: the reason's own content words
+    plus the tone cues. Lower-cased; the caller matches case-insensitively."""
+    terms = set(_EV_CUES)
+    for w in _EV_WORD.findall(reason or ""):
+        lw = w.lower()
+        if len(lw) > 3 and lw not in _EV_STOP:
+            terms.add(lw)
+    return terms
+
+
+_EV_JOIN = re.compile(r"</mark>((?:\s+[A-Za-z0-9'’-]+){0,2}\s)<mark>")
+_EV_RX_CACHE = {}
+
+
+def evidence_html(text, family_terms, reason):
+    """The mention, escaped, with the family name in bold and the words the
+    score was read from in <mark>.
+
+    ONE pass over the text: two passes nest, because the second finds its
+    own terms inside the tags the first wrote. The alternation puts the
+    family name first, so a word that is both stays bold.
+
+    Then single marked words a word or two apart are joined into one span -
+    a reader wants the phrase a judgement came from, not three scattered
+    flecks of colour.
+    """
+    import html as _html
+
+    escaped = _html.escape(text or "", quote=False)
+    if not reason:
+        return escaped
+    key = (tuple(sorted(family_terms)), reason)
+    rx = _EV_RX_CACHE.get(key)
+    if rx is None:
+        fam = "|".join(sorted((re.escape(t) for t in family_terms if t),
+                              key=len, reverse=True))
+        ev = "|".join(sorted((re.escape(t) for t in evidence_terms(reason)),
+                             key=len, reverse=True))
+        rx = re.compile("(?<![A-Za-z0-9])(?:(?P<ent>" + fam + ")"
+                        "|(?P<ev>" + ev + "))(?![A-Za-z])", re.I)
+        if len(_EV_RX_CACHE) > 400:
+            _EV_RX_CACHE.clear()
+        _EV_RX_CACHE[key] = rx
+
+    def _wrap(m):
+        if m.group("ent"):
+            return "<b>" + m.group("ent") + "</b>"
+        return "<mark>" + m.group("ev") + "</mark>"
+
+    return _EV_JOIN.sub(r"\1", rx.sub(_wrap, escaped))
