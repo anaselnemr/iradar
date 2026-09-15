@@ -3649,6 +3649,8 @@ def sentiment_page():
     scored = con.execute(
         "SELECT COUNT(*) n, AVG(score) avg FROM mentions"
         " WHERE score IS NOT NULL").fetchone()
+    unscored = con.execute(
+        "SELECT COUNT(*) FROM mentions WHERE score IS NULL").fetchone()[0]
     con.close()
     last_collected = con2 = None
     try:
@@ -3674,6 +3676,7 @@ def sentiment_page():
                              if mention_counts.get(t["entity"])})
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
                            total=total, scored_n=scored["n"],
+                           unscored=unscored,
                            avg_all=scored["avg"], src_totals=src_totals,
                            filtered_total=filtered_total,
                            last_collected=last_collected,

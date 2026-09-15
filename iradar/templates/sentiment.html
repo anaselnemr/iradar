@@ -206,6 +206,23 @@
                     {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
               Score the tone</button>
           </form>
+          {#- the whole backlog, in the background. Scoring 7,000 mentions is
+              hours of work, so it is a different button from "score the next
+              page of them" rather than the same one with a surprise. -#}
+          {% if unscored %}
+          <form method="post" action="{{ url_for('sentiment_score') }}"
+                style="display:inline">
+            <input type="hidden" name="all" value="1">
+            <button type="submit" class="linkbtn"
+                    title="Score every unscored mention. Runs in the background.">
+              Score all {{ '{:,}'.format(unscored) }}</button>
+          </form>
+          {% endif %}
+          {% if not has_llm_key %}
+          <span class="muted" style="font-size:12px">— scoring needs
+            <code>ANTHROPIC_API_KEY</code> in the environment; collection and
+            browsing work without it</span>
+          {% endif %}
         </div>
         {% endif %}
       </div>
