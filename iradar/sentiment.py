@@ -940,13 +940,15 @@ def run_collect_background():
 # --- LLM scoring (needs ANTHROPIC_API_KEY; everything works unscored) -------
 
 SCORE_MODEL = "claude-opus-5"
-# Effort is the quality lever inside one model, and this is the model's own
-# default. Max was tried and rejected: scoring 7,370 short forum posts is
-# high-volume classification, which is the shape of work that repays effort
-# least, and the top of the range earns its cost only on hard problems.
-# "medium" or "low" are one word away if the bill matters more than the
-# borderline calls. Thinking is on by default here; budget_tokens is a 400.
-SCORE_EFFORT = "high"
+# MEDIUM, deliberately. This is high-volume classification, the shape of work
+# that repays effort least - most of these posts are plainly a question or
+# plainly a complaint. But it is not pure pattern-matching either: the prompt
+# asks for sarcasm to be read as MEANT and for a mixed mention to keep both
+# truths, and those are the calls where a little reasoning pays. Low would
+# take the easy ones just as well and lose the interesting ones; high and max
+# spend a hard problem's budget on "How do I set up SPI DMA on this part?".
+# Thinking is on by default on this model; budget_tokens is a 400.
+SCORE_EFFORT = "medium"
 # room for the reasoning AND the JSON: thinking is billed against max_tokens,
 # and a truncated answer costs the whole batch
 SCORE_MAX_TOKENS = 16000
