@@ -376,6 +376,63 @@
              letter-spacing: .5px; }
   .statrow { display: flex; gap: 8px; justify-content: space-around;
              flex-wrap: wrap; }
+
+  /* ---- the summary header a screen opens with ------------------------------
+     The Dashboard's top card, lifted out of index.html so the Explore screens
+     can wear the same one. Figures on the left in an even grid, the timing and
+     the run button in a fixed column on the right, a progress track under
+     both. A page sets --stat-cols to say how many figures it has.
+     One definition, so the screens cannot drift apart. */
+  .summary-overview { display: grid; grid-template-columns: minmax(0,1fr) 340px;
+                      align-items: start; gap: 16px; padding: 6px 0 12px; }
+  .summary-operations { align-self: stretch; display: flex;
+                        flex-direction: column; justify-content: center;
+                        gap: 8px; min-width: 0; }
+  .report-stats { display: grid; gap: 8px;
+                  grid-template-columns: repeat(var(--stat-cols, 4),
+                                                minmax(0, 1fr)); }
+  .report-stat { min-width: 0; padding: 6px 4px; text-align: center;
+                 color: inherit; text-decoration: none; border-radius: 4px; }
+  .report-stat .n { font-size: 26px; line-height: 1.2; font-weight: 700;
+                    font-variant-numeric: tabular-nums; }
+  .report-stat .l { margin-top: 3px; color: var(--muted); font-size: 12.5px;
+                    font-weight: 400; line-height: 1.25; letter-spacing: .02em; }
+  .report-stat .detail { min-height: 2.5em; margin-top: 5px; color: var(--muted);
+                         font-size: 11.5px; line-height: 1.25; }
+  .report-stat .delta { margin-left: 3px; font-size: 12px; letter-spacing: 0;
+                        vertical-align: 3px; }
+  a.report-stat:hover .l { color: var(--accent); text-decoration: underline; }
+  a.report-stat:focus-visible { outline: 2px solid var(--accent);
+                                outline-offset: -3px; }
+  .summary-controls { display: flex; align-items: center;
+                      justify-content: center; margin: 0; }
+  .next-check { min-width: 0; text-align: center; color: var(--muted);
+                font-size: 12.5px; }
+  .next-check strong { display: block; color: var(--ink); font-size: 15px;
+                       line-height: 1.4; }
+  .next-check .l { letter-spacing: .02em; }
+  .run-actions { display: flex; align-items: center; justify-content: center;
+                 gap: 8px; flex-wrap: nowrap; white-space: nowrap; }
+  /* the idle track: the run box's seat is never empty, so the bar reads as
+     furniture rather than an event when a check starts */
+  .run-track { display: flex; align-items: center; gap: 10px; }
+  .run-track .t { flex: 1 1 auto; height: 10px; border-radius: 999px;
+                  background: var(--hover); border: 1px solid var(--line);
+                  overflow: hidden; }
+  .run-track .p { flex: 0 0 auto; min-width: 3.2ch; text-align: right;
+                  font-size: 12px; font-weight: 700; color: var(--muted);
+                  font-variant-numeric: tabular-nums; }
+  @media (max-width: 1100px) {
+    .summary-overview { grid-template-columns: 1fr; gap: 0; }
+    .report-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .summary-operations { padding-top: 8px; }
+  }
+  @media (max-width: 760px) {
+    .report-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 520px) {
+    .report-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   /* reads as a companion to the count, not another number competing with it */
   .runpct { margin-left: 8px; padding: 1px 8px; border-radius: 999px;
             background: var(--hover); color: var(--muted);

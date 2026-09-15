@@ -114,14 +114,6 @@
     .mn-topics { display: inline; margin-left: 8px; }
   }
 
-  /* figures and actions share one line: the five numbers read left to right
-     and the run controls close the row, so the card opens with one band of
-     information instead of three stacked ones. */
-  .sn-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  .sn-head .statrow { flex: 1 1 420px; justify-content: flex-start; gap: 4px; }
-  .sn-head .stat { padding: 6px 8px; }
-  .sn-actions { display: flex; gap: 10px; align-items: center;
-                flex-wrap: wrap; margin-left: auto; }
   .sn-empty { text-align: center; padding: 30px 16px; color: var(--muted); }
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
@@ -153,17 +145,12 @@
   .sspin.on { opacity: 1; animation: snspin .7s linear infinite; }
   @keyframes snspin { to { transform: rotate(360deg); } }
   .sn-note { font-size: 12.5px; color: var(--muted); }
-  .snp-row { display: flex; align-items: center; gap: 10px; }
-  .snp-track { flex: 1 1 auto; height: 10px; border-radius: 999px;
-               background: var(--hover); border: 1px solid var(--line);
-               overflow: hidden; }
+  /* the track itself is base.html's .run-track, the Dashboard's; only the
+     fill that moves inside it is this screen's own */
   .snp-fill { height: 100%; border-radius: 999px; width: 0;
               background: linear-gradient(90deg, #6d78e0, #8b5cf6);
               transition: width .6s ease; }
-  .snp-pct { flex: 0 0 auto; min-width: 3.2ch; text-align: right;
-             font-size: 12px; font-weight: 700; color: var(--muted);
-             font-variant-numeric: tabular-nums; }
-  .snp-live .snp-pct { color: var(--accent); }
+  .snp-live .run-track .p { color: var(--accent); }
   .terms > summary { list-style: none; cursor: pointer; }
   .terms > summary::-webkit-details-marker { display: none; }
   .terms > summary::after { content: " \25BE"; color: var(--muted);
@@ -188,19 +175,16 @@
   .tt-act form { display: inline; margin: 0; }
   .tt-off .tt-name { opacity: .55; text-decoration: line-through; }
   @media (max-width: 620px) { .tt-o { display: none; } }
-  /* the run/score bar: primary action at the right end, the quieter scoring
-     links to its left, and both on one line until the screen is too narrow
-     to hold them - then the links drop below the button, not through it. */
-  .sn-actions { display: flex; align-items: center; justify-content: flex-end;
-                gap: 14px; flex-wrap: wrap; margin-top: 14px; }
-  .sn-actions form { margin: 0; }
-  .sn-scoring { display: flex; align-items: center; gap: 8px;
-                flex-wrap: wrap; }
-  .sn-dot { color: var(--line); }
+  /* the collect button wears the Dashboard's run-button size, and the
+     missing-key mark rides beside it - an admin-only diagnostic, so a glyph
+     with the variable's name on hover rather than a sentence in the row */
+  .run-actions .linkbtn { white-space: nowrap; }
+  .run-launch button { min-height: 34px; font-size: 12px; line-height: 1.25;
+                       padding: 8px 10px; white-space: nowrap; }
   .sn-need { color: var(--warn); font-size: 14px; cursor: help;
              line-height: 1; }
-  @media (max-width: 620px) {
-    .sn-actions { justify-content: space-between; }
+  @media (max-width: 420px) {
+    .run-actions { flex-wrap: wrap; white-space: normal; }
   }
 </style>
 <script>
@@ -217,81 +201,96 @@ function snRange(sel) {
 
 <div class="sn-wrap">
   <div class="card">
-    {#- the Dashboard's own top structure: one row of figures with the
-        action at its right end, the progress underneath. Same .stat
-        classes from base.html, so the two screens are one design. No
-        heading - the nav already says where you are. -#}
-    <div class="sn-head">
-      <div class="statrow">
-      <div class="stat"><div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
-        <div class="l">Mentions</div></div>
-      <div class="stat"><div class="n">{{ per_entity|length }}</div>
-        <div class="l">Families</div></div>
-      <div class="stat"><div class="n">{{ ready_keys|length }}</div>
-        <div class="l">Sources</div></div>
-      <div class="stat">
-        {% if scored_n %}
-        <div class="n" style="color:{{ '#16a34a' if (avg_all or 0) > 0.15 else ('#dc2626' if (avg_all or 0) < -0.15 else 'var(--muted)') }}">
-          {{ '%+.2f'|format(avg_all or 0) }}</div>
-        <div class="l">Tone ({{ '{:,}'.format(scored_n) }} scored)</div>
-        {% else %}
-        <div class="n" style="color:var(--muted)">—</div>
-        <div class="l">Not scored yet</div>
-        {% endif %}
+    {#- the Dashboard's summary header, from the shared classes in
+        base.html: the figures in an even grid on the left, the collection's
+        timing and its button in the column on the right, the progress track
+        under both. One definition, so the two screens cannot drift. -#}
+    <div class="summary-overview">
+      <div class="report-stats" aria-label="mention and tone summary">
+        <a class="report-stat" href="{{ url_for('sentiment_page') }}"
+           title="Every mention kept across all sources">
+          <div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
+          <div class="l">Mentions</div>
+          <div class="detail">across {{ ready_keys|length }} source{{ '' if ready_keys|length == 1 else 's' }}</div>
+        </a>
+        <div class="report-stat" title="Product families the mentions name">
+          <div class="n">{{ per_entity|length }}</div>
+          <div class="l">Families</div>
+          <div class="detail">named in the feed</div>
+        </div>
+        <div class="report-stat" title="Places searched: forums, code hosts, video, link aggregators">
+          <div class="n">{{ ready_keys|length }}</div>
+          <div class="l">Sources</div>
+          <div class="detail">searched each check</div>
+        </div>
+        <a class="report-stat" href="{{ url_for('sentiment_page', sort='worst') }}"
+           title="The average score across every scored mention, from -1 to +1">
+          {% if scored_n %}
+          <div class="n" style="color:{{ '#16a34a' if (avg_all or 0) > 0.15 else ('#dc2626' if (avg_all or 0) < -0.15 else 'var(--muted)') }}">
+            {{ '%+.2f'|format(avg_all or 0) }}</div>
+          <div class="l">Tone</div>
+          <div class="detail">{% if unscored %}{{ '{:,}'.format(scored_n) }} of {{ '{:,}'.format(total) }} scored{% else %}all {{ '{:,}'.format(scored_n) }} scored{% endif %}</div>
+          {% else %}
+          <div class="n" style="color:var(--muted)">—</div>
+          <div class="l">Tone</div>
+          <div class="detail">not scored yet</div>
+          {% endif %}
+        </a>
       </div>
-      <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">
-          {{ last_collected|localtime if last_collected else '—' }}</div>
-        <div class="l">Last collected</div></div>
-    </div>
 
-      {#- the actions used to sit inside the figure row as one more .stat, but
-          .stat centres its contents and the key hint is a sentence, so that
-          one cell grew wider than the other five put together and shoved the
-          row out of line. They ride at the end of the same line instead. -#}
-    {% if is_admin %}
-    <div class="sn-actions">
-      {% if total %}
-      <div class="sn-scoring">
-        <form method="post" action="{{ url_for('sentiment_score') }}">
-          <button type="submit" class="linkbtn"
-                  {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
-            Score the tone</button>
-        </form>
-        {#- the whole backlog, in the background. Scoring 7,000 mentions is
-            hours of work, so it is a different button from "score the next
-            page of them" rather than the same one with a surprise. -#}
-        {% if unscored %}
-        <span class="sn-dot">·</span>
-        <form method="post" action="{{ url_for('sentiment_score') }}">
-          <input type="hidden" name="all" value="1">
-          <button type="submit" class="linkbtn"
-                  title="Score every unscored mention. Runs in the background.">
-            Score all {{ '{:,}'.format(unscored) }}</button>
-        </form>
-        {% endif %}
-        {#- the whole sentence cost 147px on a row that is already 100px
-            over the card, and it is an admin-only diagnostic: the mark keeps
-            it visible and says the rest on hover. -#}
-        {% if not has_llm_key %}
-        <span class="sn-need" tabindex="0"
-              title="Scoring needs ANTHROPIC_API_KEY in the environment. Collection and browsing work without it.">&#9888;</span>
+      <div class="summary-operations">
+        <div class="next-check">
+          <strong>{{ last_collected|localtime if last_collected else 'not yet' }}</strong>
+          <div class="l">Last collected (auto after checks)</div>
+        </div>
+        {% if is_admin %}
+        <div class="summary-controls">
+          <div class="run-actions">
+            {% if total %}
+            <form method="post" action="{{ url_for('sentiment_score') }}"
+                  style="margin:0">
+              <button type="submit" class="linkbtn"
+                      {% if not has_llm_key %}title="Needs ANTHROPIC_API_KEY in the environment"{% endif %}>
+                Score the tone</button>
+            </form>
+            {#- the whole backlog, in the background. Scoring thousands of
+                mentions is hours of work, so it is a different button from
+                "score the next page of them", not the same one with a
+                surprise behind it. -#}
+            {% if unscored %}
+            <form method="post" action="{{ url_for('sentiment_score') }}"
+                  style="margin:0">
+              <input type="hidden" name="all" value="1">
+              <button type="submit" class="linkbtn"
+                      title="Score every unscored mention. Runs in the background.">
+                Score all {{ '{:,}'.format(unscored) }}</button>
+            </form>
+            {% endif %}
+            {% if not has_llm_key %}
+            <span class="sn-need" tabindex="0"
+                  title="Scoring needs ANTHROPIC_API_KEY in the environment. Collection and browsing work without it.">&#9888;</span>
+            {% endif %}
+            {% endif %}
+            <form method="post" action="{{ url_for('sentiment_collect') }}"
+                  class="run-launch">
+              <button type="submit">&#9654; Collect mentions</button>
+            </form>
+          </div>
+        </div>
         {% endif %}
       </div>
-      {% endif %}
-      <form method="post" action="{{ url_for('sentiment_collect') }}">
-        <button type="submit">&#9654; Collect mentions</button>
-      </form>
-    </div>
-    {% endif %}
     </div>
 
     <div id="snprog" class="{{ 'snp-live' if sstate.running }}"
          style="margin:14px 0 0">
       {% set _pct = (sstate.done * 100 / sstate.total)|round|int if sstate.running and sstate.total else 0 %}
-      <div class="snp-row" {% if not sstate.running %}hidden{% endif %}>
-        <div class="snp-track"><div class="snp-fill" id="snpfill"
+      {#- the same seat the Dashboard keeps: a grey track holds the spot when
+          nothing is collecting, so the bar is furniture rather than an event
+          that appears and shoves the page down. -#}
+      <div class="run-track">
+        <div class="t"><div class="snp-fill" id="snpfill"
              style="width:{{ _pct }}%"></div></div>
-        <span class="snp-pct" id="snppct">{{ _pct ~ '%' if sstate.running else '0%' }}</span>
+        <span class="p" id="snppct">{{ _pct ~ '%' if sstate.running else '0%' }}</span>
       </div>
       {#- Idle, this line used to be blank, so the bar sat there saying nothing
           about when any of this last happened. The Dashboard prints its last
@@ -528,9 +527,6 @@ function snRange(sel) {
   var prog = document.getElementById('snprog');
   if (prog) {
     var wasRunning = prog.classList.contains('snp-live');
-    // the track is hidden while nothing is running, so the poll has to bring
-    // it back the moment a collection starts
-    var row = prog.querySelector('.snp-row');
     var fill = document.getElementById('snpfill');
     var pctEl = document.getElementById('snppct');
     var textEl = document.getElementById('snptext');
@@ -541,7 +537,6 @@ function snRange(sel) {
           if (s.running) {
             wasRunning = true;
             prog.classList.add('snp-live');
-            row.hidden = false;
             var pct = s.total ? Math.round(s.done * 100 / s.total) : 0;
             fill.style.width = pct + '%';
             pctEl.textContent = pct + '%';
@@ -554,7 +549,6 @@ function snRange(sel) {
           if (wasRunning) { location.reload(); return; }
           // idle: keep the label true as the world changes under the page
           prog.classList.remove('snp-live');
-          row.hidden = true;
           fill.style.width = '0%';
           pctEl.textContent = '0%';
           // back to the idle sentence, not to nothing: blanking it left the

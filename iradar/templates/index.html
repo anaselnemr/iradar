@@ -33,37 +33,12 @@
 
 <div class="card dashboard-summary">
   <style>
-    /* Restore the original open stat row, retaining the richer readings. */
-    .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed; }
+    /* The shared summary header lives in base.html; this page keeps only
+       what is its own: its two extra stat colours, seven figures instead of
+       four, and the run button's split menu. */
+    .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed;
+                         --stat-cols:7; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
-    .summary-overview { display:grid; grid-template-columns:minmax(0,1fr) 340px;
-                        align-items:start; gap:16px; padding:6px 0 12px; }
-    .summary-operations { align-self:stretch; display:flex; flex-direction:column;
-                          justify-content:center; gap:8px; min-width:0; }
-    .report-stats { display:grid; grid-template-columns:repeat(7,minmax(0,1fr));
-                    gap:8px; }
-    .report-stat { min-width:0; padding:6px 4px; text-align:center;
-                   color:inherit; text-decoration:none; border-radius:4px; }
-    .report-stat .n { font-size:26px; line-height:1.2; font-weight:700;
-                      font-variant-numeric:tabular-nums; }
-    .report-stat .l { margin-top:3px; color:var(--muted); font-size:12.5px;
-                      font-weight:400; line-height:1.25; letter-spacing:.02em; }
-    .report-stat .detail { min-height:2.5em; margin-top:5px; color:var(--muted);
-                           font-size:11.5px; line-height:1.25; }
-    .report-stat .delta { margin-left:3px; font-size:12px; letter-spacing:0;
-                          vertical-align:3px; }
-    a.report-stat:hover .l { color:var(--accent); text-decoration:underline; }
-    a.report-stat:focus-visible { outline:2px solid var(--accent);
-                                  outline-offset:-3px; }
-    .summary-controls { display:flex; align-items:center;
-                        justify-content:center; margin:0; }
-    .next-check { min-width:0; text-align:center;
-                  color:var(--muted); font-size:12.5px; }
-    .next-check strong { display:block; color:var(--ink); font-size:15px;
-                         line-height:1.4; }
-    .next-check .l { letter-spacing:.02em; }
-    .run-actions { display:flex; align-items:center; justify-content:center;
-                   gap:8px; flex-wrap:nowrap; white-space:nowrap; }
     .run-split { display:inline-flex; align-items:stretch; }
     .run-launch { display:flex; margin:0; }
     .run-launch button { min-height:34px; font-size:12px; line-height:1.25;
@@ -86,20 +61,11 @@
     .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
                      font-size:11px; cursor:pointer; white-space:nowrap; }
     .report-choice input { margin:0; }
-    @media (max-width:1100px) {
-      .summary-overview { grid-template-columns:1fr; gap:0; }
-      .report-stats { grid-template-columns:repeat(4,minmax(0,1fr)); }
-      .report-stat:last-child { grid-column:span 2; }
-      .summary-operations { padding-top:8px; }
-    }
-    @media (max-width:760px) {
-      .report-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
-      .report-stat:last-child { grid-column:span 3; }
-    }
-    @media (max-width:520px) {
-      .report-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
-      .report-stat:last-child { grid-column:span 2; }
-    }
+    /* seven figures do not divide by four, three or two: the last one takes
+       the slack so the grid never ends in a hole */
+    @media (max-width:1100px) { .report-stat:last-child { grid-column:span 2; } }
+    @media (max-width:760px)  { .report-stat:last-child { grid-column:span 3; } }
+    @media (max-width:520px)  { .report-stat:last-child { grid-column:span 2; } }
     @media (max-width:360px) {
       .run-actions { gap:4px; }
       .run-launch button { padding:8px 6px; font-size:11px; }
