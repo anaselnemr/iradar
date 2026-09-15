@@ -107,7 +107,7 @@
      information instead of three stacked ones. */
   .sn-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .sn-head .statrow { flex: 1 1 420px; justify-content: flex-start; gap: 4px; }
-  .sn-head .stat { padding: 6px 10px; }
+  .sn-head .stat { padding: 6px 8px; }
   .sn-actions { display: flex; gap: 10px; align-items: center;
                 flex-wrap: wrap; margin-left: auto; }
   .sn-empty { text-align: center; padding: 30px 16px; color: var(--muted); }
@@ -185,7 +185,8 @@
   .sn-scoring { display: flex; align-items: center; gap: 8px;
                 flex-wrap: wrap; }
   .sn-dot { color: var(--line); }
-  .sn-need { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .sn-need { color: var(--warn); font-size: 14px; cursor: help;
+             line-height: 1; }
   @media (max-width: 620px) {
     .sn-actions { justify-content: space-between; }
   }
@@ -256,8 +257,12 @@ function snRange(sel) {
             Score all {{ '{:,}'.format(unscored) }}</button>
         </form>
         {% endif %}
+        {#- the whole sentence cost 147px on a row that is already 100px
+            over the card, and it is an admin-only diagnostic: the mark keeps
+            it visible and says the rest on hover. -#}
         {% if not has_llm_key %}
-        <span class="sn-need">needs <code>ANTHROPIC_API_KEY</code></span>
+        <span class="sn-need" tabindex="0"
+              title="Scoring needs ANTHROPIC_API_KEY in the environment. Collection and browsing work without it.">&#9888;</span>
         {% endif %}
       </div>
       {% endif %}
