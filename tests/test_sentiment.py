@@ -457,3 +457,23 @@ def test_enrich_writes_from_the_calling_thread_only(monkeypatch):
     assert threads == {_t.get_ident()}  # every db call on the caller's thread
     assert ("thread text", "SOLVED", "a", "", 1) in writes
     assert [w[-1] for w in writes] == [1, 2, 3]
+
+
+def test_enrich_spreads_the_batch_across_sources():
+    """One rate-limited source must not eat the whole batch. GitHub without a
+    token allows sixty requests an hour; ordered by id it sat in front of
+    every other source and the pass filled in nothing at all."""
+    rows = ([{"source": "github", "id": i} for i in range(100)]
+            + [{"source": "forum", "id": 200 + i} for i in range(5)]
+            + [{"source": "blog", "id": 300 + i} for i in range(2)])
+    got = sn._spread(rows, 9)
+    assert len(got) == 9
+    by = {}
+    for r in got:
+        by[r["source"]] = by.get(r["source"], 0) + 1
+    assert by == {"github": 4, "forum": 3, "blog": 2}, by
+    # the scarce sources are taken in full before github takes a second helping
+    assert [r["id"] for r in got[:3]] == [0, 200, 300]
+    # no limit, or a limit past the end, returns everything untouched
+    assert len(sn._spread(rows, 0)) == len(rows)
+    assert len(sn._spread(rows, 999)) == len(rows)

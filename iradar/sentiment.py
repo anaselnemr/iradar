@@ -945,6 +945,38 @@ def run_collect_background():
 
 # --- reading the page behind the link ---------------------------------------
 
+def _spread(rows, limit):
+    """`limit` rows taken round-robin across sources, newest first.
+
+    Straight "ORDER BY id DESC LIMIT n" starves everything behind whichever
+    source happens to hold the newest ids. On the server that was GitHub:
+    1,303 GitHub rows sat in front of every forum, blog and community row,
+    and GitHub without a token allows sixty requests an hour - so the pass
+    spent its whole budget collecting 403s and filled in nothing at all,
+    six times running. Taking one from each source in turn means a
+    rate-limited source costs only its own share of the batch.
+    """
+    if not limit or len(rows) <= limit:
+        return list(rows)
+    from collections import OrderedDict
+    queues = OrderedDict()
+    for r in rows:
+        queues.setdefault(r["source"], []).append(r)
+    out, i = [], 0
+    while len(out) < limit:
+        took = False
+        for q in queues.values():
+            if i < len(q):
+                out.append(q[i])
+                took = True
+                if len(out) >= limit:
+                    break
+        if not took:
+            break
+        i += 1
+    return out
+
+
 def enrich_pending(limit=0, con=None):
     """Fetch the real text for mentions that arrived as a bare link.
 
@@ -974,8 +1006,8 @@ def enrich_pending(limit=0, con=None):
         rows = con.execute(
             "SELECT id, source, url FROM mentions"
             " WHERE IFNULL(fulltext,'')='' AND source NOT IN (%s)"
-            " ORDER BY id DESC" % ",".join("?" * len(skip))
-            + ("" if not limit else " LIMIT %d" % int(limit)), skip).fetchall()
+            " ORDER BY id DESC" % ",".join("?" * len(skip)), skip).fetchall()
+        rows = _spread(rows, limit)
         if not rows:
             return 0
         SENT_STATE["message"] = "reading %d page(s)…" % len(rows)
