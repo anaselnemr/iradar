@@ -1889,3 +1889,92 @@ def test_an_image_says_whether_it_is_the_hero_or_just_present():
     assert "<b>Not the hero image</b> on any of these 1 page" in \
         flat(_ok("/item/kd")), \
         "a placeholder sitting in a tile is claiming to be the hero"
+
+
+def _seed_mentions():
+    """Two terms, two product lines, three ages - enough to prove each filter
+    narrows on its own axis."""
+    from datetime import datetime, timedelta, timezone
+    import sentiment as sn
+    now = datetime.now(timezone.utc)
+    con = db.connect()
+    try:
+        # OR IGNORE, because every test here calls this and the runner shares
+        # one database - a second insert used to raise and leave the
+        # connection open, which locked the file for every test after it
+        for uid, path, pl, bl, title in (
+                (960, "psoc-4-mcu", "92", "ICW", "PSOC 4 MCU"),
+                (961, "optiga-trust", "81", "DSI", "OPTIGA Trust")):
+            con.execute(
+                "INSERT OR IGNORE INTO urls(id, url, active, ptype, level,"
+                " pl, bl, title_override) VALUES(?,?,1,'Product','PFP',?,?,?)",
+                (uid, "https://www.infineon.com/products/x/" + path, pl, bl,
+                 title))
+        for i, (entity, days) in enumerate((("PSOC", 3), ("PSOC", 200),
+                                            ("OPTIGA", 3))):
+            con.execute(
+                "INSERT OR IGNORE INTO mentions(entity, source, url, title,"
+                " body, posted, fetched, score) VALUES(?,?,?,?,'',?,?,0.5)",
+                (entity, "hn", "https://example.invalid/%d" % i,
+                 "%s post" % entity,
+                 (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S"),
+                 now.strftime("%Y-%m-%d %H:%M:%S")))
+        con.commit()
+    finally:
+        con.close()
+    sn._PL_CACHE.update(at=0, val=None)     # the pages just changed
+    sn._ENT_CACHE.update(at=0, val=None)
+
+
+def test_a_pulse_check_can_be_read_over_a_period():
+    """"What has the market said this quarter" could not be asked at all -
+    the feed was every mention ever collected, newest first.
+
+    Asserted on the links, not the titles: the feed bolds the term inside the
+    title, so "PSOC post" is never in the HTML as one string.
+    """
+    _seed_mentions()
+    import sentiment as sn
+    assert sn.period_days("30d") == 30 and sn.period_days("") == 0
+    every = _ok("/sentiment").data.decode("utf-8", "replace")
+    for n in (0, 1, 2):
+        assert "example.invalid/%d" % n in every
+    month = _ok("/sentiment?period=30d").data.decode("utf-8", "replace")
+    assert "example.invalid/1" not in month, "a 200-day-old mention is not this month"
+    assert "example.invalid/0" in month and "example.invalid/2" in month
+
+
+def test_a_term_takes_its_product_line_from_the_pages_that_name_it():
+    """Derived, not typed in: every watched page already carries its PL from
+    the CSS export, so the line of a term is the line of the pages naming it.
+    Nobody keeps a second list that goes stale when PIM moves a family."""
+    _seed_mentions()
+    import sentiment as sn
+    lines = sn.entity_lines()
+    assert lines["PSOC"]["pl"] == "92" and lines["PSOC"]["bl"] == "ICW"
+    assert lines["OPTIGA"]["pl"] == "81" and lines["OPTIGA"]["bl"] == "DSI"
+
+
+def test_filtering_by_product_line_narrows_to_that_lines_terms():
+    _seed_mentions()
+    body = _ok("/sentiment?pl=81").data.decode("utf-8", "replace")
+    assert "example.invalid/2" in body, "OPTIGA sits on PL 81 and is missing"
+    assert "example.invalid/0" not in body, "another line's mentions came through"
+    # a line nobody has a term for shows nothing rather than everything
+    empty = _ok("/sentiment?pl=999").data.decode("utf-8", "replace")
+    for n in (0, 1, 2):
+        assert "example.invalid/%d" % n not in empty
+
+
+def test_the_filters_survive_clicking_a_source():
+    """The source chips rebuild the URL from scratch. Without carrying the
+    new parameters, clicking one silently throws the period and the product
+    line away and the reader is looking at all time again."""
+    _seed_mentions()
+    import re as _re
+    body = _ok("/sentiment?period=30d&pl=92").data.decode("utf-8", "replace")
+    chips = _re.findall(r'class="chip[^"]*"\s+title="[^"]*"\s+href="([^"]+)"',
+                        body)
+    assert chips, "no source chips rendered"
+    for href in chips:
+        assert "period=30d" in href and "pl=92" in href, href

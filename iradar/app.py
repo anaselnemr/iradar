@@ -3559,6 +3559,21 @@ def sentiment_page():
     ent = request.args.get("entity", "")
     src = request.args.get("source", "")
     q = (request.args.get("q") or "").strip()
+    period = request.args.get("period", "")
+    sel_pl = request.args.get("pl", "")
+    origin = request.args.get("origin", "")
+    # Which terms belong to the chosen product line, and which to the chosen
+    # kind of term. Both narrow the SAME thing - the set of entities asked
+    # for - so they are resolved to a term list once and applied as one IN.
+    lines = sn.entity_lines()
+    terms_all = sn.entities()
+    want = None
+    if sel_pl:
+        want = {t["entity"] for t in terms_all
+                if sel_pl in (lines.get(t["entity"], {}).get("pls") or [])}
+    if origin:
+        of = {t["entity"] for t in terms_all if t["origin"] == origin}
+        want = of if want is None else (want & of)
     con = db.connect()
     # one SUM per registered source, so a new collector shows up here and in
     # the template with no query edit - the registry is the only list
@@ -3582,6 +3597,20 @@ def sentiment_page():
                      " OR author LIKE ?)")
         like = "%" + q + "%"
         args += [like, like, like, like]
+    # posted is what the market said WHEN; fetched is only when we heard it,
+    # and a mention with no posted date would otherwise drop out of every
+    # window the moment a collection ran.
+    days = sn.period_days(period)
+    if days:
+        where.append("COALESCE(NULLIF(posted,''), fetched) >= ?")
+        args.append((datetime.now(timezone.utc)
+                     - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S"))
+    if want is not None:
+        if not want:
+            where.append("1=0")          # a line with no terms has no mentions
+        else:
+            where.append("entity IN (" + ",".join("?" * len(want)) + ")")
+            args += sorted(want)
     # One video about GaN drivers legitimately files under two families -
     # but the unfiltered feed must not show it twice. Without an entity
     # filter, one row per LINK; with one, the family's own copy.
@@ -3618,6 +3647,13 @@ def sentiment_page():
     except Exception:
         removed_terms = []
     mention_counts = {r["entity"]: r["n"] for r in per_entity}
+    # Only lines and kinds that actually have something to show. An empty
+    # option is a dead end somebody has to click to discover.
+    pl_options = sorted({pl for t in terms
+                         for pl in (lines.get(t["entity"], {}).get("pls") or [])
+                         if mention_counts.get(t["entity"])})
+    origin_options = sorted({t["origin"] for t in terms
+                             if mention_counts.get(t["entity"])})
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
                            total=total, scored_n=scored["n"],
                            avg_all=scored["avg"], src_totals=src_totals,
@@ -3629,6 +3665,10 @@ def sentiment_page():
                            sources=sn.SOURCES,
                            ready_keys={s["key"] for s in sn.sources_ready()},
                            sel_entity=ent, sel_source=src, q=q,
+                           lines=lines, periods=sn.PERIODS,
+                           sel_period=period, sel_pl=sel_pl,
+                           sel_origin=origin, pl_options=pl_options,
+                           origin_options=origin_options,
                            sstate=sn.SENT_STATE,
                            has_llm_key=bool(os.environ.get("ANTHROPIC_API_KEY")))
 

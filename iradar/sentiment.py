@@ -81,6 +81,72 @@ def _clean_family(title):
 
 
 _ENT_CACHE = {"at": 0.0, "val": None}
+_PL_CACHE = {"at": 0.0, "val": None}
+
+
+def entity_lines():
+    """Which product line each searched term belongs to: {term: {...}}.
+
+    DERIVED, NOT TYPED IN. Every watched page already carries its BL and PL
+    from the CSS export, and a term like AIROC or OPTIGA is named by the
+    titles and addresses of the pages it belongs to - so the product line of
+    a term is the product line of the pages that name it. Nobody maintains a
+    second list that goes stale the moment PIM moves a family.
+
+    A term genuinely spans several lines (PSOC sits under more than one), so
+    the whole set is kept and `pl` is only the one that carries the most
+    pages - enough to sort and filter by, honest about the rest.
+    """
+    if _PL_CACHE["val"] is not None and time.time() - _PL_CACHE["at"] < 300:
+        return _PL_CACHE["val"]
+    con = db.connect()
+    pages = con.execute(
+        "SELECT COALESCE(NULLIF(u.title_override,''), NULLIF(s.page_title,''),"
+        " '') t, u.url u, IFNULL(u.pl,'') pl, IFNULL(u.bl,'') bl FROM urls u"
+        " LEFT JOIN (SELECT url_id, MAX(id) mid FROM snapshots"
+        "            WHERE status='ok' GROUP BY url_id) m ON m.url_id=u.id"
+        " LEFT JOIN snapshots s ON s.id=m.mid"
+        " WHERE u.active=1 AND (IFNULL(u.pl,'')<>'' OR IFNULL(u.bl,'')<>'')"
+    ).fetchall()
+    con.close()
+    hay = [((r["t"] + " " + r["u"]).lower(), r["pl"], r["bl"]) for r in pages]
+    out = {}
+    for e in entities():
+        pls, bls = {}, {}
+        # match on the term and every alias it is searched under, because
+        # "CYW43" names AIROC pages that never write the word AIROC
+        needles = [n.lower() for n in
+                   ([e["entity"]] + list(e.get("queries") or []))]
+        needles = [n[len("infineon "):] if n.startswith("infineon ") else n
+                   for n in needles]
+        needles = [n for n in needles if len(n) >= 3]
+        for text, pl, bl in hay:
+            if not any(n in text for n in needles):
+                continue
+            if pl:
+                pls[pl] = pls.get(pl, 0) + 1
+            if bl:
+                bls[bl] = bls.get(bl, 0) + 1
+        out[e["entity"]] = {
+            "pls": sorted(pls, key=lambda k: -pls[k]),
+            "bls": sorted(bls, key=lambda k: -bls[k]),
+            "pl": max(pls, key=pls.get) if pls else "",
+            "bl": max(bls, key=bls.get) if bls else "",
+            "pages": sum(pls.values()) or sum(bls.values()),
+        }
+    _PL_CACHE.update(at=time.time(), val=out)
+    return out
+
+
+# The periods a pulse check is read over. "Monthly" is a WINDOW, not a
+# calendar month: somebody asking what the market said this month on the 2nd
+# does not want two days of data.
+PERIODS = (("30d", "Last 30 days", 30), ("90d", "Last quarter", 91),
+           ("365d", "Last year", 365))
+
+
+def period_days(key):
+    return dict((k, d) for k, _l, d in PERIODS).get(key or "", 0)
 
 
 def _term_overrides():
