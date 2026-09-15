@@ -118,7 +118,7 @@
   /* search and filters share one line. The box is allowed to shrink to a
      third of the row so the four questions fit beside it; below 1100px the
      filters wrap underneath on their own rather than squeezing it away. */
-  .sn-search .grow { flex: 1 1 260px; max-width: 420px; }
+  .sn-search .grow { flex: 1 1 300px; min-width: 240px; max-width: 420px; }
   .sn-filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
                 flex: 1 1 auto; }
   .sn-filters label { display: flex; align-items: center; gap: 7px;
@@ -228,7 +228,7 @@ function snRange(sel) {
       </div>
       <div class="stat"><div class="n" style="font-size:15px; padding-top:9px">
           {{ last_collected|localtime if last_collected else '—' }}</div>
-        <div class="l">Last collected (auto after checks)</div></div>
+        <div class="l">Last collected</div></div>
     </div>
 
       {#- the actions used to sit inside the figure row as one more .stat, but
@@ -280,7 +280,7 @@ function snRange(sel) {
           about when any of this last happened. The Dashboard prints its last
           run under its own bar; this is the same sentence in the same place,
           and the JS restores it from data-idle when a collection ends. -#}
-      {%- set _idle %}{% if last_collected %}Last collected {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} mentions from {{ ready_keys|length }} source{{ '' if ready_keys|length == 1 else 's' }}{% else %}Nothing collected yet — the next check will gather the first mentions.{% endif %}{% endset -%}
+      {%- set _idle %}{% if last_collected %}Last collected {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} mentions from {{ ready_keys|length }} source{{ '' if ready_keys|length == 1 else 's' }}, gathered automatically after each check{% else %}Nothing collected yet — the next check will gather the first mentions.{% endif %}{% endset -%}
       <p class="muted" style="margin:6px 0 0; font-size:12.5px" id="snptext"
          data-idle="{{ _idle }}">
         {%- if sstate.running -%}
