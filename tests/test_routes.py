@@ -1980,6 +1980,90 @@ def test_the_filters_survive_clicking_a_source():
         assert "period=30d" in href and "pl=92" in href, href
 
 
+def _pagination_mentions():
+    """Large disposable inventory: never leak these rows to another test."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def seed():
+        con = db.connect()
+        con.executemany(
+            "INSERT INTO mentions(entity,source,url,title,body,posted,fetched,score)"
+            " VALUES(?,'hn',?,?,'Infineon pagination fixture body','2026-09-15 12:00:00',"
+            " '2026-09-15 12:00:00',0.5)",
+            [("Fixture family %03d" % n, "https://pagination.invalid/%d" % n,
+              "Pagination fixture %03d" % n) for n in range(540)])
+        con.commit()
+        con.close()
+        try:
+            yield
+        finally:
+            con = db.connect()
+            con.execute("DELETE FROM mentions WHERE url LIKE 'https://pagination.invalid/%'")
+            con.commit()
+            con.close()
+    return seed()
+
+
+def test_sentiment_bounds_families_and_mentions_without_losing_later_pages():
+    import re
+    with _pagination_mentions():
+        def page(query):
+            return _ok('/sentiment?q=Pagination+fixture' + query).data.decode()
+        first = page('')
+        second = page('&family_page=2&page=2')
+        families = lambda p: set(re.findall(r'class="fam" data-entity="([^"]+)"', p))
+        links = lambda p: set(re.findall(r'href="(https://pagination.invalid/\d+)"', p.split('id="snresults"', 1)[1]))
+        assert len(families(first)) == 12
+        assert len(links(first)) == 50
+        a, b = families(first), families(second)
+        assert not a & b, 'family pages repeat cards when counts tie'
+        assert not links(first) & links(second), 'mention pages must be disjoint'
+        assert '540 shown' in first
+        assert int(re.findall(r'<div class="n">(\d+)</div>', first)[0]) >= 540
+        last = page('&family_page=999999&page=999999')
+        assert len(families(last)) == 12
+        assert len(links(last)) == 40
+        assert 'aria-current="page">45</span>' in last
+        bad = page('&family_page=oops&page=-3')
+        assert a == families(bad)
+
+
+def test_sentiment_search_narrows_family_cards_and_keeps_pager_filters():
+    import re
+    from html import unescape
+    from urllib.parse import urlparse, parse_qs
+    with _pagination_mentions():
+        html = _ok('/sentiment?q=Pagination+fixture&source=hn&sort=best'
+                   '&from=2026-09-01&to=2026-09-30').data.decode()
+        pager_links = re.findall(r'class="p(?:num|step)[^"]*"\s+href="([^"]+)"', html)
+        assert pager_links
+        for href in pager_links:
+            if href == '#':
+                continue
+            args = parse_qs(urlparse(unescape(href)).query)
+            for key, value in [('q', 'Pagination fixture'), ('source', 'hn'),
+                               ('sort', 'best'), ('from', '2026-09-01'),
+                               ('to', '2026-09-30')]:
+                assert args[key] == [value]
+        narrowed = _ok('/sentiment?q=Pagination+fixture+539').data.decode()
+        assert re.findall(r'class="fam" data-entity="([^"]+)"', narrowed) == ['Fixture family 539']
+        assert len(set(re.findall(r'href="https://pagination.invalid/\d+"', narrowed.split('id="snresults"', 1)[1]))) == 1
+        empty = _ok('/sentiment?q=nonexistent-pagination-term').data.decode()
+        assert 'class="fam"' not in empty and '<ol class="mn">' not in empty
+        assert 'id="snfamilies"' in empty, 'live search needs a stable empty target'
+
+
+def test_sentiment_uses_dashboard_controls_and_reads_the_form():
+    doc = _ok('/sentiment').data.decode()
+    assert 'class="toolbar sn-search"' in doc and 'class="sbar grow"' in doc
+    assert 'id="snbtn">Apply</button>' in doc
+    assert 'class="dd"' in doc and 'type="radio" name="period"' in doc
+    script = doc
+    assert 'new URLSearchParams(new FormData(form))' in script
+    assert 'bindFamilies();' in script
+
+
 def test_the_per_page_export_can_be_asked_for_named_pages():
     """Ticking rows and asking for those is not "every EB page" - it is the
     answer to a conversation somebody is already having, and usually cannot
@@ -2054,7 +2138,7 @@ def test_the_feed_can_be_read_oldest_first_and_by_score():
     _seed_mentions()
     import re as _re
     def order(url):
-        b = _ok(url).data.decode("utf-8", "replace")
+        b = _ok(url).data.decode("utf-8", "replace").split('id="snresults"', 1)[1]
         return _re.findall(r"example\.invalid/(\d)", b)
     # 0 = PSOC 3 days ago, 1 = PSOC 200 days ago, 2 = OPTIGA 3 days ago
     assert order("/sentiment")[0] != "1", "newest first put the oldest on top"
@@ -2071,12 +2155,13 @@ def test_an_unscored_mention_sorts_last_not_as_zero():
     for i, score in ((90, -0.9), (91, None), (92, 0.8)):
         con.execute("INSERT OR IGNORE INTO mentions(entity, source, url, title,"
                     " body, posted, fetched, score) VALUES('PSOC','hn',?,?,'',?,?,?)",
-                    ("https://example.invalid/s%d" % i, "s%d post" % i, now, now,
+                    ("https://example.invalid/s%d" % i, "PSOC s%d post" % i, now, now,
                      score))
     con.commit()
     con.close()
     import re as _re
     body = _ok("/sentiment?sort=worst").data.decode("utf-8", "replace")
+    body = body.split('id="snresults"', 1)[1]
     seen = _re.findall(r"example\.invalid/s(9\d)", body)
     assert seen, "the seeded rows are not on the page"
     assert seen.index("90") < seen.index("91"), "the -0.9 must come first"

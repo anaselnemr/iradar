@@ -23,6 +23,23 @@
         it, the collected snippet when we could not. -#}
     {% set said = m.fulltext or m.body %}
     {% if said %}<div class="mn-body">{{ said[:220]|evmark(m.entity, m.reason) }}</div>{% endif %}
+    <details class="mn-more">
+      <summary>{{ 'Read collected text' if said else 'Evidence details' }}
+        <span class="muted">· {{ 'fetched excerpt' if m.fulltext else ('snippet only' if m.body else 'title only') }}</span></summary>
+      {% if said %}<div class="mn-full">{{ said|evmark(m.entity, m.reason) }}</div>{% else %}<p>No readable body has been retrieved.</p>{% endif %}
+      <p class="muted">{{ 'Video description / sampled comments — not a transcript.' if m.source == 'youtube' else 'Collected excerpt; replies, when available, are labelled separately.' }}
+        {% if m.text_checked_at %}Last read {{ m.text_checked_at|localtime }}.{% else %}Reading time not recorded.{% endif %}
+        {% if m.read_state in ('unavailable','unsupported') %}Last attempt: {{ m.read_state }}; any older text is retained.{% endif %}
+        {% if m.scored_at %}Scored {{ m.scored_at|localtime }}.{% elif m.score is not none %}Legacy score; scoring time not recorded.{% endif %}</p>
+      <a href="{{ m.url }}" target="_blank" rel="noopener">Read original source ↗</a>
+      {% if is_admin %}
+      <form method="post" action="{{ url_for('sentiment_relevance') }}" style="display:inline; margin-left:12px">
+        <input type="hidden" name="id" value="{{ m.id }}">
+        <input type="hidden" name="action" value="{{ 'auto' if m.relevance_override == 1 else 'exclude' }}">
+        <button type="submit" class="linkbtn">{{ 'Restore automatic relevance check' if m.relevance_override == 1 else 'Unrelated — hide from analysis' }}</button>
+      </form>
+      {% endif %}
+    </details>
     {% if m.reason %}<div class="mn-why">{{ m.reason }}</div>{% endif %}
     <div class="mn-meta">
       {#- what became of it. A question that was answered is not a complaint,

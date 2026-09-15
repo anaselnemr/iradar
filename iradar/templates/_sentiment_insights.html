@@ -1,0 +1,48 @@
+<section class="card" id="sninsights" aria-labelledby="sninsight-title">
+  <h3 id="sninsight-title" style="margin:0 0 8px">What people are saying</h3>
+  <p class="sn-note">Current filters · {{ insight.total }} unique posts · {{ insight.scored }} scored:
+    {{ insight.negative }} negative, {{ insight.neutral }} neutral/mixed, {{ insight.positive }} positive.
+    These are collected posts, not a representative survey.</p>
+  {% if not insight.total %}<p>No related mentions match these filters.</p>
+  {% else %}
+  <div class="sn-insight-grid">
+    {% for title, themes in [('Main concerns', insight.concerns), ('What works well', insight.strengths)] %}
+    <div><h4>{{ title }}</h4>
+      {% for theme in themes %}
+      <details class="sn-theme"><summary>{{ theme.name|capitalize }} — {{ theme.count }} post{{ 's' if theme.count != 1 }}</summary>
+        {% for m in theme.evidence %}<p><a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>
+          <span class="muted"> · {{ m.entity }}</span>{% if m.reason %}<br>{{ m.reason }}{% endif %}</p>{% endfor %}
+      </details>
+      {% else %}<p class="muted">{{ 'Not enough scored evidence yet.' if not insight.scored else 'No directional themes in the scored posts.' }}</p>{% endfor %}
+    </div>
+    {% endfor %}
+    <div><h4>Recent evidence</h4>
+      {% for m in insight.recent %}<p><a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>
+        <span class="muted"> · {{ m.entity }} · {{ m.posted[:10] if m.posted else 'post date unknown' }}</span></p>{% endfor %}
+    </div>
+  </div>
+  <p class="sn-note">Themes group existing scored tags and link to their evidence; vendor-tagged posts are excluded from themes.
+    Recent evidence is not a claim that an issue is increasing.</p>
+  {% endif %}
+  <details class="sn-coverage">
+    <summary>Evidence &amp; coverage — {{ insight.text }} with fetched text, {{ insight.snippets }} snippet-only, {{ insight.unread }} title-only</summary>
+    <p class="sn-note">{{ insight.failed }} matched post(s) unavailable or unsupported on the last reading attempt.
+      {{ insight.undated }} have no publication date; date filters use collection time for those.
+      “All time” means collected history, not complete historical coverage. Fetched text can be a bounded excerpt—not a complete conversation.</p>
+    <div style="overflow-x:auto"><table class="termtbl">
+      <thead><tr><th>Source (all collected history)</th><th>Unique posts</th><th>Text fetched</th><th>Scored</th><th>Checked ≤14d</th><th>Unavailable</th><th>Last collection attempt</th></tr></thead>
+      <tbody>{% for s in sources %}
+      {% set c = source_coverage|selectattr('source','equalto',s.key)|first %}
+      {% set a = source_attempts.get(s.key) %}
+      <tr><td>{{ s.label }}</td><td>{{ c.total if c else 0 }}</td><td>{{ c.readable if c else 0 }}</td>
+        <td>{{ c.scored if c else 0 }}</td><td>{{ c.fresh if c else 0 }}</td><td>{{ c.unavailable if c else 0 }}</td>
+        <td>{{ a.last_attempt|localtime if a else 'Not recorded yet' }}{% if a %}<br>{{ a.status }} · {{ a.returned }} returned, {{ a.added }} new{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    <p class="sn-note">Each collection reads up to 400 new/stale posts and, with the configured model key, scores up to 40 pending posts automatically.
+      Changed evidence clears its old score until rescored. Title-only posts are not scored.
+      Reddit retains collected snippets; YouTube descriptions/comments require a configured API key. Transcripts are not collected.</p>
+    <p>{{ excluded_n }} unrelated or unverified assignment(s) excluded from analysis.
+      {% if is_admin %}<a href="{{ url_for('sentiment_excluded') }}">Review and restore exclusions</a>{% endif %}</p>
+  </details>
+</section>

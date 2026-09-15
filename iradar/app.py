@@ -3581,6 +3581,7 @@ SENT_SORTS = (("", "Newest first"), ("oldest", "Oldest first"),
 @app.route("/sentiment")
 def sentiment_page():
     import sentiment as sn
+    import sentiment_review as sr
     ent = request.args.get("entity", "")
     src = request.args.get("source", "")
     q = (request.args.get("q") or "").strip()
@@ -3612,10 +3613,11 @@ def sentiment_page():
         "SUM(CASE WHEN source='%s' THEN 1 ELSE 0 END) src_%s"
         % (s["key"], s["key"]) for s in sn.SOURCES)
     per_entity = con.execute(
-        "SELECT entity, COUNT(*) n, AVG(score) avg_score, "
-        + sums + " FROM mentions GROUP BY entity ORDER BY n DESC").fetchall()
+        "SELECT entity, COUNT(*) n FROM sentiment_mentions GROUP BY entity").fetchall()
+    family_count = len(per_entity)
+    mention_counts = {r["entity"]: r["n"] for r in per_entity}
     src_totals = {r["source"]: r["n"] for r in con.execute(
-        "SELECT source, COUNT(*) n FROM mentions GROUP BY source")}
+        "SELECT source, COUNT(DISTINCT url) n FROM sentiment_mentions GROUP BY source")}
     where, args = [], []
     if ent:
         where.append("entity=?")
@@ -3624,10 +3626,10 @@ def sentiment_page():
         where.append("source=?")
         args.append(src)
     if q:
-        where.append("(title LIKE ? OR body LIKE ? OR entity LIKE ?"
+        where.append("(title LIKE ? OR body LIKE ? OR fulltext LIKE ? OR entity LIKE ?"
                      " OR author LIKE ?)")
         like = "%" + q + "%"
-        args += [like, like, like, like]
+        args += [like, like, like, like, like]
     # posted is what the market said WHEN; fetched is only when we heard it,
     # and a mention with no posted date would otherwise drop out of every
     # window the moment a collection ran.
@@ -3657,16 +3659,31 @@ def sentiment_page():
     # One video about GaN drivers legitimately files under two families -
     # but the unfiltered feed must not show it twice. Without an entity
     # filter, one row per LINK; with one, the family's own copy.
-    base = "FROM mentions"
+    base = "FROM sentiment_mentions"
     if where:
         base += " WHERE " + " AND ".join(where)
+    # Bound the rendered family grid, not the tracked inventory. The same
+    # filters narrow both the family overview and the feed below it.
+    def page_window(name, count, size):
+        last = max(1, (count + size - 1) // size)
+        page = max(1, min(request.args.get(name, 1, type=int) or 1, last))
+        return page, last
+
+    family_total = con.execute(
+        "SELECT COUNT(DISTINCT entity) " + base, args).fetchone()[0]
+    family_page, family_last = page_window("family_page", family_total, 12)
+    per_entity = con.execute(
+        "SELECT entity, COUNT(*) n, AVG(score) avg_score, " + sums + " "
+        + base + " GROUP BY entity ORDER BY n DESC, entity COLLATE NOCASE, entity"
+        " LIMIT 12 OFFSET ?", args + [(family_page - 1) * 12]).fetchall()
     if ent:
         sql = "SELECT * " + base
     else:
-        sql = ("SELECT * FROM mentions WHERE id IN"
+        sql = ("SELECT * FROM sentiment_mentions WHERE id IN"
                " (SELECT MIN(id) " + base + " GROUP BY url)")
     filtered_total = con.execute(
         "SELECT COUNT(*) FROM (" + sql + ")", args).fetchone()[0]
+    mention_page, mention_last = page_window("page", filtered_total, 50)
     # WHEN it was said, or how it was said. Newest first is the pulse check;
     # oldest first is how you read a story forward; the two score orders are
     # "show me the complaints" and "show me what is working", which is the
@@ -3675,24 +3692,30 @@ def sentiment_page():
     sql += {
         "oldest": " ORDER BY COALESCE(NULLIF(posted,''), fetched) ASC, id ASC",
         "worst": " ORDER BY score IS NULL, score ASC,"
-                 " COALESCE(NULLIF(posted,''), fetched) DESC",
+                 " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC",
         "best": " ORDER BY score IS NULL, score DESC,"
-                " COALESCE(NULLIF(posted,''), fetched) DESC",
+                " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC",
     }.get(sort, " ORDER BY COALESCE(NULLIF(posted,''), fetched) DESC, id DESC")
-    sql += " LIMIT 200"
-    rows = con.execute(sql, args).fetchall()
-    total = con.execute("SELECT COUNT(*) FROM mentions").fetchone()[0]
+    sql += " LIMIT 50 OFFSET ?"
+    rows = con.execute(sql, args + [(mention_page - 1) * 50]).fetchall()
+    insight = sr.insights(con, base, args)
+    source_coverage = sr.coverage(con)
+    source_attempts = {r['source']: dict(r) for r in con.execute('SELECT * FROM sentiment_sources')}
+    excluded_n = con.execute('SELECT COUNT(*) FROM mentions WHERE id NOT IN (SELECT id FROM sentiment_mentions)').fetchone()[0]
+    total = con.execute("SELECT COUNT(DISTINCT url) FROM sentiment_mentions").fetchone()[0]
     scored = con.execute(
-        "SELECT COUNT(*) n, AVG(score) avg FROM mentions"
-        " WHERE score IS NOT NULL").fetchone()
+        "SELECT COUNT(*) n, AVG(score) avg FROM sentiment_mentions"
+        " WHERE id IN (SELECT MIN(id) FROM sentiment_mentions GROUP BY url)"
+        " AND score IS NOT NULL").fetchone()
     unscored = con.execute(
-        "SELECT COUNT(*) FROM mentions WHERE score IS NULL").fetchone()[0]
+        "SELECT COUNT(*) FROM sentiment_mentions WHERE score IS NULL"
+        " AND id IN (SELECT MIN(id) FROM sentiment_mentions GROUP BY url)").fetchone()[0]
     con.close()
     last_collected = con2 = None
     try:
         con2 = db.connect()
         last_collected = con2.execute(
-            "SELECT MAX(fetched) FROM mentions").fetchone()[0]
+            "SELECT MAX(fetched) FROM sentiment_mentions").fetchone()[0]
     finally:
         if con2 is not None:
             con2.close()
@@ -3702,7 +3725,6 @@ def sentiment_page():
             db.get_settings().get("sn_removed") or "[]"))
     except Exception:
         removed_terms = []
-    mention_counts = {r["entity"]: r["n"] for r in per_entity}
     # Only lines and kinds that actually have something to show. An empty
     # option is a dead end somebody has to click to discover.
     pl_options = sorted({pl for t in terms
@@ -3711,6 +3733,12 @@ def sentiment_page():
     origin_options = sorted({t["origin"] for t in terms
                              if mention_counts.get(t["entity"])})
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
+                           insight=insight, source_coverage=source_coverage,
+                           source_attempts=source_attempts, excluded_n=excluded_n,
+                           last_collection_attempt=max((v['last_attempt'] for v in source_attempts.values()), default=None),
+                           family_count=family_count, family_total=family_total,
+                           family_page=family_page, family_last=family_last,
+                           mention_page=mention_page, mention_last=mention_last,
                            total=total, scored_n=scored["n"],
                            unscored=unscored,
                            avg_all=scored["avg"], src_totals=src_totals,
@@ -3745,12 +3773,12 @@ def sentiment_rows():
     con = db.connect()
     if src:
         rows = con.execute(
-            "SELECT * FROM mentions WHERE entity=? AND source=? ORDER BY"
+            "SELECT * FROM sentiment_mentions WHERE entity=? AND source=? ORDER BY"
             " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC LIMIT 500",
             (ent, src)).fetchall()
     else:
         rows = con.execute(
-            "SELECT * FROM mentions WHERE entity=? ORDER BY"
+            "SELECT * FROM sentiment_mentions WHERE entity=? ORDER BY"
             " COALESCE(NULLIF(posted,''), fetched) DESC, id DESC LIMIT 500",
             (ent,)).fetchall()
     con.close()
@@ -3793,6 +3821,40 @@ def sentiment_terms():
     db.set_setting("sn_custom", json.dumps(custom))
     sn._ENT_CACHE["val"] = None
     return redirect(url_for("sentiment_page"))
+
+
+@app.route('/sentiment/excluded')
+def sentiment_excluded():
+    if not is_admin():
+        abort(403)
+    con = db.connect()
+    count = con.execute('SELECT COUNT(*) FROM mentions WHERE id NOT IN '
+                        '(SELECT id FROM sentiment_mentions)').fetchone()[0]
+    last = max(1, (count + 49) // 50)
+    page = max(1, min(request.args.get('page', 1, type=int) or 1, last))
+    rows = con.execute('SELECT * FROM mentions WHERE id NOT IN '
+                       '(SELECT id FROM sentiment_mentions) ORDER BY id DESC LIMIT 50 OFFSET ?',
+                       ((page-1)*50,)).fetchall()
+    con.close()
+    return render_template('sentiment_excluded.html', rows=rows, total=count,
+                           page=page, last=last)
+
+
+@app.route('/sentiment/relevance', methods=['POST'])
+def sentiment_relevance():
+    mid = request.form.get('id', type=int)
+    action = request.form.get('action')
+    if not mid or action not in ('restore', 'exclude', 'auto'):
+        abort(400)
+    con = db.connect()
+    con.execute('UPDATE mentions SET relevance_override=? WHERE id=?',
+                ({'restore': 1, 'exclude': -1, 'auto': 0}[action], mid))
+    con.commit()
+    con.close()
+    flash('Mention restored to analysis.' if action == 'restore' else
+          'Mention hidden from analysis; the original is retained.' if action == 'exclude'
+          else 'Automatic relevance check restored.')
+    return redirect(url_for('sentiment_excluded' if action == 'restore' else 'sentiment_page'))
 
 
 @app.route("/sentiment/status")

@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% from '_pager.html' import pager %}
+{% block title %}Excluded mentions — iRadar{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Excluded from analysis <span class="muted">— {{ total }} saved mentions</span></h2>
+  <p>No verified company/product connection was found in the available text or source address, or an admin hid the mention.
+    Originals are retained. Restore a false exclusion here; it stays restored across future collections.</p>
+  <p><a href="{{ url_for('sentiment_page') }}">← Back to sentiment analysis</a></p>
+  {% macro purl(n) %}{{ url_for('sentiment_excluded', page=n) }}{% endmacro %}
+  {{ pager(page, last, total, 50, purl, 'top') }}
+  {% for m in rows %}
+  <div style="border-top:1px solid var(--line); padding:14px 0; overflow-wrap:anywhere">
+    <a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>
+    <p class="muted">{{ m.entity }} · {{ m.source }} · {{ 'Hidden by admin' if m.relevance_override == -1 else 'No verified connection in available evidence' }}</p>
+    <p>{{ (m.fulltext or m.body)[:500] }}</p>
+    <form method="post" action="{{ url_for('sentiment_relevance') }}">
+      <input type="hidden" name="id" value="{{ m.id }}"><input type="hidden" name="action" value="restore">
+      <button type="submit">Related to Infineon — restore</button>
+    </form>
+  </div>
+  {% else %}<p>Nothing excluded.</p>{% endfor %}
+  {{ pager(page, last, total, 50, purl) }}
+</div>
+{% endblock %}

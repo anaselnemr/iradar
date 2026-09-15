@@ -6,6 +6,7 @@ repo checkout; parser tests always run).
 import json
 import sys
 import urllib.parse
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -355,7 +356,8 @@ def test_detag_reads_like_the_page_not_like_the_markup():
     assert "one\ntwo" in out
 
 
-def test_community_batch_reads_the_outcome_not_just_the_body(monkeypatch):
+@patch.object(mt, 'get')
+def test_community_batch_reads_the_outcome_not_just_the_body(mock_get):
     payload = {"data": {"items": [{
         "id": 277154, "subject": "Fail message", "body": "<p>PSoC Creator <b>fails</b></p>",
         "post_time": "2021-03-04T11:22:33+00:00", "author": {"login": "asker"},
@@ -364,21 +366,24 @@ def test_community_batch_reads_the_outcome_not_just_the_body(monkeypatch):
     seen = {}
 
     def fake_get(url, accept="", timeout=0):
+        if 'topic.id' in url:
+            return json.dumps({'data': {'items': []}})
         seen["url"] = url
         return json.dumps(payload)
 
-    monkeypatch.setattr(mt, "get", fake_get)
+    mock_get.side_effect = fake_get
     got = mt.community_batch(["277154"])
     text, ctx, author, posted = got["277154"]
     assert text == "PSoC Creator fails"
     # the outcome, in the order that makes it readable at a glance
-    assert ctx == "SOLVED · 3 replies · board: PSoC Creator"
+    assert ctx == "SOLVED · 3 replies · board: PSoC Creator · replies not retrieved"
     assert author == "asker" and posted == "2021-03-04T11:22:33"
     # one call, ids inlined - 873 threads must not become 873 requests
     assert "id%20IN%20%28%27277154%27%29" in seen["url"].replace("+", "%20")
 
 
-def test_community_batch_always_states_a_limit(monkeypatch):
+@patch.object(mt, 'get')
+def test_community_batch_always_states_a_limit(mock_get):
     # LiQL defaults to 25 rows and does not say so: without an explicit
     # LIMIT, asking for 40 threads silently returns 25 and loses the rest
     asked = {}
@@ -387,13 +392,13 @@ def test_community_batch_always_states_a_limit(monkeypatch):
         asked["url"] = urllib.parse.unquote(url)
         return json.dumps({"data": {"items": []}})
 
-    monkeypatch.setattr(mt, "get", fake_get)
+    mock_get.side_effect = fake_get
     mt.community_batch([str(n) for n in range(40)])
     assert asked["url"].endswith("LIMIT 40")
 
 
-def test_fetch_one_never_raises_on_a_bad_page(monkeypatch):
-    monkeypatch.setattr(mt, "get", lambda *a, **k: (_ for _ in ()).throw(IOError("nope")))
+@patch.object(mt, 'get', side_effect=IOError('nope'))
+def test_fetch_one_never_raises_on_a_bad_page(mock_get):
     assert mt.fetch_one("blog", "https://example.com/x") is None
     assert mt.fetch_one("reddit", "https://reddit.com/x") is None   # never tried
     assert mt.fetch_one("blog", "") is None
@@ -421,7 +426,7 @@ def test_prompt_line_caps_what_it_shows():
     assert len(sn._for_prompt(row)) <= sn.PROMPT_CHARS + 40
 
 
-def test_enrich_writes_from_the_calling_thread_only(monkeypatch):
+def test_enrich_writes_from_the_calling_thread_only():
     """A sqlite connection belongs to the thread that opened it. The pool may
     fetch; only this thread may write, or the pass dies on its first page."""
     import threading as _t
@@ -440,22 +445,20 @@ def test_enrich_writes_from_the_calling_thread_only(monkeypatch):
             threads.add(_t.get_ident())
             if sql.lstrip().upper().startswith("SELECT"):
                 return type("R", (), {"fetchall": lambda s: want})()
-            writes.append(params)
+            if 'fulltext=' in sql:
+                writes.append(params)
             return None
 
         def commit(self):
             threads.add(_t.get_ident())
 
-    monkeypatch.setattr(mt, "community_batch",
-                        lambda ids: {"900": ("thread text", "SOLVED", "a", "")})
-    monkeypatch.setattr(mt, "fetch_one",
-                        lambda src, url: None if "gone" in url
-                        else ("post text", "", "", ""))
-
-    n = sn.enrich_pending(con=FakeCon())
+    with patch.object(mt, 'community_batch', return_value={"900": ("thread text", "SOLVED", "a", "")}), \
+         patch.object(mt, 'fetch_one', side_effect=lambda src, url: None if "gone" in url else ("post text", "", "", "")):
+        n = sn.enrich_pending(con=FakeCon())
     assert n == 3                       # the unreadable one is skipped, not saved
     assert threads == {_t.get_ident()}  # every db call on the caller's thread
-    assert ("thread text", "SOLVED", "a", "", 1) in writes
+    assert writes[0][12:14] == ('thread text', 'SOLVED')
+    assert writes[0][-3:] == ('a', '', 1)
     assert [w[-1] for w in writes] == [1, 2, 3]
 
 

@@ -48,7 +48,7 @@ import urllib.request
 # this one is not. Proven from inside Railway, not assumed.
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-CAP = 4000          # per mention. Past this a thread is repeating itself.
+CAP = 8000          # bounded evidence, not a claim of a complete conversation
 TIMEOUT = 25
 
 
@@ -149,7 +149,38 @@ def community_batch(thread_ids):
             detag(it.get("body") or "")[:CAP], " · ".join(bits),
             (it.get("author") or {}).get("login") or "",
             (it.get("post_time") or "")[:19])
+    if out:
+        # Confirmed against the source API: replies use topic.id, not
+        # conversation.id. A bounded batch retains opening posts on failure.
+        q = ("SELECT id,topic.id,body,author.login,is_solution FROM messages"
+             " WHERE topic.id IN ('" + "','".join(out) + "') AND depth > 0 LIMIT 160")
+        try:
+            replies = json.loads(get('https://community.infineon.com/api/2.0/search?q='
+                                     + urllib.parse.quote(q), 'application/json'))
+            groups = {}
+            for r in (replies.get('data') or {}).get('items') or []:
+                root = str((r.get('topic') or {}).get('id') or '')
+                if root in out and str(r.get('id')) != root:
+                    groups.setdefault(root, []).append(r)
+            for root, value in list(out.items()):
+                rs = sorted(groups.get(root, []), key=lambda r: not r.get('is_solution'))[:5]
+                parts = [('Accepted answer' if r.get('is_solution') else 'Reply') +
+                         ' — ' + ((r.get('author') or {}).get('login') or 'unknown author') +
+                         '\n' + detag(r.get('body') or '') for r in rs]
+                text, ctx, author, posted = value
+                out[root] = (with_replies(text, parts), ctx +
+                             (' · %d reply excerpts read' % len(parts) if parts else
+                              ' · replies not retrieved'), author, posted)
+        except Exception:
+            out = {k: (v[0], v[1] + ' · replies unavailable', v[2], v[3]) for k, v in out.items()}
     return out
+
+
+def with_replies(opening, replies):
+    if not replies:
+        return opening[:CAP]
+    return ('[Original post]\n' + opening[:4000] +
+            '\n\n[Replies / outcome — other authors]\n' + '\n\n'.join(replies)[:3800])[:CAP]
 
 
 # --- one url at a time -------------------------------------------------------
@@ -168,7 +199,19 @@ def _stackexchange(url):
         return None
     ctx = "%d answers%s" % (it.get("answer_count") or 0,
                             ", ACCEPTED" if it.get("accepted_answer_id") else "")
-    return (detag(it.get("body") or "")[:CAP], ctx,
+    text = detag(it.get('body') or '')
+    aid = it.get('accepted_answer_id')
+    if aid:
+        try:
+            answers = json.loads(get('https://api.stackexchange.com/2.3/answers/%s?site=%s&filter=withbody'
+                                     % (aid, site), 'application/json'))
+            parts = ['Accepted answer — ' + ((a.get('owner') or {}).get('display_name') or 'unknown author')
+                     + '\n' + detag(a.get('body') or '') for a in answers.get('items', [])]
+            text = with_replies(text, parts)
+            ctx += ' · answer text read' if parts else ' · answer text unavailable'
+        except Exception:
+            ctx += ' · answer text unavailable'
+    return (text[:CAP], ctx,
             (it.get("owner") or {}).get("display_name") or "", "")
 
 
@@ -210,7 +253,21 @@ def _youtube(url):
     if vid:                       # the API when a key is configured: see above
         got = youtube_batch([vid.group(1)]).get(vid.group(1))
         if got:
-            return got
+            text, ctx, author, posted = got
+            key = os.environ.get('YT_API_KEY', '')
+            try:
+                payload = json.loads(get('https://www.googleapis.com/youtube/v3/commentThreads'
+                    '?part=snippet&textFormat=plainText&order=relevance&maxResults=20&videoId='
+                    + vid.group(1) + '&key=' + key, 'application/json'))
+                parts = []
+                for item in payload.get('items', []):
+                    c = ((item.get('snippet') or {}).get('topLevelComment') or {}).get('snippet') or {}
+                    parts.append((c.get('authorDisplayName') or 'unknown author') + ': ' + (c.get('textDisplay') or ''))
+                text = with_replies(text, parts)
+                ctx += ' · description + %d sampled comments (no transcript)' % len(parts)
+            except Exception:
+                ctx += ' · description only; comments unavailable (no transcript)'
+            return text, ctx, author, posted
     h = get(url)
     m = _YT_DESC.search(h)
     if not m:
@@ -253,7 +310,21 @@ def _github(url):
         d = json.loads(urllib.request.urlopen(rq, timeout=TIMEOUT).read())
     ctx = "%s · %s · %s comments" % (kind, d.get("state") or "",
                                      d.get("comments") or 0)
-    return ((d.get("body") or "").strip()[:CAP], ctx,
+    text = (d.get('body') or '').strip()
+    if d.get('comments') and os.environ.get('GITHUB_TOKEN'):
+        try:
+            rq = urllib.request.Request('https://api.github.com/' + path + '/comments?per_page=20',
+                headers={'User-Agent': UA, 'Accept': 'application/vnd.github+json',
+                         'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN']})
+            comments = json.loads(urllib.request.urlopen(rq, timeout=TIMEOUT).read())
+            text = with_replies(text, [((c.get('user') or {}).get('login') or 'unknown author')
+                                      + ': ' + (c.get('body') or '') for c in comments])
+            ctx += ' · %d sampled comments read' % len(comments)
+        except Exception:
+            ctx += ' · comment text unavailable'
+    elif d.get('comments'):
+        ctx += ' · issue body only (comment reading needs GITHUB_TOKEN)'
+    return (text[:CAP], ctx,
             (d.get("user") or {}).get("login") or "",
             (d.get("created_at") or "")[:19])
 
@@ -264,7 +335,9 @@ def _forum(url):
     posts = (d.get("post_stream") or {}).get("posts") or []
     if not posts:
         return None
-    text = "\n---\n".join(detag(p.get("cooked") or "") for p in posts[:6])
+    text = with_replies(detag(posts[0].get('cooked') or ''),
+                        [(p.get('username') or 'unknown author') + ': ' +
+                         detag(p.get('cooked') or '') for p in posts[1:6]])
     return (text[:CAP], "%d posts" % len(posts), posts[0].get("username") or "",
             (posts[0].get("created_at") or "")[:19])
 

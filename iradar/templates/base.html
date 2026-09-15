@@ -1556,7 +1556,7 @@ document.addEventListener('keydown', function (e) {
   const last = parseInt(el.dataset.last, 10) || 1;
   if (!n || n < 1 || n > last) { el.value = ''; return; }
   // the macro rendered this href with page=0; swap in the number asked for
-  location.href = (el.dataset.base || '').replace(/([?&]page=)0\b/, '$1' + n);
+  location.href = (el.dataset.base || '').replace(/([?&](?:family_page|page)=)0\b/, '$1' + n);
 });
 
 document.addEventListener('click', function (ev) { closePopovers(ev.target); });

@@ -266,6 +266,8 @@ def connect():
     con.execute("PRAGMA cache_size=-16384")        # 16 MB per connection
     con.execute("PRAGMA temp_store=MEMORY")
     con.execute("PRAGMA synchronous=NORMAL")
+    from sentiment_review import company_related
+    con.create_function("company_related", 4, company_related, deterministic=True)
     return con
 
 
@@ -619,6 +621,24 @@ def init_db():
     # the whole story: asked Monday, answered Tuesday, marked accepted.
     _ensure_column(con, "mentions", "fulltext", "TEXT DEFAULT ''")
     _ensure_column(con, "mentions", "context", "TEXT DEFAULT ''")
+    for name, spec in (
+            ("relevance_override", "INTEGER NOT NULL DEFAULT 0"),
+            ("read_state", "TEXT NOT NULL DEFAULT 'pending'"),
+            ("text_checked_at", "TEXT NOT NULL DEFAULT ''"),
+            ("read_attempted_at", "TEXT NOT NULL DEFAULT ''"),
+            ("scored_at", "TEXT NOT NULL DEFAULT ''"),
+            ("scored_model", "TEXT NOT NULL DEFAULT ''"),
+            ("needs_rescore", "INTEGER NOT NULL DEFAULT 0")):
+        _ensure_column(con, "mentions", name, spec)
+    # A view protects every analysis query, including legacy rows. Originals
+    # stay untouched; an admin override makes false exclusions reversible.
+    con.execute("""CREATE VIEW IF NOT EXISTS sentiment_mentions AS
+        SELECT * FROM mentions WHERE relevance_override=1 OR
+        (relevance_override=0 AND company_related(title,body,fulltext,url)=1)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS sentiment_sources(
+        source TEXT PRIMARY KEY, last_attempt TEXT NOT NULL DEFAULT '',
+        returned INTEGER NOT NULL DEFAULT 0, added INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT '')""")
     con.execute("CREATE INDEX IF NOT EXISTS idx_items_key ON items(item_key)")
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (k, v))

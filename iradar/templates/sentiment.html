@@ -7,7 +7,16 @@
     list, then the full feed with the same search bar Content has. Sources
     wear their logos, drawn once in _srcicons.html. -#}
 <style>
-  .sn-wrap { max-width: 1000px; margin: 0 auto; }
+  .sn-wrap { min-width: 0; }
+  .sn-insight-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
+  .sn-insight-grid h4 { margin:8px 0; }
+  .sn-insight-grid p { font-size:13px; overflow-wrap:anywhere; }
+  .sn-theme { margin:8px 0; font-size:13px; }
+  .sn-theme summary, .sn-coverage summary, .mn-more summary { cursor:pointer; }
+  .sn-coverage { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:13px; }
+  .mn-more { grid-column:1 / -1; font-size:12.5px; }
+  .mn-full { max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:10px 0; }
+  @media(max-width:700px) { .sn-insight-grid { grid-template-columns:1fr; gap:4px; } }
 
   /* the phone shrink the Dashboard's stat row wears, mirrored */
   @media (max-width: 640px) {
@@ -122,27 +131,22 @@
   .sn-empty { text-align: center; padding: 30px 16px; color: var(--muted); }
   .sn-empty b { display: block; color: var(--ink); font-size: 15px;
                 margin-bottom: 5px; }
-  .sn-search { display: flex; gap: 10px; margin: 0; flex-wrap: wrap;
-               align-items: center; }
-  /* search and filters share one line. The box is allowed to shrink to a
-     third of the row so the four questions fit beside it; below 1100px the
-     filters wrap underneath on their own rather than squeezing it away. */
-  .sn-search .grow { flex: 1 1 300px; min-width: 240px; }
-  .sn-filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-                flex: 1 1 auto; }
-  .sn-filters label { display: flex; align-items: center; gap: 7px;
-                      font-size: 12.5px; font-weight: 600; color: var(--muted);
-                      /* "Product line" broke over two lines and dragged the
-                         row out of alignment with the others */
-                      white-space: nowrap; }
-  .sn-filters select { height: 32px; font-size: 13px; padding: 0 8px; }
-  .sn-filters input[type=date] { height: 32px; font-size: 13px; padding: 0 8px; }
-  #snrange { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .sn-search .grow { min-width: 0; }
+  .sn-search [hidden] { display: none !important; }
+  .sn-search .dd:last-of-type .panel { left: auto; right: 0; }
+  #snrange input { min-width: 0; width: 150px; margin-left: auto; }
   #snrange[hidden] { display: none; }
-  @media (max-width: 560px) {
-    .sn-filters label { flex: 1 1 100%; }
-    .sn-filters select { flex: 1; min-width: 0; }
+  .sn-browse-head { display: flex; align-items: center; justify-content: space-between;
+                    gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .sn-browse-head h3 { margin: 0; }
+  .sn-browse-head .pgr { margin: 0; }
+  .sn-feedback { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+  .sn-feedback:empty { display: none; }
+  @media (max-width: 640px) {
+    .sn-search .sbar { flex-basis: 100%; }
+    .sn-search .dd:last-of-type .panel { left: 0; }
   }
+  @media (prefers-reduced-motion: reduce) { .sspin.on { animation: none; } }
   .sspin { position: absolute; right: 40px; top: 50%; width: 15px; height: 15px;
            margin-top: -7.5px; border: 2px solid var(--line);
            border-top-color: var(--accent); border-radius: 50%; opacity: 0;
@@ -193,13 +197,13 @@
   }
 </style>
 <script>
-// "Custom range" is the only period that does not answer immediately - it
-// needs two dates first, so it reveals them instead of submitting an empty
-// range and showing everything.
+// Reveal dates for a custom range; clear them when choosing a named period
+// so an old hidden date cannot override the newly selected period.
 function snRange(sel) {
   var box = document.getElementById('snrange');
   if (!box) return;
   box.hidden = sel.value !== 'custom';
+  if (box.hidden) box.querySelectorAll('input').forEach(function (i) { i.value = ''; });
   if (!box.hidden) { var i = box.querySelector('input'); if (i) i.focus(); }
 }
 </script>
@@ -216,17 +220,17 @@ function snRange(sel) {
            title="Every mention kept across all sources">
           <div class="n" style="color:var(--accent)">{{ '{:,}'.format(total) }}</div>
           <div class="l">Mentions</div>
-          <div class="detail">across {{ ready_keys|length }} source{{ '' if ready_keys|length == 1 else 's' }}</div>
+          <div class="detail">across {{ src_totals|length }} source{{ '' if src_totals|length == 1 else 's' }}</div>
         </a>
         <div class="report-stat" title="Product families the mentions name">
-          <div class="n">{{ per_entity|length }}</div>
+          <div class="n">{{ family_count }}</div>
           <div class="l">Families</div>
           <div class="detail">named in the feed</div>
         </div>
         <div class="report-stat" title="Places searched: forums, code hosts, video, link aggregators">
           <div class="n">{{ ready_keys|length }}</div>
           <div class="l">Sources</div>
-          <div class="detail">searched each check</div>
+          <div class="detail">configured source types</div>
         </div>
         <a class="report-stat" href="{{ url_for('sentiment_page', sort='worst') }}"
            title="The average score across every scored mention, from -1 to +1">
@@ -245,8 +249,8 @@ function snRange(sel) {
 
       <div class="summary-operations">
         <div class="next-check">
-          <strong>{{ last_collected|localtime if last_collected else 'not yet' }}</strong>
-          <div class="l">Last collected (auto after checks)</div>
+          <strong>{{ last_collection_attempt|localtime if last_collection_attempt else (last_collected|localtime if last_collected else 'not yet') }}</strong>
+          <div class="l">{{ 'Last collection attempt' if last_collection_attempt else 'Last new mention (attempt time not recorded)' }}</div>
         </div>
         {% if is_admin %}
         <div class="summary-controls">
@@ -301,7 +305,7 @@ function snRange(sel) {
           about when any of this last happened. The Dashboard prints its last
           run under its own bar; this is the same sentence in the same place,
           and the JS restores it from data-idle when a collection ends. -#}
-      {%- set _idle %}{% if last_collected %}Last collected {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} mentions from {{ ready_keys|length }} source{{ '' if ready_keys|length == 1 else 's' }}, gathered automatically after each check{% else %}Nothing collected yet — the next check will gather the first mentions.{% endif %}{% endset -%}
+      {%- set _idle %}{% if last_collected %}Last new mention {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} related unique posts in collected history. See evidence & coverage for source attempts.{% else %}No related mentions collected yet — the next check gathers evidence.{% endif %}{% endset -%}
       <p class="muted" style="margin:6px 0 0; font-size:12.5px" id="snptext"
          data-idle="{{ _idle }}">
         {%- if sstate.running -%}
@@ -312,89 +316,92 @@ function snRange(sel) {
         {%- endif -%}</p>
     </div>
 
-    <form method="get" class="sn-search" autocomplete="off" id="snform"
+  </div>
+  <div class="card" id="snsearch">
+    <h3 style="margin:0">Search mentions</h3>
+    <p class="sn-note" style="margin:6px 0 0">Top figures cover all collected history. The evidence summary and lists below follow your filters.</p>
+    <form method="get" class="toolbar sn-search" autocomplete="off" id="snform"
           style="margin-top:14px">
-      <span class="sbar sbar-lg grow">
+      <span class="sbar grow">
         <svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
         <input type="text" name="q" value="{{ q }}" id="snq"
+               aria-label="Search mentions"
                placeholder="Search mentions — a part, a tool, an author…">
         <span class="sspin" id="snspin" aria-hidden="true"></span>
-        <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"
-                onclick="var i=document.getElementById('snq'); i.value=''; i.form.requestSubmit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+        <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </span>
       {% if sel_entity %}<input type="hidden" name="entity" value="{{ sel_entity }}">{% endif %}
       {% if sel_source %}<input type="hidden" name="source" value="{{ sel_source }}">{% endif %}
-      <button type="submit" id="snbtn">Search</button>
-
-      {#- WHEN, WHOSE, WHAT KIND. A pulse check is read over a period and
-          against one product line - "what has the market said about PL 92
-          this quarter" is the question, and neither half of it could be
-          asked before. They submit on change: a filter you have to confirm
-          gets used half as often. -#}
-      <div class="sn-filters">
-        <label>Period
-          <select name="period" id="snperiod"
-                  onchange="snRange(this); if (this.value !== 'custom') this.form.requestSubmit()">
-            <option value="">All time</option>
-            {% for key, label, _d in periods %}
-            <option value="{{ key }}" {{ 'selected' if sel_period == key }}>{{ label }}</option>
-            {% endfor %}
-            <option value="custom" {{ 'selected' if sel_from or sel_to }}>Custom range…</option>
-          </select>
-        </label>
-        {#- shown only once a range is being asked for: two date boxes sitting
-            permanently beside a dropdown nobody set is three controls to read
-            where one would do -#}
-        <span id="snrange" {% if not (sel_from or sel_to) %}hidden{% endif %}>
+      <details class="dd" name="filters">
+        <summary>Period<span class="fbadge" {{ 'hidden' if not (sel_period or sel_from or sel_to) }}>1</span></summary>
+        <div class="panel">
+          <label><input type="radio" name="period" value="" {{ 'checked' if not (sel_period or sel_from or sel_to) }} onchange="snRange(this)">All time</label>
+          {% for key, label, _d in periods %}
+          <label><input type="radio" name="period" value="{{ key }}" {{ 'checked' if sel_period == key and not (sel_from or sel_to) }} onchange="snRange(this)">{{ label }}</label>
+          {% endfor %}
+          <label><input type="radio" name="period" value="custom" {{ 'checked' if sel_period == 'custom' or sel_from or sel_to }} onchange="snRange(this)">Custom range…</label>
+          <div id="snrange" {% if not (sel_period == 'custom' or sel_from or sel_to) %}hidden{% endif %}>
           <label>From <input type="date" name="from" value="{{ sel_from }}"></label>
           <label>To <input type="date" name="to" value="{{ sel_to }}"></label>
-          <button type="submit" class="linkbtn">Apply</button>
-        </span>
+          </div>
+        </div>
+      </details>
         {% if pl_options %}
-        <label>Product line
-          <select name="pl" onchange="this.form.requestSubmit()">
-            <option value="">All lines</option>
+        <details class="dd" name="filters">
+          <summary>Product line<span class="fbadge" {{ 'hidden' if not sel_pl }}>1</span></summary>
+          <div class="panel">
+            <label><input type="radio" name="pl" value="" {{ 'checked' if not sel_pl }}>All lines</label>
             {% for pl in pl_options %}
-            <option value="{{ pl }}" {{ 'selected' if sel_pl == pl }}>PL {{ pl }}</option>
+            <label><input type="radio" name="pl" value="{{ pl }}" {{ 'checked' if sel_pl == pl }}>PL {{ pl }}</label>
             {% endfor %}
-          </select>
-        </label>
+          </div>
+        </details>
         {% endif %}
         {% if origin_options %}
-        <label>Term
-          <select name="origin" onchange="this.form.requestSubmit()">
-            <option value="">Everything</option>
+        <details class="dd" name="filters">
+          <summary>Term<span class="fbadge" {{ 'hidden' if not sel_origin }}>1</span></summary>
+          <div class="panel">
+            <label><input type="radio" name="origin" value="" {{ 'checked' if not sel_origin }}>Everything</label>
             {% for o in origin_options %}
-            <option value="{{ o }}" {{ 'selected' if sel_origin == o }}>{{
+            <label><input type="radio" name="origin" value="{{ o }}" {{ 'checked' if sel_origin == o }}>{{
               {'brand': 'Infineon brands', 'pages': 'Product families',
-               'custom': 'Added by hand'}.get(o, o) }}</option>
+               'custom': 'Added by hand'}.get(o, o) }}</label>
             {% endfor %}
-          </select>
-        </label>
+          </div>
+        </details>
         {% endif %}
-        <label>Sort
-          <select name="sort" onchange="this.form.requestSubmit()">
+        <details class="dd" name="filters">
+          <summary>Sort<span class="fbadge" {{ 'hidden' if not sel_sort }}>1</span></summary>
+          <div class="panel">
             {% for key, label in sorts %}
-            <option value="{{ key }}" {{ 'selected' if sel_sort == key }}>{{ label }}</option>
+            <label><input type="radio" name="sort" value="{{ key }}" {{ 'checked' if sel_sort == key }}>{{ label }}</label>
             {% endfor %}
-          </select>
-        </label>
-        {% if sel_period or sel_pl or sel_origin or sel_sort %}
-        <a class="linkbtn" href="{{ url_for('sentiment_page',
-             entity=sel_entity or none, source=sel_source or none,
-             q=q or none) }}">Clear filters</a>
-        {% endif %}
-      </div>
+          </div>
+        </details>
+      <button type="submit" id="snbtn">Apply</button>
+      <a class="btn btn-ghost" id="snreset" href="{{ url_for('sentiment_page') }}"
+         {% if not (q or sel_entity or sel_source or sel_period or sel_pl or sel_origin or sel_sort or sel_from or sel_to) %}hidden{% endif %}>Clear filters</a>
     </form>
+    <p id="snfeedback" class="sn-feedback" role="status" aria-live="polite"></p>
   </div>
 
-  {% if per_entity %}
-  <div class="card">
-    <h3 style="margin:0 0 12px">By product family
+  {% include '_sentiment_insights.html' %}
+  {% from '_pager.html' import pager %}
+  {% set page_keep = {'entity': sel_entity or none, 'source': sel_source or none,
+       'q': q or none, 'period': sel_period or none, 'pl': sel_pl or none,
+       'origin': sel_origin or none, 'sort': sel_sort or none,
+       'from': sel_from or none, 'to': sel_to or none} %}
+  {% macro family_url(n) %}{{ url_for('sentiment_page', family_page=n, page=mention_page, _anchor='snfamilies', **page_keep) }}{% endmacro %}
+  {% macro mention_url(n) %}{{ url_for('sentiment_page', page=n, family_page=family_page, _anchor='snresults', **page_keep) }}{% endmacro %}
+  <div class="card" id="snfamilies">
+    <div class="sn-browse-head">
+    <h3>By product family
       <span class="muted" style="font-weight:400; font-size:12.5px">— click
-        one to read its mentions</span></h3>
+        one to read its mentions · {{ '{:,}'.format(family_total) }} shown</span></h3>
+    {{ pager(family_page, family_last, family_total, 12, family_url, 'top') }}
+    </div>
     <div class="fams">
       {% for e in per_entity %}
       <div class="fam" data-entity="{{ e.entity }}" tabindex="0" role="button"
@@ -421,8 +428,8 @@ function snRange(sel) {
       </div>
       {% endfor %}
     </div>
+    {% if not per_entity %}<p class="muted">No families match these filters.</p>{% endif %}
   </div>
-  {% endif %}
 
   {% if is_admin %}
   <div class="card">
@@ -487,9 +494,7 @@ function snRange(sel) {
     <h3 style="margin:0 0 12px">
       Mentions{% if sel_entity %} — {{ sel_entity }}{% endif %}
       <span class="muted" style="font-weight:400; font-size:12.5px">—
-        {% if filtered_total > rows|length %}latest {{ rows|length }} of
-        {{ '{:,}'.format(filtered_total) }} · narrow with the search or a
-        family{% else %}{{ filtered_total }}{% endif %}</span></h3>
+        {{ '{:,}'.format(filtered_total) }} matching</span></h3>
 
     <div class="sn-chips">
       {%- set keep = {'entity': sel_entity or none, 'q': q or none,
@@ -509,7 +514,9 @@ function snRange(sel) {
     </div>
 
     {% if rows %}
+    {{ pager(mention_page, mention_last, filtered_total, 50, mention_url, 'top') }}
     {% include "_mention_rows.html" %}
+    {{ pager(mention_page, mention_last, filtered_total, 50, mention_url) }}
     {% else %}
     <div class="sn-empty">
       {% if total %}
@@ -566,8 +573,9 @@ function snRange(sel) {
 })();
 (function () {
   // a family card opens into its own scrollable list, fetched once
+  function bindFamilies() {
   document.querySelectorAll('.fam').forEach(function (f) {
-    function toggle() {
+    function toggle(src) {
       var was = f.classList.contains('open');
       document.querySelectorAll('.fam.open').forEach(function (o) {
         o.classList.remove('open');
@@ -576,27 +584,41 @@ function snRange(sel) {
       if (was) return;
       f.classList.add('open');
       f.setAttribute('aria-expanded', 'true');
-      var panel = f.querySelector('.fam-panel');
-      load(f, '');
+      load(f, src || '');
       f.scrollIntoView({ block: 'nearest' });
     }
     function load(f, src) {
       var panel = f.querySelector('.fam-panel');
       if (panel.dataset.loaded === (src || 'all')) return;
+      delete panel.dataset.loaded;
+      var token = String((Number(panel.dataset.request) || 0) + 1);
+      panel.dataset.request = token;
       f.querySelectorAll('.fam-src').forEach(function (b) {
         b.classList.toggle('on', (b.dataset.src || '') === src);
       });
       panel.innerHTML = '<p class="muted" style="padding:10px 0">Loading…</p>';
-      fetch('{{ url_for("sentiment_rows") }}?entity=' +
-            encodeURIComponent(f.dataset.entity) +
-            (src ? '&source=' + encodeURIComponent(src) : ''))
-        .then(function (r) { return r.text(); })
+      // Reuse the paged feed so the drawer keeps the search, dates and sort,
+      // and a large family cannot inject hundreds of rows into the DOM.
+      var params = new URLSearchParams(location.search);
+      params.set('entity', f.dataset.entity);
+      params.delete('page');
+      params.delete('family_page');
+      if (src) params.set('source', src); else params.delete('source');
+      fetch('{{ url_for("sentiment_page") }}?' + params.toString())
+        .then(function (r) { if (!r.ok) throw new Error('load failed'); return r.text(); })
         .then(function (html) {
-          panel.innerHTML = html ||
-            '<p class="muted" style="padding:10px 0">Nothing from this source.</p>';
+          if (panel.dataset.request !== token) return;
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var list = doc.querySelector('#snresults .mn, #snresults .sn-empty');
+          if (!list) throw new Error('missing family results');
+          panel.replaceChildren(list);
+          var pager = doc.querySelector('#snresults .pgr');
+          if (pager) panel.appendChild(pager);
           panel.dataset.loaded = src || 'all';
         })
         .catch(function () {
+          if (panel.dataset.request !== token) return;
+          delete panel.dataset.loaded;
           panel.innerHTML = '<p class="muted">Could not load — reload the page.</p>';
         });
     }
@@ -605,8 +627,8 @@ function snRange(sel) {
       var srcBtn = e.target.closest('.fam-src');
       if (srcBtn) {
         // clicking the youtube count: open if closed, then only youtube
-        if (!f.classList.contains('open')) toggle();
-        load(f, srcBtn.dataset.src || '');
+        if (!f.classList.contains('open')) toggle(srcBtn.dataset.src || '');
+        else load(f, srcBtn.dataset.src || '');
         e.stopPropagation();
         return;
       }
@@ -620,52 +642,73 @@ function snRange(sel) {
       }
     });
   });
+  }
+  bindFamilies();
   // Content's own live search, pointed at this page: debounced fetch of
   // the same URL, swap the results card in place, keep the address bar
   // honest. One definition of a result - the server's - either way in.
   var input = document.getElementById('snq');
   var form = document.getElementById('snform');
-  var btn = document.getElementById('snbtn');
   var spin = document.getElementById('snspin');
   if (input && form && window.fetch && window.DOMParser) {
-    var timer = null, seq = 0, lastSent = null;
-    var run = function (q) {
-      var p = new URLSearchParams(location.search);
-      if (q) { p.set('q', q); } else { p.delete('q'); }
+    var timer = null, seq = 0;
+    var feedback = document.getElementById('snfeedback');
+    var run = function () {
+      // Read the controls, not the previous URL. A new search also starts
+      // both paged lists at the beginning rather than a now-empty old page.
+      var p = new URLSearchParams(new FormData(form));
+      p.set('q', input.value.trim());
+      Array.from(p.keys()).forEach(function (k) { if (!p.get(k)) p.delete(k); });
       var url = location.pathname + (p.toString() ? '?' + p.toString() : '');
-      if (url === lastSent) return;
-      lastSent = url;
       var mine = ++seq;
+      form.querySelectorAll('details[open]').forEach(function (d) { d.open = false; });
+      feedback.textContent = 'Searching…';
       if (spin) spin.classList.add('on');
       fetch(url, { headers: { 'X-Requested-With': 'fetch' } })
-        .then(function (r) { return r.text(); })
+        .then(function (r) { if (!r.ok) throw new Error('search failed'); return r.text(); })
         .then(function (html) {
           if (mine !== seq) return;   // an older answer never wins
           var doc = new DOMParser().parseFromString(html, 'text/html');
-          var fresh = doc.getElementById('snresults');
-          var here = document.getElementById('snresults');
-          if (fresh && here) here.replaceWith(fresh);
+          if (!doc.getElementById('snresults') || !doc.getElementById('snfamilies')) {
+            throw new Error('missing results');
+          }
+          ['snresults', 'snfamilies', 'snreset', 'sninsights'].forEach(function (id) {
+            document.getElementById(id).replaceWith(doc.getElementById(id));
+          });
+          bindFamilies();
           history.replaceState(null, '', url);
+          feedback.textContent = document.querySelector('#snresults h3').textContent.trim().replace(/\s+/g, ' ');
         })
-        .catch(function () {})
+        .catch(function () {
+          if (mine === seq) feedback.textContent = 'Could not update results. Press Apply to retry, or reload the page.';
+        })
         .then(function () {
           if (mine === seq && spin) spin.classList.remove('on');
         });
     };
     input.addEventListener('input', function () {
       clearTimeout(timer);
-      var q = input.value.trim();
-      timer = setTimeout(function () { run(q); }, 220);
+      // Invalidate pending responses as soon as typing resumes.
+      seq++;
+      timer = setTimeout(run, 220);
     });
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       clearTimeout(timer);
-      run(input.value.trim());
+      run();
     });
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { input.value = ''; run(''); }
+    form.addEventListener('change', function (e) {
+      if (e.target === input) return; // blurring search must not cancel its request
+      clearTimeout(timer);
+      seq++;
+      if (spin) spin.classList.remove('on');
+      var dd = e.target.closest('.dd');
+      if (dd) {
+        var chosen = dd.querySelector('input[type=radio]:checked');
+        dd.querySelector('.fbadge').hidden = !chosen || !chosen.value;
+      }
+      feedback.textContent = 'Filters changed — press Apply to update results.';
     });
-    if (btn) btn.style.display = 'none';   // nothing left for it to do
   }
 })();
 </script>
