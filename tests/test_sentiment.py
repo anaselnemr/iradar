@@ -419,3 +419,41 @@ def test_prompt_line_caps_what_it_shows():
     row = {"id": 1, "entity": "X", "title": "t", "body": "",
            "fulltext": "word " * 2000, "context": ""}
     assert len(sn._for_prompt(row)) <= sn.PROMPT_CHARS + 40
+
+
+def test_enrich_writes_from_the_calling_thread_only(monkeypatch):
+    """A sqlite connection belongs to the thread that opened it. The pool may
+    fetch; only this thread may write, or the pass dies on its first page."""
+    import threading as _t
+
+    want = [
+        {"id": 1, "source": "community",
+         "url": "https://community.infineon.com/t5/x/td-p/900"},
+        {"id": 2, "source": "blog", "url": "https://example.com/a"},
+        {"id": 3, "source": "blog", "url": "https://example.com/b"},
+        {"id": 4, "source": "blog", "url": "https://example.com/gone"},
+    ]
+    writes, threads = [], set()
+
+    class FakeCon:
+        def execute(self, sql, params=()):
+            threads.add(_t.get_ident())
+            if sql.lstrip().upper().startswith("SELECT"):
+                return type("R", (), {"fetchall": lambda s: want})()
+            writes.append(params)
+            return None
+
+        def commit(self):
+            threads.add(_t.get_ident())
+
+    monkeypatch.setattr(mt, "community_batch",
+                        lambda ids: {"900": ("thread text", "SOLVED", "a", "")})
+    monkeypatch.setattr(mt, "fetch_one",
+                        lambda src, url: None if "gone" in url
+                        else ("post text", "", "", ""))
+
+    n = sn.enrich_pending(con=FakeCon())
+    assert n == 3                       # the unreadable one is skipped, not saved
+    assert threads == {_t.get_ident()}  # every db call on the caller's thread
+    assert ("thread text", "SOLVED", "a", "", 1) in writes
+    assert [w[-1] for w in writes] == [1, 2, 3]

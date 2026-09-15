@@ -1009,22 +1009,22 @@ def enrich_pending(limit=0, con=None):
                                      % (min(i + 40, len(keys)), len(keys)))
 
         # the rest, a few at a time: polite to the far end, and 2,000 pages
-        # one after another is half an hour of waiting on the network
+        # one after another is half an hour of waiting on the network.
+        # THE POOL FETCHES; THIS THREAD WRITES. A sqlite connection belongs to
+        # the thread that opened it - executing on it from a worker raises,
+        # and the whole pass would die on its first page.
         singles = [r for r in rows if r["source"] in mt.FETCHERS]
         if singles:
-            lock = threading.Lock()
-
-            def job(r):
-                got = mt.fetch_one(r["source"], r["url"])
-                if got:
-                    with lock:
-                        save(r["id"], got)
-                        if done[0] % 50 == 0:
-                            con.commit()
-                            SENT_STATE["message"] = ("reading pages %d/%d"
-                                                     % (done[0], len(rows)))
             with ThreadPoolExecutor(max_workers=4) as ex:
-                list(ex.map(job, singles))
+                for r, got in zip(singles, ex.map(
+                        lambda x: mt.fetch_one(x["source"], x["url"]), singles)):
+                    if not got:
+                        continue
+                    save(r["id"], got)
+                    if done[0] % 50 == 0:
+                        con.commit()
+                        SENT_STATE["message"] = ("reading pages %d/%d"
+                                                 % (done[0], len(rows)))
             con.commit()
 
         print("[sentiment] read %d of %d page(s)" % (done[0], len(rows)),
