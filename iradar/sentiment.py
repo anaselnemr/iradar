@@ -910,9 +910,16 @@ def sources_ready():
 def _store(con, entity, source, mentions, now):
     new = 0
     for m in mentions:
+        # `extra` is what BECAME of the post - "4 comment(s)", "SOLVED",
+        # "r/embedded | 12 comments". That belongs in context, which the row
+        # renders as the outcome beside the date. It used to be inserted into
+        # reason, where the row renders the SCORE'S justification: every
+        # freshly collected mention showed "repo | open | 0 comment(s)" in the
+        # place a sentence of judgement goes, and the moment it was scored the
+        # provenance was overwritten and lost for good.
         cur = con.execute(
             "INSERT OR IGNORE INTO mentions(entity, source, url, title, body,"
-            " author, posted, fetched, reason)"
+            " author, posted, fetched, context)"
             " VALUES(?,?,?,?,?,?,?,?,?)",
             (entity, source, m["url"], m["title"][:300], m.get("body", ""),
              m.get("author", "")[:80], m.get("posted", ""), now,
@@ -929,11 +936,16 @@ def _store(con, entity, source, mentions, now):
                 scored_model=CASE WHEN title<>? OR (?<>'' AND body<>?) THEN '' ELSE scored_model END,
                 needs_rescore=CASE WHEN (title<>? OR (?<>'' AND body<>?)) AND score IS NOT NULL THEN 1 ELSE needs_rescore END,
                 title=?,body=CASE WHEN ?<>'' THEN ? ELSE body END,
-                posted=CASE WHEN posted='' THEN ? ELSE posted END
+                posted=CASE WHEN posted='' THEN ? ELSE posted END,
+                context=CASE WHEN ?<>'' THEN ? ELSE context END
                 WHERE entity=? AND source=? AND url=?""",
                 tuple([m['title'][:300], m.get('body',''), m.get('body','')]*6)
                 + (m['title'][:300], m.get('body',''), m.get('body',''),
-                   m.get('posted',''), entity, source, m['url']))
+                   m.get('posted',''),
+                   # a thread that gained replies or got marked solved says so
+                   # on the next pass; an empty extra leaves what we had
+                   m.get('extra','')[:120], m.get('extra','')[:120],
+                   entity, source, m['url']))
     return new
 
 

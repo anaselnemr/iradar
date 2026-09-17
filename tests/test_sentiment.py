@@ -480,3 +480,43 @@ def test_enrich_spreads_the_batch_across_sources():
     # no limit, or a limit past the end, returns everything untouched
     assert len(sn._spread(rows, 0)) == len(rows)
     assert len(sn._spread(rows, 999)) == len(rows)
+
+
+def test_collect_puts_the_outcome_in_context_and_leaves_reason_for_the_score():
+    """`extra` is what became of the post; reason is why the score is what it
+    is. Inserting extra into reason meant every freshly collected mention
+    displayed "repo | open | 0 comment(s)" where a sentence of judgement goes,
+    and scoring then overwrote the provenance and lost it."""
+    import sqlite3
+    con = sqlite3.connect(":memory:")
+    con.row_factory = sqlite3.Row
+    con.execute("""CREATE TABLE mentions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT, source TEXT,
+        url TEXT, title TEXT, body TEXT DEFAULT '', author TEXT DEFAULT '',
+        posted TEXT DEFAULT '', fetched TEXT DEFAULT '', score REAL,
+        topics TEXT DEFAULT '', reason TEXT DEFAULT '',
+        scored_at TEXT DEFAULT '', scored_model TEXT DEFAULT '',
+        needs_rescore INTEGER DEFAULT 0, context TEXT DEFAULT '',
+        UNIQUE(entity, source, url))""")
+
+    m = {"url": "https://example.invalid/1", "title": "PWM dead time too low",
+         "body": "first snippet", "extra": "acme/board | open | 0 comment(s)"}
+    assert sn._store(con, "PSOC", "github", [m], "2026-09-17") == 1
+    row = con.execute("SELECT * FROM mentions").fetchone()
+    assert row["context"] == "acme/board | open | 0 comment(s)"
+    assert row["reason"] == "", "provenance must not sit in the reason column"
+
+    # a score arrives, then the thread is seen again with replies: the new
+    # outcome lands, and the judgement is only cleared because the body moved
+    con.execute("UPDATE mentions SET score=-0.4, reason='Dead time set below spec'")
+    con.commit()
+    m2 = dict(m, body="first snippet", extra="acme/board | closed | 4 comment(s)")
+    sn._store(con, "PSOC", "github", [m2], "2026-09-18")
+    row = con.execute("SELECT * FROM mentions").fetchone()
+    assert row["context"] == "acme/board | closed | 4 comment(s)"
+    assert row["reason"] == "Dead time set below spec", "an unchanged body keeps its score"
+
+    # an empty extra must not wipe the outcome we already had
+    sn._store(con, "PSOC", "github", [dict(m, extra="")], "2026-09-19")
+    assert con.execute("SELECT context FROM mentions").fetchone()[0] \
+        == "acme/board | closed | 4 comment(s)"
