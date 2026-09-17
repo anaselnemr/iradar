@@ -8,15 +8,6 @@
     wear their logos, drawn once in _srcicons.html. -#}
 <style>
   .sn-wrap { min-width: 0; }
-  .sn-insight-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
-  .sn-insight-grid h4 { margin:8px 0; }
-  .sn-insight-grid p { font-size:13px; overflow-wrap:anywhere; }
-  .sn-theme { margin:8px 0; font-size:13px; }
-  .sn-theme summary, .sn-coverage summary, .mn-more summary { cursor:pointer; }
-  .sn-coverage { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:13px; }
-  .mn-more { grid-column:1 / -1; font-size:12.5px; }
-  .mn-full { max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:10px 0; }
-  @media(max-width:700px) { .sn-insight-grid { grid-template-columns:1fr; gap:4px; } }
 
   /* the phone shrink the Dashboard's stat row wears, mirrored */
   @media (max-width: 640px) {
@@ -160,30 +151,6 @@
               background: linear-gradient(90deg, #6d78e0, #8b5cf6);
               transition: width .6s ease; }
   .snp-live .run-track .p { color: var(--accent); }
-  .terms > summary { list-style: none; cursor: pointer; }
-  .terms > summary::-webkit-details-marker { display: none; }
-  .terms > summary::after { content: " \25BE"; color: var(--muted);
-                            font-size: 11px; }
-  .terms[open] > summary::after { content: " \25B4"; }
-  .term-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
-  .term-add input[name=entity] { flex: 1 1 200px; }
-  .term-add input[name=query] { flex: 2 1 280px; }
-  .termtbl { width: 100%; border-collapse: collapse; margin-top: 10px;
-             font-size: 13px; }
-  .termtbl th { text-align: left; font-size: 11px; color: var(--muted);
-                text-transform: uppercase; letter-spacing: .05em;
-                padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); }
-  .termtbl td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line);
-                vertical-align: baseline; }
-  .termtbl tr:last-child td { border-bottom: 0; }
-  .tt-name { font-weight: 600; white-space: nowrap; }
-  .tt-q { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
-  .tt-o { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .tt-n { text-align: right; font-variant-numeric: tabular-nums; }
-  .tt-act { text-align: right; white-space: nowrap; }
-  .tt-act form { display: inline; margin: 0; }
-  .tt-off .tt-name { opacity: .55; text-decoration: line-through; }
-  @media (max-width: 620px) { .tt-o { display: none; } }
   /* the collect button wears the Dashboard's run-button size, and the
      missing-key mark rides beside it - an admin-only diagnostic, so a glyph
      with the variable's name on hover rather than a sentence in the row */
@@ -305,7 +272,7 @@ function snRange(sel) {
           about when any of this last happened. The Dashboard prints its last
           run under its own bar; this is the same sentence in the same place,
           and the JS restores it from data-idle when a collection ends. -#}
-      {%- set _idle %}{% if last_collected %}Last new mention {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} related unique posts in collected history. See evidence & coverage for source attempts.{% else %}No related mentions collected yet — the next check gathers evidence.{% endif %}{% endset -%}
+      {%- set _idle %}{% if last_collected %}Last new mention {{ last_collected|localtime }} — {{ '{:,}'.format(total) }} related unique posts in collected history.{% else %}No related mentions collected yet — the next check gathers evidence.{% endif %}{% endset -%}
       <p class="muted" style="margin:6px 0 0; font-size:12.5px" id="snptext"
          data-idle="{{ _idle }}">
         {%- if sstate.running -%}
@@ -319,7 +286,7 @@ function snRange(sel) {
   </div>
   <div class="card" id="snsearch">
     <h3 style="margin:0">Search mentions</h3>
-    <p class="sn-note" style="margin:6px 0 0">Top figures cover all collected history. The evidence summary and lists below follow your filters.</p>
+    <p class="sn-note" style="margin:6px 0 0">Top figures cover all collected history. The lists below follow your filters.</p>
     <form method="get" class="toolbar sn-search" autocomplete="off" id="snform"
           style="margin-top:14px">
       <span class="sbar grow">
@@ -387,7 +354,6 @@ function snRange(sel) {
     <p id="snfeedback" class="sn-feedback" role="status" aria-live="polite"></p>
   </div>
 
-  {% include '_sentiment_insights.html' %}
   {% from '_pager.html' import pager %}
   {% set page_keep = {'entity': sel_entity or none, 'source': sel_source or none,
        'q': q or none, 'period': sel_period or none, 'pl': sel_pl or none,
@@ -430,65 +396,6 @@ function snRange(sel) {
     </div>
     {% if not per_entity %}<p class="muted">No families match these filters.</p>{% endif %}
   </div>
-
-  {% if is_admin %}
-  <div class="card">
-    <details class="terms">
-      <summary><h3 style="margin:0; display:inline">What is searched
-        <span class="muted" style="font-weight:400; font-size:12.5px">—
-        {{ terms|length }} term(s){% if removed_terms %},
-        {{ removed_terms|length }} switched off{% endif %} · click to
-        manage</span></h3></summary>
-
-      <form method="post" action="{{ url_for('sentiment_terms') }}"
-            class="term-add">
-        <input type="hidden" name="action" value="add">
-        <input type="text" name="entity" required maxlength="60"
-               placeholder="Track another term… e.g. Wireless charging ICs">
-        <input type="text" name="query" maxlength="120"
-               placeholder="searched as (optional) — e.g. infineon wireless charging">
-        <button type="submit">Track it</button>
-      </form>
-
-      <table class="termtbl">
-        <tr><th>Term</th><th>Searched as</th><th>From</th>
-            <th class="tt-n">Mentions</th><th></th></tr>
-        {% for t in terms %}
-        <tr>
-          <td class="tt-name">{{ t.entity }}</td>
-          <td class="tt-q">{{ t.queries | join(' · ') }}</td>
-          <td class="tt-o">{{ {'brand': 'your pages (brand name)',
-                               'pages': 'your pages (family)',
-                               'custom': 'added by hand'}[t.origin] }}</td>
-          <td class="tt-n">{{ mention_counts.get(t.entity, 0) or '' }}</td>
-          <td class="tt-act">
-            <form method="post" action="{{ url_for('sentiment_terms') }}">
-              <input type="hidden" name="action" value="remove">
-              <input type="hidden" name="entity" value="{{ t.entity }}">
-              <button type="submit" class="linkbtn linkbtn-danger"
-                      title="Stop searching this. Stored mentions stay.">Remove</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-        {% for name in removed_terms %}
-        <tr class="tt-off">
-          <td class="tt-name">{{ name }}</td>
-          <td class="tt-q muted">switched off — not searched</td>
-          <td class="tt-o"></td><td class="tt-n"></td>
-          <td class="tt-act">
-            <form method="post" action="{{ url_for('sentiment_terms') }}">
-              <input type="hidden" name="action" value="restore">
-              <input type="hidden" name="entity" value="{{ name }}">
-              <button type="submit" class="linkbtn">Search again</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </table>
-    </details>
-  </div>
-  {% endif %}
 
   <div class="card" id="snresults">
     <h3 style="margin:0 0 12px">
@@ -672,7 +579,7 @@ function snRange(sel) {
           if (!doc.getElementById('snresults') || !doc.getElementById('snfamilies')) {
             throw new Error('missing results');
           }
-          ['snresults', 'snfamilies', 'snreset', 'sninsights'].forEach(function (id) {
+          ['snresults', 'snfamilies', 'snreset'].forEach(function (id) {
             document.getElementById(id).replaceWith(doc.getElementById(id));
           });
           bindFamilies();

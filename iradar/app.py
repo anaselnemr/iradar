@@ -3581,7 +3581,6 @@ SENT_SORTS = (("", "Newest first"), ("oldest", "Oldest first"),
 @app.route("/sentiment")
 def sentiment_page():
     import sentiment as sn
-    import sentiment_review as sr
     ent = request.args.get("entity", "")
     src = request.args.get("source", "")
     q = (request.args.get("q") or "").strip()
@@ -3698,10 +3697,7 @@ def sentiment_page():
     }.get(sort, " ORDER BY COALESCE(NULLIF(posted,''), fetched) DESC, id DESC")
     sql += " LIMIT 50 OFFSET ?"
     rows = con.execute(sql, args + [(mention_page - 1) * 50]).fetchall()
-    insight = sr.insights(con, base, args)
-    source_coverage = sr.coverage(con)
     source_attempts = {r['source']: dict(r) for r in con.execute('SELECT * FROM sentiment_sources')}
-    excluded_n = con.execute('SELECT COUNT(*) FROM mentions WHERE id NOT IN (SELECT id FROM sentiment_mentions)').fetchone()[0]
     total = con.execute("SELECT COUNT(DISTINCT url) FROM sentiment_mentions").fetchone()[0]
     scored = con.execute(
         "SELECT COUNT(*) n, AVG(score) avg FROM sentiment_mentions"
@@ -3720,11 +3716,6 @@ def sentiment_page():
         if con2 is not None:
             con2.close()
     terms = sn.entities()
-    try:
-        removed_terms = sorted(json.loads(
-            db.get_settings().get("sn_removed") or "[]"))
-    except Exception:
-        removed_terms = []
     # Only lines and kinds that actually have something to show. An empty
     # option is a dead end somebody has to click to discover.
     pl_options = sorted({pl for t in terms
@@ -3733,8 +3724,6 @@ def sentiment_page():
     origin_options = sorted({t["origin"] for t in terms
                              if mention_counts.get(t["entity"])})
     return render_template("sentiment.html", per_entity=per_entity, rows=rows,
-                           insight=insight, source_coverage=source_coverage,
-                           source_attempts=source_attempts, excluded_n=excluded_n,
                            last_collection_attempt=max((v['last_attempt'] for v in source_attempts.values()), default=None),
                            family_count=family_count, family_total=family_total,
                            family_page=family_page, family_last=family_last,
@@ -3745,8 +3734,6 @@ def sentiment_page():
                            filtered_total=filtered_total,
                            last_collected=last_collected,
                            capture_running=bool(runner.RUN_STATE.get("running")),
-                           terms=terms, removed_terms=removed_terms,
-                           mention_counts=mention_counts,
                            sources=sn.SOURCES,
                            ready_keys={s["key"] for s in sn.sources_ready()},
                            sel_entity=ent, sel_source=src, q=q,

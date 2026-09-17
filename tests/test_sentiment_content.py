@@ -139,9 +139,11 @@ def test_model_cannot_score_an_excluded_or_out_of_batch_id():
         assert con.execute('SELECT scored_at FROM mentions WHERE id=?', [ids[0]]).fetchone()[0]
 
 
-def test_more_text_is_escaped_and_available_without_losing_the_short_preview():
-    with mentions([dict(fulltext='Infineon ' + 'long evidence ' * 40 + '<script>bad()</script>')]):
+def test_clean_feed_keeps_searchable_evidence_without_removed_panels():
+    with mentions([dict(fulltext='Infineon <script>bad()</script> ' + 'long evidence ' * 40)]):
         body = routes._ok('/sentiment?q=long+evidence').data.decode()
-        assert 'Read collected text' in body and 'class="mn-full"' in body
         assert '&lt;script&gt;' in body and '<script>bad()' not in body
-        assert 'Evidence &amp; coverage' in body
+        assert 'class="mn-body"' in body and 'long evidence' in body
+        for removed in ('Read collected text', 'mn-full', 'What people are saying',
+                        'What is searched', 'Evidence &amp; coverage', 'sninsights'):
+            assert removed not in body, removed

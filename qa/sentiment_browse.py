@@ -51,9 +51,7 @@ def main():
             assert desktop_mentions_top < 1700, desktop_mentions_top
             page.screenshot(path=str(output / 'desktop.png'), full_page=False)
             page.locator('#snfamilies').screenshot(path=str(output / 'families.png'))
-            page.locator('#sninsights').screenshot(path=str(output / 'insights.png'))
-            page.locator('#sninsights .sn-theme').first.locator('summary').click()
-            assert page.locator('#sninsights .sn-theme[open] a').count() > 0
+            assert page.locator('#sninsights, .terms, .mn-more, .mn-full').count() == 0
             first = page.locator('.fam').first.get_attribute('data-entity')
             page.locator('#snfamilies a[aria-label="Next page"]').click()
             assert page.locator('.fam').first.get_attribute('data-entity') != first
@@ -130,19 +128,12 @@ def main():
             page.locator('#snresults').scroll_into_view_if_needed()
             page.screenshot(path=str(output / 'mobile-results.png'))
             page.goto(url + '/sentiment?q=Pagination+fixture+000')
-            page.locator('#snresults .mn-more summary').click()
-            assert page.locator('#snresults .mn-full').is_visible()
-            assert 'important setup steps' in page.locator('#snresults .mn-full').inner_text()
-            page.locator('#snresults .mn-more').screenshot(path=str(output / 'mobile-evidence.png'))
-            page.locator('#sninsights .sn-coverage summary').click()
+            assert 'important setup steps' in page.locator('#snresults .mn-body').inner_text()
+            assert page.locator('#sninsights, .terms, .mn-more, .mn-full').count() == 0
+            page.locator('#snresults').screenshot(path=str(output / 'mobile-evidence.png'))
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            page.locator('#snresults button').filter(has_text='Unrelated').click()
-            page.locator('#sninsights .sn-coverage summary').click()
-            page.get_by_role('link', name='Review and restore exclusions').click()
+            page.goto(url + '/sentiment/excluded')
             assert 'Merus wine tasting' in page.locator('main').inner_text()
-            row = page.locator('div').filter(has=page.get_by_role('link', name='Pagination fixture 000', exact=True)).filter(has=page.get_by_role('button', name='Related to Infineon — restore'))
-            # The innermost matching row is the one containing this mention.
-            row.last.get_by_role('button', name='Related to Infineon — restore').click()
             page.goto(url + '/sentiment?q=Pagination+fixture+000')
             assert page.locator('#snresults .mn > li').count() == 1
             assert not errors, errors
