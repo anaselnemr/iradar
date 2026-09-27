@@ -22,6 +22,21 @@ on:
 
 jobs:
   trigger:
+    # Only ONE repository may hold the clock. The team's mirror at
+    # esinfineon/iradar carries this same file, so without this line it woke
+    # up every Sunday too: no secrets there, so it failed in six seconds and
+    # mailed the whole team a red alert about a check that had in fact just
+    # run perfectly from here. Worse, if anyone ever DID add the secrets over
+    # there, two crons would POST /cron/run minutes apart and start the
+    # weekly check twice.
+    #
+    # The clock belongs to the repo that holds the secrets. If this project's
+    # home ever moves, move this line with it - and note that a fork can still
+    # run the check by hand, which fails loudly and names the missing secret
+    # rather than skipping silently.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.repository == 'anaselnemr/iradar'
     runs-on: ubuntu-latest
     steps:
       - name: Wake iRadar and start the weekly check
