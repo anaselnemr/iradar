@@ -110,7 +110,8 @@ GUEST_MAY_POST = {"logout"}
 # the owner's, because that destroys the record of who has been reading.
 OWNER_ONLY_VIEWS = {"guests_delete", "guests_clear"}
 # Reachable without signing in.
-PUBLIC_ENDPOINTS = {"login", "static", "report_chart", "cron_run"}
+PUBLIC_ENDPOINTS = {"login", "static", "report_chart", "cron_run",
+                    "cron_status", "healthz"}
 
 # --- the shared read-only link ---------------------------------------------
 # UNSET, WHICH IS THE DEFAULT AND WHAT EVERY EXISTING INSTALL HAS, means none
@@ -1003,6 +1004,145 @@ def cron_run():
     return jsonify({"ok": True,
                     "note": "weekly check triggered; the cycle guard decides"
                             " whether it actually runs"})
+
+
+def _awake_needed():
+    """Is there work in flight that this container must stay up for?
+
+    Three things count, and the middle one is why this is not simply
+    RUN_STATE:
+      - a run actively capturing,
+      - a run in the database with no finish time, which the next boot will
+        resume - true in the window where the container has restarted but the
+        resume thread has not stamped RUN_STATE yet,
+      - the file sweep, which is the run's last phase and outlives the pages.
+
+    A run a PERSON ended is not work in flight: its parked suspects wait for
+    the next check by design, and nobody should be billed for holding them.
+    """
+    s = dict(runner.RUN_STATE)
+    import asset_watch
+    sweeping = bool(asset_watch.ASSET_STATE.get("running"))
+    row = None
+    try:
+        con = db.connect()
+        try:
+            row = con.execute(
+                "SELECT id, started, finished, stopped, total"
+                " FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        finally:
+            con.close()
+    except Exception as e:                       # never fail the keep-awake
+        print("[hold] could not read runs: %s" % e, flush=True)
+    unfinished = bool(row and not row["finished"] and not (row["stopped"] or ""))
+    running = bool(s.get("running"))
+    return {
+        "awake_needed": running or unfinished or sweeping,
+        "running": running,
+        "unfinished_run": unfinished,
+        "sweeping": sweeping,
+        "phase": s.get("phase", "files" if sweeping else ""),
+        "done": s.get("done", 0),
+        "total": s.get("total", 0) or (row["total"] if row else 0),
+        "eta_s": s.get("eta_s"),
+        "run_id": row["id"] if row else None,
+        "started": row["started"] if row else None,
+        "finished": row["finished"] if row else None,
+    }
+
+
+# How often the app reaches through the front door to say it is still busy.
+# Two minutes is chosen against the sleep threshold rather than the run: the
+# cost of being wrong low is a few hundred trivial requests, and the cost of
+# being wrong high is the container sleeping on a half-finished check.
+HOLD_EVERY_S = 120
+
+
+def _hold_awake_loop():
+    """Keep the container up while a check is running, and only then.
+
+    The container is allowed to sleep, which is what took the idle cost from
+    about $10.81 of a ~$14 bill down to the hours actually worked. The weekly
+    check then takes twelve hours or more, and nothing held the door: on
+    27 Sep 2026 run 19 captured for four hours, the container slept with 1,040
+    pages never reached, and it sat parked for 81 minutes until somebody
+    happened to open the site. The app resumes an interrupted run on boot, so
+    nothing was lost - but 'finishes eventually, if a human visits' is not a
+    schedule.
+
+    The request must go out through the PUBLIC url and back in: Railway wakes
+    and sleeps on what its edge proxy sees, so a call to localhost proves
+    nothing to the thing making the decision. /healthz is the cheapest door
+    that exists - no template, no session, no database.
+
+    This holds the door open and nothing else. When no run is in flight it
+    makes no requests at all, so an idle week still costs an idle week.
+    """
+    while True:
+        time.sleep(HOLD_EVERY_S)
+        try:
+            _hold_awake_once()
+        except Exception as e:
+            # A failed ping is not worth a crashed thread: the next one is two
+            # minutes away, and the run survives a sleep either way.
+            print("[hold] self-ping failed: %s" % e, flush=True)
+
+
+def _hold_awake_once():
+    """One knock, if one is owed. Returns the url knocked on, or None."""
+    import urllib.request
+    if not _awake_needed()["awake_needed"]:
+        return None
+    url = _base_url().rstrip("/") + "/healthz"
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "iradar-hold-awake"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        r.read(64)
+    return url
+
+
+@app.route("/healthz")
+def healthz():
+    """A door to knock on. Deliberately the cheapest response in the app:
+    _hold_awake_loop knocks on it every two minutes for hours on end while a
+    check runs, and it is the only thing here that does."""
+    return jsonify({"ok": True})
+
+
+@app.route("/cron/status")
+def cron_status():
+    """Does this container still need to be kept awake?
+
+    Starting the check from outside was only half the problem. The container
+    is allowed to sleep, the check takes twelve hours or more, and nothing in
+    between holds it up: on 27 Sep 2026 run 19 captured for four hours, the
+    container slept with 1,040 pages never reached, and it sat parked for 81
+    minutes until somebody happened to open the site. Resuming works - the app
+    picks an interrupted run up on boot - but 'finishes eventually, if a human
+    visits' is not a schedule.
+
+    So the external clock now holds the door open, and this is how it knows
+    when to let go. The request itself is the wake-up, exactly as /cron/run's
+    is; `awake_needed` is the single answer it acts on, because the judgement
+    of what counts as still-working belongs here rather than in a shell loop.
+
+    Three things count as still-working, and the middle one is why this is not
+    simply RUN_STATE:
+      - a run actively capturing,
+      - a run in the database with no finish time, which the next boot will
+        resume - true in the window where the container has restarted but the
+        resume thread has not stamped RUN_STATE yet,
+      - the file sweep, which is the run's last phase and outlives the pages.
+
+    Read-only on purpose: the clock must be able to ask this every few minutes
+    for hours without ever starting anything.
+    """
+    key = os.environ.get("CRON_KEY", "")
+    sent = (request.headers.get("X-Cron-Key")
+            or request.args.get("key", ""))
+    if not key or not secrets.compare_digest(sent, key):
+        abort(404)
+    return jsonify(_awake_needed())
 
 
 def next_run_text():
@@ -8833,6 +8973,8 @@ if __name__ == "__main__":
     threading.Thread(target=_post_run_watcher, daemon=True).start()
     # and pick up a check the last process was in the middle of
     threading.Thread(target=_resume_on_boot, daemon=True).start()
+    # hold the container up while that check runs, and only then
+    threading.Thread(target=_hold_awake_loop, daemon=True).start()
     print()
     print("  iRadar is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")

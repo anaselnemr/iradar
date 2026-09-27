@@ -2219,3 +2219,149 @@ def test_the_custom_range_beats_a_named_period():
     both = _ok("/sentiment?period=30d&from=%s&to=%s" % (day(220), day(150))
                ).data.decode("utf-8", "replace")
     assert "example.invalid/1" in both, "the dates should win over 30d"
+
+
+def test_cron_status_is_gated_read_only_and_never_starts_a_run():
+    """The clock holds the container awake by asking this every few minutes
+    for hours. It must answer on the same key, it must never start anything,
+    and a wrong key must not confirm it exists."""
+    import app as appmod
+    old = os.environ.get("CRON_KEY")
+    started = []
+    real = appmod._scheduled_check
+    appmod._scheduled_check = lambda *a, **k: started.append(1)
+    try:
+        os.environ.pop("CRON_KEY", None)
+        assert _client.get("/cron/status").status_code == 404, "dark when unset"
+        os.environ["CRON_KEY"] = "a-long-random-cron-key-2026"
+        assert _client.get("/cron/status").status_code == 404, "no key got in"
+        assert _client.get("/cron/status?key=wrong").status_code == 404
+        r = _client.get("/cron/status?key=a-long-random-cron-key-2026")
+        assert r.status_code == 200, r.status_code
+        assert _client.get("/cron/status",
+                           headers={"X-Cron-Key": "a-long-random-cron-key-2026"}
+                           ).status_code == 200, "the header form must work"
+        import time as _t
+        _t.sleep(0.3)
+        assert started == [], "asking for status started a run"
+        body = r.get_json()
+        assert set(("awake_needed", "running", "unfinished_run", "sweeping")
+                   ) <= set(body), body
+        assert isinstance(body["awake_needed"], bool)
+    finally:
+        appmod._scheduled_check = real
+        if old is None:
+            os.environ.pop("CRON_KEY", None)
+        else:
+            os.environ["CRON_KEY"] = old
+
+
+def test_cron_status_holds_the_door_for_a_run_that_only_the_database_knows():
+    """The case this exists for. After a sleep the container restarts with an
+    empty RUN_STATE while the database still holds an unfinished run that the
+    next boot will resume - and a clock trusting RUN_STATE alone would hang up
+    in exactly that window. A run a PERSON ended is different: its suspects
+    wait for the next check, and nobody should be billed for holding it up."""
+    import app as appmod, runner as runnermod
+    old = os.environ.get("CRON_KEY")
+    os.environ["CRON_KEY"] = "a-long-random-cron-key-2026"
+    url = "/cron/status?key=a-long-random-cron-key-2026"
+    saved = dict(runnermod.RUN_STATE)
+    con = appmod.db.connect()
+    try:
+        runnermod.RUN_STATE.clear()              # as it is on a fresh boot
+        con.execute("INSERT INTO runs(started, finished, kind, total)"
+                    " VALUES('2026-09-27 06:02:44', NULL, 'scheduled', 3640)")
+        con.commit()
+        b = _client.get(url).get_json()
+        assert b["running"] is False, "RUN_STATE is empty on a fresh boot"
+        assert b["unfinished_run"] is True and b["awake_needed"] is True, b
+
+        rid = con.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+        con.execute("UPDATE runs SET stopped='2026-09-27 12:00:00'"
+                    " WHERE id=?", (rid,))
+        con.commit()
+        b = _client.get(url).get_json()
+        assert b["awake_needed"] is False, "a run a person ended still held on"
+
+        con.execute("UPDATE runs SET stopped='',"
+                    " finished='2026-09-27 18:00:00' WHERE id=?", (rid,))
+        con.commit()
+        assert _client.get(url).get_json()["awake_needed"] is False
+        con.execute("DELETE FROM runs WHERE id=?", (rid,))
+        con.commit()
+    finally:
+        con.close()
+        runnermod.RUN_STATE.clear()
+        runnermod.RUN_STATE.update(saved)
+        if old is None:
+            os.environ.pop("CRON_KEY", None)
+        else:
+            os.environ["CRON_KEY"] = old
+
+
+def test_healthz_is_public_and_cheap():
+    """The hold loop knocks on this every two minutes for hours while a check
+    runs. It must answer without a session and without touching anything."""
+    r = _client.get("/healthz")
+    assert r.status_code == 200, r.status_code
+    assert r.get_json() == {"ok": True}
+    assert len(r.data) < 60, "healthz should be the cheapest answer here"
+
+
+def test_the_app_holds_itself_awake_only_while_a_check_is_running():
+    """The point of the whole thing. An idle week must still cost an idle
+    week, so no run means no request at all; and the knock has to go out
+    through the PUBLIC url, because Railway sleeps on what its edge proxy
+    sees and a call to localhost proves nothing to it."""
+    import app as appmod, runner as runnermod
+    from unittest.mock import patch
+    saved = dict(runnermod.RUN_STATE)
+    old_pub = os.environ.get("PUBLIC_URL")
+    con = appmod.db.connect()
+    rid = None
+    try:
+        os.environ["PUBLIC_URL"] = "https://iradar.example"
+        runnermod.RUN_STATE.clear()
+        # add a FINISHED run rather than clearing the table: these rows are
+        # shared fixture state and deleting them fails every other test here
+        con.execute("INSERT INTO runs(started, finished, kind, total)"
+                    " VALUES('2026-09-27 06:02:44',"
+                    " '2026-09-27 18:00:00', 'scheduled', 3640)")
+        con.commit()
+        rid = con.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+        with patch("urllib.request.urlopen") as op:
+            assert appmod._hold_awake_once() is None
+            op.assert_not_called(), "it knocked with no run in flight"
+
+        con.execute("UPDATE runs SET finished=NULL WHERE id=?", (rid,))
+        con.commit()
+        with patch("urllib.request.urlopen") as op:
+            op.return_value.__enter__ = lambda self: self
+            op.return_value.__exit__ = lambda self, *a: False
+            op.return_value.read = lambda *a: b"{}"
+            url = appmod._hold_awake_once()
+        assert url == "https://iradar.example/healthz", url
+        sent = op.call_args[0][0]
+        assert sent.full_url.startswith("https://iradar.example"), \
+            "the knock must leave the container, not hit localhost"
+        assert "127.0.0.1" not in sent.full_url and "localhost" not in sent.full_url
+
+        # a run a person ended is not work in flight
+        con.execute("UPDATE runs SET stopped='2026-09-27 12:00:00' WHERE id=?",
+                    (rid,))
+        con.commit()
+        with patch("urllib.request.urlopen") as op:
+            assert appmod._hold_awake_once() is None
+            op.assert_not_called(), "it held a run a person had ended"
+    finally:
+        if rid is not None:
+            con.execute("DELETE FROM runs WHERE id=?", (rid,))
+            con.commit()
+        con.close()
+        runnermod.RUN_STATE.clear()
+        runnermod.RUN_STATE.update(saved)
+        if old_pub is None:
+            os.environ.pop("PUBLIC_URL", None)
+        else:
+            os.environ["PUBLIC_URL"] = old_pub
