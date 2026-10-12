@@ -1,0 +1,53 @@
+# Friday's review reminder.
+#
+# The weekly report counts every update nobody has reviewed yet, so a week left
+# open is reported again on top of the next one (11 Oct 2026: 2,518 "updates to
+# review" for a week that had 1,151). This wakes the app on Friday morning and
+# asks it to mail everyone on the report if the queue is still open.
+#
+# 08:00 in Berlin is 06:00 UTC in summer and 07:00 UTC in winter, and GitHub
+# only speaks UTC, so it fires at BOTH. The app judges the local hour itself
+# and sends at most once per Friday, so the extra firing is a no-op.
+#
+# Uses the same two secrets as weekly-check.yml (IRADAR_URL, IRADAR_CRON_KEY).
+name: Queue reminder
+
+on:
+  schedule:
+    - cron: "0 6 * * 5"        # Friday 08:00 Europe/Berlin in summer time
+    - cron: "0 7 * * 5"        # Friday 08:00 Europe/Berlin in winter time
+  workflow_dispatch:
+
+jobs:
+  remind:
+    # One repository holds the clock - see the note in weekly-check.yml.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.repository == 'anaselnemr/iradar'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake iRadar and send the reminder if the queue is open
+        env:
+          URL: ${{ secrets.IRADAR_URL }}
+          KEY: ${{ secrets.IRADAR_CRON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "IRADAR_URL or IRADAR_CRON_KEY is not set in repo secrets."
+            exit 1
+          fi
+          # a sleeping container can answer the first request with a 502
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' \
+                     --max-time 90 \
+                     -H "X-Cron-Key: $KEY" \
+                     "$URL/cron/remind" || echo 000)
+            echo "attempt $attempt -> HTTP $code"
+            cat /tmp/body || true
+            echo
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Could not reach iRadar after 6 attempts."
+          exit 1

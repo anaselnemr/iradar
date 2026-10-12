@@ -111,7 +111,7 @@ GUEST_MAY_POST = {"logout"}
 OWNER_ONLY_VIEWS = {"guests_delete", "guests_clear"}
 # Reachable without signing in.
 PUBLIC_ENDPOINTS = {"login", "static", "report_chart", "cron_run",
-                    "cron_status", "healthz"}
+                    "cron_status", "cron_remind", "healthz"}
 
 # --- the shared read-only link ---------------------------------------------
 # UNSET, WHICH IS THE DEFAULT AND WHAT EVERY EXISTING INSTALL HAS, means none
@@ -320,7 +320,7 @@ def _require_login():
         # a CSRF token in - a machine calling a URL on a schedule is not a
         # browser being tricked into anything, which is the only thing CSRF
         # defends against. Its own key is checked in the view.
-        if ep == "cron_run":
+        if ep in ("cron_run", "cron_remind"):
             return None
         sent = (request.form.get("_csrf")
                 or request.headers.get("X-CSRF-Token") or "")
@@ -1143,6 +1143,92 @@ def cron_status():
     if not key or not secrets.compare_digest(sent, key):
         abort(404)
     return jsonify(_awake_needed())
+
+
+# Friday, 08:00 in the display zone: the start of the last working day before
+# Sunday's check, which leaves a whole day to clear the queue.
+REMIND_WEEKDAY = 4
+REMIND_HOUR = 8
+
+
+def _queue_reminder(now=None):
+    """Mail everyone on the report if the review queue is still open on Friday.
+
+    The weekly report counts every update nobody has reviewed yet, so a week
+    left open is reported again under the next one. On 11 Oct 2026 that meant
+    2,518 "updates to review" when the week itself had 1,151, and a corrected
+    email had to follow. This is the nudge that comes two days earlier.
+
+    The clock is outside (GitHub cron, because the container sleeps) and fires
+    at both 06:00 and 07:00 UTC, since 08:00 in Berlin is one or the other
+    depending on daylight saving. So the time is judged here, in the display
+    zone: nothing before Friday 08:00, and once only per Friday. The day is
+    claimed before anything is sent, so a retry after a slow send cannot mail
+    everyone twice.
+    """
+    now = now or datetime.now(timezone.utc)
+    local = now.astimezone(_DISPLAY_ZONE) if _DISPLAY_ZONE else now.astimezone()
+    today = local.strftime("%Y-%m-%d")
+    if local.weekday() != REMIND_WEEKDAY or local.hour < REMIND_HOUR:
+        return {"sent": 0, "why": "only on Friday from 08:00"}
+    if (db.get_settings().get("last_queue_reminder") or "") == today:
+        return {"sent": 0, "why": "already reminded today"}
+    if not mailer.configured():
+        return {"sent": 0, "why": "mail not configured"}
+    con = db.connect()
+    try:
+        updates = con.execute(
+            "SELECT COUNT(*), MIN(ts) FROM changes WHERE reviewed=0").fetchone()
+        files = con.execute(
+            "SELECT COUNT(*), MIN(ts) FROM asset_changes"
+            " WHERE IFNULL(reviewed,0)=0").fetchone()
+        recipients = [r["email"] for r in con.execute(
+            "SELECT email FROM users WHERE active=1"
+            " AND IFNULL(email_opt_in,0)=1 AND email<>''")]
+    finally:
+        con.close()
+    db.set_setting("last_queue_reminder", today)
+    n, fu = updates[0] or 0, files[0] or 0
+    if not n and not fu:
+        return {"sent": 0, "why": "queue is clear"}
+    oldest = min(t for t in (updates[1], files[1]) if t)
+    try:
+        o = to_local(oldest)
+        since = "%s, %d %s" % (o.strftime("%A"), o.day, o.strftime("%B"))
+    except ValueError:
+        since = ""
+    nxt = "the next check"
+    if schedule_mode() == "days":
+        ahead = [(WEEKDAYS.index(d) - local.weekday()) % 7 or 7
+                 for d in check_days()]
+        nxt = (local + timedelta(days=min(ahead))).strftime("%A") + "’s check"
+    html = mailer.render_reminder(n, fu, since, nxt, _base_url())
+    count = n or fu
+    subj = "iRadar reminder — %d update%s still to review" % (
+        count, "" if count == 1 else "s")
+    sent = 0
+    for addr in recipients:
+        err = mailer.send(addr, subj, html)
+        if err:
+            print(f"[remind] {addr}: {err}", flush=True)
+        else:
+            sent += 1
+    print(f"[remind] queue reminder sent to {sent} of {len(recipients)}"
+          f" ({n} updates, {fu} files open)", flush=True)
+    return {"sent": sent, "updates": n, "files": fu}
+
+
+@app.route("/cron/remind", methods=["GET", "POST"])
+def cron_remind():
+    """Friday's queue reminder, fired by the external clock. Same key and the
+    same 404 for a wrong one as /cron/run. Calling it at any other time is
+    harmless: _queue_reminder decides whether this is the moment."""
+    key = os.environ.get("CRON_KEY", "")
+    sent = (request.headers.get("X-Cron-Key")
+            or request.args.get("key", ""))
+    if not key or not secrets.compare_digest(sent, key):
+        abort(404)
+    return jsonify(_queue_reminder())
 
 
 def next_run_text():

@@ -2300,6 +2300,107 @@ def test_cron_status_holds_the_door_for_a_run_that_only_the_database_knows():
             os.environ["CRON_KEY"] = old
 
 
+def test_queue_reminder_goes_out_once_on_friday_from_eight_berlin_time():
+    """The clock fires at 06:00 AND 07:00 UTC because 08:00 in Berlin is one
+    or the other with daylight saving, so the app must judge the hour itself:
+    nothing before Friday 08:00 local, exactly one batch per Friday, and
+    nothing at all when the queue is already clear."""
+    import app as appmod
+    import mailer
+    from datetime import datetime as _dt, timezone as _tz
+    utc = lambda s: _dt.strptime(s, "%Y-%m-%d %H:%M").replace(tzinfo=_tz.utc)
+    con = db.connect()
+    prev_opt = con.execute("SELECT email_opt_in FROM users WHERE id=?",
+                           (_uid,)).fetchone()[0]
+    con.execute("UPDATE users SET email_opt_in=1, active=1 WHERE id=?", (_uid,))
+    cid = con.execute(
+        "INSERT INTO changes(url_id, ts, old_snapshot_id, new_snapshot_id,"
+        " text_changed, reviewed) VALUES(1, '2026-10-11 20:00:00', ?, ?, 1, 0)",
+        (_sid, _sid)).lastrowid
+    con.commit()
+    con.close()
+    sent = []
+    real_conf, real_send = mailer.configured, mailer.send
+    mailer.configured = lambda: True
+    mailer.send = lambda to, subj, html, text="": sent.append((to, subj, html)) or None
+    prev_mark = db.get_settings().get("last_queue_reminder") or ""
+    try:
+        db.set_setting("last_queue_reminder", "")
+        # Thursday mid-morning, and Friday 07:59 in summer time: too early
+        assert appmod._queue_reminder(utc("2026-10-15 08:00"))["sent"] == 0
+        assert appmod._queue_reminder(utc("2026-10-16 05:59"))["sent"] == 0
+        assert sent == [], "reminded before Friday 08:00"
+        # Friday 06:00 UTC is 08:00 CEST: this one sends
+        r = appmod._queue_reminder(utc("2026-10-16 06:00"))
+        batch = len(sent)
+        assert batch and r["sent"] == batch and r["updates"] >= 1, r
+        assert "routes@example.com" in [x[0] for x in sent]
+        to, subj, html = sent[0]
+        assert "still to review" in subj, subj
+        assert "the oldest since " in html, "the oldest open update is named"
+        assert "’s check" in html and "counted again" in html
+        assert "Review the queue" in html
+        # the 07:00 UTC firing the same Friday must not mail again
+        assert appmod._queue_reminder(utc("2026-10-16 07:00"))["sent"] == 0
+        assert len(sent) == batch, "two reminders on one Friday"
+
+        # winter time: 06:00 UTC is 07:00 CET, 07:00 UTC is the one
+        assert appmod._queue_reminder(utc("2026-10-30 06:00"))["sent"] == 0
+        assert appmod._queue_reminder(utc("2026-10-30 07:00"))["sent"] == batch
+        assert len(sent) == 2 * batch
+
+        # a clear queue sends nothing
+        con = db.connect()
+        open_ch = [r[0] for r in con.execute(
+            "SELECT id FROM changes WHERE reviewed=0")]
+        open_fu = [r[0] for r in con.execute(
+            "SELECT id FROM asset_changes WHERE IFNULL(reviewed,0)=0")]
+        con.execute("UPDATE changes SET reviewed=1 WHERE reviewed=0")
+        con.execute("UPDATE asset_changes SET reviewed=1 WHERE IFNULL(reviewed,0)=0")
+        con.commit()
+        try:
+            r = appmod._queue_reminder(utc("2026-11-06 07:00"))
+            assert r == {"sent": 0, "why": "queue is clear"}, r
+            assert len(sent) == 2 * batch
+        finally:
+            for t, ids in (("changes", open_ch), ("asset_changes", open_fu)):
+                if ids:
+                    con.execute("UPDATE %s SET reviewed=0 WHERE id IN (%s)"
+                                % (t, ",".join(map(str, ids))))
+            con.commit()
+            con.close()
+    finally:
+        mailer.configured, mailer.send = real_conf, real_send
+        db.set_setting("last_queue_reminder", prev_mark)
+        con = db.connect()
+        con.execute("DELETE FROM changes WHERE id=?", (cid,))
+        con.execute("UPDATE users SET email_opt_in=? WHERE id=?", (prev_opt, _uid))
+        con.commit()
+        con.close()
+
+
+def test_cron_remind_is_gated_like_the_other_cron_doors():
+    import app as appmod
+    old = os.environ.get("CRON_KEY")
+    real = appmod._queue_reminder
+    appmod._queue_reminder = lambda: {"sent": 0, "why": "stub"}
+    try:
+        os.environ.pop("CRON_KEY", None)
+        assert _client.get("/cron/remind").status_code == 404, "dark when unset"
+        os.environ["CRON_KEY"] = "a-long-random-cron-key-2026"
+        assert _client.get("/cron/remind?key=wrong").status_code == 404
+        r = _client.post("/cron/remind",
+                         headers={"X-Cron-Key": "a-long-random-cron-key-2026"})
+        assert r.status_code == 200, r.status_code
+        assert r.get_json() == {"sent": 0, "why": "stub"}
+    finally:
+        appmod._queue_reminder = real
+        if old is None:
+            os.environ.pop("CRON_KEY", None)
+        else:
+            os.environ["CRON_KEY"] = old
+
+
 def test_healthz_is_public_and_cheap():
     """The hold loop knocks on this every two minutes for hours while a check
     runs. It must answer without a session and without touching anything."""

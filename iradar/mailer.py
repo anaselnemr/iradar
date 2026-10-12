@@ -985,3 +985,74 @@ def render_report(d, base_url, when_label):
 'Manage them here</a></div></td></tr>'
 
 '</table></td></tr></table></body></html>')
+
+
+def render_reminder(updates, files, since, next_check, base_url):
+    """Friday's nudge: the queue is still open and Sunday's check is coming.
+
+    Deliberately small - two numbers, one sentence on why it matters, one
+    button. The why is the point: an open week is counted again in the next
+    report, on top of that week's own changes."""
+    b = base_url.rstrip("/")
+    bits = []
+    if updates:
+        bits.append("{:,} page update{}".format(updates, "" if updates == 1 else "s"))
+    if files:
+        bits.append("{:,} file update{}".format(files, "" if files == 1 else "s"))
+    waiting = " and ".join(bits)
+    lead = (waiting + (" are" if updates + files > 1 else " is")
+            + " still waiting for review"
+            + ((", the oldest since " + since) if since else "") + ".")
+    why = ("Anything still open at " + next_check + " is counted again in its "
+           "report, on top of that week’s own changes.")
+    tiles = ""
+    for label, value, colour in (("Updates to review", updates, "#ea580c"),
+                                 ("Files to review", files, "#7c3aed")):
+        tiles += ('<td width="50%" align="center" style="padding:6px 4px;">'
+                  '<div style="font:700 26px/1.2 ' + FONT + ';color:'
+                  + (colour if value else _MUT) + ';">' + "{:,}".format(value)
+                  + '</div><div style="font:400 12px/1.3 ' + FONT + ';'
+                  'letter-spacing:.02em;text-transform:uppercase;color:' + _MUT
+                  + ';margin-top:3px;">' + label + '</div></td>')
+    return (
+'<!doctype html><html><head><meta charset="utf-8">'
+'<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+'<body style="margin:0;padding:0;background:' + _PAPER + ';">'
+'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+'style="background:' + _PAPER + ';padding:24px 12px;"><tr><td align="center">'
+'<table role="presentation" width="600" cellpadding="0" cellspacing="0" '
+'style="max-width:600px;width:100%;background:#ffffff;border:1px solid ' + _LINE + ';'
+'border-radius:16px;overflow:hidden;">'
+
+'<tr><td style="background:' + _INK + ';padding:18px 28px;">'
+'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+'<td style="padding-right:11px;"><img src="cid:iradarlogo" width="32" height="32" '
+'alt="iRadar" style="display:block;border-radius:8px;"></td>'
+'<td style="font:800 20px/1 ' + FONT + ';letter-spacing:-.02em;">'
+'<span style="color:#ffffff;">i</span><span style="color:#8b5cf6;">Radar</span>'
+'<div style="font:400 12px/1.4 ' + FONT + ';color:#b9bdf0;margin-top:4px;'
+'letter-spacing:0;">Review reminder</div>'
+'</td></tr></table></td></tr>'
+
+'<tr><td style="padding:22px 28px 6px;font:400 14px/1.55 ' + FONT + ';color:'
++ _INK + ';">' + _esc(lead) + '<div style="color:' + _MUT + ';margin-top:8px;">'
++ _esc(why) + '</div></td></tr>'
+
+'<tr><td style="padding:8px 18px 0;"><table role="presentation" width="100%" '
+'cellpadding="0" cellspacing="0" style="table-layout:fixed;"><tr>' + tiles
++ '</tr></table></td></tr>'
+
+'<tr><td align="center" style="padding:20px 28px 10px;font:600 15px/1.4 ' + FONT
++ ';">'
+'<a href="' + b + '/?status=changed" style="display:inline-block;background:'
++ _ACCENT + ';color:#ffffff;font:700 14px/1 ' + FONT + ';text-decoration:none;'
+'padding:14px 30px;border-radius:9px;">Review the queue →</a></td></tr>'
+
+'<tr><td align="center" style="padding:14px 28px 22px;border-top:1px solid '
++ _LINE + ';">'
+'<div style="font:400 11px/1.6 ' + FONT + ';color:' + _FAINT + ';">'
+'Email report preferences · '
+'<a href="' + b + '/account" style="color:' + _ACCENT + ';text-decoration:none;">'
+'Manage them here</a></div></td></tr>'
+
+'</table></td></tr></table></body></html>')
