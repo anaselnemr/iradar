@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>iRadar architecture</title>
+<style>
+  body{margin:0;background:#fff;font:14px/1.4 "Segoe UI",Arial,sans-serif;color:#17161c}
+  #c{width:1200px;height:580px;position:relative}
+  h1{position:absolute;left:40px;top:22px;margin:0;font-size:22px}
+  h1 span{color:#6b6a76;font-weight:400;font-size:15px;margin-left:10px}
+  .box{position:absolute;border:1.5px solid #c9c8d2;border-radius:12px;background:#fafafd;padding:12px 14px}
+  .box b{display:block;font-size:15px;margin-bottom:4px}
+  .box small{color:#6b6a76;font-size:12.5px;display:block}
+  .zone{position:absolute;border:2px dashed #5e6ad2;border-radius:16px;background:#f4f5fd}
+  .zone .lab{position:absolute;left:16px;top:-12px;background:#fff;padding:0 8px;color:#5e6ad2;font-weight:600;font-size:13px}
+  .srv{border-color:#5e6ad2;background:#fff}
+  .inner{position:absolute;border:1px solid #dcdcf0;border-radius:9px;background:#f7f7fe;padding:8px 10px;font-size:13px}
+  .inner small{color:#6b6a76;font-size:12px;display:block}
+  .ext{border-color:#e0803a;background:#fff8f2}
+  .mail{border-color:#1ea896;background:#f1faf8}
+  svg{position:absolute;left:0;top:0}
+  .al{position:absolute;font-size:12px;color:#3a3a44;background:#fff;padding:1px 5px;border-radius:4px}
+</style></head><body><div id="c">
+<h1>iRadar <span>architecture: weekly change monitoring for infineon.com</span></h1>
+
+<svg width="1200" height="580">
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3a3a44"/></marker></defs>
+  <g stroke="#3a3a44" stroke-width="1.6" fill="none" marker-end="url(#a)">
+    <path d="M230 300 L338 300"/>
+    <path d="M808 210 L928 160"/>
+    <path d="M808 300 L928 310"/>
+    <path d="M808 420 L928 470"/>
+  </g>
+</svg>
+
+<div class="box" style="left:40px;top:240px;width:160px">
+  <b>Web team</b><small>about 10 users, browser on the intranet</small>
+</div>
+<div class="al" style="left:240px;top:276px">HTTPS, sign-in</div>
+
+<div class="zone" style="left:330px;top:90px;width:490px;height:460px"><div class="lab">Infineon cloud (AWS eu-central-1), intranet only</div></div>
+<div class="box srv" style="left:350px;top:115px;width:430px;height:300px">
+  <b>iRadar server: one container (Docker), one instance</b>
+  <div class="inner" style="left:14px;top:46px;width:180px">Web dashboard<small>Python Flask: review queue, exports, reports</small></div>
+  <div class="inner" style="left:222px;top:46px;width:180px">Capture engine<small>Playwright + headless Chromium, reads public pages</small></div>
+  <div class="inner" style="left:14px;top:140px;width:180px">Scheduler<small>weekly check (Sun 03:00), Friday review reminder</small></div>
+  <div class="inner" style="left:222px;top:140px;width:180px">Comparison<small>text, documents, images, prices, page components</small></div>
+  <div class="inner" style="left:14px;top:234px;width:388px">Storage: 50 GB disk at /app/data<small>embedded SQLite database + page snapshots and screenshots (3.3 GB today); no separate database server</small></div>
+</div>
+<div class="box" style="left:350px;top:452px;width:430px">
+  <b>Backup</b><small>daily disk snapshot</small>
+</div>
+
+<div class="box ext" style="left:930px;top:110px;width:230px">
+  <b>www.infineon.com</b><small>about 3,600 public pages, read once a week</small>
+</div>
+<div class="box ext" style="left:930px;top:265px;width:230px">
+  <b>Public community sites</b><small>Reddit, GitHub, Hacker News, YouTube: public mentions for the sentiment view</small>
+</div>
+<div class="al" style="left:822px;top:236px">outbound HTTPS via proxy, read-only</div>
+<div class="box mail" style="left:930px;top:440px;width:230px">
+  <b>Internal SMTP relay</b><small>weekly report + Friday reminder to the web team</small>
+</div>
+<div class="al" style="left:846px;top:452px">SMTP</div>
+</div></body></html>
