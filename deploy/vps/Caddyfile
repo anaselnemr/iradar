@@ -1,0 +1,4 @@
+iradar.net, www.iradar.net {
+	encode gzip
+	reverse_proxy iradar:5000
+}

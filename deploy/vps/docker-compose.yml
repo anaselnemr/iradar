@@ -1,0 +1,38 @@
+# iRadar on a plain Linux VPS: the app container plus Caddy in front of it for
+# HTTPS (Caddy fetches and renews the Let's Encrypt certificate by itself).
+#
+# Lives at /opt/iradar/repo/deploy/vps on the server. Data and settings sit
+# OUTSIDE the repo, so a `git pull` can never touch them:
+#   /opt/iradar/data   the database, snapshots, screenshots, the session key
+#   /opt/iradar/.env   the same variables the app had on Railway
+services:
+  iradar:
+    build: ../..
+    restart: unless-stopped
+    env_file: /opt/iradar/.env
+    environment:
+      PORT: "5000"
+    volumes:
+      - /opt/iradar/data:/app/data
+    # Chromium is launched with --disable-dev-shm-usage, but a roomier /dev/shm
+    # costs nothing and removes one way for a long check to crash
+    shm_size: "1gb"
+    expose:
+      - "5000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - iradar
+
+volumes:
+  caddy_data:
+  caddy_config:
