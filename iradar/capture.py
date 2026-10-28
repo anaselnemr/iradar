@@ -2207,6 +2207,17 @@ async def capture_one(browser, url, out_dir):
         context = await browser.new_context(
             viewport=VIEWPORT, user_agent=USER_AGENT, locale="en-US",
             ignore_https_errors=True)
+        # PIN THE CURRENCY TO USD. infineon.com picks it from the visitor's
+        # country: on the Canadian server every page came back reading
+        # "Canadian Dollar (CAD)" in the header picker (and CAD part prices),
+        # so all 605 pages of the first run there looked edited. These are the
+        # two places the site stores a visitor's own currency choice; set
+        # before any script runs, the site honours them like a returning
+        # visitor's pick, whatever country the server sits in.
+        await context.add_cookies([{"name": "MkHcCurrencyId", "value": "USD",
+                                    "domain": ".infineon.com", "path": "/"}])
+        await context.add_init_script(
+            "try{localStorage.setItem('ifxCurrencyId','USD')}catch(e){}")
         context.set_default_timeout(15_000)
         page = await context.new_page()
         net_state = _attach_inflight_tracker(page)
