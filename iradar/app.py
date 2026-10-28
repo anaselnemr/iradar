@@ -5202,6 +5202,8 @@ def _post_run_watcher():
                 _housekeeping("after run")
             except Exception as e:
                 print(f"[post-run] housekeeping failed: {e}", flush=True)
+            # the run just took new screenshots: thumbnail them for the export
+            threading.Thread(target=_warm_export_thumbs, daemon=True).start()
             try:
                 # the file sweep runs INSIDE the chain, synchronously: the
                 # report below quotes its count, so mailing first meant the
@@ -7743,15 +7745,37 @@ def export_builder():
 PREVIEW_COL_PX = 150            # thumbnail width in the spreadsheet
 
 
+XLSX_THUMB_DIR = db.DATA_DIR / "xlsxthumbs"
+
+
+def _thumb_cache_path(shot, px=PREVIEW_COL_PX):
+    key = hashlib.sha1(f"{shot}|{px}".encode()).hexdigest()[:24]
+    return XLSX_THUMB_DIR / f"{key}.jpg"
+
+
 def _thumb_bytes(shot, px=PREVIEW_COL_PX):
     """A small JPEG of a page's screenshot, for embedding in a spreadsheet.
 
     JPEG rather than the stored webp: openpyxl will embed webp bytes happily,
     but older Excel cannot draw them and the reader gets an empty frame with
-    no clue why. draft() lets the decoder skip most of the work by scaling as
-    it reads, which is what makes 4,300 pages about a minute rather than ten.
+    no clue why.
+
+    CACHED ON DISK. The screenshots are webp, and draft() - the decoder
+    shortcut this used to lean on - only works for JPEG, so every export fully
+    decoded ~4,300 tall screenshots: about four minutes on the 2-core server
+    with both cores pinned, for a file whose pictures had not changed. A
+    snapshot folder is never rewritten, so its thumbnail is made once and
+    read back from then on (_warm_export_thumbs makes them ahead of time).
     """
     from PIL import Image as _Im
+    cached = _thumb_cache_path(shot, px)
+    try:
+        data = cached.read_bytes()
+        with _Im.open(io.BytesIO(data)) as im:
+            w, h = im.size
+        return io.BytesIO(data), w, h
+    except Exception:
+        pass
     try:
         im = _Im.open(shot)
         im.draft("RGB", (px * 2, px * 2))
@@ -7759,10 +7783,43 @@ def _thumb_bytes(shot, px=PREVIEW_COL_PX):
         im.thumbnail((px, px * 4))       # tall pages keep their proportions
         buf = io.BytesIO()
         im.save(buf, "JPEG", quality=60, optimize=True)
+        try:
+            XLSX_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = cached.with_suffix(".tmp%d" % threading.get_ident())
+            tmp.write_bytes(buf.getvalue())
+            os.replace(tmp, cached)
+        except Exception:
+            pass                         # a failed cache write costs speed only
         buf.seek(0)
         return buf, im.width, im.height
     except Exception:
         return None, 0, 0
+
+
+def _warm_export_thumbs():
+    """Make the export thumbnail of every page's newest screenshot ahead of
+    time, and drop the ones no export can ask for any more (a page's older
+    screenshot, a deleted page). Run at startup and after every check, so a
+    click on Export only ever reads finished files."""
+    try:
+        con = db.connect()
+        shots = _latest_shots(con)
+        con.close()
+        made = 0
+        for p in shots.values():
+            if not _thumb_cache_path(p).exists():
+                _thumb_bytes(p)
+                made += 1
+        keep = {_thumb_cache_path(p).name for p in shots.values()}
+        gone = 0
+        for f in XLSX_THUMB_DIR.glob("*.jpg"):
+            if f.name not in keep:
+                f.unlink(missing_ok=True)
+                gone += 1
+        if made or gone:
+            print(f"[export] thumbnails: {made} made, {gone} dropped", flush=True)
+    except Exception as e:
+        print(f"[export] thumbnail warm-up failed: {e}", flush=True)
 
 
 def _latest_shots(con):
@@ -9055,6 +9112,8 @@ if __name__ == "__main__":
     reschedule()
     # warm the document previews in the background so item pages open instantly
     threading.Thread(target=_prewarm_docs, daemon=True).start()
+    # and the export's page thumbnails, so Export never decodes 4,300 images
+    threading.Thread(target=_warm_export_thumbs, daemon=True).start()
     # auto-infer product/application levels after every run
     threading.Thread(target=_post_run_watcher, daemon=True).start()
     # and pick up a check the last process was in the middle of
