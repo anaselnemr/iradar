@@ -1172,6 +1172,37 @@ def test_the_pages_export_carries_a_picture_of_each_page():
         "row %s was not made tall enough for the picture (h=%s)" % (r0 + 1, h)
 
 
+def test_the_pages_export_is_built_once_and_rebuilt_when_a_page_changes():
+    """The everything-sheet took ~50 s to write on the 2-core server, every
+    click. An unchanged answer is now the file already on disk; any change to
+    what the sheet would say makes a fresh one."""
+    import io
+    from openpyxl import load_workbook
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_status)"
+                " VALUES(902, 'https://www.infineon.com/part/CACHE', 1,"
+                " 'Part', 'unchanged')"
+                " ON CONFLICT(id) DO UPDATE SET active=1, title_override=''")
+    con.commit()
+    con.close()
+    first = _client.get("/export/download?mode=pages&go=1&all=1")
+    assert first.status_code == 200
+    files = sorted(app.EXPORT_CACHE_DIR.glob("pages-*.xlsx"))
+    assert files, "the built sheet was not kept"
+    again = _client.get("/export/download?mode=pages&go=1&all=1")
+    assert again.data == first.data, "an unchanged sheet was rebuilt"
+    assert sorted(app.EXPORT_CACHE_DIR.glob("pages-*.xlsx")) == files
+
+    con = db.connect()
+    con.execute("UPDATE urls SET title_override='Renamed by hand' WHERE id=902")
+    con.commit()
+    con.close()
+    fresh = _client.get("/export/download?mode=pages&go=1&all=1")
+    ws = load_workbook(io.BytesIO(fresh.data))["Pages"]
+    pages = [c.value for c in ws["C"]]
+    assert "Renamed by hand" in pages, "a changed page was served stale"
+
+
 def test_the_cron_trigger_needs_its_key_and_hides_otherwise():
     """The weekly check is started from outside now, so the app may sleep.
     The key is the whole authentication, and a wrong one must not even

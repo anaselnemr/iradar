@@ -5203,7 +5203,7 @@ def _post_run_watcher():
             except Exception as e:
                 print(f"[post-run] housekeeping failed: {e}", flush=True)
             # the run just took new screenshots: thumbnail them for the export
-            threading.Thread(target=_warm_export_thumbs, daemon=True).start()
+            threading.Thread(target=_warm_exports, daemon=True).start()
             try:
                 # the file sweep runs INSIDE the chain, synchronously: the
                 # report below quotes its count, so mailing first meant the
@@ -7822,6 +7822,35 @@ def _warm_export_thumbs():
         print(f"[export] thumbnail warm-up failed: {e}", flush=True)
 
 
+EXPORT_CACHE_DIR = db.DATA_DIR / "exportcache"
+
+
+def _send_export(path):
+    try:
+        os.utime(path)                   # recently used = kept by the prune
+    except OSError:
+        pass
+    stamp = datetime.now().strftime("%Y-%m-%d")
+    return send_file(str(path), as_attachment=True,
+                     download_name=f"infineonwatch-table-{stamp}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "spreadsheetml.sheet")
+
+
+def _warm_exports():
+    """Thumbnails first, then the one-click "everything" sheet itself, so
+    the Export button hands over a finished file."""
+    _warm_export_thumbs()
+    try:
+        t = time.time()
+        with app.test_request_context("/export/download?mode=pages&go=1&all=1"):
+            export_builder_download().close()
+        print(f"[export] everything-sheet ready ({time.time() - t:.0f}s)",
+              flush=True)
+    except Exception as e:
+        print(f"[export] everything-sheet warm-up failed: {e}", flush=True)
+
+
 def _latest_shots(con):
     """url_id -> path of its newest good screenshot, for the export preview."""
     out = {}
@@ -7893,17 +7922,29 @@ def export_builder_download():
         # then have to open the page to resolve
         rows, want_meta, want_comps, want_page = _export_rows(
             con, levels, cols, verbose=True, ids=_wanted_ids())
-        ws = wb.create_sheet("Pages")
         # A PICTURE OF THE PAGE, second column. A row of URLs and yes/nos
         # makes you open the site to know what you are even looking at; the
         # screenshot we already hold answers that in the sheet itself. It sits
         # beside the URL because those two together identify the row.
         shots = _latest_shots(con)
+        headers = (["URL", "Preview", "Page", "Level", "Type"]
+                   + _export_headers(want_meta, want_comps, want_page,
+                                     verbose=True))
+        # THE SAME SHEET IS NOT BUILT TWICE. Writing ~144,000 cells and 4,300
+        # pictures is about 50 s of pure-Python XML on the 2-core server, and
+        # between two checks the answer rarely changes. The rows are cheap to
+        # work out, so they are fingerprinted with the screenshots they show
+        # and an identical file already on disk is sent as it is.
+        key = hashlib.sha1(repr((headers, rows, [
+            str(shots.get(r["id"], "")) for r in rows])).encode()).hexdigest()[:20]
+        cached = EXPORT_CACHE_DIR / f"pages-{key}.xlsx"
+        if cached.exists():
+            con.close()
+            return _send_export(cached)
+        ws = wb.create_sheet("Pages")
         ws.column_dimensions["B"].width = 24
         # URL first: it is the join key people paste into their own tools
-        ws.append(["URL", "Preview", "Page", "Level", "Type"]
-                  + _export_headers(want_meta, want_comps, want_page,
-                                    verbose=True))
+        ws.append(headers)
         for i, r in enumerate(rows, start=2):
             shot = shots.get(r["id"])
             buf = None
@@ -7923,6 +7964,16 @@ def export_builder_download():
                     ws.add_image(img)
                 except Exception:
                     pass
+        con.close()
+        EXPORT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_suffix(".tmp%d" % threading.get_ident())
+        wb.save(tmp)
+        os.replace(tmp, cached)
+        # keep the newest few: one per distinct filter anyone recently used
+        for old in sorted(EXPORT_CACHE_DIR.glob("pages-*.xlsx"),
+                          key=lambda p: p.stat().st_mtime)[:-6]:
+            old.unlink(missing_ok=True)
+        return _send_export(cached)
     con.close()
     f = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     f.close()
@@ -9113,7 +9164,7 @@ if __name__ == "__main__":
     # warm the document previews in the background so item pages open instantly
     threading.Thread(target=_prewarm_docs, daemon=True).start()
     # and the export's page thumbnails, so Export never decodes 4,300 images
-    threading.Thread(target=_warm_export_thumbs, daemon=True).start()
+    threading.Thread(target=_warm_exports, daemon=True).start()
     # auto-infer product/application levels after every run
     threading.Thread(target=_post_run_watcher, daemon=True).start()
     # and pick up a check the last process was in the middle of
