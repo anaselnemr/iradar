@@ -2000,9 +2000,15 @@ SKIP_CLICK_JS = ("el => !!el.closest('header, nav, [role=\"navigation\"], footer
 # keeps its placeholder forever - the icon is on the page for a reader who
 # scrolls down, and was simply never in ours. Returns how many are still
 # unresolved, so the caller can stop as soon as there is nothing to wait for.
+#
+# Each image is HELD in view until it swaps (or a short cap passes). Scrolling
+# them all through in one synchronous sweep and jumping back meant the page's
+# IntersectionObserver never saw most of them on screen: on the 2-core VPS a
+# part page's six partner logos came back as one, and 226+ pages read as
+# "partner logos removed" against the faster US host's baseline.
 LAZY_IMG_JS = r"""
-() => {
-  const pend = [...document.querySelectorAll('img')].filter(im => {
+async (sel) => {
+  const pend = [...document.querySelectorAll(sel || 'img')].filter(im => {
     const s = im.getAttribute('src') || '';
     return /^data:/i.test(s) && im.offsetParent !== null;
   });
@@ -2012,22 +2018,27 @@ LAZY_IMG_JS = r"""
   // cards than the rest of the capture had just read, and the page image list
   // came back short. Restore the offset, do not assume it was zero.
   const y = window.scrollY, x = window.scrollX;
-  pend.forEach(im => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const t0 = Date.now();
+  for (const im of pend) {
+    if (Date.now() - t0 > 8000) break;          // one wedged widget can't stall the run
     try { im.scrollIntoView({block: 'center', inline: 'nearest'}); } catch (e) {}
     im.loading = 'eager';
-  });
+    for (let w = 0; w < 800 && /^data:/i.test(im.getAttribute('src') || ''); w += 50)
+      await sleep(50);
+  }
   window.scrollTo(x, y);
-  return pend.length;
+  return pend.filter(im => /^data:/i.test(im.getAttribute('src') || '')).length;
 }
 """
 
 
-async def _load_lazy_images(page, rounds=3):
+async def _load_lazy_images(page, rounds=3, sel=None):
     """Nudge unresolved card icons into view until they stop being placeholders."""
     prev = None
     for _ in range(rounds):
         try:
-            n = await page.evaluate(LAZY_IMG_JS)
+            n = await page.evaluate(LAZY_IMG_JS, sel)
         except Exception:
             return
         if not n or n == prev:
@@ -2571,6 +2582,12 @@ async def capture_one(browser, url, out_dir):
                 print(f"  [unstick] neutralised {n_unstuck} sticky/fixed")
         except Exception as exc:
             print(f"  [unstick] FAILED: {exc}")   # never swallow this again
+
+        # Partner logos only swap in while held on screen; the early auto-scroll
+        # passes them before the widget has rendered on a busy host. Scoped to
+        # the partner section: it is what the baseline has, and widening it
+        # would change the design-resource icons every stored library holds.
+        await _load_lazy_images(page, sel="#partner-solutions img")
 
         # Make every lazy image actually arrive before anything reads the page.
         # Last thing before the screenshot, so the picture and the inventory
