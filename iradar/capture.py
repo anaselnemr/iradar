@@ -505,6 +505,10 @@ IMG_REV = 6
 #       "outside them" moved, so the read is stamped anew like the other three.
 # 4: the product table's own count and column names, and the page's
 #    meta description, which the visible-text walk never saw.
+# NOT bumped for the 2026-11 `url` shadowing fix (categories/products drop
+# the page's self-link again): only 12 baselines carried one, and they were
+# cleaned in place - a bump would have blinded the library comparison on
+# every page for a whole run to hide 12 one-time removals.
 SECTIONS_REV = 4
 
 TEXT_JS = r"""
@@ -2765,9 +2769,12 @@ async def capture_one(browser, url, out_dir):
                 # language variants of one title were keyed identically and one
                 # was dropped. Fall back to the meta (which carries the
                 # language) when there is no url - matching the JS-layer key.
-                url = d.get("url", "")
-                key = (d["title"].lower(), url,
-                       "" if url else d.get("meta", ""))
+                # NOT `url`: that is this function's page address, and
+                # rebinding it here (Jul-Oct 2026) stamped the last document's
+                # PDF into meta.json and broke the self-link drop below.
+                durl = d.get("url", "")
+                key = (d["title"].lower(), durl,
+                       "" if durl else d.get("meta", ""))
                 prev = by_key.get(key)
                 if prev is None or len(d.get("meta", "")) > len(prev.get("meta", "")):
                     by_key[key] = d

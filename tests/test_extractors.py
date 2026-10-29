@@ -547,3 +547,41 @@ def test_the_one_third_guard_is_measured_against_the_page_a_reader_sees():
             "       document.body.innerText.length]")
         b.close()
     assert seen > real * 50, (seen, real)
+
+
+def test_capture_one_never_rebinds_the_page_url():
+    """The document dedupe once reused `url` as its loop variable. From then
+    on, on every page with documents, `url` was the last PDF: meta.json
+    recorded it as the page, and the categories/products self-link drop
+    compared against a PDF and kept the page's tile to itself. The parameter
+    must stay the page for the whole function."""
+    import ast
+    import inspect
+    import textwrap
+    fn = ast.parse(textwrap.dedent(inspect.getsource(C.capture_one))).body[0]
+    rebinds = []
+    for node in ast.walk(fn):
+        targets = []
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            targets = [node.target]
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            targets = [i.optional_vars for i in node.items if i.optional_vars]
+        elif isinstance(node, ast.NamedExpr):
+            targets = [node.target]
+        for t in targets:
+            for n in ast.walk(t):
+                if isinstance(n, ast.Name) and n.id == "url":
+                    rebinds.append(getattr(node, "lineno", "?"))
+    assert not rebinds, f"capture_one rebinds `url` at lines {rebinds}"
+
+
+def test_link_lists_drop_the_pages_link_to_itself():
+    page = "https://www.infineon.com/part/CY8C4046FNI-T442T"
+    items = [
+        {"title": "CY8C4046FNI-T442T", "url": page + "/#overview"},
+        {"title": "PSOC 4000T", "url": "https://www.infineon.com/products/psoc-4000t"},
+    ]
+    kept = C._clean_link_list(items, page.split("#")[0].rstrip("/"))
+    assert [it["title"] for it in kept] == ["PSOC 4000T"]
