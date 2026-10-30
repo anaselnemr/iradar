@@ -2124,9 +2124,10 @@ def test_the_per_page_export_can_be_asked_for_named_pages():
     assert len(list(ws2.iter_rows(values_only=True))) == 1, "header only"
 
 
-def test_a_paused_page_asked_for_by_name_is_exported():
+def test_paused_pages_are_exported():
     """Pausing stops the checking, not the page. Ticking paused pages and
-    exporting them gave a sheet with nothing but the header."""
+    exporting them gave a sheet with nothing but the header, and the
+    everything exports left them out."""
     import io
     from openpyxl import load_workbook
     con = db.connect()
@@ -2140,11 +2141,16 @@ def test_a_paused_page_asked_for_by_name_is_exported():
     ws = load_workbook(io.BytesIO(r.data))["Pages"]
     urls = {r0[0] for r0 in ws.iter_rows(values_only=True)}
     assert "https://www.infineon.com/part/PAUSED978" in urls
-    # the whole-site sheet is still the pages being watched
+    # and so does the everything-per-page sheet: ALL pages, paused included
     every = _client.get("/export/download?mode=pages&go=1&all=1")
     ws2 = load_workbook(io.BytesIO(every.data))["Pages"]
-    assert "https://www.infineon.com/part/PAUSED978" not in {
+    assert "https://www.infineon.com/part/PAUSED978" in {
         r0[0] for r0 in ws2.iter_rows(values_only=True)}
+    # the workbook with one sheet per kind of content too
+    wb3 = load_workbook(io.BytesIO(_client.get("/export/all").data))
+    assert "https://www.infineon.com/part/PAUSED978" in {
+        c for ws3 in wb3.worksheets for r0 in ws3.iter_rows(values_only=True)
+        for c in r0}
 
 
 def test_the_per_page_export_says_hero_image_before_it_says_where():

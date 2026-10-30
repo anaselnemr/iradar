@@ -11,13 +11,15 @@
 #   IRADAR_CRON_KEY  the same value as the CRON_KEY variable on Railway
 #
 # GitHub runs scheduled workflows in UTC and may start them a few minutes
-# late; the check does not care about the minute. 01:00 UTC is 03:00 in
-# Berlin, which is the slot the app has always used.
+# late; the check does not care about the minute. 00:00 UTC is 01:00 in
+# Berlin in winter (02:00 in summer). The app on the VPS runs all week and
+# fires its own check at 01:00 Berlin; this is the fallback, and arriving
+# while that check runs is harmless (run lock + one-check-per-cycle guard).
 name: Weekly check
 
 on:
   schedule:
-    - cron: "0 1 * * 0"        # Sunday 01:00 UTC = 03:00 Europe/Berlin
+    - cron: "0 0 * * 0"        # Sunday 00:00 UTC = 01:00 Europe/Berlin (winter)
   workflow_dispatch:            # and a button, for running it by hand
 
 jobs:

@@ -6953,18 +6953,14 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
     # those is not the same question as "every EB page" - it is the answer to
     # a conversation somebody is already having, and rebuilding it out of
     # level and type filters usually cannot be done at all.
-    # Pausing stops the CHECKING, not the page: a page ticked by name is
-    # exported with what we last captured, paused or not. Only the filtered
-    # whole-site export leaves paused pages out.
+    # Pausing stops the CHECKING, not the page: every export carries paused
+    # pages too, with what we last captured of them.
     if ids is not None:
         q += " WHERE u.id IN (" + ",".join("?" * len(ids)) + ")"
         args += list(ids)
-    else:
-        q += " WHERE u.active=1"
-        if levels:
-            q += (" AND IFNULL(u.level,'') IN ("
-                  + ",".join("?" * len(levels)) + ")")
-            args += levels
+    elif levels:
+        q += " WHERE IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
+        args += levels
     q += " ORDER BY u.level, lower(COALESCE(NULLIF(u.title_override,''), u.url))"
     pages = con.execute(q, args).fetchall()
 
@@ -7394,7 +7390,7 @@ def _export_item_rows(con, kinds, levels, cols=()):
          "    AND s.status='ok' AND s.page_title<>''"
          "    ORDER BY s.id DESC LIMIT 1)) AS ptitle"
          " FROM items i JOIN urls u ON u.id=i.url_id"
-         " WHERE u.active=1 AND (" + kind_sql + ")")
+         " WHERE (" + kind_sql + ")")
     args = []
     if levels:
         q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
@@ -7460,7 +7456,7 @@ def _export_pair_rows(con, kinds, levels):
          "    AND s.status='ok' AND s.page_title<>''"
          "    ORDER BY s.id DESC LIMIT 1), u.url) AS ptitle"
          " FROM items i JOIN urls u ON u.id=i.url_id"
-         " WHERE u.active=1 AND (" + kind_sql + ")")
+         " WHERE (" + kind_sql + ")")
     args = []
     if levels:
         q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
@@ -7549,7 +7545,7 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
         rows = con.execute(
             "SELECT " + case + ", i.meta, i.doc_type, i.grp, i.item_url,"
             " i.category FROM items i JOIN urls u ON u.id=i.url_id"
-            " WHERE u.active=1 AND ("
+            " WHERE ("
             + " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")" for k in all_k)
             + ")" + lv_sql + " GROUP BY lower(i.title), i.item_url",
             lv_args).fetchall()
@@ -7570,7 +7566,7 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
         for lv in con.execute(
                 "SELECT IFNULL(u.level,'') lv, COUNT(DISTINCT u.id) n"
                 " FROM urls u JOIN items i ON i.url_id=u.id"
-                " WHERE u.active=1 AND ("
+                " WHERE ("
                 + " OR ".join("(" + _q_items(ITEM_KIND_SQL[k]) + ")"
                               for k in ks)
                 + ") GROUP BY lv"):
@@ -7578,12 +7574,13 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
         return out
 
     # pages mode: how many of the chosen pages carry each component
+    # paused pages count too - the sheet carries them (see _export_rows)
     lv_sql, lv_args = "", []
     if levels:
         lv_sql = (" AND IFNULL(level,'') IN ("
                   + ",".join("?" * len(levels)) + ")")
         lv_args = list(levels)
-    total = con.execute("SELECT COUNT(*) FROM urls WHERE active=1" + lv_sql,
+    total = con.execute("SELECT COUNT(*) FROM urls WHERE 1" + lv_sql,
                         lv_args).fetchone()[0]
     out["_total"] = total
 
@@ -7622,11 +7619,11 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
     where = (" AND " + " AND ".join(conds)) if conds else ""
     for r in con.execute(
             "SELECT IFNULL(u.level,'') lv, COUNT(*) n FROM urls u"
-            " WHERE u.active=1" + where + " GROUP BY lv", cargs):
+            " WHERE 1" + where + " GROUP BY lv", cargs):
         out["lv_" + r["lv"]] = r["n"]
     for k, _l in _export_meta_cols():
         out[k] = con.execute(
-            f"SELECT COUNT(*) FROM urls WHERE active=1 AND IFNULL({k},'')<>''"
+            f"SELECT COUNT(*) FROM urls WHERE IFNULL({k},'')<>''"
             + lv_sql, lv_args).fetchone()[0]
     for k, _l in PAGE_FIELDS:
         out[k] = total
@@ -7634,13 +7631,13 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
     for k, a in cat_of.items():
         out[k] = con.execute(
             "SELECT COUNT(DISTINCT u.id) FROM urls u JOIN items i ON i.url_id=u.id"
-            " WHERE u.active=1 AND i.category=?" + lv_sql,
+            " WHERE i.category=?" + lv_sql,
             [a] + lv_args).fetchone()[0]
     # nav/flag/tab components live in the page's own component list
     navs = [(k, a) for k, _l, kind, a in _all_components() if kind in ("nav", "tab")]
     if navs:
         rows = con.execute(
-            "SELECT components, detail_tabs FROM urls WHERE active=1" + lv_sql,
+            "SELECT components, detail_tabs FROM urls WHERE 1" + lv_sql,
             lv_args).fetchall()
         pools = []
         for r in rows:
@@ -7657,7 +7654,7 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
     # json_extract abort the whole query rather than skip that row
     for k, a in [(k, a) for k, _l, kind, a in _all_components() if kind == "flag"]:
         out[k] = con.execute(
-            "SELECT COUNT(*) FROM urls WHERE active=1 AND json_valid(flags)"
+            "SELECT COUNT(*) FROM urls WHERE json_valid(flags)"
             f" AND json_extract(flags, '$.{a}.exists') = 1" + lv_sql,
             lv_args).fetchone()[0]
     return out
@@ -7689,8 +7686,7 @@ def export_builder():
     """
     con = db.connect()
     lv_rows = con.execute(
-        "SELECT IFNULL(level,'') lv, COUNT(*) n FROM urls WHERE active=1"
-        " GROUP BY lv").fetchall()
+        "SELECT IFNULL(level,'') lv, COUNT(*) n FROM urls GROUP BY lv").fetchall()
     counts = {r["lv"]: r["n"] for r in lv_rows}
     # taxonomy order, so the rows read top-down the way the site nests:
     # product levels, then parts, then applications, then design resources
@@ -8055,7 +8051,7 @@ def export_xlsx():
             " GROUP BY url_id"):
         snap_by[r["url_id"]] = r
 
-    for u in con.execute("SELECT * FROM urls WHERE active=1 ORDER BY id"):
+    for u in con.execute("SELECT * FROM urls ORDER BY id"):
         snap = snap_by.get(u["id"])
         cb = counts_by.get(u["id"], {})
         counts = [cb.get(c, 0) for c in cat_keys]
@@ -8102,7 +8098,7 @@ def export_xlsx():
             " i.img, i.category, u.id AS pid, u.url AS purl,"
             " IFNULL(u.level,'') AS lv,"
             " u.ptype FROM items i JOIN urls u ON u.id=i.url_id"
-            " WHERE u.active=1 AND (" + pred + ")"
+            " WHERE (" + pred + ")"
             " ORDER BY lower(i.title)").fetchall()
         if not rows:
             continue
@@ -8250,8 +8246,8 @@ def export_copy_limits():
 
     rows, unread, stale, tally, overage = [], 0, 0, {}, {}
     for u in con.execute(
-            "SELECT id, url, label, ptype, level FROM urls WHERE active=1"
-            " AND IFNULL(copy_flags,'') NOT IN ('', '{}', '[]')"
+            "SELECT id, url, label, ptype, level FROM urls"
+            " WHERE IFNULL(copy_flags,'') NOT IN ('', '{}', '[]')"
             " ORDER BY IFNULL(ptype,''), IFNULL(label,''), id"):
         det = cmp.copy_detail(dirs.get(u["id"], ""), sset)
         bad = {k: d for k, d in det.items() if d["problems"]}
