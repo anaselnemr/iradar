@@ -6947,18 +6947,24 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
          "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
          "    AND s.status='ok' AND s.page_title<>''"
          "    ORDER BY s.id DESC LIMIT 1)) AS title"
-         " FROM urls u WHERE u.active=1")
+         " FROM urls u")
     args = []
     # A NAMED SET BEATS A FILTER. Ticking rows on the dashboard and asking for
     # those is not the same question as "every EB page" - it is the answer to
     # a conversation somebody is already having, and rebuilding it out of
     # level and type filters usually cannot be done at all.
-    if ids:
-        q += " AND u.id IN (" + ",".join("?" * len(ids)) + ")"
+    # Pausing stops the CHECKING, not the page: a page ticked by name is
+    # exported with what we last captured, paused or not. Only the filtered
+    # whole-site export leaves paused pages out.
+    if ids is not None:
+        q += " WHERE u.id IN (" + ",".join("?" * len(ids)) + ")"
         args += list(ids)
-    elif levels:
-        q += " AND IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
-        args += levels
+    else:
+        q += " WHERE u.active=1"
+        if levels:
+            q += (" AND IFNULL(u.level,'') IN ("
+                  + ",".join("?" * len(levels)) + ")")
+            args += levels
     q += " ORDER BY u.level, lower(COALESCE(NULLIF(u.title_override,''), u.url))"
     pages = con.execute(q, args).fetchall()
 

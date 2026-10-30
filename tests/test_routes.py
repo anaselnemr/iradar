@@ -2124,6 +2124,29 @@ def test_the_per_page_export_can_be_asked_for_named_pages():
     assert len(list(ws2.iter_rows(values_only=True))) == 1, "header only"
 
 
+def test_a_paused_page_asked_for_by_name_is_exported():
+    """Pausing stops the checking, not the page. Ticking paused pages and
+    exporting them gave a sheet with nothing but the header."""
+    import io
+    from openpyxl import load_workbook
+    con = db.connect()
+    con.execute("INSERT OR IGNORE INTO urls(id, url, active, ptype, level)"
+                " VALUES(978, 'https://www.infineon.com/part/PAUSED978', 0,"
+                " 'Part', 'PTP')")
+    con.commit()
+    con.close()
+    r = _client.post("/export/download?mode=pages&go=1&all=1",
+                     data={"ids": "978", "_csrf": _csrf()})
+    ws = load_workbook(io.BytesIO(r.data))["Pages"]
+    urls = {r0[0] for r0 in ws.iter_rows(values_only=True)}
+    assert "https://www.infineon.com/part/PAUSED978" in urls
+    # the whole-site sheet is still the pages being watched
+    every = _client.get("/export/download?mode=pages&go=1&all=1")
+    ws2 = load_workbook(io.BytesIO(every.data))["Pages"]
+    assert "https://www.infineon.com/part/PAUSED978" not in {
+        r0[0] for r0 in ws2.iter_rows(values_only=True)}
+
+
 def test_the_per_page_export_says_hero_image_before_it_says_where():
     """A column of addresses cannot be sorted or counted - you cannot see how
     many boards are on a placeholder without reading 229 URLs, and the address
