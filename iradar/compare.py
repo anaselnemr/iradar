@@ -4,6 +4,7 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
@@ -80,6 +81,13 @@ def _sections_rev(snap_dir):
     return _meta_rev(snap_dir, "sections_rev")
 
 
+_SPACE_RE = re.compile(r"\s+")
+
+
+def _no_space(line):
+    return _SPACE_RE.sub("", line)
+
+
 def text_diff(old_dir, new_dir, ignore_patterns=None):
     """Returns (changed, added_count, removed_count, hunks).
 
@@ -123,16 +131,37 @@ def _compile_patterns(patterns):
     return compiled
 
 
+def _image_file(u):
+    """The picture an image URL shows, without how it is to be shown.
+
+    Infineon's image server takes the rendition in the address: a size
+    (`?fit=constrain,1&wid=380&hei=180`), a preset (`?$IMG-1400-933-D$`) or a
+    `:asset-680-2x1` modifier on the file name. The same JPEG reached through
+    a new set of those read as one image removed and two added - 38 pages in
+    run 25 'changed images' with not one picture different. A different FILE
+    is a different picture and still flags."""
+    p = urlsplit(str(u or ""))
+    path = p.path.split(":", 1)[0] if ":" in p.path.rsplit("/", 1)[-1] \
+        else p.path
+    return (p.netloc + path).lower()
+
+
 def images_diff(old_dir, new_dir, ignore_patterns=None):
-    """Returns (changed, added_list, removed_list)."""
+    """Returns (changed, added_list, removed_list).
+
+    A URL counts as added only if its picture (_image_file) is not already
+    on the old page in another rendition, and as removed only if its picture
+    is gone from the new one."""
     old = set(_load_images(old_dir))
     new = set(_load_images(new_dir))
     rxs = _compile_patterns(ignore_patterns)
     if rxs:
         old = {u for u in old if not any(rx.search(u) for rx in rxs)}
         new = {u for u in new if not any(rx.search(u) for rx in rxs)}
-    added = sorted(new - old)
-    removed = sorted(old - new)
+    old_files = {_image_file(u) for u in old}
+    new_files = {_image_file(u) for u in new}
+    added = sorted(u for u in new - old if _image_file(u) not in old_files)
+    removed = sorted(u for u in old - new if _image_file(u) not in new_files)
     return bool(added or removed), added, removed
 
 
@@ -1375,7 +1404,7 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     # become the clean baseline; the image / screenshot / library signals still
     # apply, so a genuine change in the same run is not missed, and the very
     # next run - both sides on the new rev - resumes normal text diffing.
-    t_reordered = False
+    t_reordered = t_respaced = False
     if _text_rev(old_dir) != _text_rev(new_dir):
         t_changed, t_added, t_removed = False, 0, 0
     else:
@@ -1390,9 +1419,18 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
         # counts and still flags. Duplication changes them too, so a block
         # rendered twice is not mistaken for a move.
         if t_changed:
-            if Counter(_load_text_lines(old_dir, ignore_patterns)) == \
-               Counter(_load_text_lines(new_dir, ignore_patterns)):
+            old_lines = _load_text_lines(old_dir, ignore_patterns)
+            new_lines = _load_text_lines(new_dir, ignore_patterns)
+            if Counter(old_lines) == Counter(new_lines):
                 t_reordered, t_changed = True, False
+            # SAME WORDS, NEW SPACING is not an edit either. Infineon dropped
+            # the space after full stops in its descriptions ("microcontroller.
+            # The board" -> "microcontroller.The board"), 26 pages in run 25,
+            # and nobody reading the page would call it changed. Lines equal
+            # once every space is taken out carry the same text.
+            elif Counter(_no_space(l) for l in old_lines) == \
+                    Counter(_no_space(l) for l in new_lines):
+                t_respaced, t_changed = True, False
     # ACROSS AN IMAGE-COLLECTOR REVISION the URL sets are not comparable (the
     # rev-2 inventory dropped the news-box thumbnails and legacy community
     # avatars), so the removals would flag every re-normalised page once.
@@ -1487,6 +1525,7 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
         "library": lib,
         "text_changed": t_changed,
         "text_reordered": t_reordered,
+        "text_respaced": t_respaced,
         "lines_added": t_added,
         "lines_removed": t_removed,
         "images_changed": i_changed,

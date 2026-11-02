@@ -833,3 +833,43 @@ def test_benefits_keep_their_rule_whatever_they_look_like():
               {"title": "Hardware protection to avoid damage in the lab No"},
               {"title": "Safe operating voltage"}]
     assert "benefits" in cmp.copy_findings(_copy(benefits=shaped))
+
+
+# --- spacing and image renditions (run 25) ----------------------------------
+
+def test_spacing_only_is_not_an_update():
+    # Infineon dropped the space after full stops: same words, not an edit
+    r = _cmp(["The board allows evaluation. The board comes with pins.", "Kit"],
+             ["The board allows evaluation.The board comes with pins.", "Kit"])
+    assert r["text_changed"] is False and r["any_changed"] is False, r["summary"]
+    assert r["text_respaced"] is True
+
+
+def test_a_reworded_line_still_flags_next_to_a_respaced_one():
+    r = _cmp(["Evaluation. Board", "Smart thermostat"],
+             ["Evaluation.Board", "Smart thermostats"])
+    assert r["text_changed"] is True, "a real word change was swallowed"
+    assert r["text_respaced"] is False
+
+
+IMG = "https://assets.infineon.com/is/image/infineon/"
+
+
+def test_the_same_picture_in_new_renditions_is_not_an_image_change():
+    old = [IMG + "cortex-m4-en.jpeg",
+           IMG + "banner.jpg:asset-680-2x1?qlt=55,0"]
+    new = [IMG + "cortex-m4-en.jpeg?fit=constrain,1&wid=380&hei=180",
+           IMG + "cortex-m4-en.jpeg?fit=constrain,1&wid=680&hei=280",
+           IMG + "banner.jpg?$IMG-1400-933-D$&qlt=55"]
+    r = _cmp(["x"], ["x"], old, new)
+    assert r["images_changed"] is False, r["summary"]
+
+
+def test_a_different_picture_still_flags_beside_renditions():
+    old = [IMG + "ecall-how-it-works.jpeg", IMG + "optiga-5g-esim.jpeg"]
+    new = [IMG + "ecall-how-it-works.jpeg?fit=constrain,1&wid=380&hei=180",
+           IMG + "new-esim-board.jpeg"]
+    r = _cmp(["x"], ["x"], old, new)
+    assert r["images_changed"] is True
+    assert r["images_added_list"] == [IMG + "new-esim-board.jpeg"]
+    assert r["images_removed_list"] == [IMG + "optiga-5g-esim.jpeg"]

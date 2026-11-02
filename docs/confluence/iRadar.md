@@ -229,6 +229,8 @@ caused a flood of false alarms before it was handled.
 | **Products table** — the table of parts changes shape: the product count the page itself reports moves, or a column appears or disappears. Columns in a new order do not count; that is layout. | |
 | **File updates** — a file republished at the same address. The page is identical; the datasheet behind it is new. | **Timestamps and "3 days ago"** — they change with nobody editing anything. |
 | | **The same words, set differently** — a page is photographed only once its fonts have arrived, so text that wraps at a different word is never mistaken for text that changed. |
+| | **Spacing** — the same words with a space added or dropped ("microcontroller.The board") are the same text. Any changed word still counts. |
+| | **The same picture at a new size** — the image server puts the size in the address (`?wid=380&hei=180`), so one photo can arrive under several addresses. A different picture file still counts. |
 
 *Thresholds are the live values as of writing; an admin can change them under
 Settings, and the in-app Help page always shows the current ones.*
