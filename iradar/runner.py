@@ -902,6 +902,38 @@ def _run_check_inner(kind, url_ids, baseline=False):
         con.close()
         return {"total": 0, "ok": 0, "changed": 0, "errors": 0}
 
+    # Offline pages get a status knock before any browser starts (see
+    # capture.still_gone). One still answering 404/410 is settled here exactly
+    # as a dead->dead capture settles it below - checked, still not live,
+    # baseline untouched - without the three hours of captures. Anything else
+    # stays in the queue and is captured in full, so a page that came back is
+    # seen the same run. A baseline run captures everything, dead or not.
+    if not baseline:
+        dead_rows = [r for r in urls if (r["last_status"] or "") == "notlive"]
+        if dead_rows:
+            RUN_STATE["message"] = f"checking {len(dead_rows)} offline page(s)…"
+            gone = capture.still_gone([r["url"] for r in dead_rows])
+            now = db.now_iso()
+            settled = 0
+            for r in dead_rows:
+                if r["url"] in gone:
+                    _set_checked(con, r["id"], now, "notlive")
+                    _mark_item(con, run_id, r["id"], "done")
+                    settled += 1
+            counters["ok"] += settled
+            counters["saved"] += settled
+            con.execute("UPDATE runs SET ok=? WHERE id=?",
+                        (counters["ok"], run_id))
+            con.commit()
+            # done0/saved0 move with done/saved: the ETA rates only pages this
+            # session CAPTURED, and 700 knocks in a minute are not a capture rate
+            for k in ("done", "done0", "phase_done", "saved", "saved0"):
+                RUN_STATE[k] = RUN_STATE.get(k, 0) + settled
+            urls = [r for r in urls if r["url"] not in gone]
+            print(f"[offline] {settled} of {len(dead_rows)} offline page(s)"
+                  " still answer 404/410 - no capture needed;"
+                  f" {len(dead_rows) - settled} get a full look", flush=True)
+
     # Save one page at a time: each capture is recorded, compared and COMMITTED
     # the instant it finishes, inside the progress callback. That callback runs
     # on this same thread (asyncio.run blocks it), so the one connection is

@@ -20,6 +20,9 @@ import random
 import re
 import time
 import traceback
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -3004,32 +3007,69 @@ async def capture_all(jobs, concurrency=4, progress=None, pause_check=None,
                       stop_check=None):
     """Capture many URLs. jobs = [(url, out_dir), ...]. Returns list of result dicts.
 
-    The browser is restarted every PAGES_PER_BROWSER pages to keep memory flat
-    on large (3-4k URL) runs.
+    The browser is replaced every PAGES_PER_BROWSER pages to keep memory flat
+    on large (3-4k URL) runs - ROLLING, not in batches. A batch of 100 waited
+    for its slowest page before the next browser could start, so every
+    restart left most of the tabs idle while one straggler finished: about a
+    twentieth of a whole run spent waiting. Now the 101st page opens the next
+    browser at once, and the old one closes when its last page lands. The
+    tab count never goes above `concurrency`; for those few seconds it is
+    split across two browsers.
 
     pause_check, if given, is a zero-arg callable polled before each capture: a
     truthy return holds the worker (no new page starts) until it clears, so the
     dashboard's Pause button stops the run without killing in-flight captures.
 
-    stop_check, if given, ends the run: no new browser batch launches and any
+    stop_check, if given, ends the run: no new browser launches and any
     not-yet-started page is skipped, so Stop takes effect within one in-flight
     page. Everything already captured stays saved (the caller commits per page).
     """
     results = []
     async with async_playwright() as pw:
-        for batch_start in range(0, len(jobs), PAGES_PER_BROWSER):
-            if stop_check and stop_check():
-                break
-            batch = jobs[batch_start:batch_start + PAGES_PER_BROWSER]
-            browser = await pw.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled",
-                      "--disable-dev-shm-usage"])
-            if batch_start == 0:
-                await _selftest(browser)
-            sem = asyncio.Semaphore(concurrency)
+        sem = asyncio.Semaphore(concurrency)
+        launch_lock = asyncio.Lock()
+        live = []                  # every browser not yet closed
+        inflight = {}              # browser -> pages it is capturing right now
+        retiring = set()           # replaced; closes when its last page lands
+        cur = {"browser": None, "served": 0}
 
-            async def run_job(url, out_dir):
+        async def close(browser):
+            if browser in live:
+                live.remove(browser)
+            retiring.discard(browser)
+            try:
+                await browser.close()
+            except Exception:
+                pass
+
+        async def checkout():
+            async with launch_lock:
+                if cur["browser"] is None or cur["served"] >= PAGES_PER_BROWSER:
+                    old = cur["browser"]
+                    browser = await pw.chromium.launch(
+                        headless=True,
+                        args=["--disable-blink-features=AutomationControlled",
+                              "--disable-dev-shm-usage"])
+                    live.append(browser)
+                    if old is None:
+                        await _selftest(browser)
+                    else:
+                        retiring.add(old)
+                        if not inflight.get(old):
+                            await close(old)
+                    cur.update(browser=browser, served=0)
+                cur["served"] += 1
+                browser = cur["browser"]
+                inflight[browser] = inflight.get(browser, 0) + 1
+                return browser
+
+        async def checkin(browser):
+            inflight[browser] -= 1
+            if browser in retiring and not inflight[browser]:
+                await close(browser)
+
+        async def run_job(url, out_dir):
+            while True:
                 # Hold OUTSIDE the semaphore so a paused worker frees its slot
                 # instead of blocking a resume; the capture itself can't be
                 # interrupted mid-flight, so pause takes effect within one page.
@@ -3040,29 +3080,64 @@ async def capture_all(jobs, concurrency=4, progress=None, pause_check=None,
                 if stop_check and stop_check():
                     return None            # Stop requested: skip this page
                 async with sem:
+                    # The whole run queues on this semaphore now, not a batch
+                    # of 100, so a page can have passed the pause check long
+                    # before Pause was pressed: look again once it has a slot.
+                    if pause_check and pause_check():
+                        continue
                     if stop_check and stop_check():
                         return None
-                    res = await capture_one(browser, url, out_dir)
+                    browser = await checkout()
+                    try:
+                        res = await capture_one(browser, url, out_dir)
+                    finally:
+                        await checkin(browser)
                     if progress:
                         progress(res)
                     return res
 
-            # FINALLY, not afterwards. The close used to sit below the
-            # gather, so anything the batch raised jumped over it and left a
-            # Chromium alive with nothing holding it. Twice that filled the
-            # container's process table until it could not fork at all, and a
-            # run then reported itself running while doing nothing for two
-            # days - the worst shape a failure can take, because the dashboard
-            # says everything is fine.
-            try:
-                batch_results = await asyncio.gather(
-                    *(run_job(u, d) for u, d in batch))
-                results.extend(r for r in batch_results if r is not None)
-            finally:
-                try:
-                    await browser.close()
-                except Exception:
-                    pass
-            if stop_check and stop_check():
-                break
+        # FINALLY, not afterwards. The close used to sit below the gather, so
+        # anything the batch raised jumped over it and left a Chromium alive
+        # with nothing holding it. Twice that filled the container's process
+        # table until it could not fork at all, and a run then reported itself
+        # running while doing nothing for two days - the worst shape a failure
+        # can take, because the dashboard says everything is fine.
+        try:
+            all_results = await asyncio.gather(
+                *(run_job(u, d) for u, d in jobs))
+            results.extend(r for r in all_results if r is not None)
+        finally:
+            for browser in list(live):
+                await close(browser)
     return results
+
+
+# A DEAD PAGE GETS A KNOCK, NOT A CAPTURE. Some 700 pages answer 404, and a
+# full capture of each one - browser, page load, scroll, screenshot - cost
+# about three hours of every weekly run to learn, nearly always, that the page
+# is still gone. The site's own status code says the same in under a second.
+# Only a page answering 404/410 AT ITS OWN ADDRESS counts as still gone: a
+# redirect, a 200, a CDN block (403/429/5xx) or a timeout all mean "look
+# properly", and get the full capture they always had.
+GONE_CODES = (404, 410)
+
+
+def _knock(url, timeout):
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.geturl()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.geturl()
+    except Exception:
+        return None, ""
+
+
+def still_gone(urls, workers=4, timeout=20):
+    """The subset of urls the site still answers 404/410 at the same address."""
+    if not urls:
+        return set()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        answers = list(pool.map(lambda u: _knock(u, timeout), urls))
+    return {u for u, (code, final) in zip(urls, answers)
+            if code in GONE_CODES and final.rstrip("/") == u.rstrip("/")}

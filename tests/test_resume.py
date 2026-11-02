@@ -1086,6 +1086,53 @@ def test_library_and_community_suspects_demand_the_same_difference():
         "a signal that did not fire must not block agreement"
 
 
+def test_offline_pages_still_gone_are_knocked_not_captured():
+    # two offline pages and a live one: the one still answering 404 is
+    # settled by the knock, the one that came back and the live page are
+    # captured in full
+    import runner as R
+    _fresh_db()
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_checked,"
+                " last_status, last_http) VALUES(1, 'https://example.invalid/gone',"
+                " 1, 'Part', '2026-10-01', 'notlive', 404)")
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_checked,"
+                " last_status, last_http) VALUES(2, 'https://example.invalid/back',"
+                " 1, 'Part', '2026-10-01', 'notlive', 404)")
+    con.execute("INSERT INTO urls(id, url, active, ptype, last_checked,"
+                " last_status) VALUES(3, 'https://example.invalid/live', 1,"
+                " 'Part', '2026-10-01', 'unchanged')")
+    con.commit()
+    con.close()
+
+    captured = []
+    async def _record(jobs, **k):
+        captured.extend(u for u, _ in jobs)
+        return []
+    real = R.capture.capture_all, R.capture.still_gone
+    R.capture.capture_all = _record
+    R.capture.still_gone = lambda urls: {u for u in urls if u.endswith("/gone")}
+    try:
+        R.run_check("test")
+    finally:
+        R.capture.capture_all, R.capture.still_gone = real
+
+    assert "https://example.invalid/gone" not in captured, captured
+    assert "https://example.invalid/back" in captured
+    assert "https://example.invalid/live" in captured
+    con = db.connect()
+    row = con.execute("SELECT last_status, last_checked FROM urls WHERE id=1"
+                      ).fetchone()
+    assert row["last_status"] == "notlive"
+    assert row["last_checked"] != "2026-10-01", "the knock was not recorded"
+    state = con.execute("SELECT state FROM run_items WHERE url_id=1"
+                        " ORDER BY run_id DESC LIMIT 1").fetchone()
+    assert state["state"] == "done"
+    ok = con.execute("SELECT ok FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    assert ok["ok"] >= 1, "the settled page is missing from the run's tally"
+
+
 def test_the_bar_bands_sum_to_the_total_mid_verify():
     """The guide promises every page sits in exactly one band. A transiently
     blocked page increments the error counter but never stamps last_checked,

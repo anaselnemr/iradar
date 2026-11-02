@@ -146,3 +146,116 @@ def test_the_browser_is_closed_even_when_the_batch_explodes():
     finally:
         capture.async_playwright, capture.capture_one, capture._selftest = (
             orig_pw, orig_one, orig_self)
+
+
+def _fake_playwright(log):
+    """A playwright stand-in that records launches, closes and open tabs."""
+    class FakeBrowser:
+        def __init__(self, n):
+            self.n = n
+        async def close(self):
+            log["closed"].append(self.n)
+
+    class FakePW:
+        def __init__(self):
+            self.chromium = self
+        async def launch(self, **kw):
+            log["launched"] += 1
+            return FakeBrowser(log["launched"])
+
+    class FakeCtx:
+        async def __aenter__(self):
+            return FakePW()
+        async def __aexit__(self, *a):
+            return False
+    return FakeCtx
+
+
+def test_browser_restarts_roll_instead_of_waiting_for_the_batch():
+    # 10 pages, a new browser every 3, 2 tabs. Browser 1's last page is slow:
+    # under the old batches pages 4-6 waited for it; rolling, browser 2 opens
+    # and works alongside while browser 1 finishes, then browser 1 closes.
+    import asyncio, capture
+    log = {"launched": 0, "closed": [], "tabs": 0, "max_tabs": 0,
+           "overlap": False}
+
+    async def _one(browser, url, out_dir):
+        log["tabs"] += 1
+        log["max_tabs"] = max(log["max_tabs"], log["tabs"])
+        if browser.n > 1 and 1 not in log["closed"]:
+            log["overlap"] = True          # browser 2 working while 1 is open
+        await asyncio.sleep(0.3 if url.endswith("/3") else 0.01)
+        log["tabs"] -= 1
+        return {"url": url, "status": "ok"}
+
+    async def _noop(browser):
+        pass
+
+    orig = (capture.async_playwright, capture.capture_one, capture._selftest,
+            capture.PAGES_PER_BROWSER)
+    capture.async_playwright = _fake_playwright(log)
+    capture.capture_one, capture._selftest = _one, _noop
+    capture.PAGES_PER_BROWSER = 3
+    try:
+        jobs = [(f"https://x/{i}", "d") for i in range(1, 11)]
+        res = asyncio.run(capture.capture_all(jobs, concurrency=2))
+    finally:
+        (capture.async_playwright, capture.capture_one, capture._selftest,
+         capture.PAGES_PER_BROWSER) = orig
+    assert sorted(r["url"] for r in res) == sorted(u for u, _ in jobs)
+    assert log["launched"] == 4, log
+    assert sorted(log["closed"]) == [1, 2, 3, 4], "a browser was left running"
+    assert log["max_tabs"] <= 2, "more tabs than the concurrency setting"
+    assert log["overlap"], "the next browser waited for the slow page"
+
+
+def test_pause_holds_pages_that_were_already_queued():
+    # the whole run queues on one semaphore now: a page that passed the pause
+    # check before Pause was pressed must still not start while paused
+    import asyncio, capture
+    log = {"launched": 0, "closed": [], "started": []}
+    state = {"paused": False}
+
+    async def _one(browser, url, out_dir):
+        log["started"].append((url, state["paused"]))
+        if url.endswith("/1"):
+            state["paused"] = True         # Pause pressed mid-capture
+            asyncio.get_running_loop().call_later(
+                1.5, lambda: state.update(paused=False))
+        await asyncio.sleep(0.01)
+        return {"url": url, "status": "ok"}
+
+    async def _noop(browser):
+        pass
+
+    orig = (capture.async_playwright, capture.capture_one, capture._selftest)
+    capture.async_playwright = _fake_playwright(log)
+    capture.capture_one, capture._selftest = _one, _noop
+    try:
+        res = asyncio.run(capture.capture_all(
+            [(f"https://x/{i}", "d") for i in range(1, 5)], concurrency=1,
+            pause_check=lambda: state["paused"]))
+    finally:
+        capture.async_playwright, capture.capture_one, capture._selftest = orig
+    assert len(res) == 4
+    assert not any(p for u, p in log["started"]), log["started"]
+
+
+def test_only_a_404_at_its_own_address_counts_as_still_gone():
+    import capture
+    answers = {
+        "https://x/gone": (404, "https://x/gone"),
+        "https://x/gone410": (410, "https://x/gone410/"),
+        "https://x/back": (200, "https://x/back"),
+        "https://x/moved": (404, "https://x/elsewhere"),
+        "https://x/blocked": (403, "https://x/blocked"),
+        "https://x/timeout": (None, ""),
+    }
+    orig = capture._knock
+    capture._knock = lambda u, timeout: answers[u]
+    try:
+        assert capture.still_gone(list(answers)) == {
+            "https://x/gone", "https://x/gone410"}
+        assert capture.still_gone([]) == set()
+    finally:
+        capture._knock = orig
