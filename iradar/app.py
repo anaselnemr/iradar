@@ -2490,6 +2490,7 @@ SECTION_LABELS = [
     ("applications", "Applications"),
     ("categories", "Browse by category"),
     ("products", "Related products"),
+    ("featured", "Featured products"),
     ("documents", "Documents"),
     ("design_resources", "Design resources & boards"),
     ("trainings", "Trainings & webinars"),

@@ -259,3 +259,29 @@ def test_only_a_404_at_its_own_address_counts_as_still_gone():
         assert capture.still_gone([]) == set()
     finally:
         capture._knock = orig
+
+
+def test_partners_come_from_the_feed_each_with_its_own_text():
+    import capture, json
+    feed = {"data": {"getPartnerSearchDetails": {"content": [
+        {"displayName": "PEmicro", "pageURL": "https://x/pemicro",
+         "description": "Flash  tools.", "partnerLogoUrl": "https://x/p.png"},
+        {"displayName": "Lauterbach GmbH", "pageURL": "https://x/l",
+         "description": "TRACE32.", "partnerLogoUrl": "https://x/l.png"},
+        {"displayName": "pemicro", "pageURL": "https://x/dup"},
+    ]}}}
+    out = capture.partners_from_feed(json.dumps(feed))
+    assert [p["title"] for p in out] == ["PEmicro", "Lauterbach GmbH"]
+    assert out[0]["meta"] == "Flash tools." and out[1]["meta"] == "TRACE32."
+    assert capture.partners_from_feed("not json") is None
+
+
+def test_featured_products_come_from_the_carousel_data():
+    import capture, json
+    attr = json.dumps({"content": [
+        {"ispnName": "CY62167G30-45ZXI", "pageUrl": "https://x/cy",
+         "familyName": "Asynchronous SRAM", "imageUrl": "https://x/i.png"}]})
+    out = capture.featured_from_attr(attr)
+    assert out == [{"title": "CY62167G30-45ZXI", "url": "https://x/cy",
+                    "meta": "Asynchronous SRAM", "img": "https://x/i.png"}]
+    assert capture.featured_from_attr("") is None

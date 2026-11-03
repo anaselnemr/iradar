@@ -92,6 +92,73 @@ _CTA_TITLE_RE = re.compile(
     r"|get started|show (more|all)|see (more|all))$")
 
 
+def partners_from_feed(feed):
+    """Partner solutions from the widget's own data feed, one item per partner.
+
+    The widget pages its logos six at a time, and the capture read only the
+    page on screen: XMC4104-Q48K64-BA stored 6 of its 14 partners. And a logo
+    without a link of its own fell back to the whole panel's text, so every
+    partner on a page carried the first partner's description. The feed the
+    widget renders from lists all of them, each with its own text."""
+    try:
+        data = feed if isinstance(feed, dict) else json.loads(feed)
+        rows = data["data"]["getPartnerSearchDetails"]["content"] or []
+    except Exception:
+        return None
+    out, seen = [], set()
+    for r in rows:
+        name = " ".join(str(r.get("displayName") or r.get("partnerName")
+                            or "").split())
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append({"title": name[:120],
+                    "url": str(r.get("pageURL") or "")[:400],
+                    "meta": " ".join(str(r.get("description") or "").split())[:200],
+                    "img": str(r.get("partnerLogoUrl") or "")[:400]})
+    return out
+
+
+def featured_from_attr(attr):
+    """Featured products from the carousel's inline data, one item per part.
+
+    The carousel was never read as a list; its names only reached the page
+    text. Its data sits in the element's data-api attribute as JSON."""
+    try:
+        rows = json.loads(attr)["content"] or []
+    except Exception:
+        return None
+    out, seen = [], set()
+    for r in rows:
+        name = " ".join(str(r.get("ispnName") or "").split())
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append({"title": name[:200], "url": str(r.get("pageUrl") or "")[:400],
+                    "meta": " ".join(str(r.get("familyName") or "").split())[:200],
+                    "img": str(r.get("imageUrl") or "")[:400]})
+    return out
+
+
+FEEDS_JS = r"""
+async () => {
+  const o = {};
+  const p = document.querySelector('[data-component="partnersolution"]');
+  if (p) {
+    const a = p.getAttribute('data-api') || '';
+    o.p_api = a;
+    if (a.startsWith('/dataApi')) {
+      try { o.partners = await (await fetch(a)).text(); }
+      catch (e) { o.p_err = String(e); }
+    }
+  }
+  const f = document.querySelector('[data-component="functionalproductcarousel"]');
+  if (f) o.featured = f.getAttribute('data-api') || '';
+  return o;
+}
+"""
+
+
 def _clean_link_list(items, page_base):
     """One entry per destination for tile/card lists (categories, products).
 
@@ -713,7 +780,8 @@ SECTIONS_JS = r"""
                trainings: [], videos: [], features: [], benefits: [],
                overview: [], subheadline: [], description: [],
                applications: [], about: [],
-               categories: [], products: [], partners: [], breadcrumb: [],
+               categories: [], products: [], featured: [], partners: [],
+               breadcrumb: [],
                images: []};
   const seen = new Set();
   const urlOwned = new Map();   // url -> category (cross-category dedupe)
@@ -1405,15 +1473,17 @@ SECTIONS_JS = r"""
       if (out[cat].length || !re.test(ht)) continue;
       const c = featContainer(h);
       if (!c) break;
+      // A real bullet can be one acronym: "CAN" among CY8CKIT-043's benefits
+      // was dropped by an old 5-character floor.
       let items = Array.from(c.querySelectorAll('li'))
         .map(li => (li.innerText || '').replace(/\s+/g, ' ').trim())
-        .filter(t => t.length > 4 && t.length < 250);
+        .filter(t => t.length > 1 && t.length < 250);
       if (!items.length) {
         items = Array.from(c.querySelectorAll('h3, h4, [class*="title" i]'))
           .map(e => (e.textContent || '').replace(/\s+/g, ' ').trim())
           .filter(t => t.length > 4 && t.length < 250 && t !== ht);
       }
-      items.slice(0, 40).forEach(t => push(cat, t, '', ''));
+      items.slice(0, 200).forEach(t => push(cat, t, '', ''));
       break;
     }
   }
@@ -2824,6 +2894,29 @@ async def capture_one(browser, url, out_dir):
                                                  page_base)
         except Exception:
             pass
+
+        # Partner solutions and featured products from the widgets' own data
+        # (partners_from_feed / featured_from_attr). A partner widget whose
+        # feed would not load is a FAILED read, not an empty list: it goes to
+        # walk_errors, so the baseline stands instead of losing its partners.
+        try:
+            feeds = await page.evaluate(FEEDS_JS)
+        except Exception as exc:
+            feeds = {"p_err": str(exc)}
+        if feeds.get("partners") is not None:
+            plist = partners_from_feed(feeds["partners"])
+            if plist is None:
+                result.setdefault("walk_errors", []).append(
+                    ("partners", "partner feed did not parse"))
+            else:
+                sections["partners"] = plist
+        elif feeds.get("p_api", "").startswith("/dataApi"):
+            result.setdefault("walk_errors", []).append(
+                ("partners", feeds.get("p_err") or "partner feed failed"))
+        if feeds.get("featured"):
+            flist = featured_from_attr(feeds["featured"])
+            if flist is not None:
+                sections["featured"] = flist
 
         # merge paginated design-resource/training panes harvested per tab.
         # The same card is often captured several times across passes (with or
