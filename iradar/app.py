@@ -517,8 +517,22 @@ def fmt_price_filter(s):
     s = " ".join((s or "").split())
     if not s:
         return []
-    rest = re.sub(r"request\s+free\s+samples?\.?", "", s, flags=re.I).strip()
+    # button captions, not prices
+    rest = re.sub(r"request\s+free\s+samples?\.?|view\s+buying\s+options", "", s,
+                  flags=re.I).strip()
     lines = []
+    # A multi-OPN part quotes a RANGE outside any volume-pricing label
+    # ("Multiple OPNs available $2.27 - $5.97 ea."). Read before the single
+    # price below, which otherwise took the range's upper end as the unit
+    # price and stranded "Multiple OPNs available $2.27 -" as a leftover.
+    m = re.search(r"(?<!pricing: )(?<!pricing:)(multiple\s+opns?\s+available\s*)?"
+                  r"([$€£]\s?[\d.,]+\d)\s*[-–]\s*([$€£]\s?[\d.,]+\d)\s*ea\.?",
+                  rest, flags=re.I)
+    if m and not re.search(r"volume\s+pricing:?\s*$", rest[:m.start()], flags=re.I):
+        lead = "Multiple OPNs: " if m.group(1) else ""
+        lines.append(f"{lead}{m.group(2).replace(' ', '')} - "
+                     f"{m.group(3).replace(' ', '')} ea.")
+        rest = rest.replace(m.group(0), " ", 1)
     m = re.search(r"([$€£]\s?[\d.,]+\d)\s*ea\.?(?!\s*[-–])", rest)
     if m:
         lines.append(m.group(1).replace(" ", "") + " ea.")

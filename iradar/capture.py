@@ -1475,7 +1475,7 @@ SECTIONS_JS = r"""
   // section, shown like the overview.
   (() => {
     const h1 = document.querySelector('h1');
-    let sub = '';
+    let sub = '', boxed = false;
     if (h1) {
       let p = h1.nextElementSibling;
       while (p && !(p.tagName === 'P' && p.textContent.trim().length > 15))
@@ -1488,7 +1488,10 @@ SECTIONS_JS = r"""
       // exactly: a looser '*sub-headline' would catch card captions elsewhere.
       const pi = document.querySelector('.para-info, [class*="subheadline" i],'
                                         + ' .product-type-sub-headline');
-      if (pi) sub = pi.textContent;
+      if (pi) {
+        sub = pi.textContent;
+        boxed = pi.matches('.product-type-sub-headline');
+      }
     }
     // A PTP (part) or board page has a subheadline only when its header
     // carries the tagline box (since autumn 2026: ~1 part in 20, most boards);
@@ -1496,7 +1499,11 @@ SECTIONS_JS = r"""
     // The lead text in the Product details "Description" pane is a
     // DESCRIPTION, a different field, and must never be promoted into this one.
     sub = (sub || '').replace(/\s+/g, ' ').trim();
-    if (sub.length > 15) push('subheadline', sub.slice(0, 400), '', '');
+    // The 15-character floor keeps a stray short <p> by the title out. The
+    // tagline box needs no floor - it is the subheadline by name, and a board
+    // can say just "XMC™ Link" there (KIT-XMC-LINK-SEGGER-V1).
+    if (sub.length > (boxed ? 2 : 15))
+      push('subheadline', sub.slice(0, 400), '', '');
   })();
 
   // Scene7 / Video.js declares each video on a [data-videourl] wrapper that
