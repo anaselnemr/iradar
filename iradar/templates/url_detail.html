@@ -420,10 +420,12 @@
           carries a price component at all - a part with nothing to quote says
           "empty" rather than vanishing, so a missing price is visibly a fact
           we checked and not a section we forgot. Captured text that is not
-          actually a price ("Multiple OPNs available", a button caption) is
-          not a price either. -#}
+          actually a price (a button caption) is not a price either - but
+          "Multiple OPNs available" is a fact about how the part is sold, so it
+          is shown as itself rather than as "empty". -#}
       {% set plines = price|fmt_price %}
-      {% set is_price = price|has_amount %}
+      {% set is_price = (price|has_amount)
+          or ('multiple opn' in (price or '')|lower and plines) %}
       {% if price or u.level in ('PTP', 'EB') %}
       <div class="pricebox">
         <div class="pricelabel">Price</div>
