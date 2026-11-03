@@ -480,7 +480,7 @@
         {% else %}
         <ul class="liblist">
           {%- set lim = copy_chars.get(cat['cat'], 0) -%}
-          {% for it in cat['items'] %}{% if cat['cat'] in ('overview', 'subheadline') %}<li>{{ it.title }}{#-
+          {% for it in cat['items'] %}{% if cat['cat'] in ('overview', 'subheadline', 'description') %}<li>{{ it.title }}{#-
             -#}{% if lim and (it.title or '')|length > lim %} <span class="badge b-over"
               title="This block is {{ (it.title or '')|length }} characters; the limit for this section is {{ lim }}, set in Settings → Advanced.">{{ (it.title or '')|length }} / {{ lim }}</span>{% endif %}</li>{% else %}{{ libitem(it, lim) }}{% endif %}{% endfor %}
         </ul>
