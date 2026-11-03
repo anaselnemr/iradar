@@ -1626,8 +1626,16 @@ def _all_components():
 NAV_VISIBILITY_FIX = "2026-07-19 11:00:00"
 
 
+def _price_text(row):
+    """The page's captured buying-options text, or '' for a row without it."""
+    try:
+        return row["price"] or ""
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
 def _page_component_states(components_json, detail_tabs_json, flags, cat_present,
-                           registry=None, captured_at=None):
+                           registry=None, captured_at=None, price=""):
     """Per component: "content", "empty" or "absent".
 
     Present and empty is a real, common state and it was being read as absent:
@@ -1674,7 +1682,13 @@ def _page_component_states(components_json, detail_tabs_json, flags, cat_present
             out[key] = ("content" if b.get("has_content")
                         else ("empty" if b.get("exists") else "absent"))
         elif kind == "nav":
-            out[key] = "content" if _in(arg, nav) else "absent"
+            # "View buying options" on a part is a BUTTON in the price box,
+            # not a section-nav entry, so the nav never offered it and every
+            # multi-OPN part read as lacking it. The captured price text
+            # carries the button's label.
+            hit = _in(arg, nav) or (key == "buying_options"
+                                    and "view buying options" in price.lower())
+            out[key] = "content" if hit else "absent"
         elif kind == "tab":
             out[key] = "content" if _in(arg, tabs) else "absent"
         else:
@@ -1683,7 +1697,7 @@ def _page_component_states(components_json, detail_tabs_json, flags, cat_present
 
 
 def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
-                        registry=None, captured_at=None):
+                        registry=None, captured_at=None, price=""):
     """The set of component keys PRESENT on one page - content OR empty.
 
     Kept as the presence answer for everything that only asks "is it there";
@@ -1691,7 +1705,7 @@ def _page_component_set(components_json, detail_tabs_json, flags, cat_present,
     """
     return {k for k, v in _page_component_states(
         components_json, detail_tabs_json, flags, cat_present, registry,
-        captured_at).items()
+        captured_at, price).items()
         if v != "absent"}
 
 
@@ -1786,7 +1800,8 @@ def _infer_level(con, row):
     except Exception:
         flags = {}
     have = _page_component_set(row["components"], row["detail_tabs"], flags,
-                               {c for c in _CAT_TO_COMP if c in cats})
+                               {c for c in _CAT_TO_COMP if c in cats},
+                               price=_price_text(row))
     sups = _components_for_type(con)
     best_j = ("", 0.0)
     for l in scheme:
@@ -2455,6 +2470,7 @@ SECTION_LABELS = [
     # thing written on the page, so the first thing listed about it
     ("subheadline", "Subheadline"),
     ("overview", "Overview"),
+    ("description", "Description"),
     ("features", "Key features"),
     ("benefits", "Benefits"),
     ("applications", "Applications"),
@@ -2542,7 +2558,8 @@ PILL_SQL_CATS = {
 # page-section PROSE (key features, benefits, applications) is no content
 # type: it lives in the page's text, and the In-page-text search names the
 # section a match sits in. Keeping them as asset chips doubled every answer.
-PROSE_CATS = ("features", "benefits", "applications", "subheadline")
+PROSE_CATS = ("features", "benefits", "applications", "subheadline",
+              "description")
 # a page's own words rather than a shared asset: never deduped across pages by
 # title, because two pages saying the same sentence are not sharing an object
 NON_ASSET_CATS = frozenset(PROSE_CATS) | {"about", "overview"}
@@ -3458,7 +3475,8 @@ def url_detail(url_id):
                  if sections and sections.get(cat)}
     states = _page_component_states(u["components"], u["detail_tabs"], flags,
                                     this_cats,
-                                    captured_at=u["last_checked"])
+                                    captured_at=u["last_checked"],
+                                    price=_price_text(u))
     have = {k for k, v in states.items() if v != "absent"}
     con5 = db.connect()
     etype = _etype(u["ptype"] or "", u["url"], u["level"])
@@ -5722,8 +5740,8 @@ def _cached_by_db(name, build):
 # features... - not assets anyone can browse. Every count shown to a person
 # excludes them with this one expression, so Help and Content can never
 # disagree by fourteen thousand again.
-_NON_ASSET_SQL = ("('about','overview','subheadline','features','benefits',"
-                  "'applications')")
+_NON_ASSET_SQL = ("('about','overview','subheadline','description',"
+                  "'features','benefits','applications')")
 
 
 def _library_counts(con, cat=""):
@@ -6244,11 +6262,13 @@ def search_items():
             prose_rows = con.execute(
                 "SELECT i.url_id, i.category, i.title FROM items i"
                 " WHERE i.category IN ('features','benefits','applications',"
-                "                      'overview','about','subheadline')"
+                "                      'overview','about','subheadline',"
+                "                      'description')"
                 " AND " + conds + " LIMIT 300", toks_all).fetchall()
         _PLBL = {"features": "Key features", "benefits": "Benefits",
                  "applications": "Applications", "overview": "Overview",
-                 "about": "About", "subheadline": "Subheadline"}
+                 "about": "About", "subheadline": "Subheadline",
+                 "description": "Description"}
 
         def _clip(s):
             # overview/about are paragraphs, not bullets - quote the window
@@ -6400,8 +6420,8 @@ def api_suggest():
     # overview is a page's own text, not an asset to jump to; prose sections
     # (features/benefits/applications) live under In page text
     raw = _fuzzy_items(q, cat, 30,
-                       exclude={"overview", "subheadline", "features", "benefits",
-                                "applications"})
+                       exclude={"overview", "subheadline", "description",
+                                "features", "benefits", "applications"})
     con = db.connect()
     pages = _pages_for_keys(con, [d["key"] for d in raw])
     con.close()
@@ -6942,7 +6962,7 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
     cat_of = {k: a for k, _l, kind, a in registry if kind == "cat"}
     q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.cm, u.owner,"
          " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
-         " u.last_checked,"
+         " u.last_checked, u.price,"
          " COALESCE(NULLIF(u.title_override,''),"
          "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
          "    AND s.status='ok' AND s.page_title<>''"
@@ -7028,7 +7048,7 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
             states = _page_component_states(
                 p["components"], p["detail_tabs"], flags,
                 cats.get(p["id"], set()), registry,
-                captured_at=p["last_checked"])
+                captured_at=p["last_checked"], price=_price_text(p))
             for k in want_comps:
                 st = states.get(k, "absent")
                 # "empty" is its own answer here too - a column of yes/no
@@ -8062,7 +8082,8 @@ def export_xlsx():
             flags = {}
         have = _page_component_set(u["components"], u["detail_tabs"], flags,
                                    cats.get(u["id"], set()), registry,
-                                   captured_at=u["last_checked"])
+                                   captured_at=u["last_checked"],
+                                   price=_price_text(u))
         comp_cells = []
         for k, _l, kind, arg in registry:
             if kind == "cat":

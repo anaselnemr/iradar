@@ -900,3 +900,20 @@ def test_a_genuinely_new_subheadline_still_flags():
                     {"subheadline": [{"title": TAG, "url": "", "meta": ""}]})
     assert cmp.library_diff(old, new)["changed"] is True
     assert "subheadline" in cmp.library_diff_detail(old, new)
+
+
+def test_a_section_the_old_capture_never_read_is_not_added():
+    # the Description pane joined the read in Nov 2026: old captures have no
+    # 'description' key at all, which means unread, not empty
+    old = _snap_sec(["x"], {"features": []})
+    new = _snap_sec(["x"], {"features": [],
+                            "description": [{"title": "A long paragraph here.",
+                                             "url": "", "meta": ""}]})
+    assert cmp.library_diff(old, new)["changed"] is False
+
+
+def test_a_read_and_empty_section_that_fills_still_flags():
+    old = _snap_sec(["x"], {"description": []})
+    new = _snap_sec(["x"], {"description": [{"title": "A long paragraph here.",
+                                             "url": "", "meta": ""}]})
+    assert cmp.library_diff(old, new)["changed"] is True

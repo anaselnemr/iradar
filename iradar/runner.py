@@ -290,6 +290,7 @@ def index_items(con, url_id, snap_dir, dead=False):
 # human labels for the diff, mirroring the app's section/component names
 _DIFF_SECTIONS = [
     ("overview", "Overview"), ("subheadline", "Subheadline"),
+    ("description", "Description"),
     ("features", "Key features"), ("benefits", "Benefits"),
     ("applications", "Applications"), ("categories", "Browse by category"),
     ("products", "Related products"), ("documents", "Documents"),

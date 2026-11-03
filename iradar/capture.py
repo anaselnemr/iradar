@@ -711,7 +711,8 @@ SECTIONS_JS = r"""
 
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
-               overview: [], subheadline: [], applications: [], about: [],
+               overview: [], subheadline: [], description: [],
+               applications: [], about: [],
                categories: [], products: [], partners: [], breadcrumb: [],
                images: []};
   const seen = new Set();
@@ -828,7 +829,8 @@ SECTIONS_JS = r"""
     // 200 chars is a sane cap for a card title, but overview/about entries ARE
     // prose - their text is the item - and capping those chopped a paragraph
     // mid-sentence, hiding the tail from the library.
-    const cap = (cat === 'overview' || cat === 'about') ? 4000 : 200;
+    const cap = (cat === 'overview' || cat === 'about' || cat === 'description')
+      ? 4000 : 200;
     title = (title || '').replace(/\s+/g, ' ').trim().slice(0, cap);
     if (!title || title.length < 3) return;
     // NB: no nav-label filter here - "Documents"/"Design resources" are real
@@ -1415,6 +1417,17 @@ SECTIONS_JS = r"""
       break;
     }
   }
+
+  // Description: the prose in the Product details "Description" pane of a
+  // part or board page. The pane is a hidden tab until clicked, so it is read
+  // by textContent (innerText is empty for it), and it is ONE paragraph - kept
+  // whole, like the overview.
+  (() => {
+    const pane = document.querySelector('#description .description-tab,'
+                                        + ' .description-tab');
+    const t = pane ? (pane.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    if (t.length > 15) push('description', t, '', '');
+  })();
 
   // Login-gated document rows (MyInfineon lock icon) have no public link -
   // capture them by their table cells so the groundtruth stays complete.

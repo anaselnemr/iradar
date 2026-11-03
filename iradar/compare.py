@@ -1306,6 +1306,13 @@ def _sections_pair(old_dir, new_dir):
     added" once, for text that had been there all along. The old side borrows
     the new reading; a subheadline that is genuinely new text still flags."""
     old, new = _load_sections(old_dir), _load_sections(new_dir)
+    # A section the old capture never had a NAME for was not read then - not
+    # empty, unread. The Description pane joined the read in November 2026;
+    # every page that carries one would otherwise report "Description added".
+    # A section the old capture read and found empty is [] and still compares.
+    if old:
+        for cat in set(new) - set(old):
+            old[cat] = new[cat]
     sub = new.get("subheadline")
     if sub and not old.get("subheadline") and isinstance(sub, list):
         was = _no_space(" ".join(_load_text_lines(old_dir)))
