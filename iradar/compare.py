@@ -1296,6 +1296,25 @@ def _community_state(snap_dir):
     return "empty"
 
 
+def _sections_pair(old_dir, new_dir):
+    """Both captures' sections, ready to compare.
+
+    A subheadline the OLD capture could not read but whose words were already
+    on the old page is a field newly read, not a tagline newly written. The
+    part and board headers' '.product-type-sub-headline' went unread until
+    November 2026, so ~300 pages would otherwise all report "Subheadline
+    added" once, for text that had been there all along. The old side borrows
+    the new reading; a subheadline that is genuinely new text still flags."""
+    old, new = _load_sections(old_dir), _load_sections(new_dir)
+    sub = new.get("subheadline")
+    if sub and not old.get("subheadline") and isinstance(sub, list):
+        was = _no_space(" ".join(_load_text_lines(old_dir)))
+        if all(isinstance(d, dict) and _no_space(str(d.get("title", ""))) in was
+               for d in sub):
+            old = dict(old, subheadline=sub)
+    return old, new
+
+
 def library_diff_detail(old_dir, new_dir):
     """The reviewable version of library_diff: WHICH items, not just counts.
 
@@ -1310,7 +1329,7 @@ def library_diff_detail(old_dir, new_dir):
                    "changed": [{"title","url","fields":[(name,old,new)...]}]}}
     String categories (price) come back as a single changed entry whose
     fields carry the old/new strings (stock count stripped, like the count)."""
-    old, new = _load_sections(old_dir), _load_sections(new_dir)
+    old, new = _sections_pair(old_dir, new_dir)
     out = {}
     for cat in sorted(set(old) | set(new)):
         if cat in _NOT_CONTENT:
@@ -1354,7 +1373,7 @@ def library_diff(old_dir, new_dir):
     board that quietly disappeared from one tab - none of those need move a
     single visible word, and before this none of them raised anything.
     """
-    old, new = _load_sections(old_dir), _load_sections(new_dir)
+    old, new = _sections_pair(old_dir, new_dir)
     per, added, removed, changed = {}, 0, 0, 0
     for cat in sorted(set(old) | set(new)):
         if cat in _NOT_CONTENT:

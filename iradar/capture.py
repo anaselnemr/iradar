@@ -1470,13 +1470,18 @@ SECTIONS_JS = r"""
       if (p) sub = p.textContent;
     }
     if (!sub) {
-      const pi = document.querySelector('.para-info, [class*="subheadline" i]');
+      // '.product-type-sub-headline' is the part and board header's own
+      // tagline box, which '[class*="subheadline"]' missed on the hyphen. Named
+      // exactly: a looser '*sub-headline' would catch card captions elsewhere.
+      const pi = document.querySelector('.para-info, [class*="subheadline" i],'
+                                        + ' .product-type-sub-headline');
       if (pi) sub = pi.textContent;
     }
-    // A PTP (part) page has no subheadline. Its title is followed straight by
-    // the datasheet/package/board links - there is no tagline. The lead text
-    // in the Product details "Description" pane is a DESCRIPTION, a different
-    // field, and must not be promoted into this one.
+    // A PTP (part) or board page has a subheadline only when its header
+    // carries the tagline box (since autumn 2026: ~1 part in 20, most boards);
+    // otherwise its title is followed straight by the datasheet/package links.
+    // The lead text in the Product details "Description" pane is a
+    // DESCRIPTION, a different field, and must never be promoted into this one.
     sub = (sub || '').replace(/\s+/g, ' ').trim();
     if (sub.length > 15) push('subheadline', sub.slice(0, 400), '', '');
   })();

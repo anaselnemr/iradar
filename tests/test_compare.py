@@ -873,3 +873,30 @@ def test_a_different_picture_still_flags_beside_renditions():
     assert r["images_changed"] is True
     assert r["images_added_list"] == [IMG + "new-esim-board.jpeg"]
     assert r["images_removed_list"] == [IMG + "optiga-5g-esim.jpeg"]
+
+
+# --- a newly READ subheadline is not a newly WRITTEN one (Nov 2026) ---------
+
+def _snap_sec(lines, sections):
+    d = Path(_snap(lines))
+    (d / "sections.json").write_text(json.dumps(sections), encoding="utf-8")
+    return str(d)
+
+
+TAG = "Ready-to-use TPM optimized for embedded systems featuring I2C interface"
+
+
+def test_a_tagline_already_on_the_page_is_not_a_new_subheadline():
+    old = _snap_sec(["OPTIGA TPM", TAG, "Datasheet"], {"subheadline": []})
+    new = _snap_sec(["OPTIGA TPM", TAG, "Datasheet"],
+                    {"subheadline": [{"title": TAG, "url": "", "meta": ""}]})
+    assert cmp.library_diff(old, new)["changed"] is False
+    assert cmp.library_diff_detail(old, new) == {}
+
+
+def test_a_genuinely_new_subheadline_still_flags():
+    old = _snap_sec(["OPTIGA TPM", "Datasheet"], {"subheadline": []})
+    new = _snap_sec(["OPTIGA TPM", TAG, "Datasheet"],
+                    {"subheadline": [{"title": TAG, "url": "", "meta": ""}]})
+    assert cmp.library_diff(old, new)["changed"] is True
+    assert "subheadline" in cmp.library_diff_detail(old, new)
