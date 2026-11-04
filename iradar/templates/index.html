@@ -93,7 +93,12 @@
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
       <div class="n" style="color:{{ 'var(--warn)' if latest_updates else 'var(--muted)' }}">{{ '{:,}'.format(latest_updates or 0) }}</div>
       <div class="l">Updated</div>
-      <div class="detail">{{ '{:,}'.format(total_open or 0) }} awaiting review</div>
+      {#- its own link inside the card: the card opens the latest updates, this
+          opens every unreviewed one, whatever the page's status is now -#}
+      <div class="detail">{% if total_open %}<span class="detail-link" role="link" tabindex="0"
+        onclick="event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'}"
+        style="text-decoration:underline;cursor:pointer">{{ '{:,}'.format(total_open) }} awaiting review</span>{% else %}0 awaiting review{% endif %}</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
       <div class="n" style="color:{{ 'var(--stat-content)' if content_updates else 'var(--muted)' }}">{{ '{:,}'.format(content_updates or 0) }}</div>

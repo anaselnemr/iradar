@@ -1358,6 +1358,11 @@ TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
 STATUS_FILTERS = {
     "metaflag":  ("⚠ Ownership mismatch", "IFNULL(u.meta_flag,'')<>''"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
+    # every page with an update nobody has reviewed yet, WHATEVER its status
+    # now: a page that went 404 carries its "removed" update as "Not live",
+    # so the Updated filter never showed what "N awaiting review" counted
+    "review":    ("Awaiting review", "EXISTS (SELECT 1 FROM changes rc"
+                  " WHERE rc.url_id=u.id AND rc.reviewed=0)"),
     # no 'rejected' state: rejecting a capture means "not this one as the
     # baseline", after which the page is dealt with and reads as unchanged
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
