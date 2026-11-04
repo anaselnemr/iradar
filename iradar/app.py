@@ -2490,6 +2490,7 @@ SECTION_LABELS = [
     ("subheadline", "Subheadline"),
     ("overview", "Overview"),
     ("description", "Description"),
+    ("parametrics", "Parametrics"),
     ("features", "Key features"),
     ("benefits", "Benefits"),
     ("applications", "Applications"),
@@ -2579,7 +2580,7 @@ PILL_SQL_CATS = {
 # type: it lives in the page's text, and the In-page-text search names the
 # section a match sits in. Keeping them as asset chips doubled every answer.
 PROSE_CATS = ("features", "benefits", "applications", "subheadline",
-              "description")
+              "description", "parametrics")
 # a page's own words rather than a shared asset: never deduped across pages by
 # title, because two pages saying the same sentence are not sharing an object
 NON_ASSET_CATS = frozenset(PROSE_CATS) | {"about", "overview"}
@@ -5761,7 +5762,7 @@ def _cached_by_db(name, build):
 # excludes them with this one expression, so Help and Content can never
 # disagree by fourteen thousand again.
 _NON_ASSET_SQL = ("('about','overview','subheadline','description',"
-                  "'features','benefits','applications')")
+                  "'parametrics','features','benefits','applications')")
 
 
 def _library_counts(con, cat=""):

@@ -780,7 +780,7 @@ SECTIONS_JS = r"""
 
   const out = {documents: [], design_resources: [], news: [],
                trainings: [], videos: [], features: [], benefits: [],
-               overview: [], subheadline: [], description: [],
+               overview: [], subheadline: [], description: [], parametrics: [],
                applications: [], about: [],
                categories: [], products: [], featured: [], partners: [],
                breadcrumb: [],
@@ -1489,6 +1489,19 @@ SECTIONS_JS = r"""
       break;
     }
   }
+
+  // Parametrics: every row of the Product details "Parametrics" pane, one item
+  // per parameter - name as the title, value as the meta - so a value that
+  // moves is reported as that parameter changing. Read by textContent (the
+  // pane can be a hidden tab) and written directly, not through push(): a
+  // parameter name may be short ("IO") or repeat another section's title.
+  document.querySelectorAll('#parametrics .parametrics-item').forEach(li => {
+    const clean = el => el ? (el.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    const name = clean(li.querySelector('.data'));
+    const value = clean(li.querySelector('.value'));
+    if (name) out.parametrics.push({title: name.slice(0, 200), url: '',
+                                    meta: value.slice(0, 1000)});
+  });
 
   // Description: the prose in the Product details "Description" pane of a
   // part or board page. The pane is a hidden tab until clicked, so it is read
