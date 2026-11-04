@@ -917,3 +917,43 @@ def test_a_read_and_empty_section_that_fills_still_flags():
     new = _snap_sec(["x"], {"description": [{"title": "A long paragraph here.",
                                              "url": "", "meta": ""}]})
     assert cmp.library_diff(old, new)["changed"] is True
+
+
+# --- position labels: where the visitor is, not what the page says ---------
+
+NAV = ["Browse by category", "All industrial applications", "News & highlights"]
+
+
+def test_the_jump_to_box_reading_a_section_is_not_a_change():
+    a = ["Industrial", "Jump to", "On this page"] + NAV + ["Body text"]
+    b = ["Industrial", "News & highlights", "On this page"] + NAV + ["Body text"]
+    r = _cmp(a, b)
+    assert r["text_changed"] is False and r["any_changed"] is False, r["summary"]
+
+
+def test_an_app_list_dropdown_label_is_not_a_change():
+    apps = ["Asset Tracking", "Industrial automation", "Wind power"]
+    a = ["All industrial applications", "Wind power"] + apps
+    b = ["All industrial applications", "Industrial automation"] + apps
+    assert _cmp(a, b)["text_changed"] is False
+
+
+def test_a_real_line_in_the_label_slot_still_counts():
+    # the line before "On this page" that is NOT a menu entry is content
+    a = ["Hero tagline one", "On this page"] + NAV
+    b = ["Hero tagline two", "On this page"] + NAV
+    assert _cmp(a, b)["text_changed"] is True
+    # and a real edit elsewhere is untouched by the rule
+    a2 = ["Jump to", "On this page"] + NAV + ["Smart thermostat"]
+    b2 = ["News & highlights", "On this page"] + NAV + ["Smart thermostats"]
+    assert _cmp(a2, b2)["text_changed"] is True
+
+
+def test_no_visual_urls_skip_only_the_screenshot_for_that_page():
+    d = Path(_snap(["x"]))
+    (d / "meta.json").write_text(json.dumps(
+        {"url": "https://www.infineon.com/applications/industrial"}), encoding="utf-8")
+    on = {"no_visual_urls": "https://www.infineon.com/applications/industrial" + chr(10)}
+    assert cmp._no_visual(str(d), on) is True
+    assert cmp._no_visual(str(d), {}) is False
+    assert cmp._no_visual(str(d), {"no_visual_urls": "https://x/other"}) is False

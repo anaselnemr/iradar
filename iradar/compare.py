@@ -17,11 +17,40 @@ MAX_REGIONS = 12                # cap on highlighted areas per change
 REGION_ROW_GAP = 28             # changed rows closer than this merge into one area
 
 
+_APP_LIST_HEAD = re.compile(r"^All .+ applications$", re.I)
+
+
+def _drop_position_labels(lines):
+    """Labels that say WHERE the visitor is, not what the page says.
+
+    The section menu's "Jump to" box shows the section scrolled into view, and
+    an application list's sticky dropdown shows the application in view. Both
+    read differently on every visit, so applications/industrial never had two
+    captures agree and sat in "Capture error". A line counts as such a label
+    only in its own slot - right before "On this page", or right after an
+    "All ... applications" heading - and only if it is "Jump to" or names an
+    entry of the menu or list right below it, so no content line can vanish (labels are short: under 60 characters)."""
+    drop = set()
+    for i, line in enumerate(lines):
+        if line == "On this page" and i:
+            prev = lines[i - 1]
+            if len(prev) < 60 and (prev == "Jump to"
+                                   or prev in lines[i + 1:i + 16]):
+                drop.add(i - 1)
+        elif _APP_LIST_HEAD.match(line) and i + 1 < len(lines):
+            nxt = lines[i + 1]
+            if len(nxt) < 60 and (nxt == "Jump to"
+                                  or nxt in lines[i + 2:i + 80]):
+                drop.add(i + 1)
+    return [l for i, l in enumerate(lines) if i not in drop] if drop else lines
+
+
 def _load_text_lines(snap_dir, ignore_patterns=None):
     p = Path(snap_dir) / "text.txt"
     if not p.exists():
         return []
-    lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = _drop_position_labels(
+        p.read_text(encoding="utf-8", errors="replace").splitlines())
     if ignore_patterns:
         compiled = []
         for pat in ignore_patterns:
@@ -803,6 +832,24 @@ def _region_strip(old_img, new_img, region, out_path, pad=40):
     _save_art(canvas, out_path)
 
 
+def _no_visual(snap_dir, settings):
+    """Pages compared WITHOUT the screenshot (settings "no_visual_urls", one
+    URL per line). For a page whose sticky bars repaint the screenshot
+    differently on every visit - applications/industrial drew the site header
+    mid-page on one capture in three - so no two captures could ever agree.
+    Its text, items and images are still compared."""
+    want = {u.strip().rstrip("/") for u in
+            (settings or {}).get("no_visual_urls", "").splitlines() if u.strip()}
+    if not want:
+        return False
+    try:
+        url = json.loads((Path(snap_dir) / "meta.json").read_text(
+            encoding="utf-8")).get("url", "")
+    except Exception:
+        return False
+    return str(url).rstrip("/") in want
+
+
 def _shot_ignore(snap_dir):
     """The live-feed regions recorded at capture (meta.json shot_ignore):
     the screenshot KEEPS the community/news boxes so a reviewer sees the whole
@@ -1501,7 +1548,7 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
     # that was re-normalised. Suppress the visual signal for that one
     # comparison - text/images/library still apply - and the next run, both on
     # the new shot_rev, resumes normal pixel diffing (now free of the feeds).
-    if _shot_rev(old_dir) != _shot_rev(new_dir):
+    if _shot_rev(old_dir) != _shot_rev(new_dir) or _no_visual(new_dir, settings):
         ratio_pct, height_delta, n_regions = 0.0, 0, 0
     else:
         ratio_pct, height_delta, n_regions = visual_diff(old_dir, new_dir,
