@@ -107,8 +107,10 @@ def partners_from_feed(feed):
         return None
     out, seen = [], set()
     for r in rows:
-        name = " ".join(str(r.get("displayName") or r.get("partnerName")
-                            or "").split())
+        # partnerName is what the widget shows ("IAR", "Lauterbach GmbH");
+        # displayName is an internal short form ("IAR System") and can be empty
+        name = " ".join(str(r.get("partnerName") or r.get("partnerNameEN")
+                            or r.get("displayName") or "").split())
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())

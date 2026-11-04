@@ -264,11 +264,11 @@ def test_only_a_404_at_its_own_address_counts_as_still_gone():
 def test_partners_come_from_the_feed_each_with_its_own_text():
     import capture, json
     feed = {"data": {"getPartnerSearchDetails": {"content": [
-        {"displayName": "PEmicro", "pageURL": "https://x/pemicro",
+        {"partnerName": "PEmicro", "displayName": "PEmicro Inc", "pageURL": "https://x/pemicro",
          "description": "Flash  tools.", "partnerLogoUrl": "https://x/p.png"},
-        {"displayName": "Lauterbach GmbH", "pageURL": "https://x/l",
+        {"partnerName": "Lauterbach GmbH", "displayName": "Lauterbach Datentechnik", "pageURL": "https://x/l",
          "description": "TRACE32.", "partnerLogoUrl": "https://x/l.png"},
-        {"displayName": "pemicro", "pageURL": "https://x/dup"},
+        {"partnerName": "pemicro", "pageURL": "https://x/dup"},
     ]}}}
     out = capture.partners_from_feed(json.dumps(feed))
     assert [p["title"] for p in out] == ["PEmicro", "Lauterbach GmbH"]
