@@ -399,9 +399,9 @@
       <li><b>Not captured</b> — added but never successfully read yet, so there
         is nothing to compare against. It gets its first reading next check.</li>
       <li><b>Paused</b> — deliberately skipped. Still listed, not checked.</li>
-      <li><b>Ownership mismatch</b> — the owner or business line on the page does
-        not agree with what was imported. Flagged for a human, never
-        auto-corrected.</li>
+      <li><b>Ownership flagged</b> — the page's BL or PL could not be confirmed:
+        infineon.com gives no product line for it, or the line is not on the
+        current ES chart. Flagged for a human to fill in.</li>
     </ul>
   </section>
 
@@ -565,11 +565,12 @@
         it are listed, each with its type and the heading the document sits
         under on that page. That is the answer to &ldquo;if I change this
         datasheet, what am I affecting?&rdquo;</li>
-      <li><b>A page belongs to people.</b> BL, PL, CM and the marketing owner,
-        imported rather than read off the page. It is our bookkeeping, so
-        editing it never raises an update — and where a page disagrees with
-        what was imported it is flagged <i>Ownership mismatch</i> rather than
-        quietly corrected.</li>
+      <li><b>A page belongs to people.</b> BL, PL, CM and the marketing owner.
+        The PL comes from infineon.com's own product data wherever the site
+        has one (parts, boards, families, product tables) and the BL from the
+        ES org chart. It is our bookkeeping, so editing it never raises an
+        update — and a page with no source for its BL or PL is flagged
+        <i>Ownership flagged</i> rather than guessed.</li>
     </ul>
     <p>So an update on one page tells you who to tell (its owners), and the
       item behind it tells you how far the change reaches (its other pages).</p>
@@ -880,9 +881,9 @@
         and everything under it rather than a flat list.</li>
       <li><b>Pages carry who owns them</b> — BL, PL, CM and the marketing owner,
         shown on the page, filterable on the Dashboard and available as export
-        columns. Where a page
-        disagrees with what was imported it is flagged <i>Ownership mismatch</i>
-        for somebody to settle, never quietly corrected.</li>
+        columns. A page with
+        no source for its BL or PL is flagged <i>Ownership flagged</i> for
+        somebody to settle, never guessed.</li>
       <li><b>Which parts a page has is tracked too</b> — whether it carries a
         documents section, a video block, a partner list. Filter the Dashboard
         by them to find, say, every product page with no datasheets. A section
