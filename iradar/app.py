@@ -1366,7 +1366,7 @@ TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
 
 STATUS_FILTERS = {
     "metaflag":  ("⚠ Ownership flagged", "IFNULL(u.meta_flag,'')<>''"
-                  " AND IFNULL(u.last_status,'')<>'notlive' AND u.active=1"),
+                  " AND u.active=1"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     # every page with an update nobody has reviewed yet, WHATEVER its status
     # now: a page that went 404 carries its "removed" update as "Not live",
