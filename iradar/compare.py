@@ -1343,6 +1343,9 @@ def _community_state(snap_dir):
     return "empty"
 
 
+_TEXT_ONLY = ("subheadline", "description", "parametrics")
+
+
 def _sections_pair(old_dir, new_dir):
     """Both captures' sections, ready to compare.
 
@@ -1353,6 +1356,15 @@ def _sections_pair(old_dir, new_dir):
     added" once, for text that had been there all along. The old side borrows
     the new reading; a subheadline that is genuinely new text still flags."""
     old, new = _load_sections(old_dir), _load_sections(new_dir)
+    # Text-only sections are compared by their TEXT. The capture fills missing
+    # links from the page's data feed by title, so a board whose tagline reads
+    # like one of its documents ("XMC4200 Platform2Go") had that document's
+    # file stamped on its subheadline: same words, a "new" item, a false update.
+    for side in (old, new):
+        for cat in _TEXT_ONLY:
+            if isinstance(side.get(cat), list):
+                side[cat] = [dict(d, url="") if isinstance(d, dict) else d
+                             for d in side[cat]]
     # A section the old capture never had a NAME for was not read then - not
     # empty, unread. The Description pane joined the read in November 2026;
     # every page that carries one would otherwise report "Description added".

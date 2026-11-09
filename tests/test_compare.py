@@ -957,3 +957,13 @@ def test_no_visual_urls_skip_only_the_screenshot_for_that_page():
     assert cmp._no_visual(str(d), on) is True
     assert cmp._no_visual(str(d), {}) is False
     assert cmp._no_visual(str(d), {"no_visual_urls": "https://x/other"}) is False
+
+
+def test_a_subheadline_that_gained_a_link_is_not_an_update():
+    # the feed link-filler stamped a document URL on a tagline with its title
+    old = _snap_sec(["x"], {"subheadline": [{"title": "XMC4200 Platform2Go",
+                                             "url": "", "meta": ""}]})
+    new = _snap_sec(["x"], {"subheadline": [{"title": "XMC4200 Platform2Go",
+                                             "url": "https://x/doc.zip", "meta": ""}]})
+    assert cmp.library_diff(old, new)["changed"] is False
+    assert cmp.library_diff_detail(old, new) == {}

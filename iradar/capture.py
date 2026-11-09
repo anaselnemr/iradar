@@ -3038,7 +3038,10 @@ async def capture_one(browser, url, out_dir):
             if api_map:
                 filled = 0
                 for cat, items in sections.items():
-                    if cat == "images" or not isinstance(items, list):
+                    # text-only sections have no link to fill: a tagline that
+                    # reads like a document title is not that document
+                    if cat in ("images", "subheadline", "description",
+                               "parametrics") or not isinstance(items, list):
                         continue
                     for it in items:
                         if not isinstance(it, dict) or it.get("url"):
