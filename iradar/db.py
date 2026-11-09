@@ -864,15 +864,6 @@ def pause_document_pages(con):
     return n
 
 
-def clear_gone_flags(con):
-    """A page the site has taken down (confirmed 404/410) needs no BL/PL: its
-    ownership flag is cleared. It is NOT paused - it stays listed as Offline
-    and pausing it is left to a person. Returns how many flags were cleared."""
-    return con.execute(
-        "UPDATE urls SET meta_flag='' WHERE IFNULL(meta_flag,'')<>''"
-        " AND last_status='notlive' AND last_http IN (404, 410)").rowcount
-
-
 def add_urls(url_list):
     """Insert URLs, ignoring duplicates. Returns (added, skipped)."""
     return add_urls_labeled([(u, "") for u in url_list])

@@ -1195,10 +1195,9 @@ def _run_check_inner(kind, url_ids, baseline=False):
                     " WHERE id=?",
                     (db.now_iso(), ok, changed, errors, run_id))
         db.finish_run_counts(con, run_id)
-        # a page the site has taken down stays listed as Offline (pausing it
-        # is a person's call) but stops asking for an owner; gated documents
-        # are files, not pages, and are paused
-        db.clear_gone_flags(con)
+        # a page the site has taken down stays listed as Offline, flag and
+        # all (pausing it is a person's call); gated documents are files,
+        # not pages, and are paused
         docs = db.pause_document_pages(con)
         if docs:
             print(f"[run] {docs} gated document(s) paused", flush=True)

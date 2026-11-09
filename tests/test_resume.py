@@ -1182,30 +1182,6 @@ def test_the_bar_bands_sum_to_the_total_mid_verify():
         "the five bands do not sum to the total"
 
 
-# --- taken-down pages stay Offline (not paused) and drop their ownership flag
-
-def test_clear_gone_flags_keeps_404s_active_and_clears_their_flag():
-    _fresh_db()
-    db.add_urls(["https://www.infineon.com/part/GONE1",
-                 "https://www.infineon.com/part/LIVE1",
-                 "https://www.infineon.com/part/BLOCKED1"])
-    con = db.connect()
-    con.execute("UPDATE urls SET last_status='notlive', last_http=404,"
-                " meta_flag='No PL source' WHERE url LIKE '%GONE1'")
-    con.execute("UPDATE urls SET last_status='unchanged', last_http=200,"
-                " meta_flag='No PL source' WHERE url LIKE '%LIVE1'")
-    # a CDN block is unknown, never 'gone' - its flag stays
-    con.execute("UPDATE urls SET last_status='error', last_http=403,"
-                " meta_flag='No PL source' WHERE url LIKE '%BLOCKED1'")
-    assert db.clear_gone_flags(con) == 1
-    rows = {r["url"].rsplit("/", 1)[1]: r for r in con.execute(
-        "SELECT url, active, meta_flag FROM urls")}
-    assert rows["GONE1"]["active"] == 1 and rows["GONE1"]["meta_flag"] == ""
-    assert rows["LIVE1"]["meta_flag"] == "No PL source"
-    assert rows["BLOCKED1"]["meta_flag"] == "No PL source"
-    con.close()
-
-
 def test_gated_and_document_promo_urls_are_gated_documents_and_paused():
     _fresh_db()
     assert db.ptype_for_url("https://www.infineon.com/gated/x-whitepaper-en_1") == "Gated document"
