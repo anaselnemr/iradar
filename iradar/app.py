@@ -6994,7 +6994,7 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
     cat_of = {k: a for k, _l, kind, a in registry if kind == "cat"}
     q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.cm, u.owner,"
          " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
-         " u.last_checked, u.price,"
+         " u.last_checked, u.price, u.active,"
          " COALESCE(NULLIF(u.title_override,''),"
          "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
          "    AND s.status='ok' AND s.page_title<>''"
@@ -7056,7 +7056,8 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
             flags = {}
         row = {"id": p["id"], "url": p["url"], "title": p["title"] or "",
                "ptype": p["ptype"] or "", "level": p["level"] or "",
-               "status": p["last_status"] or "", "vals": []}
+               "status": p["last_status"] or "", "vals": [],
+               "tag": _page_state_tag(p)}
         for k in want_meta:
             row["vals"].append(p[k] or "")
         for k in want_page:
@@ -7071,7 +7072,8 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                     else ("empty" if st == "blank"
                           else ("—" if st == "error" or not http else "yes")))
             elif k == "status":
-                row["vals"].append(p["last_status"] or "not captured yet")
+                row["vals"].append(row["tag"] or p["last_status"]
+                                   or "not captured yet")
             elif k == "last_captured":
                 row["vals"].append((p["last_checked"] or "")[:19])
             else:
@@ -7905,14 +7907,29 @@ def _warm_exports():
         print(f"[export] everything-sheet warm-up failed: {e}", flush=True)
 
 
+def _page_state_tag(p):
+    """The export's State word for a page that is not simply live and
+    checked: taken down by the site, paused by us, or both. '' otherwise."""
+    offline = (p["last_http"] in (404, 410)
+               or (p["last_status"] or "") == "notlive")
+    paused = not p["active"]
+    return " · ".join(w for w, on in (("Offline", offline), ("Paused", paused))
+                      if on)
+
+
 def _latest_shots(con):
-    """url_id -> path of its newest good screenshot, for the export preview."""
+    """url_id -> path of its newest good screenshot, for the export preview.
+    Offline and paused pages get no picture: they stay in the sheet, tagged,
+    but a stale screenshot of a page nobody checks only costs space."""
     out = {}
     for r in con.execute(
             "SELECT s.url_id, s.dir FROM snapshots s"
             " JOIN (SELECT url_id, MAX(id) mid FROM snapshots"
             "       WHERE status='ok' AND dir<>'' GROUP BY url_id) m"
-            " ON s.id=m.mid"):
+            " ON s.id=m.mid"
+            " JOIN urls u ON u.id=s.url_id"
+            " WHERE u.active=1 AND IFNULL(u.last_status,'')<>'notlive'"
+            " AND IFNULL(u.last_http,0) NOT IN (404, 410)"):
         try:
             p = db.shot_path(r["dir"])
             if p.exists():
@@ -7981,7 +7998,7 @@ def export_builder_download():
         # screenshot we already hold answers that in the sheet itself. It sits
         # beside the URL because those two together identify the row.
         shots = _latest_shots(con)
-        headers = (["URL", "Preview", "Page", "Level", "Type"]
+        headers = (["URL", "Preview", "Page", "Level", "Type", "State"]
                    + _export_headers(want_meta, want_comps, want_page,
                                      verbose=True))
         # THE SAME SHEET IS NOT BUILT TWICE. Writing ~144,000 cells and 4,300
@@ -8008,8 +8025,8 @@ def export_builder_download():
                 # the row has to be as tall as the picture or Excel overlaps
                 # them all into an unreadable stack (points = px * 0.75)
                 ws.row_dimensions[i].height = max(18, min(h, 300) * 0.75)
-            ws.append([r["url"], "", r["title"], r["level"], r["ptype"]]
-                      + r["vals"])
+            ws.append([r["url"], "", r["title"], r["level"], r["ptype"],
+                       r["tag"]] + r["vals"])
             if buf is not None:
                 try:
                     img = XLImage(buf)

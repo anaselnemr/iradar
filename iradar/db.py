@@ -864,16 +864,13 @@ def pause_document_pages(con):
     return n
 
 
-def pause_gone_pages(con):
-    """Pause every page the site has taken down (confirmed 404/410) and clear
-    its ownership flag: a page that no longer exists needs no BL/PL and should
-    not take a capture slot. Returns how many were newly paused. The page keeps
-    its history and any unreviewed "removed" update."""
-    gone = ("last_status='notlive' AND last_http IN (404, 410)")
-    n = con.execute("UPDATE urls SET active=0 WHERE active=1 AND " + gone).rowcount
-    con.execute("UPDATE urls SET meta_flag='' WHERE IFNULL(meta_flag,'')<>''"
-                " AND " + gone)
-    return n
+def clear_gone_flags(con):
+    """A page the site has taken down (confirmed 404/410) needs no BL/PL: its
+    ownership flag is cleared. It is NOT paused - it stays listed as Offline
+    and pausing it is left to a person. Returns how many flags were cleared."""
+    return con.execute(
+        "UPDATE urls SET meta_flag='' WHERE IFNULL(meta_flag,'')<>''"
+        " AND last_status='notlive' AND last_http IN (404, 410)").rowcount
 
 
 def add_urls(url_list):

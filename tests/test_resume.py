@@ -1182,9 +1182,9 @@ def test_the_bar_bands_sum_to_the_total_mid_verify():
         "the five bands do not sum to the total"
 
 
-# --- taken-down pages are paused and drop their ownership flag ---------------
+# --- taken-down pages stay Offline (not paused) and drop their ownership flag
 
-def test_pause_gone_pages_pauses_404s_and_clears_their_flag():
+def test_clear_gone_flags_keeps_404s_active_and_clears_their_flag():
     _fresh_db()
     db.add_urls(["https://www.infineon.com/part/GONE1",
                  "https://www.infineon.com/part/LIVE1",
@@ -1194,17 +1194,15 @@ def test_pause_gone_pages_pauses_404s_and_clears_their_flag():
                 " meta_flag='No PL source' WHERE url LIKE '%GONE1'")
     con.execute("UPDATE urls SET last_status='unchanged', last_http=200,"
                 " meta_flag='No PL source' WHERE url LIKE '%LIVE1'")
-    # a CDN block is unknown, never 'gone' - it must stay active
-    con.execute("UPDATE urls SET last_status='error', last_http=403"
-                " WHERE url LIKE '%BLOCKED1'")
-    assert db.pause_gone_pages(con) == 1
+    # a CDN block is unknown, never 'gone' - its flag stays
+    con.execute("UPDATE urls SET last_status='error', last_http=403,"
+                " meta_flag='No PL source' WHERE url LIKE '%BLOCKED1'")
+    assert db.clear_gone_flags(con) == 1
     rows = {r["url"].rsplit("/", 1)[1]: r for r in con.execute(
         "SELECT url, active, meta_flag FROM urls")}
-    assert rows["GONE1"]["active"] == 0 and rows["GONE1"]["meta_flag"] == ""
-    assert rows["LIVE1"]["active"] == 1
+    assert rows["GONE1"]["active"] == 1 and rows["GONE1"]["meta_flag"] == ""
     assert rows["LIVE1"]["meta_flag"] == "No PL source"
-    assert rows["BLOCKED1"]["active"] == 1
-    assert db.pause_gone_pages(con) == 0          # idempotent
+    assert rows["BLOCKED1"]["meta_flag"] == "No PL source"
     con.close()
 
 
