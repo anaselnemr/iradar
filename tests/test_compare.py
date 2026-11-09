@@ -967,3 +967,28 @@ def test_a_subheadline_that_gained_a_link_is_not_an_update():
                                              "url": "https://x/doc.zip", "meta": ""}]})
     assert cmp.library_diff(old, new)["changed"] is False
     assert cmp.library_diff_detail(old, new) == {}
+
+
+def test_an_html_code_in_place_of_a_space_is_not_an_update():
+    r = _cmp(["Partners", "Health and lifestyle", "Body"],
+             ["Partners", "Health and&nbsp;lifestyle", "Body"])
+    assert r["text_changed"] is False and r["any_changed"] is False, r["summary"]
+
+
+def test_a_reordered_list_value_is_not_an_update():
+    r = _cmp(["Type of Serial I/O Interfaces", "I²S, I²C, SPI, UART"],
+             ["Type of Serial I/O Interfaces", "UART, SPI, I²C, I²S"])
+    assert r["text_changed"] is False, r["summary"]
+    old = _snap_sec(["x"], {"parametrics": [{"title": "Type of Serial I/O Interfaces",
+                                             "url": "", "meta": "I²S, I²C, SPI, UART"}]})
+    new = _snap_sec(["x"], {"parametrics": [{"title": "Type of Serial I/O Interfaces",
+                                             "url": "", "meta": "UART, SPI, I²C, I²S"}]})
+    assert cmp.library_diff(old, new)["changed"] is False
+
+
+def test_a_list_that_gains_an_item_or_a_reworded_sentence_still_flags():
+    assert _cmp(["UART, SPI, I2C"], ["UART, SPI, I2C, CAN"])["text_changed"] is True
+    # a sentence with commas is not a list and is never rearranged
+    assert _cmp(["With the new kit, engineers can start fast, and test early."],
+                ["With the new kit, engineers can test early, and start fast."]
+                )["text_changed"] is True

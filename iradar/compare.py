@@ -1,5 +1,6 @@
 """Snapshot comparison: text diff, image inventory diff, screenshot pixel diff."""
 import difflib
+import html
 import json
 import re
 from collections import Counter
@@ -45,12 +46,38 @@ def _drop_position_labels(lines):
     return [l for i, l in enumerate(lines) if i not in drop] if drop else lines
 
 
+_LIST_PART_MAX = 40
+
+
+def _canon_line(line):
+    """A line as compared, not as shown.
+
+    - HTML codes count as the character they stand for: Infineon's partner
+      data printed "Health and&nbsp;lifestyle" on 343 pages, which is the
+      same text as "Health and lifestyle", only typed badly.
+    - Runs of whitespace (the non-breaking space included) are one space.
+    - A short list in a new order is the same list. "I²S, I²C, SPI, UART"
+      and "UART, SPI, I²C, I²S" name the same four interfaces; a parameter
+      value reshuffled is not an edit, the same as a moved line is not.
+      Only list-like lines qualify: two or more short, comma-separated
+      parts, so a sentence with commas in it is never rearranged.
+    """
+    line = re.sub(r"\s+", " ", html.unescape(line)).strip()
+    parts = [p.strip() for p in line.split(",")]
+    if (len(parts) >= 2 and not line.endswith((".", "!", "?", ":"))
+            and all(0 < len(p) <= _LIST_PART_MAX and len(p.split()) <= 5
+                    for p in parts)):
+        line = ", ".join(sorted(parts))
+    return line
+
+
 def _load_text_lines(snap_dir, ignore_patterns=None):
     p = Path(snap_dir) / "text.txt"
     if not p.exists():
         return []
     lines = _drop_position_labels(
         p.read_text(encoding="utf-8", errors="replace").splitlines())
+    lines = [_canon_line(l) for l in lines]
     if ignore_patterns:
         compiled = []
         for pat in ignore_patterns:
@@ -1365,6 +1392,12 @@ def _sections_pair(old_dir, new_dir):
             if isinstance(side.get(cat), list):
                 side[cat] = [dict(d, url="") if isinstance(d, dict) else d
                              for d in side[cat]]
+        # a parameter's value is read the way a text line is (_canon_line):
+        # the same items reshuffled, or an HTML code, is the same value
+        if isinstance(side.get("parametrics"), list):
+            side["parametrics"] = [
+                dict(d, meta=_canon_line(str(d.get("meta", ""))))
+                if isinstance(d, dict) else d for d in side["parametrics"]]
     # A section the old capture never had a NAME for was not read then - not
     # empty, unread. The Description pane joined the read in November 2026;
     # every page that carries one would otherwise report "Description added".
