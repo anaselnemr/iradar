@@ -852,6 +852,30 @@ def rebuild_items_fts(con=None):
             con.close()
 
 
+DOC_TYPE = "Gated document"
+
+
+def pause_document_pages(con):
+    """Gated documents are files behind a form, not pages: paused, never
+    flagged for an owner. Returns how many were newly paused."""
+    n = con.execute("UPDATE urls SET active=0 WHERE active=1 AND ptype=?",
+                    (DOC_TYPE,)).rowcount
+    con.execute("UPDATE urls SET meta_flag='' WHERE ptype=?", (DOC_TYPE,))
+    return n
+
+
+def pause_gone_pages(con):
+    """Pause every page the site has taken down (confirmed 404/410) and clear
+    its ownership flag: a page that no longer exists needs no BL/PL and should
+    not take a capture slot. Returns how many were newly paused. The page keeps
+    its history and any unreviewed "removed" update."""
+    gone = ("last_status='notlive' AND last_http IN (404, 410)")
+    n = con.execute("UPDATE urls SET active=0 WHERE active=1 AND " + gone).rowcount
+    con.execute("UPDATE urls SET meta_flag='' WHERE IFNULL(meta_flag,'')<>''"
+                " AND " + gone)
+    return n
+
+
 def add_urls(url_list):
     """Insert URLs, ignoring duplicates. Returns (added, skipped)."""
     return add_urls_labeled([(u, "") for u in url_list])
@@ -921,7 +945,9 @@ def ptype_for_url(u):
                       ("/application/", "Application"),
                       ("/design-resources/", "Design resources"),
                       ("/design-support/", "Design resources"),
-                      ("/gated/", "Promo"), ("/document-promo/", "Promo"),
+                      # a gated/document-promo address is a document behind
+                      # a form, not a page anyone maintains: its own type
+                      ("/gated/", DOC_TYPE), ("/document-promo/", DOC_TYPE),
                       ("/promo", "Promo")):
         if path.startswith(prefix):
             return t

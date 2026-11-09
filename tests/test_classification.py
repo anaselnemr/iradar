@@ -21,7 +21,7 @@ def test_ptype_from_url_shape():
         "https://www.infineon.com/application/coffee-machines": "Application",
         "https://www.infineon.com/design-resources/development-tools": "Design resources",
         "https://softwaretools.infineon.com/tools/com.ifx.x": "Design resources",
-        "https://www.infineon.com/gated/infineon-whitepaper": "Promo",
+        "https://www.infineon.com/gated/infineon-whitepaper": "Gated document",
     }
     for url, want in cases.items():
         got = db.ptype_for_url(url)

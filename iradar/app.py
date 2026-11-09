@@ -1365,7 +1365,8 @@ TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
                  269, 244, 278, 298, 535, 193, 194, 4233)
 
 STATUS_FILTERS = {
-    "metaflag":  ("⚠ Ownership flagged", "IFNULL(u.meta_flag,'')<>''"),
+    "metaflag":  ("⚠ Ownership flagged", "IFNULL(u.meta_flag,'')<>''"
+                  " AND IFNULL(u.last_status,'')<>'notlive'"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     # every page with an update nobody has reviewed yet, WHATEVER its status
     # now: a page that went 404 carries its "removed" update as "Not live",
@@ -1745,7 +1746,8 @@ _LEVEL_TYPES = ("PC", "PFP", "PSFP", "PEFP", "ADP", "AOP", "ASP", "AFB",
 ETYPE_ORDER = ["HOME", "PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
                "DRC", "DRF", "DRSF",
                "ADP", "AOP", "ASP", "AFB",
-               "Product", "Application", "Design resources", "Promo"]
+               "Product", "Application", "Design resources", "Promo",
+               "Gated document"]
 
 
 def _etype(ptype, url, level=""):
@@ -5955,7 +5957,7 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=()):
     out.update({"t_" + t: 0 for t in
                 ("Products & Eval Boards", "PTP", "EB", *PRODUCT_LEVELS,
                  *APP_LEVELS, *DR_LEVELS, "Product", "Part", "Application",
-                 "Design resources", "Promo", "Home")})
+                 "Design resources", "Promo", "Gated document", "Home")})
     # statuses and the urls-only attributes: one SUM(CASE) pass each
     for skip, filters, prefix in (("status", STATUS_FILTERS, "s_"),
                                   ("attr", ATTR_FILTERS, "a_")):

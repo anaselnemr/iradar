@@ -1195,6 +1195,12 @@ def _run_check_inner(kind, url_ids, baseline=False):
                     " WHERE id=?",
                     (db.now_iso(), ok, changed, errors, run_id))
         db.finish_run_counts(con, run_id)
+        # a page the site has taken down stops costing a capture slot and
+        # stops asking for an owner: paused, its ownership flag cleared
+        gone = db.pause_gone_pages(con) + db.pause_document_pages(con)
+        if gone:
+            print(f"[run] {gone} taken-down / document page(s) paused",
+                  flush=True)
     con.commit()
     con.close()
 
