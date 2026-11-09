@@ -943,6 +943,15 @@ def reschedule():
 
     scheduler.add_job(_scheduled_check, trigger, id="check",
                       replace_existing=True, misfire_grace_time=3600 * 6)
+    # Friday's review reminder runs on the server's own clock too. It lived in
+    # a GitHub workflow while the app slept on Railway; the server is always
+    # up now, and the workflow needed secrets only one repository held.
+    # _queue_reminder judges the hour and sends at most once per Friday, so a
+    # leftover GitHub call on the same morning is a no-op.
+    scheduler.add_job(_queue_reminder, CronTrigger(
+        day_of_week=REMIND_WEEKDAY, hour=REMIND_HOUR, minute=5,
+        timezone=_DISPLAY_ZONE), id="remind", replace_existing=True,
+        misfire_grace_time=3600 * 6)
 
 
 def _scheduled_check(_retry=0):
