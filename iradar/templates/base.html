@@ -1244,7 +1244,7 @@
         the account menu with the person it belongs to. Settings and Manage
         people are admin-only, so an editor was being shown two doors that
         answer 403. -#}
-    {% set REPORTS = ['hierarchy', 'export_builder', 'history', 'sentiment_page'] %}
+    {% set REPORTS = ['hierarchy', 'charts_page', 'export_builder', 'history', 'sentiment_page'] %}
     {% for ep, label in (('index', 'Dashboard'), ('search_items', 'Content'),
                          ('notes_page', 'Notes')) %}
     <a href="{{ url_for(ep) }}"
@@ -1257,6 +1257,8 @@
       <div class="panel">
         <a href="{{ url_for('hierarchy') }}">Hierarchy
           <span>the whole site as a tree</span></a>
+        <a href="{{ url_for('charts_page') }}">Charts
+          <span>how complete each page type is</span></a>
         <a href="{{ url_for('export_builder') }}">Export
           <span>any of it as a spreadsheet</span></a>
         <a href="{{ url_for('history') }}">Run history

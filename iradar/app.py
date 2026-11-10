@@ -8432,6 +8432,94 @@ def export_copy_limits():
     return send_file(out, as_attachment=True, download_name=name)
 
 
+# ---------------------------------------------------------------- charts
+# Completion charts per page type, built from the live data on every view
+# (cached until the next run or edit), so the page never shows a stale export.
+# Only PTPs for now; each page type gets its own tab when its charts exist.
+CHART_TYPES = [("ptp", "PTP")]
+KEY_COMPONENTS = ["Hero image", "Description", "Subheadline", "Key features",
+                  "Benefits", "Applications", "Parametrics"]
+_CHARTS_CACHE = {}
+
+
+def _charts_ptp_data(con):
+    """{asOf, components, keyComponents, keyNote, pls:[{pl,label,bl,ptps,have,allKey,bits}]}
+    for every live PTP with a BL and PL. A component counts only when it has
+    content: a placeholder hero image or an empty block is missing."""
+    sig = (con.execute("SELECT IFNULL(MAX(id),0) FROM runs").fetchone()[0],
+           con.execute("SELECT COUNT(*), IFNULL(SUM(length(bl)+length(pl)),0),"
+                       " IFNULL(MAX(last_checked),'') FROM urls WHERE level='PTP'")
+           .fetchone()[:])
+    hit = _CHARTS_CACHE.get("ptp")
+    if hit and hit[0] == sig:
+        return hit[1]
+    matrix = _effective_matrix(con).get("PTP", set())
+    registry = [(k, l) for k, l, _kd, _a in _all_components() if k in matrix]
+    keys = [k for k, _l in registry]
+    labels = [l for _k, l in registry]
+    meta = {r["id"]: (r["bl"] or "", r["pl"] or "") for r in con.execute(
+        "SELECT id, bl, pl FROM urls WHERE active=1 AND level='PTP'"
+        " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error','')"
+        " AND IFNULL(bl,'')<>'' AND IFNULL(pl,'')<>'' AND instr(pl,'/')=0")}
+    rows, _wm, wc, _wp = _export_rows(con, None, keys, ids=list(meta))
+    pls = {}
+    for r in rows:
+        bl, pl = meta[r["id"]]
+        got = dict(zip(wc, r["vals"]))
+        p = pls.setdefault(pl, {"pl": pl, "label": pl_label(pl), "bl": bl, "ptps": 0,
+                                "have": {l: 0 for l in labels}, "allKey": 0, "bits": []})
+        p["ptps"] += 1
+        bits = 0
+        for i, (k, l) in enumerate(registry):
+            if got.get(k) == "yes":
+                p["have"][l] += 1
+                bits |= 1 << i
+        p["bits"].append(bits)
+        if all(got.get(k) == "yes" for k, l in registry if l in KEY_COMPONENTS):
+            p["allKey"] += 1
+    last = con.execute("SELECT finished FROM runs WHERE finished IS NOT NULL"
+                       " ORDER BY id DESC LIMIT 1").fetchone()
+    try:
+        d = datetime.strptime(last[0][:10], "%Y-%m-%d")
+        as_of = f"{d.day} {d:%b %Y}"
+    except Exception:
+        as_of = datetime.now(timezone.utc).strftime("%d %b %Y")
+    data = {"asOf": as_of, "components": labels,
+            "keyComponents": [c for c in KEY_COMPONENTS if c in labels],
+            "keyNote": {"Hero image": ["Real image", "Placeholder image"],
+                        "Description": ["Description tab", "No description tab"]},
+            "pls": sorted(pls.values(), key=lambda p: (p["bl"], int(p["pl"]) if p["pl"].isdigit() else 999))}
+    _CHARTS_CACHE["ptp"] = (sig, data)
+    return data
+
+
+@app.route("/charts")
+@app.route("/charts/<kind>")
+def charts_page(kind="ptp"):
+    if kind not in dict(CHART_TYPES):
+        abort(404)
+    return render_template("charts.html", kind=kind, chart_types=CHART_TYPES)
+
+
+@app.route("/charts/<kind>/frame")
+def charts_frame(kind):
+    """The chart workspace itself, shown inside the Charts page. Its own
+    document, so its styles and downloads never touch the app's."""
+    if kind != "ptp":
+        abort(404)
+    con = db.connect()
+    try:
+        data = _charts_ptp_data(con)
+    finally:
+        con.close()
+    raw = (Path(app.root_path) / "templates" / "charts_ptp_frame.html").read_text(encoding="utf-8")
+    payload = json.dumps(data, separators=(",", ":")).replace("</", "<\/")
+    resp = app.response_class(raw.replace("__CHARTS_DATA__", payload, 1), mimetype="text/html")
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/history")
 def history():
     con = db.connect()

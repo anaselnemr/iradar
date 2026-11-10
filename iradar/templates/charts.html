@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Charts — iRadar{% endblock %}
+{% block content %}
+<style>
+  .chtabs { display:flex; gap:4px; border-bottom:1px solid var(--line, #e5e7eb); margin:0 0 4px; overflow-x:auto; }
+  .chtabs a { padding:8px 14px; text-decoration:none; color:inherit; opacity:.7; border-bottom:2px solid transparent; white-space:nowrap; font-weight:600; }
+  .chtabs a.on { opacity:1; border-bottom-color:currentColor; }
+  .chframe { width:100%; border:0; display:block; min-height:900px; background:transparent; }
+</style>
+<div class="card" style="padding-bottom:0">
+  <h1 style="margin-bottom:10px">Charts</h1>
+  <nav class="chtabs" aria-label="Page type">
+    {% for k, label in chart_types %}
+    <a href="{{ url_for('charts_page', kind=k) }}" class="{{ 'on' if k == kind }}"
+       {% if k == kind %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <iframe class="chframe" id="chframe" title="{{ dict(chart_types)[kind] }} charts"
+          src="{{ url_for('charts_frame', kind=kind) }}"></iframe>
+</div>
+<script>
+(function () {
+  // grow the frame to its content, so the page scrolls as one document
+  var f = document.getElementById('chframe');
+  function fit() {
+    try { var d = f.contentDocument; if (!d) return;
+      f.style.height = Math.max(d.documentElement.scrollHeight, d.body.scrollHeight) + 'px'; } catch (e) {}
+  }
+  f.addEventListener('load', function () {
+    fit();
+    try { new ResizeObserver(fit).observe(f.contentDocument.body); } catch (e) { setInterval(fit, 800); }
+  });
+})();
+</script>
+{% endblock %}

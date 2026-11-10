@@ -2544,3 +2544,25 @@ def test_the_app_holds_itself_awake_only_while_a_check_is_running():
             os.environ.pop("PUBLIC_URL", None)
         else:
             os.environ["PUBLIC_URL"] = old_pub
+
+
+def test_charts_page_frames_the_ptp_charts_with_live_data():
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("UPDATE urls SET level='PTP'")
+    con.commit()
+    con.close()
+    page = _client.get("/charts")
+    assert page.status_code == 200
+    assert b"/charts/ptp/frame" in page.data
+    r = _client.get("/charts/ptp/frame")
+    assert r.status_code == 200
+    assert r.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    body = r.data.decode("utf-8")
+    assert "__CHARTS_DATA__" not in body
+    import json as _j, re as _r
+    data = _j.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
+    assert {p["pl"] for p in data["pls"]} == {"81", "92"}
+    assert sum(p["ptps"] for p in data["pls"]) == 3
+    assert all(len(p["bits"]) == p["ptps"] for p in data["pls"])
+    assert _client.get("/charts/nope").status_code == 404
