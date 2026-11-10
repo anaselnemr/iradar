@@ -30,7 +30,7 @@
  <header>
   <div class="masthead"><div class="brand"></div><button id="theme" class="theme-button" aria-label="Switch page theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg><span>Dark</span></button></div>
   <div class="page-heading"><h1>PTP completion</h1><div class="stats"><div class="stat"><strong id="stat-ptps"></strong><span>Live PTPs</span></div><div class="stat"><strong id="stat-completion"></strong><span>Components in place</span></div><div class="stat"><strong id="stat-pls">14</strong><span>Product lines</span></div></div></div>
-  <nav aria-label="Chart sections"><a href="#key-components">Key components</a><a href="#heatmap">Heatmap</a><a href="#overview">Overview</a><a href="#business-lines">Business lines</a><a href="#product-lines">Product lines</a><a href="#components">Components</a></nav>
+  <nav aria-label="Chart sections"><a href="#key-components">Key components</a><a href="#heatmap">Heatmap</a><a href="#business-lines">Business lines</a><a href="#product-lines">Product lines</a><a href="#components">Components</a></nav>
  </header>
  <div class="shared-filters">
  <details id="component-picker" open aria-label="Components"><summary class="picker-heading"><span>Components</span><div class="quick-buttons"><button type="button" data-preset="key">Key 7</button><button type="button" data-preset="all">All 17</button></div></summary><div class="component-chips"></div></details>
@@ -272,6 +272,7 @@ applyTheme();
 <style>
   html.embedded main { max-width: none; padding: 14px 4px 28px; }
   html.embedded, html.embedded body { overflow: hidden; }
+  #overview { display: none !important; }
   html.tabbed nav a:first-child { border-bottom: 2px solid transparent; color: var(--muted); }
   html.tabbed nav a.on { border-bottom: 2px solid var(--accent); color: var(--ink); }
   html.tabbed main > section[id], html.tabbed main > article#heatmap { margin-top: 8px !important; }
