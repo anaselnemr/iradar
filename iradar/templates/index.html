@@ -114,7 +114,12 @@
     <a class="report-stat" href="{{ url_for('index', status='paused') }}" title="Pages excluded from automatic and full manual checks. They stay in the inventory and can be resumed.">
       <div class="n" style="color:var(--muted)">{{ '{:,}'.format(counts.paused or 0) }}</div>
       <div class="l">Paused</div>
-      <div class="detail">{{ counts.paused_blank or 0 }} blank · {{ counts.paused_offline or 0 }} offline{% set other_paused = (counts.paused or 0) - (counts.paused_blank or 0) - (counts.paused_offline or 0) %}{% if other_paused %} · {{ other_paused }} other{% endif %}</div>
+      {%- set other_paused = (counts.paused or 0) - (counts.paused_blank or 0) - (counts.paused_offline or 0) %}
+      {%- set bits = [] %}
+      {%- if counts.paused_offline %}{% set _ = bits.append('{:,}'.format(counts.paused_offline) ~ ' offline') %}{% endif %}
+      {%- if counts.paused_blank %}{% set _ = bits.append('{:,}'.format(counts.paused_blank) ~ ' blank') %}{% endif %}
+      {%- if other_paused %}{% set _ = bits.append('{:,}'.format(other_paused) ~ ' other') %}{% endif %}
+      <div class="detail">{{ bits|join(' · ') if bits else 'none paused' }}</div>
     </a>
   </div>
 
