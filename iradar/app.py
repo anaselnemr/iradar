@@ -1365,7 +1365,7 @@ TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
                  269, 244, 278, 298, 535, 193, 194, 4233)
 
 STATUS_FILTERS = {
-    "metaflag":  ("⚠ Ownership flagged", "IFNULL(u.meta_flag,'')<>''"
+    "metaflag":  ("⚠ Ownership check", "IFNULL(u.meta_flag,'')<>''"
                   " AND u.active=1"),
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     # every page with an update nobody has reviewed yet, WHATEVER its status
@@ -2301,7 +2301,7 @@ def index():
          "n": status_counts["new"]},
         {"kind": "status", "vals": ["paused"], "label": "Paused",
          "n": status_counts["paused"]},
-        {"kind": "status", "vals": ["metaflag"], "label": "Ownership flagged",
+        {"kind": "status", "vals": ["metaflag"], "label": "Ownership check",
          "n": status_counts["metaflag"], "tone": "warn"},
     ) if c["n"] or c.get("always")]
     # A chip is one more filter, not a fresh start. It used to link to

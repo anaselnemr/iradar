@@ -399,7 +399,7 @@
       <li><b>Not captured</b> — added but never successfully read yet, so there
         is nothing to compare against. It gets its first reading next check.</li>
       <li><b>Paused</b> — deliberately skipped. Still listed, not checked.</li>
-      <li><b>Ownership flagged</b> — the page's BL or PL could not be confirmed:
+      <li><b>Ownership check</b> — the page's BL or PL could not be confirmed:
         infineon.com gives no product line for it, or the line is not on the
         current ES chart. Flagged for a human to fill in.</li>
     </ul>
@@ -570,7 +570,7 @@
         has one (parts, boards, families, product tables) and the BL from the
         ES org chart. It is our bookkeeping, so editing it never raises an
         update — and a page with no source for its BL or PL is flagged
-        <i>Ownership flagged</i> rather than guessed.</li>
+        <i>Ownership check</i> rather than guessed.</li>
     </ul>
     <p>So an update on one page tells you who to tell (its owners), and the
       item behind it tells you how far the change reaches (its other pages).</p>
@@ -882,7 +882,7 @@
       <li><b>Pages carry who owns them</b> — BL, PL, CM and the marketing owner,
         shown on the page, filterable on the Dashboard and available as export
         columns. A page with
-        no source for its BL or PL is flagged <i>Ownership flagged</i> for
+        no source for its BL or PL is marked <i>Ownership check</i> for
         somebody to settle, never guessed.</li>
       <li><b>Which parts a page has is tracked too</b> — whether it carries a
         documents section, a video block, a partner list. Filter the Dashboard
