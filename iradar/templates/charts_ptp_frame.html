@@ -40,7 +40,7 @@
  <article style="margin-top:34px" id="heatmap" class="card">
   <div class="card-head"><h2 class="chart-title" contenteditable="plaintext-only" spellcheck="false" aria-label="Heatmap chart title">Components by product line</h2><div class="card-actions"><button data-export="png" data-card="heatmap" aria-label="Download heatmap PNG">PNG ↓</button><button data-export="svg" data-card="heatmap" aria-label="Download heatmap SVG">SVG ↓</button></div></div>
   <div class="toolbar">
-   <label class="control-label">Cell value<select id="metric"><option value="percent">% with it</option><option value="have">PTPs with it</option><option value="missing">PTPs missing it</option><option value="missingPercent">% missing</option></select></label>
+   <label class="control-label">Cell value<select id="metric"><option value="both">PTPs and %</option><option value="percent">% with it</option><option value="have">PTPs with it</option><option value="missing">PTPs missing it</option><option value="missingPercent">% missing</option></select></label>
    <label class="control-label">Row order<select id="order"><option value="desc">Most complete first</option><option value="asc">Least complete first</option><option value="page">Page order</option></select></label>
    <button id="choose-pl">Product lines · 14</button><span class="spacer"></span>
    <div class="export-settings"><label class="toggle"><input id="group" type="checkbox" checked>Group by BL</label><label class="control-label">Hue<input id="hue" type="color" value="#087e8b" aria-label="Chart accent hue"></label><label class="control-label">Export<select id="export-theme" aria-label="Export background"><option value="light">Light</option><option value="dark">Dark</option></select></label></div>
@@ -85,13 +85,15 @@ function heatmap(dark=false){
  const p=palette(dark),pls=activePLs(), grouped=$('#group').checked,rows=DATA.components.filter(c=>selectedComponents.has(c));
  const numerator=c=>sum(pls,p=>p.have[c]);if($('#order').value!=='page')rows.sort((a,b)=>($('#order').value==='desc'?-1:1)*(numerator(a)-numerator(b)));
  rows.push('All of the above');
- const w=1240,left=184,right=12,top=grouped?79:49,rowH=34,gap=3,groupGap=grouped?10:3, usable=w-left-right;
+ const both=$('#metric').value==='both',w=1240,left=184,right=12,top=grouped?93:63,rowH=both?44:34,gap=3,groupGap=grouped?10:3, usable=w-left-right;
  if(!pls.length)return svgRoot(w,150,text(w/2,80,!pls.length?'No product lines selected':'No components selected',{anchor:'middle',fill:p.muted,size:16}),p,'Component completion heatmap');
  const gaps=pls.slice(1).map((pl,i)=>grouped&&pl.bl!==pls[i].bl?groupGap:gap),cw=(usable-sum(gaps,x=>x))/pls.length;
  let x=left,coords=pls.map((pl,i)=>{let v=x;x+=cw+(gaps[i]||0);return v;});let body='';
  if(grouped)BLS.forEach(bl=>{let ix=pls.map((p,i)=>p.bl===bl?i:-1).filter(i=>i>=0);if(!ix.length)return;let start=coords[ix[0]],end=coords[ix.at(-1)]+cw;body+=text((start+end)/2,23,bl,{fill:p.ink,size:12,weight:650,anchor:'middle'});body+=line(start,35,end,35,p.line);});
- pls.forEach((pl,i)=>{body+=text(coords[i]+cw/2,grouped?59:29,pl.label,{fill:p.muted,size:11,anchor:'middle'});});
- rows.forEach((c,j)=>{let y=top+j*rowH+(c==='All of the above'?14:0);if(c==='All of the above')body+=line(12,y-8,w-12,y-8,p.line);body+=text(left-15,y+19,c,{fill:p.ink,size:12,anchor:'end'});pls.forEach((pl,i)=>{let have=c==='All of the above'?allCount([pl]):pl.have[c],ratio=have/pl.ptps,v=['missing','missingPercent'].includes($('#metric').value)?1-ratio:ratio,value=metricValue(have,pl.ptps);body+=`<g ${tipAttr([value,`${fmt(have)} of ${fmt(pl.ptps)} PTPs`,`${fmt(pl.ptps-have)} missing`,`${c} · ${pl.label}`])}><rect x="${coords[i]}" y="${y}" width="${cw}" height="${rowH-3}" rx="3" fill="${magnitude(v)}"/>${text(coords[i]+cw/2,y+19,value,{fill:cellInk(v),size:11,anchor:'middle',extra:'style="font-variant-numeric:tabular-nums"'})}</g>`;});});
+ const tab='style="font-variant-numeric:tabular-nums"';
+ pls.forEach((pl,i)=>{let ly=grouped?59:29;body+=text(coords[i]+cw/2,ly,pl.label,{fill:p.muted,size:11,anchor:'middle'});body+=text(coords[i]+cw/2,ly+15,fmt(pl.ptps)+' PTPs',{fill:p.ink,size:11,weight:600,anchor:'middle',extra:tab});});
+ const mid=Math.round((rowH-3)/2+4);
+ rows.forEach((c,j)=>{let y=top+j*rowH+(c==='All of the above'?14:0);if(c==='All of the above')body+=line(12,y-8,w-12,y-8,p.line);body+=text(left-15,y+mid,c,{fill:p.ink,size:12,anchor:'end'});pls.forEach((pl,i)=>{let have=c==='All of the above'?allCount([pl]):pl.have[c],ratio=have/pl.ptps,v=['missing','missingPercent'].includes($('#metric').value)?1-ratio:ratio,cx=coords[i]+cw/2,ink=cellInk(v),value=both?`${fmt(have)} · ${Math.round(ratio*100)}%`:metricValue(have,pl.ptps),cell=both?text(cx,y+18,fmt(have),{fill:ink,size:12,weight:650,anchor:'middle',extra:tab})+text(cx,y+33,Math.round(ratio*100)+'%',{fill:ink,size:10,anchor:'middle',extra:tab}):text(cx,y+mid,value,{fill:ink,size:11,anchor:'middle',extra:tab});body+=`<g ${tipAttr([value,`${fmt(have)} of ${fmt(pl.ptps)} PTPs`,`${fmt(pl.ptps-have)} missing`,`${c} · ${pl.label}`])}><rect x="${coords[i]}" y="${y}" width="${cw}" height="${rowH-3}" rx="3" fill="${magnitude(v)}"/>${cell}</g>`;});});
  return svgRoot(w,top+rows.length*rowH+21,body,p,'Component completion by product line');
 }
 function completion(pls,label,group){let n=sum(pls,p=>p.ptps)*selectedComponents.size,h=sum(pls,p=>sum(activeComponents(),c=>p.have[c]));return {label,group,value:n?h/n:0,have:h,total:n,unit:'components'};}
