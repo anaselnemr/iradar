@@ -343,7 +343,8 @@
         third of pages carry no BL, and a filter that silently hid them would
         be answering a different question. -#}
     {% for dim, opts, sel, name in [("Business line", bls, sel_bl, "bl"),
-                                    ("Product line", pls, sel_pl, "pl")] %}
+                                    ("Product line", pls, sel_pl, "pl"),
+                                    ("Segment", segs, sel_seg, "seg")] %}
     {% if opts|length > 1 %}
     <details class="dd" name="filters">
       <summary>{{ dim }}{% if sel %}<span class="fbadge">{{ sel|length }}</span>{% endif %}</summary>
@@ -458,6 +459,7 @@
     {% for t in sel_types %}<input type="hidden" name="ptype" value="{{ t }}">{% endfor %}
     {% for b in sel_bl %}<input type="hidden" name="bl" value="{{ b }}">{% endfor %}
     {% for l in sel_pl %}<input type="hidden" name="pl" value="{{ l }}">{% endfor %}
+    {% for g in sel_seg %}<input type="hidden" name="seg" value="{{ g }}">{% endfor %}
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>

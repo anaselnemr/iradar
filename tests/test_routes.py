@@ -657,6 +657,24 @@ def test_unassigned_pages_can_be_asked_for_rather_than_hidden():
     assert _ids(w, p) == ["d"]
 
 
+def test_segment_filter_narrows_like_bl_and_pl():
+    """Application pages carry a segment (C3 / A / I2) instead of a BL/PL."""
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("UPDATE urls SET segment='C3' WHERE url LIKE '%/a' OR url LIKE '%/b'")
+    con.execute("UPDATE urls SET segment='I2' WHERE url LIKE '%/c'")
+    con.commit()
+    con.close()
+    w, p = app._url_filter("", [], [], [], segs=["C3"])
+    assert _ids(w, p) == ["a", "b"]
+    w, p = app._url_filter("", [], [], [], segs=["C3", "I2"])
+    assert _ids(w, p) == ["a", "b", "c"], "two segments must mean either"
+    w, p = app._url_filter("", [], [], [], pls=["81"], segs=["C3"])
+    assert _ids(w, p) == ["a"]
+    w, p = app._url_filter("", [], [], [], segs=[app._UNASSIGNED])
+    assert _ids(w, p) == ["d"]
+
+
 def test_an_unfiltered_list_still_holds_everything():
     _pages_with_owners()
     w, p = app._url_filter("", [], [], [])

@@ -1988,7 +1988,7 @@ def _dash_order(sort):
     return _DASH_ORDER.get(sort, _DASH_ORDER["page"])
 
 
-def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=()):
+def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
 
     bl and pl are their own dimensions rather than attributes, because they
@@ -2051,7 +2051,7 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=()):
     # A page with no BL at all is not "some other BL" - it is unassigned, and
     # on a third of pages that is the honest answer. Ticking (none) asks for
     # exactly those, so the filter can never quietly hide them.
-    for vals, col in ((bls, "bl"), (pls, "pl")):
+    for vals, col in ((bls, "bl"), (pls, "pl"), (segs, "segment")):
         vals = [v for v in vals if v]
         if not vals:
             continue
@@ -2142,6 +2142,7 @@ def index():
     sel_types = request.args.getlist("ptype")
     sel_bl = request.args.getlist("bl")
     sel_pl = request.args.getlist("pl")
+    sel_seg = request.args.getlist("seg")
     attrs = [a for a in request.args.getlist("attr") if a in ATTR_FILTERS]
     sort = request.args.get("sort", "page")
     # Sort by page ADDRESS, not title: the URL is the site's own path, so
@@ -2162,7 +2163,8 @@ def index():
     except ValueError:
         page = 1
 
-    wsql, params = _url_filter(q, statuses, sel_types, attrs, sel_bl, sel_pl)
+    wsql, params = _url_filter(q, statuses, sel_types, attrs, sel_bl, sel_pl,
+                               sel_seg)
 
     con = db.connect()
     total_match = con.execute(
@@ -2259,6 +2261,7 @@ def index():
     cat_pages, vid_pages, status_counts, attr_counts = _dash_counts(con)
     # read while this connection is still open - it closes on the next line
     bl_opts, pl_opts = _owner_values(con, "bl"), _owner_values(con, "pl")
+    seg_opts = _owner_values(con, "segment")
     con.close()
     con2 = db.connect()
     # content/component has/no counts come from cat_pages: has = pages with the
@@ -2326,7 +2329,7 @@ def index():
     # pages are in that state, not how many are left after the other filters.
     try:
         facets = _dash_facets(con2, q, statuses, sel_types, attrs,
-                              sel_bl, sel_pl)
+                              sel_bl, sel_pl, sel_seg)
     finally:
         con2.close()
     con3 = db.connect()
@@ -2349,8 +2352,8 @@ def index():
                            pages_delta=pages_delta,
                            offline_delta=offline_delta,
                            facets=facets,
-                           bls=bl_opts, pls=pl_opts,
-                           sel_bl=sel_bl, sel_pl=sel_pl,
+                           bls=bl_opts, pls=pl_opts, segs=seg_opts,
+                           sel_bl=sel_bl, sel_pl=sel_pl, sel_seg=sel_seg,
                            unassigned=_UNASSIGNED,
                            last_run=last_run, total_open=total_open,
                            next_run=next_run_text(), settings=db.get_settings(),
@@ -2389,7 +2392,8 @@ def urls_bulk():
                                    request.form.getlist("ptype"),
                                    request.form.getlist("attr"),
                                    request.form.getlist("bl"),
-                                   request.form.getlist("pl"))
+                                   request.form.getlist("pl"),
+                                   request.form.getlist("seg"))
         con0 = db.connect()
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
@@ -5958,7 +5962,7 @@ def _dash_counts(con):
     return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
 
 
-def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=()):
+def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
     """What each filter option would still be worth, given the others.
 
     Faceted, not flat: a dimension is narrowed by the OTHER dimensions and
@@ -5975,7 +5979,8 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=()):
                            [] if skip == "type" else ptypes,
                            [] if skip == "attr" else attrs,
                            () if skip == "owner" else bls,
-                           () if skip == "owner" else pls)
+                           () if skip == "owner" else pls,
+                           () if skip == "owner" else segs)
 
     out = {"s_" + k: 0 for k in STATUS_FILTERS}
     out.update({"a_" + k: 0 for k in ATTR_FILTERS})
@@ -6056,7 +6061,9 @@ def urls_range():
             request.args.get("q", "").strip(),
             [x for x in request.args.getlist("status") if x in STATUS_FILTERS],
             request.args.getlist("ptype"),
-            [x for x in request.args.getlist("attr") if x in ATTR_FILTERS])
+            [x for x in request.args.getlist("attr") if x in ATTR_FILTERS],
+            request.args.getlist("bl"), request.args.getlist("pl"),
+            request.args.getlist("seg"))
         order = _dash_order(request.args.get("sort", "page"))
         rows = con.execute(
             "SELECT u.id FROM urls u " + where + " ORDER BY " + order
@@ -6076,7 +6083,8 @@ def dash_avail():
             [s for s in request.args.getlist("status") if s in STATUS_FILTERS],
             request.args.getlist("ptype"),
             [a for a in request.args.getlist("attr") if a in ATTR_FILTERS],
-            request.args.getlist("bl"), request.args.getlist("pl"))
+            request.args.getlist("bl"), request.args.getlist("pl"),
+            request.args.getlist("seg"))
     finally:
         con.close()
     return jsonify(data)
@@ -7181,7 +7189,8 @@ def _wanted_ids():
                                    request.form.getlist("ptype"),
                                    request.form.getlist("attr"),
                                    request.form.getlist("bl"),
-                                   request.form.getlist("pl"))
+                                   request.form.getlist("pl"),
+                                   request.form.getlist("seg"))
         con = db.connect()
         try:
             return [r["id"] for r in
