@@ -63,6 +63,9 @@
     .report-choice input { margin:0; }
     /* seven figures do not divide by four, three or two: the last one takes
        the slack so the grid never ends in a hole */
+    /* the Paused note is the longest line in the row: a touch smaller on the
+       seven-across layout so it never breaks onto a second line */
+    @media (min-width:1101px) { .report-stat:last-child .detail { font-size:10.5px; } }
     @media (max-width:1100px) { .report-stat:last-child { grid-column:span 2; } }
     @media (max-width:760px)  { .report-stat:last-child { grid-column:span 3; } }
     @media (max-width:520px)  { .report-stat:last-child { grid-column:span 2; } }
