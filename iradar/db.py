@@ -594,6 +594,9 @@ def init_db():
     # warning (e.g. a PTP whose PL disagrees with its product family's).
     for _c in ("bl", "pl", "cm", "owner", "meta_flag"):
         _ensure_column(con, "urls", _c, "TEXT DEFAULT ''")
+    # Application pages carry the Infineon segment that leads them (C3, A,
+    # I2) from the ES application list, in place of a BL/PL they never have
+    _ensure_column(con, "urls", "segment", "TEXT DEFAULT ''")
     # the page's own section-nav = the authoritative list of components it
     # carries (JSON list); plus the Product-details sub-tabs and price text.
     # Which editorial limits this page's copy breaks, as a JSON list of short

@@ -3526,7 +3526,7 @@ def url_detail(url_id):
     # ownership fields to show/edit: the page type's set, plus any field that
     # carries an imported value even if not in the type's default set
     _mfields = list(META_FIELDS.get(u["ptype"], []))
-    for f in ("bl", "pl", "cm", "owner"):
+    for f in ("bl", "pl", "segment", "cm", "owner"):
         if (u[f] or "") and f not in _mfields:
             _mfields.append(f)
     notes, _n, n_open = _notes_for("page", url_id)
@@ -4764,7 +4764,8 @@ def url_set_level(url_id):
 # just CM. Design-resources / Home carry none unless a value was imported.
 # Just the names. Whoever reads this page knows what BL and PL are, and
 # spelling them out every time made the label longer than the value beside it.
-META_LABELS = {"bl": "BL", "pl": "PL", "cm": "CM", "owner": "Owner"}
+META_LABELS = {"bl": "BL", "pl": "PL", "segment": "Segment", "cm": "CM",
+               "owner": "Owner"}
 
 # The ES product lines by number, as the org chart (effective 1 Oct 2026)
 # names them. Only the label changes: the stored PL stays the bare number,
@@ -4791,7 +4792,7 @@ app.jinja_env.filters["pl_label"] = pl_label
 META_FIELDS = {
     "Product": ["bl", "pl", "cm", "owner"],
     "Part": ["bl", "pl"],
-    "Application": ["cm", "owner"],
+    "Application": ["segment", "cm", "owner"],
     "Promo": ["cm"],
 }
 
@@ -4905,7 +4906,7 @@ def url_set_meta(url_id):
     con = db.connect()
     if not con.execute("SELECT 1 FROM urls WHERE id=?", (url_id,)).fetchone():
         con.close(); abort(404)
-    for f in ("bl", "pl", "cm", "owner"):
+    for f in ("bl", "pl", "segment", "cm", "owner"):
         if f in request.form:
             con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
                         ((request.form.get(f) or "").strip()[:200], url_id))
@@ -6975,7 +6976,8 @@ def hierarchy():
 
 def _export_meta_cols():
     """The ownership columns, in the order the CSS report used."""
-    return [("bl", "BL"), ("pl", "PL"), ("cm", "CM"), ("owner", "Owner")]
+    return [("bl", "BL"), ("pl", "PL"), ("segment", "Segment"), ("cm", "CM"),
+            ("owner", "Owner")]
 
 
 # an Excel cell holds 32,767 characters; a page with two hundred documents can
@@ -7016,7 +7018,8 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
     want_page = [k for k, _l in PAGE_FIELDS if k in cols]
 
     cat_of = {k: a for k, _l, kind, a in registry if kind == "cat"}
-    q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.cm, u.owner,"
+    q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.segment, u.cm,"
+         " u.owner,"
          " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
          " u.last_checked, u.price, u.active,"
          " COALESCE(NULLIF(u.title_override,''),"
@@ -8105,7 +8108,7 @@ def export_xlsx():
 
     ws = wb.create_sheet("Pages")
     ws.append(["ID", "URL", "Name", "Page type", "Level", "Status", "HTTP",
-               "Last checked (UTC)", "BL", "PL", "CM", "Owner",
+               "Last checked (UTC)", "BL", "PL", "Segment", "CM", "Owner",
                "Text lines", "Image count"]
               + [label for _c, label in SECTION_LABELS]
               + comp_labels + ["Overview text"])
@@ -8170,7 +8173,7 @@ def export_xlsx():
         ws.append([u["id"], u["url"], u["label"] or "", u["ptype"] or "",
                    u["level"] or "", u["last_status"] or "", u["last_http"],
                    u["last_checked"] or "", u["bl"] or "", pl_label(u["pl"]),
-                   u["cm"] or "", u["owner"] or "",
+                   u["segment"] or "", u["cm"] or "", u["owner"] or "",
                    snap["text_lines"] if snap else 0,
                    snap["image_count"] if snap else 0]
                   + counts
@@ -8543,7 +8546,7 @@ def _normalize_urls():
                             (r["redirect_from"], twin["id"]))
             # the junk row may be the one the CSS report landed its ownership
             # on - carry it over, filling only what the keeper is missing
-            for f in ("bl", "pl", "cm", "owner"):
+            for f in ("bl", "pl", "segment", "cm", "owner"):
                 if (r[f] or "").strip() and not (twin[f] or "").strip():
                     con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
                                 (r[f], twin["id"]))

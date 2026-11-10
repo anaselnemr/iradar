@@ -114,9 +114,9 @@ def _follow_redirect(con, url_id, old_url, final_url):
         # pages under their legacy address, so that is the only row carrying
         # BL/PL/CM/Owner. Move it to the keeper before the row goes, or the
         # report's ownership dies here and re-importing just recreates the row.
-        stale = con.execute("SELECT bl, pl, cm, owner FROM urls WHERE id=?",
-                            (url_id,)).fetchone()
-        for f in ("bl", "pl", "cm", "owner"):
+        stale = con.execute("SELECT bl, pl, segment, cm, owner FROM urls"
+                            " WHERE id=?", (url_id,)).fetchone()
+        for f in ("bl", "pl", "segment", "cm", "owner"):
             if (stale[f] or "").strip() and not (existing[f] or "").strip():
                 con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
                             (stale[f], existing["id"]))
