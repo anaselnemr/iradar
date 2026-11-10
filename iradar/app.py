@@ -4776,7 +4776,7 @@ META_LABELS = {"bl": "BL", "pl": "PL", "segment": "Segment", "cm": "CM",
 # so filters, imports and exports keep matching on it.
 PL_NAMES = {
     "80": "CDT", "81": "ESA",
-    "92": "MUC", "82": "WRLS", "91": "USB", "94": "UWB",
+    "92": "MUC", "30": "MUC", "82": "WRLS", "91": "USB", "94": "UWB",
     "38": "ACS", "41": "MAG", "42": "MAG", "44": "ENV",
     "55": "COM", "32": "RAD", "53": "MSI",
 }
