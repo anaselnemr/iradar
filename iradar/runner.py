@@ -1196,11 +1196,11 @@ def _run_check_inner(kind, url_ids, baseline=False):
                     (db.now_iso(), ok, changed, errors, run_id))
         db.finish_run_counts(con, run_id)
         # a page the site has taken down stays listed as Offline, flag and
-        # all (pausing it is a person's call); gated documents are files,
+        # all (pausing it is a person's call); document pages are files,
         # not pages, and are paused
         docs = db.pause_document_pages(con)
         if docs:
-            print(f"[run] {docs} gated document(s) paused", flush=True)
+            print(f"[run] {docs} document page(s) paused", flush=True)
     con.commit()
     con.close()
 

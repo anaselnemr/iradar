@@ -852,11 +852,11 @@ def rebuild_items_fts(con=None):
             con.close()
 
 
-DOC_TYPE = "Gated document"
+DOC_TYPE = "Document page"
 
 
 def pause_document_pages(con):
-    """Gated documents are files behind a form, not pages: paused, never
+    """Document pages (gated whitepapers etc.) are files behind a form, not pages: paused, never
     flagged for an owner. Returns how many were newly paused."""
     n = con.execute("UPDATE urls SET active=0 WHERE active=1 AND ptype=?",
                     (DOC_TYPE,)).rowcount

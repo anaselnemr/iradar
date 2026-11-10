@@ -1182,15 +1182,15 @@ def test_the_bar_bands_sum_to_the_total_mid_verify():
         "the five bands do not sum to the total"
 
 
-def test_gated_and_document_promo_urls_are_gated_documents_and_paused():
+def test_gated_and_document_promo_urls_are_document_pages_and_paused():
     _fresh_db()
-    assert db.ptype_for_url("https://www.infineon.com/gated/x-whitepaper-en_1") == "Gated document"
-    assert db.ptype_for_url("https://www.infineon.com/document-promo/y-whitepaper-en") == "Gated document"
+    assert db.ptype_for_url("https://www.infineon.com/gated/x-whitepaper-en_1") == "Document page"
+    assert db.ptype_for_url("https://www.infineon.com/document-promo/y-whitepaper-en") == "Document page"
     assert db.ptype_for_url("https://www.infineon.com/promo/60ghz") == "Promo"
     db.add_urls(["https://www.infineon.com/gated/x-whitepaper-en_1"])
     con = db.connect()
     con.execute("UPDATE urls SET meta_flag='No PL source'")
     assert db.pause_document_pages(con) == 1
     r = con.execute("SELECT ptype, active, meta_flag FROM urls").fetchone()
-    assert (r["ptype"], r["active"], r["meta_flag"]) == ("Gated document", 0, "")
+    assert (r["ptype"], r["active"], r["meta_flag"]) == ("Document page", 0, "")
     con.close()

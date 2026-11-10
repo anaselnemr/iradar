@@ -1747,7 +1747,7 @@ ETYPE_ORDER = ["HOME", "PC", "PFP", "PSFP", "PEFP", "PTP", "Evaluation board",
                "DRC", "DRF", "DRSF",
                "ADP", "AOP", "ASP", "AFB",
                "Product", "Application", "Design resources", "Promo",
-               "Gated document"]
+               "Document page"]
 
 
 def _etype(ptype, url, level=""):
@@ -5957,7 +5957,7 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=()):
     out.update({"t_" + t: 0 for t in
                 ("Products & Eval Boards", "PTP", "EB", *PRODUCT_LEVELS,
                  *APP_LEVELS, *DR_LEVELS, "Product", "Part", "Application",
-                 "Design resources", "Promo", "Gated document", "Home")})
+                 "Design resources", "Promo", "Document page", "Home")})
     # statuses and the urls-only attributes: one SUM(CASE) pass each
     for skip, filters, prefix in (("status", STATUS_FILTERS, "s_"),
                                   ("attr", ATTR_FILTERS, "a_")):
