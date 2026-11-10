@@ -1265,3 +1265,37 @@ def test_a_baseline_run_still_accepts_a_normal_page():
     assert counters["errors"] == 0 and retry_q == []
     assert con.execute("SELECT last_status FROM urls WHERE id=7").fetchone()[0] == "unchanged"
     con.close()
+
+
+def test_a_normal_run_also_refuses_a_half_loaded_page():
+    """The guard is not only for silent runs: an ordinary check accepted
+    three RF parts that lost most of their sections with the text unchanged."""
+    import runner as R
+
+    root = _fresh_db()
+    con = db.connect()
+    old = '["Product details", "Documents", "Design resources", "Developer community", "Diagrams"]'
+    con.execute("INSERT INTO urls(id, url, active, last_status, components)"
+                " VALUES(8, 'https://www.infineon.com/part/R', 1, 'unchanged', ?)", (old,))
+    good = root / "r0"
+    good.mkdir()
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status) VALUES(8, 't0', ?, 'ok')",
+                (str(good),))
+    snap = root / "r1"
+    snap.mkdir()
+    con.commit()
+    row = con.execute("SELECT * FROM urls WHERE id=8").fetchone()
+    res = {"status": "ok", "error": "", "title": "R", "text_lines": 40,
+           "image_count": 1, "http_status": 200, "components": ["Product details", "Diagrams"]}
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    retry_q = []
+    R._snapshot_dir = lambda uid, ts: snap
+    try:
+        R._handle_result(con, res, row, "t1", counters, [], retry_queue=retry_q)
+    finally:
+        del R._snapshot_dir
+        import importlib
+        importlib.reload(R)
+    assert counters["errors"] == 1 and [x["id"] for x in retry_q] == [8]
+    assert not snap.exists()
+    con.close()

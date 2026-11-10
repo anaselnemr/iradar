@@ -1427,42 +1427,42 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
     # against old-method captures a diff would measure the method, not the
     # site - no suspects, no compare-dependent guards. The previous snapshot
     # is pruned like any settled page's.
+    # GUARD for every run, silent or not: a page that comes back with under
+    # half the sections it had, or under half its library, is a half-loaded
+    # render, not the page's new state. On 10 Nov three RF parts (BAW101,
+    # BGA7P320, BGSX33M5U16) came back without Documents, Design resources,
+    # Developer community... while complete on the live site; the text was
+    # unchanged, so the item guard below never fired and their section lists
+    # were overwritten. Keep the old capture and try the page again.
+    if not dead and prev is not None:
+        try:
+            old_c = set(json.loads(row["components"] or "[]"))
+        except Exception:
+            old_c = set()
+        new_c = set(res.get("components") or [])
+        prev_n = con.execute("SELECT COUNT(*) FROM items WHERE url_id=?",
+                             (url_id,)).fetchone()[0]
+        new_n = _snapshot_item_count(snap_dir)
+        lost_secs = len(old_c) >= 3 and len(old_c & new_c) < len(old_c) * 0.5
+        lost_items = baseline and prev_n >= 5 and 0 <= new_n < prev_n * 0.5
+        if lost_secs or lost_items:
+            con.execute("UPDATE urls SET last_checked=? WHERE id=?",
+                        (now, url_id))
+            if retry_queue is not None:
+                retry_queue.append(row)
+            _restore_page_meta(con, url_id, prev)
+            shutil.rmtree(snap_dir, ignore_errors=True)
+            con.execute("UPDATE snapshots SET dir='' WHERE id=?",
+                        (new_snap_id,))
+            counters["errors"] += 1
+            counters["saved"] += 1
+            print(f"[guard] {row['url']}: capture lost"
+                  f" {len(old_c - new_c)} of {len(old_c)} sections /"
+                  f" items {prev_n} -> {new_n}; half-loaded render,"
+                  " previous capture kept", flush=True)
+            return
+
     if baseline:
-        # ...except one cheap guard that needs no comparison. A page that
-        # comes back with under half the sections it had, or under half its
-        # library, is a half-loaded render, not the page's new truth: on
-        # 10 Nov a silent RF/UWB re-baseline accepted three such pages
-        # (BAW101, BGA7P320, BGSX33M5U16 lost Documents, Design resources,
-        # Developer community...) that were complete on the live site. Keep
-        # the old baseline and try the page again, exactly like the item
-        # guard on the normal path.
-        if not dead and prev is not None:
-            try:
-                old_c = set(json.loads(row["components"] or "[]"))
-            except Exception:
-                old_c = set()
-            new_c = set(res.get("components") or [])
-            prev_n = con.execute("SELECT COUNT(*) FROM items WHERE url_id=?",
-                                 (url_id,)).fetchone()[0]
-            new_n = _snapshot_item_count(snap_dir)
-            lost_secs = len(old_c) >= 3 and len(old_c & new_c) < len(old_c) * 0.5
-            lost_items = prev_n >= 5 and 0 <= new_n < prev_n * 0.5
-            if lost_secs or lost_items:
-                con.execute("UPDATE urls SET last_checked=? WHERE id=?",
-                            (now, url_id))
-                if retry_queue is not None:
-                    retry_queue.append(row)
-                _restore_page_meta(con, url_id, prev)
-                shutil.rmtree(snap_dir, ignore_errors=True)
-                con.execute("UPDATE snapshots SET dir='' WHERE id=?",
-                            (new_snap_id,))
-                counters["errors"] += 1
-                counters["saved"] += 1
-                print(f"[guard] {row['url']}: baseline capture lost"
-                      f" {len(old_c - new_c)} of {len(old_c)} sections /"
-                      f" items {prev_n} -> {new_n}; half-loaded render,"
-                      " old baseline kept", flush=True)
-                return
         con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
                     (now, "notlive" if dead else "unchanged", url_id))
         index_items(con, url_id, snap_dir, dead)
