@@ -4806,7 +4806,7 @@ META_LABELS = {"bl": "BL", "pl": "PL", "segment": "Segment", "cm": "CM",
 # so filters, imports and exports keep matching on it.
 PL_NAMES = {
     "80": "CDT", "81": "ESA",
-    "92": "MUC", "30": "MUC", "82": "WRLS", "91": "USB", "94": "UWB",
+    "92": "MUC", "82": "WRLS", "91": "USB", "94": "UWB",
     "38": "ACS", "41": "MAG", "42": "MAG", "44": "ENV",
     "55": "COM", "32": "RAD", "53": "MSI",
 }
@@ -8476,10 +8476,14 @@ def _charts_ptp_data(con):
     """{asOf, components, keyComponents, keyNote, pls:[{pl,label,bl,ptps,have,allKey,bits}]}
     for every live PTP with a BL and PL. A component counts only when it has
     content: a placeholder hero image or an empty block is missing."""
+    # any edit to a PTP's BL/PL must show: a length sum would miss 30 -> 92,
+    # so the signature hashes the actual values
     sig = (con.execute("SELECT IFNULL(MAX(id),0) FROM runs").fetchone()[0],
-           con.execute("SELECT COUNT(*), IFNULL(SUM(length(bl)+length(pl)),0),"
-                       " IFNULL(MAX(last_checked),'') FROM urls WHERE level='PTP'")
-           .fetchone()[:])
+           con.execute("SELECT COUNT(*), IFNULL(MAX(last_checked),'')"
+                       " FROM urls WHERE level='PTP'").fetchone()[:],
+           hash(con.execute("SELECT group_concat(id || ':' || IFNULL(bl,'') || ':'"
+                            " || IFNULL(pl,'')) FROM urls WHERE level='PTP'")
+                .fetchone()[0]))
     hit = _CHARTS_CACHE.get("ptp")
     if hit and hit[0] == sig:
         return hit[1]
