@@ -89,8 +89,8 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     start = body.index('class="report-stats"')
     end = body.index('class="next-check"', start)
     summary = body[start:end]
-    labels = [">Total pages<", ">Live<", ">Paused<", ">Updated<", ">Content<",
-              ">Updated files<", ">Total offline<"]
+    labels = [">Total pages<", ">Live<", ">Total offline<", ">Updated<",
+              ">Content<", ">Updated files<", ">Paused<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard report metrics changed order"
     assert "Next auto check" not in summary and "Check all pages" not in summary
