@@ -846,23 +846,27 @@ def render_report(d, base_url, when_label):
     paused_blank = d.get("paused_blank", 0)
     paused_offline = d.get("paused_offline", 0)
     other = paused - paused_blank - paused_offline
-    paused_detail = "%s blank · %s offline" % (paused_blank, paused_offline)
-    if other:
-        paused_detail += " · %s other" % other
+    # same words as the dashboard's Paused card
+    others = paused - paused_offline
+    off = ("all offline" if paused_offline and paused_offline == d.get("notlive", 0)
+           else "{:,} offline".format(paused_offline))
+    paused_detail = (("incl. " + off + (" + {:,} other".format(others) if others else ""))
+                     if paused else "none paused")
     live_pct = round(d.get("live", 0) * 100 / (pages or 1))
     readings = [
         ("Total pages", pages, _ACCENT, "{:,} captured".format(d.get("captured", 0)),
          suffix(delta, _GOOD if delta > 0 else _BAD if delta < 0 else _MUT)),
         ("Live", d.get("live", 0), _GOOD, "%d%% of all pages" % live_pct, ""),
-        ("Paused", paused, _MUT, paused_detail, ""),
+        ("Offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
+         "%d%% of all pages" % round(d.get("notlive", 0) * 100 / (pages or 1)),
+         suffix(d.get("offline_delta", 0), _BAD)),
         ("Updated", n, "#ea580c" if n else _MUT,
          "{:,} awaiting review".format(d.get("open_updates", n)), ""),
         ("Content", d.get("content_updates", 0), "#168b7d" if d.get("content_updates") else _MUT,
          "items in the latest report", ""),
         ("Updated files", fu, "#7c3aed" if fu else _MUT,
          "{:,} awaiting review".format(d.get("open_files", fu)), ""),
-        ("Total offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
-         "includes paused pages", suffix(d.get("offline_delta", 0), _BAD)),
+        ("Paused", paused, _MUT, paused_detail, ""),
     ]
     stats = ""
     for group in (readings[:4], readings[4:]):

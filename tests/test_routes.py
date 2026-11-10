@@ -89,7 +89,7 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     start = body.index('class="report-stats"')
     end = body.index('class="next-check"', start)
     summary = body[start:end]
-    labels = [">Total pages<", ">Live<", ">Total offline<", ">Updated<",
+    labels = [">Total pages<", ">Live<", ">Offline<", ">Updated<",
               ">Content<", ">Updated files<", ">Paused<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard report metrics changed order"
@@ -183,7 +183,7 @@ def test_latest_report_is_self_only_and_does_not_change_automatic_email_settings
         assert selected == [rid], "must use the latest finished check, not the in-progress one"
         assert len(sent) == 1 and sent[0][0] == "routes@example.com"
         assert "latest report" in sent[0][1] and not _re.search(r"\btest\b", sent[0][1])
-        assert ">Total offline<" in sent[0][2]
+        assert ">Offline<" in sent[0][2]
         assert before == {key:db.get_settings().get(key) for key in before}
         c = db.connect()
         assert c.execute("SELECT email_opt_in FROM users WHERE id=?", (_uid,)).fetchone()[0] == 0
@@ -244,19 +244,19 @@ def test_offline_delta_appears_only_when_it_changed_and_reads_by_direction():
     try:
         for delta, label, colour in [(4, "+4", "var(--err)"),
                                      (-4, "−4", "var(--ok)")]:
-            tile = tile_for(delta, "Total offline")
+            tile = tile_for(delta, "Offline")
             inline = tile.find("div[@class='n']/span[@class='delta']")
             assert inline is not None, "offline delta must sit next to the total"
             assert inline.text == label
             assert inline.get("style") == "color:" + colour,                 "%s should read %s" % (label, colour)
             assert inline.get("title") == "Change in offline pages this run"
-            assert (tile.find("div[@class='detail']").text or "").strip() == ""
+            assert (tile.find("div[@class='detail']").text or "").endswith("% of all pages")
             # the standing count itself is ink, never an alarm colour
             n = tile.find("div[@class='n']")
             assert "var(--err)" not in (n.get("style") or ""),                 "the offline COUNT must not be red - only its change is"
 
         # unchanged: no badge at all
-        tile = tile_for(0, "Total offline")
+        tile = tile_for(0, "Offline")
         assert tile.find("div[@class='n']/span[@class='delta']") is None,             "an unchanged offline count must carry no delta badge"
     finally:
         app._bar_extras = original
@@ -878,8 +878,8 @@ def test_the_report_builds_and_renders_from_a_real_run():
     assert "digest" not in html.lower() and "test summary" not in html.lower()
     # The stat row mirrors all seven dashboard readings, in the same order.
     assert "live" in d, "run_report must count live pages"
-    labels = (">Total pages<", ">Live<", ">Paused<", ">Updated<", ">Content<",
-              ">Updated files<", ">Total offline<")
+    labels = (">Total pages<", ">Live<", ">Offline<", ">Updated<", ">Content<",
+              ">Updated files<", ">Paused<")
     assert [html.index(label) for label in labels] == sorted(html.index(label) for label in labels)
     assert html.count('class="report-stat"') == 7
     assert html.count('class="delta"') == 2

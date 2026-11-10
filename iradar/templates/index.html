@@ -90,8 +90,8 @@
     </a>
     <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="All pages answering HTTP 404 or 410, paused or not. The run delta is newly offline pages minus pages that came back live.">
       <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
-      <div class="l">Total offline</div>
-      <div class="detail">&#160;</div>
+      <div class="l">Offline</div>
+      <div class="detail">{{ (((counts.notlive or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
       <div class="n" style="color:{{ 'var(--warn)' if latest_updates else 'var(--muted)' }}">{{ '{:,}'.format(latest_updates or 0) }}</div>
