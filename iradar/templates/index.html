@@ -116,7 +116,7 @@
       <div class="l">Paused</div>
       {%- set others = (counts.paused or 0) - (counts.paused_offline or 0) %}
       {%- set off = 'all offline' if counts.paused_offline and counts.paused_offline == counts.notlive else '{:,}'.format(counts.paused_offline or 0) ~ ' offline' %}
-      <div class="detail">{% if counts.paused %}includes {{ off }}{% if others %} + {{ '{:,}'.format(others) }} other{% endif %}{% else %}none paused{% endif %}</div>
+      <div class="detail">{% if counts.paused %}incl. {{ off }}{% if others %} + {{ '{:,}'.format(others) }} other{% endif %}{% else %}none paused{% endif %}</div>
     </a>
   </div>
 
