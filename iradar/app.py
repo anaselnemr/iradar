@@ -2083,7 +2083,8 @@ def _owner_values(con, col):
     out = []
     for r in rows:
         out.append({"v": r["v"] or _UNASSIGNED,
-                    "label": r["v"] or "(not assigned)",
+                    "label": ((pl_label(r["v"]) if col == "pl" else r["v"])
+                              or "(not assigned)"),
                     "n": r["n"]})
     return out
 
@@ -4764,6 +4765,29 @@ def url_set_level(url_id):
 # Just the names. Whoever reads this page knows what BL and PL are, and
 # spelling them out every time made the label longer than the value beside it.
 META_LABELS = {"bl": "BL", "pl": "PL", "cm": "CM", "owner": "Owner"}
+
+# The ES product lines by number, as the org chart (effective 1 Oct 2026)
+# names them. Only the label changes: the stored PL stays the bare number,
+# so filters, imports and exports keep matching on it.
+PL_NAMES = {
+    "80": "CDT", "81": "ESA",
+    "92": "MUC (Microcontrollers)", "82": "WRLS (Wireless)", "91": "USB",
+    "94": "UWB (Ultra wideband)",
+    "38": "ACS (Acoustics)", "41": "MAG (Magnetics)", "42": "MAG (Magnetics)",
+    "44": "ENV (Environmental)",
+    "55": "COM (Communication)", "32": "RAD (Radar)", "53": "MSI",
+}
+
+
+def pl_label(pl):
+    """'92' -> '92 MUC (Microcontrollers)'; '80/81' -> '80 CDT / 81 ESA'.
+    A number the chart does not name is shown as it is."""
+    parts = [p.strip() for p in str(pl or "").split("/") if p.strip()]
+    return " / ".join(f"{p} {PL_NAMES[p]}" if p in PL_NAMES else p
+                      for p in parts)
+
+
+app.jinja_env.filters["pl_label"] = pl_label
 META_FIELDS = {
     "Product": ["bl", "pl", "cm", "owner"],
     "Part": ["bl", "pl"],
@@ -7059,7 +7083,7 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                "status": p["last_status"] or "", "vals": [],
                "tag": _page_state_tag(p)}
         for k in want_meta:
-            row["vals"].append(p[k] or "")
+            row["vals"].append(pl_label(p[k]) if k == "pl" else (p[k] or ""))
         for k in want_page:
             if k == "live":
                 # Three answers, not two. A blank page answered - it is not a
@@ -7961,7 +7985,7 @@ def export_builder_download():
                    "Section on page", "Kind", "Title"]
                   + [flab[f] for f in pfields] + ["Link"])
         for e in prows:
-            ws.append([e["level"], e["bl"], e["pl"], e["ptitle"], e["purl"],
+            ws.append([e["level"], e["bl"], pl_label(e["pl"]), e["ptitle"], e["purl"],
                        e["grp"], klab.get(e["kind"], e["kind"]), e["title"]]
                       + [e["fields"].get(f, "") for f in pfields]
                       + [e["url"]])
@@ -8145,7 +8169,7 @@ def export_xlsx():
                 comp_cells.append("yes" if k in have else "no")
         ws.append([u["id"], u["url"], u["label"] or "", u["ptype"] or "",
                    u["level"] or "", u["last_status"] or "", u["last_http"],
-                   u["last_checked"] or "", u["bl"] or "", u["pl"] or "",
+                   u["last_checked"] or "", u["bl"] or "", pl_label(u["pl"]),
                    u["cm"] or "", u["owner"] or "",
                    snap["text_lines"] if snap else 0,
                    snap["image_count"] if snap else 0]

@@ -242,7 +242,7 @@
     {% for f in meta_fields %}
     <span class="ownfield">
       <span class="ownlbl">{{ meta_labels.get(f, f) }}</span>
-      {% if u[f] %}<span class="ownval">{{ u[f] }}</span>
+      {% if u[f] %}<span class="ownval">{{ u[f] | pl_label if f == 'pl' else u[f] }}</span>
       {% else %}<span class="ownval ownval-none" title="Not set">not set</span>{% endif %}
     </span>
     {% endfor %}
