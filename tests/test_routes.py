@@ -812,7 +812,7 @@ def test_the_pairs_export_is_the_join_of_the_other_two():
     mine = [b for b in body if b["Title"] == "AN12345 - Getting started"]
     assert mine, "the document row is missing"
     b = mine[0]
-    assert b["BL"] == "ICW" and b["PL"] == "81 ESA" and b["Level"] == "PTP"
+    assert b["BL"] == "ICW" and b["PL"] == "81 (ESA)" and b["Level"] == "PTP"
     assert b["Page URL"].endswith("/part/PAIRX")
     assert b["File type"] == "PDF", b
     assert b["Access"] == "Public", b
