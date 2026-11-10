@@ -1,35 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Charts — iRadar{% endblock %}
+{% block mainclass %}chartsfull{% endblock %}
 {% block content %}
 <style>
-  .chtabs { display:flex; gap:4px; border-bottom:1px solid var(--line, #e5e7eb); margin:0 0 4px; overflow-x:auto; }
+  main.chartsfull { max-width: none; padding-left: max(16px, 2vw); padding-right: max(16px, 2vw); }
+  .chhead { display:flex; align-items:flex-end; gap:24px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin-bottom:8px; }
+  .chhead h1 { margin:0 0 10px; }
+  .chtabs { display:flex; gap:4px; overflow-x:auto; }
   .chtabs a { padding:8px 14px; text-decoration:none; color:inherit; opacity:.7; border-bottom:2px solid transparent; white-space:nowrap; font-weight:600; }
   .chtabs a.on { opacity:1; border-bottom-color:currentColor; }
-  .chframe { width:100%; border:0; display:block; min-height:900px; background:transparent; }
+  .chwrap { position:relative; min-height:420px; }
+  .chframe { width:100%; border:0; display:block; height:420px; background:transparent; overflow:hidden; }
+  .chload { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:var(--muted); font-size:14px; }
+  .chload[hidden] { display:none; }
+  .chspin { width:38px; height:38px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--accent); animation:chspin .8s linear infinite; }
+  @keyframes chspin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .chspin { animation-duration:2.4s; } }
 </style>
-<div class="card" style="padding-bottom:0">
-  <h1 style="margin-bottom:10px">Charts</h1>
+<div class="chhead">
+  <h1>Charts</h1>
   <nav class="chtabs" aria-label="Page type">
     {% for k, label in chart_types %}
     <a href="{{ url_for('charts_page', kind=k) }}" class="{{ 'on' if k == kind }}"
        {% if k == kind %}aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
-  <iframe class="chframe" id="chframe" title="{{ dict(chart_types)[kind] }} charts"
+</div>
+<div class="chwrap">
+  <div class="chload" id="chload" role="status" aria-live="polite">
+    <div class="chspin" aria-hidden="true"></div>
+    <span>Loading {{ dict(chart_types)[kind] }} charts…</span>
+  </div>
+  <iframe class="chframe" id="chframe" scrolling="no" title="{{ dict(chart_types)[kind] }} charts"
           src="{{ url_for('charts_frame', kind=kind) }}"></iframe>
 </div>
 <script>
 (function () {
-  // grow the frame to its content, so the page scrolls as one document
-  var f = document.getElementById('chframe');
-  function fit() {
-    try { var d = f.contentDocument; if (!d) return;
-      f.style.height = Math.max(d.documentElement.scrollHeight, d.body.scrollHeight) + 'px'; } catch (e) {}
-  }
-  f.addEventListener('load', function () {
-    fit();
-    try { new ResizeObserver(fit).observe(f.contentDocument.body); } catch (e) { setInterval(fit, 800); }
+  // The charts report their own height, so the frame is always exactly as
+  // tall as its content: one page scroll, never a box scrolling inside it.
+  var f = document.getElementById('chframe'), load = document.getElementById('chload');
+  window.addEventListener('message', function (e) {
+    if (e.origin !== location.origin || !e.data || e.data.type !== 'charts-height') return;
+    f.style.height = Math.max(420, Math.ceil(e.data.h)) + 'px';
+    load.hidden = true;
   });
+  f.addEventListener('load', function () { setTimeout(function () { load.hidden = true; }, 1500); });
 })();
 </script>
 {% endblock %}

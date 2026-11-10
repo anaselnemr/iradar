@@ -269,17 +269,54 @@ document.addEventListener('click',async e=>{let b=e.target.closest('[data-export
 let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>charts.forEach(renderCard),80);}).observe($('main'));
 applyTheme();
 </script>
+<style>
+  html.embedded main { max-width: none; padding: 14px 4px 28px; }
+  html.embedded, html.embedded body { overflow: hidden; }
+  html.tabbed nav a:first-child { border-bottom: 2px solid transparent; color: var(--muted); }
+  html.tabbed nav a.on { border-bottom: 2px solid var(--accent); color: var(--ink); }
+  html.tabbed main > section[id], html.tabbed main > article#heatmap { margin-top: 8px !important; }
+</style>
 <script>
-// Inside iRadar the charts follow iRadar's own theme switch: no second
-// toggle, and flipping iRadar's theme repaints the charts straight away.
+// The section links are real tabs: one section on screen at a time, so the
+// page is as long as what you are looking at, not all six sections stacked.
+document.addEventListener('DOMContentLoaded', function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav[aria-label="Chart sections"] a'));
+  var ids = links.map(function (a) { return a.getAttribute('href').slice(1); });
+  var panels = ids.map(function (id) { return document.getElementById(id); });
+  if (!links.length || panels.some(function (p) { return !p; })) return;
+  document.documentElement.classList.add('tabbed');
+  function show(id) {
+    if (ids.indexOf(id) < 0) id = ids[0];
+    panels.forEach(function (p, i) { p.hidden = ids[i] !== id; });
+    links.forEach(function (a, i) { a.classList.toggle('on', ids[i] === id); a.setAttribute('aria-current', ids[i] === id ? 'page' : 'false'); });
+    try { history.replaceState(null, '', '#' + id); } catch (e) {}
+    try { if (typeof renderAll === 'function') renderAll(); } catch (e) {}
+    window.scrollTo(0, 0);
+  }
+  links.forEach(function (a, i) { a.addEventListener('click', function (e) { e.preventDefault(); show(ids[i]); }); });
+  show((location.hash || '').slice(1));
+});
+</script>
+<script>
+// Inside iRadar: follow iRadar's theme switch (no second toggle), use the full
+// width, and tell the page how tall the charts are so it can size the frame.
 (function () {
   try {
     if (window.parent === window) return;
+    document.documentElement.classList.add('embedded');
     var root = window.parent.document.documentElement;
     var mast = document.querySelector('.masthead'); if (mast) mast.style.display = 'none';
     var sync = function () { pageDark = root.dataset.theme === 'dark'; manualTheme = true; applyTheme(); };
     sync();
     new MutationObserver(sync).observe(root, {attributes: true, attributeFilter: ['data-theme']});
+    var last = 0;
+    var post = function () {
+      var h = Math.ceil(document.body.getBoundingClientRect().height);
+      if (h !== last) { last = h; window.parent.postMessage({type: 'charts-height', h: h}, location.origin); }
+    };
+    post();
+    new ResizeObserver(post).observe(document.body);
+    window.addEventListener('load', post);
   } catch (e) {}
 })();
 </script>
