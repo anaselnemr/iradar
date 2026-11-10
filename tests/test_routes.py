@@ -2566,3 +2566,22 @@ def test_charts_page_frames_the_ptp_charts_with_live_data():
     assert sum(p["ptps"] for p in data["pls"]) == 3
     assert all(len(p["bits"]) == p["ptps"] for p in data["pls"])
     assert _client.get("/charts/nope").status_code == 404
+
+
+def test_search_ignores_spaces_and_dashes_in_part_names():
+    """People type 'SLE 78CFX1M10PH'; the page address says SLE-78CFX1M10PH."""
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
+                " VALUES('https://www.infineon.com/evaluation-board/SLE-78CFX1M10PH',"
+                " 1, 'Part', 'x', 'unchanged')")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
+                " VALUES('https://www.infineon.com/part/OTHER-PART', 1, 'Part', 'x', 'unchanged')")
+    con.commit()
+    con.close()
+    for q in ("SLE 78CFX1M10PH", "sle78cfx1m10ph", "SLE-78CFX1M10PH", "78cfx1m10"):
+        w, p = app._url_filter(q, [], [], [])
+        con = db.connect()
+        got = [r[0] for r in con.execute(f"SELECT url FROM urls u {w}", p)]
+        con.close()
+        assert got == ["https://www.infineon.com/evaluation-board/SLE-78CFX1M10PH"], (q, got)

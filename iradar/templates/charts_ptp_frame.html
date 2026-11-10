@@ -269,5 +269,19 @@ document.addEventListener('click',async e=>{let b=e.target.closest('[data-export
 let resizeTimer;new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>charts.forEach(renderCard),80);}).observe($('main'));
 applyTheme();
 </script>
+<script>
+// Inside iRadar the charts follow iRadar's own theme switch: no second
+// toggle, and flipping iRadar's theme repaints the charts straight away.
+(function () {
+  try {
+    if (window.parent === window) return;
+    var root = window.parent.document.documentElement;
+    var mast = document.querySelector('.masthead'); if (mast) mast.style.display = 'none';
+    var sync = function () { pageDark = root.dataset.theme === 'dark'; manualTheme = true; applyTheme(); };
+    sync();
+    new MutationObserver(sync).observe(root, {attributes: true, attributeFilter: ['data-theme']});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

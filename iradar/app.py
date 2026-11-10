@@ -1988,6 +1988,25 @@ def _dash_order(sort):
     return _DASH_ORDER.get(sort, _DASH_ORDER["page"])
 
 
+_SQUASH_CHARS = (" ", "-", "_", "/", ".", "™", "®")
+
+
+def _squash(t):
+    """'SLE 78CFX1M10PH' and 'SLE-78CFX1M10PH' -> 'sle78cfx1m10ph'."""
+    t = (t or "").lower()
+    for ch in _SQUASH_CHARS:
+        t = t.replace(ch, "")
+    return t
+
+
+def _squash_sql(col, chars=_SQUASH_CHARS):
+    """The same squash in SQL, for a LIKE against a squashed query."""
+    expr = f"lower({col})"
+    for ch in chars:
+        expr = f"replace({expr}, '{ch}', '')"
+    return expr
+
+
 def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
 
@@ -2009,12 +2028,23 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
         # people type. Searching only url/label meant "page not found" matched
         # nothing while 682 pages were titled exactly that - the title lives in
         # the snapshot, so it needs the EXISTS (14 ms on the whole corpus).
+        # Typed names and page names spell separators differently: people
+        # type "SLE 78CFX1M10PH", the page address says SLE-78CFX1M10PH. Also
+        # compare the address with dashes, underscores and dots squashed out
+        # against the query with its spaces/dashes squashed, so any spelling
+        # of a part or board finds it. Only the address: squashing every
+        # snapshot title too cost ~0.9 s per search on the full corpus.
+        qs = _squash(q)
+        sq = (" OR " + _squash_sql("u.url", ("-", "_", ".")) + " LIKE ?"
+              ) if len(qs) >= 3 else ""
         where.append("(u.url LIKE ? OR u.label LIKE ?"
                      " OR u.canonical_url LIKE ?"
                      " OR IFNULL(u.title_override,'') LIKE ?"
                      " OR EXISTS(SELECT 1 FROM snapshots s WHERE s.url_id=u.id"
-                     "   AND s.status='ok' AND s.page_title LIKE ?))")
+                     "   AND s.status='ok' AND s.page_title LIKE ?)" + sq + ")")
         params += [f"%{q}%"] * 5
+        if sq:
+            params.append(f"%{qs}%")
     picked = ["(" + STATUS_FILTERS[s][1] + ")"
               for s in statuses if s in STATUS_FILTERS]
     if picked:
