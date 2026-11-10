@@ -1194,3 +1194,74 @@ def test_gated_and_document_promo_urls_are_document_pages_and_paused():
     r = con.execute("SELECT ptype, active, meta_flag FROM urls").fetchone()
     assert (r["ptype"], r["active"], r["meta_flag"]) == ("Document page", 0, "")
     con.close()
+
+
+def test_a_baseline_run_refuses_a_half_loaded_page():
+    """Baseline mode skips the comparison, but a page that comes back with
+    most of its sections gone is a half-loaded render (BAW101 & co, 10 Nov),
+    not the page's new truth: old baseline kept, page retried."""
+    import runner as R
+
+    root = _fresh_db()
+    con = db.connect()
+    old = '["Product details", "Documents", "Design resources", "Developer community"]'
+    con.execute("INSERT INTO urls(id, url, active, last_status, components)"
+                " VALUES(6, 'https://www.infineon.com/part/H', 1, 'unchanged', ?)", (old,))
+    good = root / "h0"
+    good.mkdir()
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status) VALUES(6, 't0', ?, 'ok')",
+                (str(good),))
+    snap = root / "h1"
+    snap.mkdir()
+    con.commit()
+    row = con.execute("SELECT * FROM urls WHERE id=6").fetchone()
+    res = {"status": "ok", "error": "", "title": "H", "text_lines": 40,
+           "image_count": 1, "http_status": 200, "components": ["Product details"]}
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    retry_q = []
+    R._snapshot_dir = lambda uid, ts: snap
+    try:
+        R._handle_result(con, res, row, "t1", counters, [], baseline=True,
+                         retry_queue=retry_q)
+    finally:
+        del R._snapshot_dir
+        import importlib
+        importlib.reload(R)
+    assert counters["errors"] == 1
+    assert [x["id"] for x in retry_q] == [6], "the page goes back in the queue"
+    assert not snap.exists(), "the half-loaded capture is dropped"
+    con.close()
+
+
+def test_a_baseline_run_still_accepts_a_normal_page():
+    import runner as R
+
+    root = _fresh_db()
+    con = db.connect()
+    old = '["Product details", "Documents", "Design resources"]'
+    con.execute("INSERT INTO urls(id, url, active, last_status, components)"
+                " VALUES(7, 'https://www.infineon.com/part/N', 1, 'unchanged', ?)", (old,))
+    good = root / "n0"
+    good.mkdir()
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status) VALUES(7, 't0', ?, 'ok')",
+                (str(good),))
+    snap = root / "n1"
+    snap.mkdir()
+    con.commit()
+    row = con.execute("SELECT * FROM urls WHERE id=7").fetchone()
+    res = {"status": "ok", "error": "", "title": "N", "text_lines": 40, "image_count": 1,
+           "http_status": 200,
+           "components": ["Product details", "Diagrams", "Documents", "Design resources"]}
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    retry_q = []
+    R._snapshot_dir = lambda uid, ts: snap
+    try:
+        R._handle_result(con, res, row, "t1", counters, [], baseline=True,
+                         retry_queue=retry_q)
+    finally:
+        del R._snapshot_dir
+        import importlib
+        importlib.reload(R)
+    assert counters["errors"] == 0 and retry_q == []
+    assert con.execute("SELECT last_status FROM urls WHERE id=7").fetchone()[0] == "unchanged"
+    con.close()
