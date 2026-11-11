@@ -2142,6 +2142,11 @@ def _owner_values(con, col):
         f" GROUP BY v ORDER BY (v='') ASC, n DESC").fetchall()
     out = []
     for r in rows:
+        # PL, like BL, offers only the ES chart's lines (a product table may
+        # carry several): an old 86 or a "?" left on offline pages is not one
+        if col == "pl" and r["v"] and not all(
+                p.strip() in PL_NAMES for p in r["v"].split("/")):
+            continue
         out.append({"v": r["v"] or _UNASSIGNED,
                     "label": ((pl_label(r["v"]) if col == "pl" else r["v"])
                               or "(not assigned)"),

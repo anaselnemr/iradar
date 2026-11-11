@@ -690,9 +690,9 @@ def test_owner_dropdowns_only_count_their_own_pages():
     con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
                 " VALUES('https://www.infineon.com/promo/q', 1, 'Promo', 'x',"
                 " 'unchanged')")
-    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
-                " VALUES('https://www.infineon.com/part/gone', 0, 'Part', 'x',"
-                " 'notlive')")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status,"
+                " pl) VALUES('https://www.infineon.com/part/gone', 0, 'Part', 'x',"
+                " 'notlive', '86')")
     con.commit()
     seg = {v["label"]: v["n"] for v in app._owner_values(con, "segment")}
     bl = {v["label"]: v["n"] for v in app._owner_values(con, "bl")}
@@ -700,6 +700,8 @@ def test_owner_dropdowns_only_count_their_own_pages():
     assert "SURF" not in bl, "SURF is not a business line on the ES chart"
     assert bl == {"ICW": 2, "DSI": 1, "(not assigned)": 1}, \
         "only the live part d is missing a BL - not the promo or the paused part"
+    pls = {v["label"] for v in app._owner_values(con, "pl")}
+    assert "86" not in pls, "PLs off the ES chart are not offered"
     f = app._dash_facets(con, "", [], ["Part"], [])
     assert f["o_seg"] == 0, "Type = Part leaves the Segment dropdown empty"
     assert f["o_bl_ICW"] == 2 and "o_bl_SURF" not in f
