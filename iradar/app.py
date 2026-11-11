@@ -8652,7 +8652,7 @@ def charts_frame(kind):
     finally:
         con.close()
     raw = (Path(app.root_path) / "templates" / "charts_ptp_frame.html").read_text(encoding="utf-8")
-    payload = json.dumps(data, separators=(",", ":")).replace("</", "<\/")
+    payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
     resp = app.response_class(raw.replace("__CHARTS_DATA__", payload, 1), mimetype="text/html")
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
     resp.headers["Cache-Control"] = "no-store"
