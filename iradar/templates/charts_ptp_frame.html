@@ -73,9 +73,13 @@ function allEntry(pls,label='All of the above',group){const total=sum(pls,p=>p.p
 let accent='#087e8b' ,pageDark=matchMedia('(prefers-color-scheme: dark)').matches, manualTheme=false;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 function palette(dark){return dark?{bg:'#18242c',ink:'#edf3f6',muted:'#a9b8c1',line:'#35434c',track:'#34434c'}:{bg:'#ffffff',ink:'#202d36',muted:'#5e6e79',line:'#dce3e6',track:'#e7edef'};}
-function magnitude(v){let rgb=accent.match(/\w\w/g).map(x=>parseInt(x,16)),low=[242,247,248],t=Math.max(0,Math.min(1,v));return '#'+rgb.map((x,i)=>Math.round(low[i]+(x-low[i])*t).toString(16).padStart(2,'0')).join('');}
-// Choose the higher WCAG contrast against the actual cell fill (at least 4.58:1).
-function cellInk(v){let rgb=magnitude(v).match(/\w\w/g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4),l=.2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];return 1.05/(l+.05)>(l+.05)/.05?'#ffffff':'#000000';}
+function mix(t){let rgb=accent.match(/\w\w/g).map(x=>parseInt(x,16)),low=[242,247,248];return '#'+rgb.map((x,i)=>Math.round(low[i]+(x-low[i])*t).toString(16).padStart(2,'0')).join('');}
+function lum(hex){let c=hex.match(/\w\w/g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];}
+// One dark ink on every cell: the ramp stops where that ink still has 5:1 contrast.
+const CELL_INK='#14212a';
+function heatTop(){let k=1;while(k>.3&&(lum(mix(k))+.05)/(lum(CELL_INK)+.05)<5)k-=.01;return k;}
+function magnitude(v){return mix(Math.max(0,Math.min(1,v))*heatTop());}
+function cellInk(){return CELL_INK;}
 function text(x,y,s,{size=12,fill,anchor='start',weight=400,extra=''}={}){return `<text x="${x}" y="${y}" font-size="${size}" fill="${fill||'#202d36'}" text-anchor="${anchor}" font-weight="${weight}" ${extra}>${esc(s)}</text>`;}
 const line=(x1,y1,x2,y2,c)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1"/>`;
 function tipAttr(lines){return `data-tip="${esc(JSON.stringify(lines))}"`;}
