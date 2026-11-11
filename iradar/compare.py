@@ -1435,6 +1435,8 @@ def library_diff_detail(old_dir, new_dir):
             continue
         a_raw, b_raw = old.get(cat), new.get(cat)
         if isinstance(a_raw, str) or isinstance(b_raw, str):   # price
+            if cat not in old:
+                continue          # a field the baseline never read: not a change
             a_s = _STOCK_RE.sub("", str(a_raw or "")).split()
             b_s = _STOCK_RE.sub("", str(b_raw or "")).split()
             if a_s != b_s:
@@ -1479,6 +1481,11 @@ def library_diff(old_dir, new_dir):
             continue
         a_raw, b_raw = old.get(cat), new.get(cat)
         if isinstance(a_raw, str) or isinstance(b_raw, str):   # price
+            # A string field the baseline was captured before we read at all
+            # (the product status, added 11 Nov 2026) is not "changed from
+            # nothing": every part would raise a review on its first run.
+            if cat not in old:
+                continue
             a_s = _STOCK_RE.sub("", str(a_raw or "")).split()
             b_s = _STOCK_RE.sub("", str(b_raw or "")).split()
             if a_s != b_s:

@@ -299,6 +299,7 @@ _DIFF_SECTIONS = [
     ("trainings", "Trainings & webinars"), ("partners", "Partner solutions"),
     ("news", "News & highlights"), ("videos", "Videos"),
     ("images", "Images"), ("about", "About"),
+    ("product_status", "Product status"),
 ]
 _DIFF_FLAGS = [("hero_image", "Hero image"), ("product_table", "Products table"),
                ("developer_community", "Developer community")]

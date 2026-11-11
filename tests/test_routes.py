@@ -2630,3 +2630,60 @@ def test_search_ignores_spaces_and_dashes_in_part_names():
         got = [r[0] for r in con.execute(f"SELECT url FROM urls u {w}", p)]
         con.close()
         assert got == ["https://www.infineon.com/evaluation-board/SLE-78CFX1M10PH"], (q, got)
+
+
+def test_a_part_shows_its_product_status_above_the_price():
+    """The status badge under a part's title is read into the page's flags and
+    shown in its own box, directly above the price."""
+    import json as _json
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, level, flags, price)"
+                " VALUES(930, 'https://www.infineon.com/part/STATUSPART', 1,"
+                " 'Part', 'PTP', ?, '1.23 EUR')",
+                (_json.dumps({"product_status": {"exists": True, "has_content": True,
+                                                 "text": "Not for new design"}}),))
+    con.execute("INSERT INTO urls(id, url, active, ptype, level, flags)"
+                " VALUES(931, 'https://www.infineon.com/part/NOTREADYET', 1,"
+                " 'Part', 'PTP', '{}')")
+    for uid in (930, 931):
+        d = _D / "snapshots" / f"status{uid}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "sections.json").write_text(_json.dumps(
+            {"features": [{"title": "A bullet"}]}), encoding="utf-8")
+        con.execute("INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+                    " VALUES(?, 't', ?, 'ok', 0)", (uid, str(d)))
+        con.execute("INSERT INTO items(url_id, category, title, item_key)"
+                    " VALUES(?, 'features', 'A bullet', ?)", (uid, f"kst{uid}"))
+    con.commit()
+    con.close()
+    body = _ok("/url/930").data.decode("utf-8", "replace")
+    assert "Not for new design" in body
+    assert body.index("Product status") < body.index(">Price<"), \
+        "the status sits above the price"
+    body = _ok("/url/931").data.decode("utf-8", "replace")
+    assert "not read yet" in body, "an unread status must not look like none"
+    states = app._page_component_states(
+        "[]", "[]", {"product_status": {"exists": True, "has_content": True,
+                                        "text": "Active"}}, set())
+    assert states["product_status"] == "content"
+
+
+def test_a_string_field_the_baseline_never_read_is_not_a_change():
+    """Adding the product status must not put every part in review on its
+    first run - but a real status move afterwards must."""
+    import json as _json
+    import compare as _cmp
+    old, new = _D / "snapshots" / "ps_old", _D / "snapshots" / "ps_new"
+    for d in (old, new):
+        d.mkdir(parents=True, exist_ok=True)
+    (old / "sections.json").write_text(_json.dumps({"price": "1 EUR"}), encoding="utf-8")
+    (new / "sections.json").write_text(_json.dumps(
+        {"price": "1 EUR", "product_status": "Active"}), encoding="utf-8")
+    assert not _cmp.library_diff(old, new)["changed"]
+    assert not _cmp.library_diff_detail(old, new)
+    (old / "sections.json").write_text(_json.dumps(
+        {"price": "1 EUR", "product_status": "Active"}), encoding="utf-8")
+    (new / "sections.json").write_text(_json.dumps(
+        {"price": "1 EUR", "product_status": "Discontinued"}), encoding="utf-8")
+    d = _cmp.library_diff(old, new)
+    assert d["changed"] and "product_status" in d["per_section"]

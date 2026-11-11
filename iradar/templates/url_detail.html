@@ -423,6 +423,23 @@
           actually a price (a button caption) is not a price either - but
           "Multiple OPNs available" is a fact about how the part is sold, so it
           is shown as itself rather than as "empty". -#}
+      {#- Product status sits right above the price: the badge under a part's
+          title. "Not read yet" until the page's first capture that reads it,
+          so a gap in our data never passes for a part with no status. -#}
+      {% set _ps = (flags or {}).get('product_status') %}
+      {% if (_ps and _ps.text) or u.level == 'PTP' %}
+      <div class="pricebox">
+        <div class="pricelabel">Product status</div>
+        {% if _ps and _ps.text %}
+          <div style="font-weight:600; font-size:15px">{{ _ps.text }}</div>
+        {% elif _ps is none %}
+          <div class="muted">not read yet - comes with the next capture</div>
+        {% else %}
+          <div class="muted">empty</div>
+        {% endif %}
+      </div>
+      {% endif %}
+
       {% set plines = price|fmt_price %}
       {% set is_price = (price|has_amount)
           or ('multiple opn' in (price or '')|lower and plines) %}

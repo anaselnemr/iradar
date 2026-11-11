@@ -1805,6 +1805,21 @@ SECTIONS_JS = r"""
                           has_content: !!heroSrc && !heroDefault,
                           src: (heroSrc || '').slice(0, 400)};
 
+  // Product status: the badge under a part's title ("Active and preferred",
+  // "Discontinued", "Not for new design", "Coming soon", "On request",
+  // "Active"). The class reads "product-type-active" whatever the status is;
+  // the page lower-cases some values and capitalises them with CSS, so the
+  // text is normalised to one spelling. Stored as its own string, the way the
+  // price is, so a part going from active to discontinued is a reviewed change.
+  let psTxt = '';
+  try {
+    const ps = document.querySelector('.product-type-active .product-type-feature');
+    if (ps) psTxt = (ps.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  } catch (e) { psTxt = ''; }
+  if (psTxt) psTxt = psTxt.charAt(0).toUpperCase() + psTxt.slice(1).toLowerCase();
+  out.product_status = psTxt;
+  out.flags.product_status = {exists: !!psTxt, has_content: !!psTxt, text: psTxt};
+
   // The page's OWN section navigation is the authoritative list of the
   // components it carries - read here, after full render, so it reflects the
   // live page. Each nav anchor is a real section (not a text match), which is

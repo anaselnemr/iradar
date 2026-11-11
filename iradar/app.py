@@ -1507,6 +1507,11 @@ _flag3("community", "developer_community", "developer community",
 # a hero image that "exists" without content IS the site default placeholder,
 # so its empty state is named for what you would actually see
 _flag3("hero", "hero_image", "hero image", "Has the default hero image")
+# the status badge is either there with its text or not there at all
+ATTR_FILTERS["hasstatus"] = ("Has product status",
+                             _flag("product_status", "has_content"))
+ATTR_FILTERS["nostatus"] = ("No product status",
+                            _noflag("product_status", "exists"))
 
 # Components read from the page's own section-nav / Product-details sub-tabs
 # (urls.components / urls.detail_tabs, filled by the component re-capture).
@@ -1563,6 +1568,7 @@ for _stem, _c, _l in _COMPONENT_ATTRS:
     COMPONENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
 for _stem in ("table", "community", "hero"):
     COMPONENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
+COMPONENT_KEYS += ["hasstatus", "nostatus"]
 COMPONENT_KEYS += ["hasprice", "noprice"]
 # A nav entry is a LINK, not a container: there is nothing inside it to be
 # empty, so these two states are the whole truth for them.
@@ -1595,7 +1601,9 @@ COMPONENTS = [
     # it is the first thing the page says about itself
     ("subheadline",        "Subheadline",           "cat",  "subheadline"),
     ("hero_image",         "Hero image",            "flag", "hero_image"),
-    ("overview",           "Overview",              "cat",  "overview"),
+    # the status badge under a part's title (Active and preferred, Discontinued..)
+    ("product_status",     "Product status",        "flag", "product_status"),
+    ("overview",          "Overview",              "cat",  "overview"),
     ("parametrics",        "Parametrics",           "tab",  "parametrics"),
     ("ordering",           "Ordering",              "tab",  "ordering"),
     ("description",        "Description",           "tab",  "description"),
@@ -1883,7 +1891,8 @@ def _component_counts(con):
             fl = json.loads(r["flags"] or "{}")
         except Exception:
             fl = {}
-        for block in ("product_table", "developer_community", "hero_image"):
+        for block in ("product_table", "developer_community", "hero_image",
+                      "product_status"):
             if (fl.get(block) or {}).get("exists"):
                 bump(et, block)
         def _loadset(j):
@@ -7202,7 +7211,11 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                 word = ("yes" if st == "content"
                         else ("default" if (st == "empty" and k == "hero_image")
                               else ("empty" if st == "empty" else "no")))
-                if not verbose:
+                if k == "product_status":
+                    # the status IS its text - "yes" would say nothing
+                    row["vals"].append((flags.get("product_status") or {})
+                                       .get("text", "") or "no")
+                elif not verbose:
                     row["vals"].append(word)
                 elif k in cat_of:
                     lines = texts.get((p["id"], cat_of[k]), [])
@@ -8252,6 +8265,9 @@ def export_xlsx():
             elif k == "hero_image":
                 comp_cells.append((flags.get("hero_image") or {}).get("src", "")
                                   or ("yes" if k in have else "no"))
+            elif k == "product_status":
+                comp_cells.append((flags.get("product_status") or {})
+                                  .get("text", "") or "no")
             else:
                 comp_cells.append("yes" if k in have else "no")
         ws.append([u["id"], u["url"], u["label"] or "", u["ptype"] or "",
