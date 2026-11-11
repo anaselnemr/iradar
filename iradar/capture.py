@@ -1820,6 +1820,23 @@ SECTIONS_JS = r"""
   out.product_status = psTxt;
   out.flags.product_status = {exists: !!psTxt, has_content: !!psTxt, text: psTxt};
 
+  // The page's own product line, for automatic BL/PL. Three places carry it,
+  // in order of trust: the datalayer input (every part, orderable or not),
+  // the add-to-cart block (boards, which have no datalayer code), and the
+  // ordering table's analytics attribute. A part Infineon gives no PL has all
+  // three empty - that is "no source", never a guess.
+  let pagePl = '';
+  try {
+    const dl = document.getElementById('datalayer-businessSegmentCode');
+    const cands = [dl ? (dl.value || dl.getAttribute('value') || '') : ''];
+    const cart = document.querySelector('[data-businesssegment]');
+    cands.push(cart ? cart.getAttribute('data-businesssegment') || '' : '');
+    const ord = document.querySelector('[data-item-category4]');
+    cands.push(ord ? ord.getAttribute('data-item-category4') || '' : '');
+    pagePl = (cands.map(c => c.trim()).find(c => /^\d{2,3}$/.test(c))) || '';
+  } catch (e) { pagePl = ''; }
+  out.flags.page_pl = {exists: !!pagePl, has_content: !!pagePl, text: pagePl};
+
   // The page's OWN section navigation is the authoritative list of the
   // components it carries - read here, after full render, so it reflects the
   // live page. Each nav anchor is a real section (not a text match), which is

@@ -445,6 +445,64 @@ def _restore_page_meta(con, url_id, prev):
          url_id))
 
 
+# BL from PL, by the ES chart (effective 1 Oct 2026). PL 30 is retired: Anas
+# moved every PL 30 page to 92 (MUC) on 10 Nov, so a page that still says 30
+# is filed under 92 the same way.
+PL_TO_BL = {"80": "DSI", "81": "DSI",
+            "92": "ICW", "82": "ICW", "91": "ICW", "94": "ICW",
+            "38": "MMS", "41": "MMS", "42": "MMS", "44": "MMS",
+            "55": "RF", "32": "RF", "53": "RF"}
+PL_ALIASES = {"30": "92"}
+_PART_OR_BOARD = ("/part/", "/evaluation-board/")
+
+
+def _apply_page_pl(con, url_id, page_url, res, dead):
+    """Keep a part's / board's BL and PL in step with what its own page says.
+
+    - no PL yet and the page names one: fill PL, and BL from the ES chart
+    - the page names no PL and we have none: flag it ("No PL source") -
+      never guessed
+    - we already have a PL: never overwritten. Many were set from PIM by
+      decision. Only when INFINEON CHANGES the page's PL (it differs from what
+      the page said last time) is the page flagged for a human to look at -
+      a known, accepted difference is not re-raised every run.
+    urls.page_pl remembers what the page said, which is what makes that work.
+    """
+    if dead or not any(s in (page_url or "") for s in _PART_OR_BOARD):
+        return
+    # Only a real page counts. The CDN can answer a fresh visitor with a 202
+    # holding page that carries the right title but no datalayer and no badge:
+    # read as "this part has no PL" it would raise a false flag.
+    if res.get("http_status") not in (200, None):
+        return
+    flags = res.get("flags") or {}
+    if "page_pl" not in flags:
+        return                     # an older capture that never read it
+    seen = PL_ALIASES.get((flags["page_pl"] or {}).get("text") or "",
+                          (flags["page_pl"] or {}).get("text") or "")
+    row = con.execute("SELECT bl, pl, page_pl, meta_flag FROM urls WHERE id=?",
+                      (url_id,)).fetchone()
+    if not row:
+        return
+    pl, before = (row["pl"] or "").strip(), (row["page_pl"] or "").strip()
+    flag = (row["meta_flag"] or "").strip()
+    if not pl and seen:
+        bl = PL_TO_BL.get(seen, "")
+        con.execute("UPDATE urls SET pl=?, bl=CASE WHEN ?<>'' THEN ? ELSE bl END,"
+                    " meta_flag=? WHERE id=?",
+                    (seen, bl, bl,
+                     "" if bl else f"PL {seen} not on the ES chart - no BL",
+                     url_id))
+    elif not pl and not seen and not flag:
+        con.execute("UPDATE urls SET meta_flag='No PL source' WHERE id=?",
+                    (url_id,))
+    elif pl and seen and before and seen != before and seen != pl:
+        con.execute("UPDATE urls SET meta_flag=? WHERE id=?",
+                    (f"infineon.com changed the PL to {seen} (iRadar: {pl})",
+                     url_id))
+    con.execute("UPDATE urls SET page_pl=? WHERE id=?", (seen, url_id))
+
+
 def _write_page_meta(con, url_id, page_url, res, dead):
     """Write every page-derived urls column from ONE capture result.
 
@@ -477,6 +535,7 @@ def _write_page_meta(con, url_id, page_url, res, dead):
          "" if dead else (((res.get("flags") or {}).get("product_status")
                            or {}).get("text") or ""),
          url_id))
+    _apply_page_pl(con, url_id, page_url, res, dead)
 
 
 # How many runs in a row a page must fail EVERYTHING before the red badge.

@@ -2733,3 +2733,40 @@ def test_charts_data_carries_online_state_and_status_per_ptp():
     assert pl["ptps"] == 2 and sorted(pl["on"]) == [0, 1]
     st = dict(zip(pl["on"], pl["st"]))
     assert d["statuses"][st[1]] == "Not for new design" and st[0] == -1
+
+
+def test_a_new_part_takes_its_pl_and_bl_from_its_own_page():
+    import runner
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    con.execute("INSERT INTO urls(id, url, active) VALUES"
+                " (950, 'https://www.infineon.com/part/NEWPART', 1),"
+                " (951, 'https://www.infineon.com/part/NOPL', 1),"
+                " (952, 'https://www.infineon.com/part/PIMSET', 1),"
+                " (953, 'https://www.infineon.com/part/OLD30', 1),"
+                " (954, 'https://www.infineon.com/products/a-family', 1)")
+    con.execute("UPDATE urls SET pl='81', bl='DSI' WHERE id=952")
+    res = lambda pl: {"flags": {"page_pl": {"exists": bool(pl), "text": pl}}}
+    runner._apply_page_pl(con, 950, "https://www.infineon.com/part/NEWPART", res("44"), False)
+    runner._apply_page_pl(con, 951, "https://www.infineon.com/part/NOPL", res(""), False)
+    runner._apply_page_pl(con, 953, "https://www.infineon.com/part/OLD30", res("30"), False)
+    runner._apply_page_pl(con, 954, "https://www.infineon.com/products/a-family", res("44"), False)
+    # PIM gave 81; the page says 80 - known on first sight, so not flagged
+    runner._apply_page_pl(con, 952, "https://www.infineon.com/part/PIMSET", res("80"), False)
+    get = lambda i: dict(con.execute("SELECT bl, pl, page_pl, meta_flag FROM urls"
+                                     " WHERE id=?", (i,)).fetchone())
+    assert get(950) == {"bl": "MMS", "pl": "44", "page_pl": "44", "meta_flag": ""}
+    assert get(951)["meta_flag"] == "No PL source" and not get(951)["pl"]
+    assert get(953)["pl"] == "92" and get(953)["bl"] == "ICW", "PL 30 is filed as 92"
+    assert not get(954)["pl"], "families keep their PL rules - not from this"
+    assert get(952)["pl"] == "81" and get(952)["meta_flag"] == "", \
+        "a PIM value is never overwritten or re-flagged for a known difference"
+    # Infineon then CHANGES the page's PL: now it is worth a human's look
+    runner._apply_page_pl(con, 952, "https://www.infineon.com/part/PIMSET", res("92"), False)
+    assert get(952)["pl"] == "81" and "changed the PL to 92" in get(952)["meta_flag"]
+    # a 202 holding page from the CDN reads as "no PL" - it must change nothing
+    con.execute("UPDATE urls SET meta_flag='' WHERE id=951")
+    held = dict(res(""), http_status=202)
+    runner._apply_page_pl(con, 951, "https://www.infineon.com/part/NOPL", held, False)
+    assert get(951)["meta_flag"] == ""
+    con.close()

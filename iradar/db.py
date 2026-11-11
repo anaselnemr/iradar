@@ -597,6 +597,9 @@ def init_db():
     # Application pages carry the Infineon segment that leads them (C3, A,
     # I2) from the ES application list, in place of a BL/PL they never have
     _ensure_column(con, "urls", "segment", "TEXT DEFAULT ''")
+    # The PL the page itself showed at its last capture (automatic BL/PL):
+    # only a CHANGE in it raises an ownership check, never a known difference
+    _ensure_column(con, "urls", "page_pl", "TEXT DEFAULT ''")
     # A part's / board's status badge text, mirrored out of flags so the
     # dashboard filters it like BL/PL. Filled from flags once when it appears.
     if _ensure_column(con, "urls", "pstatus", "TEXT DEFAULT ''"):
