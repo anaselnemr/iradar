@@ -353,7 +353,7 @@
       <summary>{{ dim }}{% if sel %}<span class="fbadge">{{ sel|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for o in opts %}
-        {% set _n = facets.get('o_' + name + '_' + o.v, o.n) %}
+        {% set _n = facets.get('o_' + name + '_' + o.v, 0 if ('o_' + name) in facets else o.n) %}
         <label data-opt class="ownopt" {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
                  {% if o.v in sel %}checked{% endif %}> {{ o.label }}
           <span class="cnt" data-av="o_{{ name }}_{{ o.v }}">{{ '{:,}'.format(_n) }}</span></label>
@@ -1151,6 +1151,8 @@ refreshCount();
           if (mine !== seq) return;
           form.querySelectorAll('.cnt[data-av]').forEach(function (el) {
             var n = d[el.dataset.av];
+            // an owner value with no pages left is simply absent from the reply
+            if (n === undefined && el.closest('label.ownopt')) n = 0;
             if (n === undefined) return;
             el.textContent = n.toLocaleString();
             var lab = el.closest('label');
