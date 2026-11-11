@@ -23,18 +23,32 @@
 @media(max-width:1000px){.shared-filters{grid-template-columns:1fr;gap:22px}.scope-groups{grid-template-columns:repeat(4,minmax(0,1fr))}}
 #component-picker summary{cursor:pointer;list-style:none}#component-picker summary::-webkit-details-marker{display:none}#component-picker summary>span::after{content:'−';margin-left:9px;color:var(--muted)}#component-picker:not([open]) summary>span::after{content:'+'}
 @media(max-width:700px){.shared-filters{gap:16px;margin-bottom:24px}.scope-groups{grid-template-columns:1fr;gap:8px}.scope-group{padding:8px;display:grid;grid-template-columns:48px minmax(0,1fr);gap:6px;align-items:start}.scope-group .bl-chip{margin:3px 0 0}.pl-chips{gap:5px}.pl-chips .component-chip{padding:6px;font-size:11px}.picker-heading{margin-bottom:10px}#component-picker:not([open]) summary{margin-bottom:0}}
+.page-filters{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:12px 16px;margin:-6px 0 30px}
+.pf-group{display:contents}.pf-group>div{justify-self:start}
+.pf-label{font-size:13px;font-weight:600;white-space:nowrap}
+.seg-buttons{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg-buttons button{border:0;border-radius:0;min-height:34px;padding:0 13px;font-size:12px;background:transparent;color:var(--ink)}
+.seg-buttons button+button{border-left:1px solid var(--line)}
+.seg-buttons button[aria-pressed=true]{background:var(--ink);color:var(--surface)}
+.status-chips{display:flex;flex-wrap:wrap;gap:6px}.status-chips .component-chip{font-size:11.5px;padding:6px 9px;min-height:32px}
+.chip-n{color:var(--muted);font-variant-numeric:tabular-nums}
+@media(max-width:700px){.page-filters{grid-template-columns:minmax(0,1fr);gap:8px;margin:-4px 0 24px}.pf-group>div{justify-self:stretch}.pf-group+.pf-group .pf-label{margin-top:8px}.seg-buttons{width:100%}.seg-buttons button{flex:1}}
 </style>
 </head>
 <body>
 <main>
  <header>
   <div class="masthead"><div class="brand"></div><button id="theme" class="theme-button" aria-label="Switch page theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg><span>Dark</span></button></div>
-  <div class="page-heading"><h1>PTP completion</h1><div class="stats"><div class="stat"><strong id="stat-ptps"></strong><span>Live PTPs</span></div><div class="stat"><strong id="stat-completion"></strong><span>Components in place</span></div><div class="stat"><strong id="stat-pls">14</strong><span>Product lines</span></div></div></div>
+  <div class="page-heading"><h1>PTP completion</h1><div class="stats"><div class="stat"><strong id="stat-ptps"></strong><span id="stat-ptps-label">Live PTPs</span></div><div class="stat"><strong id="stat-completion"></strong><span>Components in place</span></div><div class="stat"><strong id="stat-pls">14</strong><span>Product lines</span></div></div></div>
   <nav aria-label="Chart sections"><a href="#key-components">Key components</a><a href="#heatmap">Heatmap</a><a href="#business-lines">Business lines</a><a href="#product-lines">Product lines</a><a href="#components">Components</a></nav>
  </header>
  <div class="shared-filters">
  <details id="component-picker" open aria-label="Components"><summary class="picker-heading"><span>Components</span><div class="quick-buttons"><button type="button" data-preset="key">Key 7</button><button type="button" data-preset="all">All 17</button></div></summary><div class="component-chips"></div></details>
  <fieldset id="scope-picker" aria-label="Scope"><div class="picker-heading"><span>Scope</span><div class="quick-buttons"><button type="button" data-scope-preset="all">All</button><button type="button" data-scope-preset="none">None</button></div></div><div class="scope-groups"></div></fieldset>
+ </div>
+ <div class="page-filters">
+  <div class="pf-group" role="group" aria-label="Pages"><span class="pf-label">Pages</span><div class="seg-buttons"><button type="button" data-pages="online">Online</button><button type="button" data-pages="offline">Offline</button><button type="button" data-pages="both">Both</button></div></div>
+  <div class="pf-group" role="group" aria-label="Product status"><span class="pf-label">Product status</span><div class="status-chips"></div></div>
  </div>
  <section id="key-components"><div id="key-grid" class="chart-grid"></div></section>
  <article style="margin-top:34px" id="heatmap" class="card">
@@ -64,7 +78,18 @@ const totalPTPs=sum(DATA.pls,p=>p.ptps), totalHave=sum(DATA.pls,p=>sum(DATA.comp
 const selectedPL=new Set(DATA.pls.map(p=>p.pl)),selectedComponents=new Set(DATA.keyComponents), charts=new Map();
 try{const saved=JSON.parse(localStorage.getItem('ptp-selected-components'));if(Array.isArray(saved)&&saved.every(c=>DATA.components.includes(c))){selectedComponents.clear();saved.forEach(c=>selectedComponents.add(c));}}catch{}
 try{const saved=JSON.parse(localStorage.getItem('ptp-selected-pls'));if(Array.isArray(saved)&&saved.every(id=>DATA.pls.some(p=>p.pl===id))){selectedPL.clear();saved.forEach(id=>selectedPL.add(id));}}catch{}
-const activePLs=()=>DATA.pls.filter(p=>selectedPL.has(p.pl));
+// Online / Offline / Both and the product status narrow the PTPs themselves:
+// every chart reads p.ptps, p.have and p.bits, so those are recomputed from
+// the full per-PTP lists (bits, on = online, st = status index, -1 = none).
+const RAW=DATA.pls.map(p=>({bits:p.bits.slice(),on:p.on||p.bits.map(()=>1),st:p.st||p.bits.map(()=>-1)}));
+const STATUSES=DATA.statuses||[];
+let pageState='online';try{const v=localStorage.getItem('ptp-pages');if(['online','offline','both'].includes(v))pageState=v;}catch{}
+const selectedStatus=new Set([...STATUSES.map((_,i)=>i),-1]);
+try{const v=JSON.parse(localStorage.getItem('ptp-status'));if(Array.isArray(v)){selectedStatus.clear();v.forEach(x=>selectedStatus.add(x));}}catch{}
+const pageOk=on=>pageState==='both'||(pageState==='online')===!!on;
+function applyPageFilter(){DATA.pls.forEach((p,k)=>{const r=RAW[k],bits=[];r.bits.forEach((b,i)=>{if(pageOk(r.on[i])&&selectedStatus.has(r.st[i]))bits.push(b);});p.bits=bits;p.ptps=bits.length;p.have={};DATA.components.forEach((c,ci)=>{p.have[c]=bits.reduce((n,b)=>n+(b>>ci&1),0);});});}
+applyPageFilter();
+const activePLs=()=>DATA.pls.filter(p=>selectedPL.has(p.pl)&&p.ptps>0);
 const activeBLs=()=>BLS.filter(bl=>activePLs().some(p=>p.bl===bl));
 const activeComponents=()=>[...DATA.keyComponents,...DATA.components.filter(c=>!DATA.keyComponents.includes(c))].filter(c=>selectedComponents.has(c));
 const selectedMask=()=>DATA.components.reduce((mask,c,i)=>selectedComponents.has(c)?mask|(1<<i):mask,0);
@@ -210,12 +235,21 @@ function refreshData(){
  const selectedHave=sum(pls,p=>sum(activeComponents(),c=>p.have[c]));
  $('#stat-completion').textContent=pct(n&&selectedComponents.size?selectedHave/(n*selectedComponents.size):0);
 }
-function renderAll(){refreshData();renderHeat();charts.forEach(renderCard);}
+function renderStatusChips(){
+ const cnt=new Map();DATA.pls.forEach((p,k)=>{if(!selectedPL.has(p.pl))return;const r=RAW[k];r.st.forEach((s,i)=>{if(pageOk(r.on[i]))cnt.set(s,(cnt.get(s)||0)+1);});});
+ $('.status-chips').innerHTML=[...STATUSES.map((s,i)=>[i,s]),[-1,'No product status']].map(([i,s])=>`<label class="component-chip"><input type="checkbox" value="${i}" ${selectedStatus.has(i)?'checked':''}>${esc(s)} <span class="chip-n">${fmt(cnt.get(i)||0)}</span></label>`).join('');
+ $$('[data-pages]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.pages===pageState)));
+ $('#stat-ptps-label').textContent=pageState==='online'?'Live PTPs':pageState==='offline'?'Offline PTPs':'PTPs';
+}
+function renderAll(){applyPageFilter();renderStatusChips();refreshData();renderHeat();charts.forEach(renderCard);}
+$$('[data-pages]').forEach(b=>b.onclick=()=>{pageState=b.dataset.pages;try{localStorage.setItem('ptp-pages',pageState);}catch{}renderAll();});
+$('.status-chips').onchange=e=>{const v=Number(e.target.value);if(e.target.checked)selectedStatus.add(v);else selectedStatus.delete(v);try{localStorage.setItem('ptp-status',JSON.stringify([...selectedStatus]));}catch{}renderAll();};
 function syncPicker(){
  $$('.component-chips input').forEach(el=>el.checked=selectedComponents.has(el.value));
  $$('[data-preset]').forEach(el=>{let list=el.dataset.preset==='key'?DATA.keyComponents:DATA.components;el.setAttribute('aria-pressed',String(list.length===selectedComponents.size&&list.every(c=>selectedComponents.has(c))));});
 }
 function saveSelection(){try{localStorage.setItem('ptp-selected-components',JSON.stringify([...selectedComponents]));}catch{}syncPicker();renderAll();}
+$('[data-preset="all"]').textContent='All '+DATA.components.length;
 $('.component-chips').innerHTML=DATA.components.map(c=>`<label class="component-chip"><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`).join('');
 $('.component-chips').onchange=e=>{if(e.target.checked)selectedComponents.add(e.target.value);else selectedComponents.delete(e.target.value);saveSelection();};
 $$('[data-preset]').forEach(el=>el.onclick=e=>{e.preventDefault();selectedComponents.clear();(el.dataset.preset==='key'?DATA.keyComponents:DATA.components).forEach(c=>selectedComponents.add(c));saveSelection();});

@@ -597,6 +597,12 @@ def init_db():
     # Application pages carry the Infineon segment that leads them (C3, A,
     # I2) from the ES application list, in place of a BL/PL they never have
     _ensure_column(con, "urls", "segment", "TEXT DEFAULT ''")
+    # A part's / board's status badge text, mirrored out of flags so the
+    # dashboard filters it like BL/PL. Filled from flags once when it appears.
+    if _ensure_column(con, "urls", "pstatus", "TEXT DEFAULT ''"):
+        con.execute("UPDATE urls SET pstatus=IFNULL(json_extract(flags,"
+                    " '$.product_status.text'),'') WHERE flags LIKE"
+                    " '%product_status%'")
     # the page's own section-nav = the authoritative list of components it
     # carries (JSON list); plus the Product-details sub-tabs and price text.
     # Which editorial limits this page's copy breaks, as a JSON list of short
@@ -755,6 +761,8 @@ def _ensure_column(con, table, col, decl):
     cols = [r[1] for r in con.execute(f"PRAGMA table_info({table})")]
     if col not in cols:
         con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        return True       # newly added - lets a caller backfill it once
+    return False
 
 
 def get_settings():

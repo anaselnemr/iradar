@@ -1603,6 +1603,8 @@ COMPONENTS = [
     ("hero_image",         "Hero image",            "flag", "hero_image"),
     # the status badge under a part's title (Active and preferred, Discontinued..)
     ("product_status",     "Product status",        "flag", "product_status"),
+    # back by request (11 Nov 2026): videos on a page, mostly eval boards
+    ("videos",             "Videos",                "cat",  "videos"),
     ("overview",          "Overview",              "cat",  "overview"),
     ("parametrics",        "Parametrics",           "tab",  "parametrics"),
     ("ordering",           "Ordering",              "tab",  "ordering"),
@@ -1631,6 +1633,10 @@ COMPONENTS = [
     ("bom",                "Bill of material",      "nav",  "bill of material"),
 ]
 COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
+# Every value infineon.com shows in a part's status badge (190 product tables,
+# 11 Nov 2026), in the order the charts list them.
+PRODUCT_STATUSES = ["Active and preferred", "Active", "Not for new design",
+                    "Discontinued", "Coming soon", "On request"]
 # category name -> component key, for turning captured categories into components
 _CAT_TO_COMP = {arg: key for key, _l, kind, arg in COMPONENTS if kind == "cat"}
 
@@ -2016,7 +2022,7 @@ def _squash_sql(col, chars=_SQUASH_CHARS):
     return expr
 
 
-def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
+def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=()):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
 
     bl and pl are their own dimensions rather than attributes, because they
@@ -2090,7 +2096,8 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
     # A page with no BL at all is not "some other BL" - it is unassigned, and
     # on a third of pages that is the honest answer. Ticking (none) asks for
     # exactly those, so the filter can never quietly hide them.
-    for vals, col in ((bls, "bl"), (pls, "pl"), (segs, "segment")):
+    for vals, col in ((bls, "bl"), (pls, "pl"), (segs, "segment"),
+                      (pss, "pstatus")):
         vals = [v for v in vals if v]
         if not vals:
             continue
@@ -2130,7 +2137,17 @@ _OWNER_VALUES = {
 _OWNER_EXPECTED = {"bl": _PRODUCT_PAGES + " AND u.active=1",
                    "pl": _PRODUCT_PAGES + " AND u.active=1",
                    "segment": _APP_PAGES + " AND u.active=1"}
-_OWNER_FIELDS = (("bl", "bl"), ("pl", "pl"), ("seg", "segment"))
+# Product status (the badge under a part's or board's title) filters the same
+# way. "No product status" only counts live parts and boards whose capture
+# already READ the badge: a page captured before the field existed is unread,
+# not status-less.
+_OWNER_VALUES["pstatus"] = "IFNULL(u.pstatus,'')<>''"
+_OWNER_EXPECTED["pstatus"] = (
+    "(u.url LIKE '%/part/%' OR u.url LIKE '%/evaluation-board/%')"
+    " AND u.active=1 AND instr(IFNULL(u.flags,''), '\"product_status\"')>0")
+_OWNER_FIELDS = (("bl", "bl"), ("pl", "pl"), ("seg", "segment"),
+                 ("ps", "pstatus"))
+_UNASSIGNED_LABEL = {"pstatus": "No product status"}
 
 
 def _owner_scope(col):
@@ -2158,7 +2175,7 @@ def _owner_values(con, col):
             continue
         out.append({"v": r["v"] or _UNASSIGNED,
                     "label": ((pl_label(r["v"]) if col == "pl" else r["v"])
-                              or "(not assigned)"),
+                              or _UNASSIGNED_LABEL.get(col, "(not assigned)")),
                     "n": r["n"]})
     return out
 
@@ -2217,6 +2234,7 @@ def index():
     sel_bl = request.args.getlist("bl")
     sel_pl = request.args.getlist("pl")
     sel_seg = request.args.getlist("seg")
+    sel_ps = request.args.getlist("ps")
     attrs = [a for a in request.args.getlist("attr") if a in ATTR_FILTERS]
     sort = request.args.get("sort", "page")
     # Sort by page ADDRESS, not title: the URL is the site's own path, so
@@ -2238,7 +2256,7 @@ def index():
         page = 1
 
     wsql, params = _url_filter(q, statuses, sel_types, attrs, sel_bl, sel_pl,
-                               sel_seg)
+                               sel_seg, sel_ps)
 
     con = db.connect()
     total_match = con.execute(
@@ -2336,6 +2354,7 @@ def index():
     # read while this connection is still open - it closes on the next line
     bl_opts, pl_opts = _owner_values(con, "bl"), _owner_values(con, "pl")
     seg_opts = _owner_values(con, "segment")
+    ps_opts = _owner_values(con, "pstatus")
     con.close()
     con2 = db.connect()
     # content/component has/no counts come from cat_pages: has = pages with the
@@ -2403,7 +2422,7 @@ def index():
     # pages are in that state, not how many are left after the other filters.
     try:
         facets = _dash_facets(con2, q, statuses, sel_types, attrs,
-                              sel_bl, sel_pl, sel_seg)
+                              sel_bl, sel_pl, sel_seg, sel_ps)
     finally:
         con2.close()
     con3 = db.connect()
@@ -2427,6 +2446,7 @@ def index():
                            offline_delta=offline_delta,
                            facets=facets,
                            bls=bl_opts, pls=pl_opts, segs=seg_opts,
+                           pss=ps_opts, sel_ps=sel_ps,
                            sel_bl=sel_bl, sel_pl=sel_pl, sel_seg=sel_seg,
                            unassigned=_UNASSIGNED,
                            last_run=last_run, total_open=total_open,
@@ -2467,7 +2487,8 @@ def urls_bulk():
                                    request.form.getlist("attr"),
                                    request.form.getlist("bl"),
                                    request.form.getlist("pl"),
-                                   request.form.getlist("seg"))
+                                   request.form.getlist("seg"),
+                                   request.form.getlist("ps"))
         con0 = db.connect()
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
@@ -6034,7 +6055,8 @@ def _dash_counts(con):
     return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
 
 
-def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
+def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
+                 pss=()):
     """What each filter option would still be worth, given the others.
 
     Faceted, not flat: a dimension is narrowed by the OTHER dimensions and
@@ -6052,7 +6074,8 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
                            [] if skip == "attr" else attrs,
                            () if skip in ("owner", "bl") else bls,
                            () if skip in ("owner", "pl") else pls,
-                           () if skip in ("owner", "seg") else segs)
+                           () if skip in ("owner", "seg") else segs,
+                           () if skip in ("owner", "ps") else pss)
 
     out = {"s_" + k: 0 for k in STATUS_FILTERS}
     out.update({"a_" + k: 0 for k in ATTR_FILTERS})
@@ -6147,7 +6170,7 @@ def urls_range():
             request.args.getlist("ptype"),
             [x for x in request.args.getlist("attr") if x in ATTR_FILTERS],
             request.args.getlist("bl"), request.args.getlist("pl"),
-            request.args.getlist("seg"))
+            request.args.getlist("seg"), request.args.getlist("ps"))
         order = _dash_order(request.args.get("sort", "page"))
         rows = con.execute(
             "SELECT u.id FROM urls u " + where + " ORDER BY " + order
@@ -6168,7 +6191,7 @@ def dash_avail():
             request.args.getlist("ptype"),
             [a for a in request.args.getlist("attr") if a in ATTR_FILTERS],
             request.args.getlist("bl"), request.args.getlist("pl"),
-            request.args.getlist("seg"))
+            request.args.getlist("seg"), request.args.getlist("ps"))
     finally:
         con.close()
     return jsonify(data)
@@ -7278,7 +7301,8 @@ def _wanted_ids():
                                    request.form.getlist("attr"),
                                    request.form.getlist("bl"),
                                    request.form.getlist("pl"),
-                                   request.form.getlist("seg"))
+                                   request.form.getlist("seg"),
+                                   request.form.getlist("ps"))
         con = db.connect()
         try:
             return [r["id"] for r in
@@ -8545,7 +8569,8 @@ def _charts_ptp_data(con):
            con.execute("SELECT COUNT(*), IFNULL(MAX(last_checked),'')"
                        " FROM urls WHERE level='PTP'").fetchone()[:],
            hash(con.execute("SELECT group_concat(id || ':' || IFNULL(bl,'') || ':'"
-                            " || IFNULL(pl,'')) FROM urls WHERE level='PTP'")
+                            " || IFNULL(pl,'') || ':' || IFNULL(last_status,'')"
+                            " || ':' || active) FROM urls WHERE level='PTP'")
                 .fetchone()[0]))
     hit = _CHARTS_CACHE.get("ptp")
     if hit and hit[0] == sig:
@@ -8554,17 +8579,34 @@ def _charts_ptp_data(con):
     registry = [(k, l) for k, l, _kd, _a in _all_components() if k in matrix]
     keys = [k for k, _l in registry]
     labels = [l for _k, l in registry]
-    meta = {r["id"]: (r["bl"] or "", r["pl"] or "") for r in con.execute(
-        "SELECT id, bl, pl FROM urls WHERE active=1 AND level='PTP'"
-        " AND IFNULL(last_status,'') NOT IN ('notlive','blank','error','')"
-        " AND IFNULL(bl,'')<>'' AND IFNULL(pl,'')<>'' AND instr(pl,'/')=0")}
+    # Live PTPs and offline ones (404/410): the charts filter Online / Offline /
+    # Both. An offline page keeps nothing of its content, so it counts as a PTP
+    # with every component missing - which is what a visitor gets.
+    meta = {}
+    for r in con.execute(
+            "SELECT id, bl, pl, flags, last_status FROM urls WHERE level='PTP'"
+            " AND ((active=1 AND IFNULL(last_status,'') NOT IN"
+            "       ('notlive','blank','error',''))"
+            "      OR last_status='notlive')"
+            " AND IFNULL(bl,'')<>'' AND IFNULL(pl,'')<>'' AND instr(pl,'/')=0"):
+        try:
+            st = ((json.loads(r["flags"] or "{}").get("product_status") or {})
+                  .get("text") or "")
+        except Exception:
+            st = ""
+        meta[r["id"]] = (r["bl"] or "", r["pl"] or "",
+                         0 if r["last_status"] == "notlive" else 1,
+                         PRODUCT_STATUSES.index(st) if st in PRODUCT_STATUSES else -1)
     rows, _wm, wc, _wp = _export_rows(con, None, keys, ids=list(meta))
     pls = {}
     for r in rows:
-        bl, pl = meta[r["id"]]
+        bl, pl, online, st = meta[r["id"]]
         got = dict(zip(wc, r["vals"]))
         p = pls.setdefault(pl, {"pl": pl, "label": pl_label(pl), "bl": bl, "ptps": 0,
-                                "have": {l: 0 for l in labels}, "allKey": 0, "bits": []})
+                                "have": {l: 0 for l in labels}, "allKey": 0, "bits": [],
+                                "on": [], "st": []})
+        p["on"].append(online)
+        p["st"].append(st)
         p["ptps"] += 1
         bits = 0
         for i, (k, l) in enumerate(registry):
@@ -8581,7 +8623,7 @@ def _charts_ptp_data(con):
         as_of = f"{d.day} {d:%b %Y}"
     except Exception:
         as_of = datetime.now(timezone.utc).strftime("%d %b %Y")
-    data = {"asOf": as_of, "components": labels,
+    data = {"asOf": as_of, "components": labels, "statuses": PRODUCT_STATUSES,
             "keyComponents": [c for c in KEY_COMPONENTS if c in labels],
             "keyNote": {"Hero image": ["Real image", "Placeholder image"],
                         "Description": ["Description tab", "No description tab"]},

@@ -2687,3 +2687,49 @@ def test_a_string_field_the_baseline_never_read_is_not_a_change():
         {"price": "1 EUR", "product_status": "Discontinued"}), encoding="utf-8")
     d = _cmp.library_diff(old, new)
     assert d["changed"] and "product_status" in d["per_section"]
+
+
+def test_product_status_filters_like_an_owner_field():
+    """Product status is a dashboard dropdown: each value, plus "No product
+    status" for live parts whose badge was read and is missing - never for a
+    page captured before the badge was read at all."""
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("UPDATE urls SET pstatus='Discontinued',"
+                " flags='{\"product_status\": {\"exists\": true, \"has_content\": true,"
+                " \"text\": \"Discontinued\"}}' WHERE url LIKE '%/a'")
+    con.execute("UPDATE urls SET pstatus='', flags='{\"product_status\":"
+                " {\"exists\": false, \"has_content\": false, \"text\": \"\"}}'"
+                " WHERE url LIKE '%/b'")
+    con.commit()
+    vals = {v["label"]: v["n"] for v in app._owner_values(con, "pstatus")}
+    con.close()
+    assert vals == {"Discontinued": 1, "No product status": 1}, vals
+    w, p = app._url_filter("", [], [], [], pss=["Discontinued"])
+    assert _ids(w, p) == ["a"]
+    w, p = app._url_filter("", [], [], [], pss=[app._UNASSIGNED])
+    assert _ids(w, p) == ["b"], "c and d were never read - not status-less"
+    html = _client.get("/?ps=Discontinued").data.decode("utf-8", "replace")
+    assert 'data-owner="ps"' in html and 'name="ps" value="Discontinued"' in html
+
+
+def test_charts_data_carries_online_state_and_status_per_ptp():
+    import json as _json
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    con.execute("INSERT INTO urls(url, active, ptype, level, last_checked,"
+                " last_status, bl, pl, flags) VALUES('https://www.infineon.com/part/on',"
+                " 1, 'Part', 'PTP', 'x', 'unchanged', 'MMS', '44', ?)",
+                (_json.dumps({"product_status": {"exists": True, "has_content": True,
+                                                 "text": "Not for new design"}}),))
+    con.execute("INSERT INTO urls(url, active, ptype, level, last_checked,"
+                " last_status, bl, pl) VALUES('https://www.infineon.com/part/off',"
+                " 0, 'Part', 'PTP', 'x', 'notlive', 'MMS', '44')")
+    con.commit()
+    app._CHARTS_CACHE.clear()
+    d = app._charts_ptp_data(con)
+    con.close()
+    pl = [p for p in d["pls"] if p["pl"] == "44"][0]
+    assert pl["ptps"] == 2 and sorted(pl["on"]) == [0, 1]
+    st = dict(zip(pl["on"], pl["st"]))
+    assert d["statuses"][st[1]] == "Not for new design" and st[0] == -1

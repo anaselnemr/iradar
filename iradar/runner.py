@@ -460,7 +460,7 @@ def _write_page_meta(con, url_id, page_url, res, dead):
     """
     con.execute(
         "UPDATE urls SET last_http=?, breadcrumb=?, flags=?, components=?,"
-        " detail_tabs=?, price=?, canonical_url=? WHERE id=?",
+        " detail_tabs=?, price=?, canonical_url=?, pstatus=? WHERE id=?",
         (res.get("http_status"),
          json.dumps([] if dead else (res.get("breadcrumb") or []),
                     ensure_ascii=False),
@@ -473,6 +473,9 @@ def _write_page_meta(con, url_id, page_url, res, dead):
          "" if dead else canonical_url(page_url,
                                        res.get("breadcrumb") or [],
                                        res.get("final_url") or ""),
+         # the status badge, in its own column so the dashboard can filter it
+         "" if dead else (((res.get("flags") or {}).get("product_status")
+                           or {}).get("text") or ""),
          url_id))
 
 

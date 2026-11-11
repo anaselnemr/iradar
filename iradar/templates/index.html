@@ -344,7 +344,8 @@
         be answering a different question. -#}
     {% for dim, opts, sel, name in [("Business line", bls, sel_bl, "bl"),
                                     ("Product line", pls, sel_pl, "pl"),
-                                    ("Segment", segs, sel_seg, "seg")] %}
+                                    ("Segment", segs, sel_seg, "seg"),
+                                    ("Product status", pss, sel_ps, "ps")] %}
     {#- Each owner field only lists values that the other filters still let
         in (Type = PTP hides SURF and the whole Segment dropdown). -#}
     {% if opts|length > 1 or sel %}
@@ -464,6 +465,7 @@
     {% for b in sel_bl %}<input type="hidden" name="bl" value="{{ b }}">{% endfor %}
     {% for l in sel_pl %}<input type="hidden" name="pl" value="{{ l }}">{% endfor %}
     {% for g in sel_seg %}<input type="hidden" name="seg" value="{{ g }}">{% endfor %}
+    {% for g in sel_ps %}<input type="hidden" name="ps" value="{{ g }}">{% endfor %}
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
@@ -1141,7 +1143,8 @@ refreshCount();
       if (q && q.value.trim()) p.set('q', q.value.trim());
       form.querySelectorAll('input[name=ptype]:checked, input[name=status]:checked,'
                           + ' input[name=attr]:checked, input[name=bl]:checked,'
-                          + ' input[name=pl]:checked, input[name=seg]:checked')
+                          + ' input[name=pl]:checked, input[name=seg]:checked,'
+                          + ' input[name=ps]:checked')
           .forEach(function (c) { p.append(c.name, c.value); });
       var mine = ++seq;
       fetch(location.origin + '{{ url_for("dash_avail") }}?' + p.toString(),
@@ -1176,7 +1179,7 @@ refreshCount();
     }, 90);
   }
   form.addEventListener('change', function (ev) {
-    if (['ptype', 'status', 'attr', 'bl', 'pl', 'seg'].indexOf(ev.target.name) >= 0) refreshFacets();
+    if (['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps'].indexOf(ev.target.name) >= 0) refreshFacets();
   });
   var qbox = form.querySelector('input[name=q]');
   if (qbox) qbox.addEventListener('input', refreshFacets);
