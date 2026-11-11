@@ -1636,7 +1636,7 @@ COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
 # Every value infineon.com shows in a part's status badge (190 product tables,
 # 11 Nov 2026), in the order the charts list them.
 # how a PL's origin reads, on the page and in the export
-PL_SOURCE_LABELS = {"page": "infineon.com", "manual": "set by hand"}
+PL_SOURCE_LABELS = {"page": "PIM", "manual": "set by hand"}
 PRODUCT_STATUSES = ["Active and preferred", "Active", "Not for new design",
                     "Discontinued", "Coming soon", "On request"]
 # category name -> component key, for turning captured categories into components
