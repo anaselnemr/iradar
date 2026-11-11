@@ -11,28 +11,36 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 @media(max-width:700px){main{padding:22px 16px 40px}.masthead{margin-bottom:26px}.page-heading{align-items:start;flex-direction:column;gap:23px;margin-bottom:25px}h1{font-size:29px}.stats{width:100%;gap:0;justify-content:space-between}.stat strong{font-size:25px}.stat span{font-size:11px}nav{gap:24px;margin-bottom:22px}nav a{font-size:12px}.card-head{padding:19px 18px 15px;gap:12px}.card-head .chart-title{flex-basis:100%;font-size:16px}.card-actions{margin-left:auto}.toolbar{padding:0 18px 18px;gap:10px}.toolbar>.control-label{width:100%;justify-content:space-between}.toolbar>.control-label select{width:calc(100% - 75px);font-size:12px}.toolbar>button{flex:1}.spacer{display:none}.export-settings{width:100%;justify-content:space-between;border-top:1px solid var(--line);padding-top:13px;margin-top:2px}.heat-scroll{padding-left:16px;padding-right:16px}.heat-footer{padding:10px 18px 18px}.chart-grid{grid-template-columns:1fr;gap:18px}.chart-body{padding:0 10px 15px}section{margin-top:28px}section h2{font-size:19px}.section-heading span{font-size:11px}.dialog-options{grid-template-columns:1fr}.brand{font-size:13px}.theme-button{font-size:12px;padding:0 10px}}
 
-[hidden]{display:none!important}#component-picker{border:0;padding:0;margin:0 0 28px;min-width:0}.picker-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.picker-heading>span{font-size:13px;font-weight:600}.quick-buttons{display:flex;gap:6px}.quick-buttons button{min-height:32px;font-size:11px}.quick-buttons button[aria-pressed=true]{background:var(--ink);color:var(--surface);border-color:var(--ink)}.component-chips{display:flex;flex-wrap:wrap;gap:8px}.component-chip{display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px;cursor:pointer;min-height:36px;white-space:nowrap}.component-chip:has(input:checked){border-color:var(--muted);background:var(--soft)}.card-total{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}.scope-row{padding:0 26px 18px;display:flex;align-items:center;gap:12px}.scope-row label{font-size:12px;color:var(--muted)}.scope-row select{flex:1;min-width:0;max-width:320px}#key-components{margin-top:0}#key-components .chart-body{padding:0 26px 20px}
-@media(max-width:700px){.component-chips{gap:6px}.component-chip{padding:7px 8px;font-size:11px;gap:6px}.component-chip input{width:14px;height:14px}.scope-row{padding:0 18px 16px}.scope-row select{max-width:none}#key-components .chart-body{padding:0 18px 18px}.card-total{margin-right:auto}}
-.shared-filters{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;margin-bottom:28px;align-items:start}
-.shared-filters #component-picker,#scope-picker{border:0;padding:0;margin:0;min-width:0}
-.scope-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.scope-group{border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;background:var(--surface)}
-.bl-chip,.bl-chip:has(input:checked){font-weight:650;border-color:transparent;background:transparent;padding:0;min-height:24px;width:fit-content;margin-bottom:8px}
-.bl-chip:has(input:indeterminate){color:var(--ink)}.bl-chip:has(input:indeterminate) input{accent-color:var(--accent)}
-.pl-chips{display:flex;flex-wrap:wrap;gap:6px}.pl-chips .component-chip{font-size:11px;padding:6px 7px;min-height:32px}
-@media(max-width:1000px){.shared-filters{grid-template-columns:1fr;gap:22px}.scope-groups{grid-template-columns:repeat(4,minmax(0,1fr))}}
-#component-picker summary{cursor:pointer;list-style:none}#component-picker summary::-webkit-details-marker{display:none}#component-picker summary>span::after{content:'−';margin-left:9px;color:var(--muted)}#component-picker:not([open]) summary>span::after{content:'+'}
-@media(max-width:700px){.shared-filters{gap:16px;margin-bottom:24px}.scope-groups{grid-template-columns:1fr;gap:8px}.scope-group{padding:8px;display:grid;grid-template-columns:48px minmax(0,1fr);gap:6px;align-items:start}.scope-group .bl-chip{margin:3px 0 0}.pl-chips{gap:5px}.pl-chips .component-chip{padding:6px;font-size:11px}.picker-heading{margin-bottom:10px}#component-picker:not([open]) summary{margin-bottom:0}}
-.page-filters{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:12px 16px;margin:-6px 0 30px}
-.pf-group{display:contents}.pf-group>div{justify-self:start}
-.pf-label{font-size:13px;font-weight:600;white-space:nowrap}
-.seg-buttons{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
-.seg-buttons button{border:0;border-radius:0;min-height:34px;padding:0 13px;font-size:12px;background:transparent;color:var(--ink)}
-.seg-buttons button+button{border-left:1px solid var(--line)}
-.seg-buttons button[aria-pressed=true]{background:var(--ink);color:var(--surface)}
-.status-chips{display:flex;flex-wrap:wrap;gap:6px}.status-chips .component-chip{font-size:11.5px;padding:6px 9px;min-height:32px}
-.chip-n{color:var(--muted);font-variant-numeric:tabular-nums}
-@media(max-width:700px){.page-filters{grid-template-columns:minmax(0,1fr);gap:8px;margin:-4px 0 24px}.pf-group>div{justify-self:stretch}.pf-group+.pf-group .pf-label{margin-top:8px}.seg-buttons{width:100%}.seg-buttons button{flex:1}}
+[hidden]{display:none!important}
+.card-total{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}.scope-row{padding:0 26px 18px;display:flex;align-items:center;gap:12px}.scope-row label{font-size:12px;color:var(--muted)}.scope-row select{flex:1;min-width:0;max-width:320px}#key-components{margin-top:0}#key-components .chart-body{padding:0 26px 20px}
+.filter-panel{--filter-height:34px;--filter-radius:6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:0 0 24px;min-width:0;box-shadow:0 2px 5px #00000003}
+.filter-summary{display:flex;align-items:center;gap:24px;min-height:64px;padding:16px 20px;list-style:none;cursor:pointer;border-radius:11px;transition:background .15s ease}
+.filter-summary::-webkit-details-marker{display:none}.filter-summary:hover{background:var(--soft)}.filter-summary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.filter-title{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:650;flex-shrink:0}.filter-title svg,.filter-disclosure svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.filter-title svg{color:var(--accent)}
+.filter-selection{display:flex;align-items:center;flex-wrap:wrap;gap:6px 0;color:var(--muted);font-size:12px;line-height:18px;min-width:0}.filter-selection span{white-space:nowrap}.filter-selection span+span::before{content:'\00b7';padding:0 10px;color:var(--muted)}
+.filter-disclosure{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-left:auto;flex-shrink:0}.filter-collapse{display:none}.filter-panel[open] .filter-expand{display:none}.filter-panel[open] .filter-collapse{display:inline}.filter-panel[open] .filter-disclosure svg{transform:rotate(180deg)}
+.filter-content{border-top:1px solid var(--line);padding:20px}
+.shared-filters{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:start}
+.filter-panel fieldset{margin:0;padding:0;border:0;min-width:0}
+.picker-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;min-height:var(--filter-height)}
+.picker-heading>span,.pf-label{font-size:12px;font-weight:650;line-height:18px}
+.quick-buttons{display:flex;gap:4px}.filter-panel .quick-buttons button{height:var(--filter-height);min-height:var(--filter-height);padding:0 10px;border-radius:var(--filter-radius);font-size:12px;background:var(--surface)}
+.filter-panel .quick-buttons button[aria-pressed=true]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.component-chips,.pl-chips,.status-chips{display:flex;flex-wrap:wrap;gap:6px}
+.filter-panel .component-chip{display:inline-flex;align-items:center;gap:7px;min-height:var(--filter-height);padding:6px 9px;border:1px solid var(--line);border-radius:var(--filter-radius);background:var(--surface);font-size:12px;line-height:20px;cursor:pointer;white-space:nowrap;transition:border-color .15s ease,background .15s ease}
+.filter-panel .component-chip:has(input:checked),.filter-panel .component-chip:has(input:indeterminate){border-color:color-mix(in srgb,var(--accent) 32%,var(--line));background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+.filter-panel .component-chip:hover{border-color:var(--accent);background:var(--soft)}.filter-panel .component-chip:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:2px}.filter-panel input[type=checkbox]{width:14px;height:14px;flex-shrink:0;cursor:pointer;outline-offset:2px}
+.scope-groups{display:grid;gap:6px}.scope-group{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px;align-items:start;min-width:0}.filter-panel .bl-chip{font-weight:650;justify-content:flex-start}.filter-panel .pl-chips .component-chip{flex-shrink:0}
+.page-filters{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:start;gap:14px 18px;border-top:1px solid var(--line);margin-top:20px;padding-top:20px}.pf-group{display:contents}.pf-label{display:flex;align-items:center;min-height:var(--filter-height)}.pf-group>div{justify-self:start}
+.seg-buttons{display:inline-flex;gap:2px;border:1px solid var(--line);border-radius:var(--filter-radius);padding:0;background:var(--soft);height:var(--filter-height)}
+.filter-panel .seg-buttons button{border:1px solid transparent;border-radius:3px;min-height:0;padding:0 15px;font-size:12px;background:transparent;color:var(--muted)}.filter-panel .seg-buttons button:hover{color:var(--ink)}.filter-panel .seg-buttons button[aria-pressed=true]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:0 1px 2px #00000008}
+.chip-n{color:var(--muted);font-variant-numeric:tabular-nums;border-left:1px solid var(--line);padding-left:7px;margin-left:1px}
+@media(max-width:1100px) and (min-width:701px){.shared-filters{grid-template-columns:1fr;gap:20px}.scope-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.scope-row{padding:0 18px 16px}.scope-row select{max-width:none}#key-components .chart-body{padding:0 18px 18px}.card-total{margin-right:auto}
+.filter-panel{margin-bottom:20px}.filter-summary{display:grid;grid-template-columns:1fr auto;gap:10px 12px;padding:14px 16px}.filter-title{font-size:14px}.filter-disclosure{grid-column:2;grid-row:1}.filter-selection{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}.filter-selection span+span::before{content:none}.filter-selection span{font-size:12px}
+.filter-content{padding:16px}.shared-filters{grid-template-columns:1fr;gap:20px}.picker-heading{margin-bottom:10px}.scope-group{grid-template-columns:64px minmax(0,1fr);gap:6px}.page-filters{grid-template-columns:1fr;gap:10px;margin-top:20px;padding-top:16px}.pf-label{min-height:20px}.pf-group>div{justify-self:stretch}.pf-group+.pf-group .pf-label{margin-top:6px}.seg-buttons button{flex:1}.filter-panel .seg-buttons button{padding:0 12px}
+}
+@media(prefers-reduced-motion:reduce){.filter-summary,.filter-panel .component-chip{transition:none}}
 </style>
 </head>
 <body>
@@ -42,14 +50,19 @@
   <div class="page-heading"><h1>PTP completion</h1><div class="stats"><div class="stat"><strong id="stat-ptps"></strong><span id="stat-ptps-label">Live PTPs</span></div><div class="stat"><strong id="stat-completion"></strong><span>Components in place</span></div><div class="stat"><strong id="stat-pls">14</strong><span>Product lines</span></div></div></div>
   <nav aria-label="Chart sections"><a href="#key-components">Key components</a><a href="#heatmap">Heatmap</a><a href="#business-lines">Business lines</a><a href="#product-lines">Product lines</a><a href="#components">Components</a></nav>
  </header>
+ <details id="filters-panel" class="filter-panel">
+ <summary class="filter-summary"><span class="filter-title"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14M7 3v4m6 1v4m-6 1v4"/></svg>Filters</span><span id="filter-selection" class="filter-selection" aria-live="polite" aria-atomic="true"></span><span class="filter-disclosure"><span class="filter-expand">Expand</span><span class="filter-collapse">Collapse</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></span></summary>
+ <div class="filter-content">
  <div class="shared-filters">
- <details id="component-picker" open aria-label="Components"><summary class="picker-heading"><span>Components</span><div class="quick-buttons"><button type="button" data-preset="key">Key 7</button><button type="button" data-preset="all">All 17</button></div></summary><div class="component-chips"></div></details>
+ <fieldset id="component-picker" aria-label="Components"><div class="picker-heading"><span>Components</span><div class="quick-buttons"><button type="button" data-preset="key">Key 7</button><button type="button" data-preset="all">All 17</button></div></div><div class="component-chips"></div></fieldset>
  <fieldset id="scope-picker" aria-label="Scope"><div class="picker-heading"><span>Scope</span><div class="quick-buttons"><button type="button" data-scope-preset="all">All</button><button type="button" data-scope-preset="none">None</button></div></div><div class="scope-groups"></div></fieldset>
  </div>
  <div class="page-filters">
   <div class="pf-group" role="group" aria-label="Pages"><span class="pf-label">Pages</span><div class="seg-buttons"><button type="button" data-pages="online">Online</button><button type="button" data-pages="offline">Offline</button><button type="button" data-pages="both">Both</button></div></div>
   <div class="pf-group" role="group" aria-label="Product status"><span class="pf-label">Product status</span><div class="status-chips"></div></div>
  </div>
+ </div>
+ </details>
  <section id="key-components"><div id="key-grid" class="chart-grid"></div></section>
  <article style="margin-top:34px" id="heatmap" class="card">
   <div class="card-head"><h2 class="chart-title" contenteditable="plaintext-only" spellcheck="false" aria-label="Heatmap chart title">Components by product line</h2><div class="card-actions"><button data-export="png" data-card="heatmap" aria-label="Download heatmap PNG">PNG ↓</button><button data-export="svg" data-card="heatmap" aria-label="Download heatmap SVG">SVG ↓</button></div></div>
@@ -241,7 +254,12 @@ function renderStatusChips(){
  $$('[data-pages]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.pages===pageState)));
  $('#stat-ptps-label').textContent=pageState==='online'?'Live PTPs':pageState==='offline'?'Offline PTPs':'PTPs';
 }
-function renderAll(){applyPageFilter();renderStatusChips();refreshData();renderHeat();charts.forEach(renderCard);}
+function updateFilterSummary(){
+ const statusCount=[...STATUSES.map((_,i)=>i),-1].filter(i=>selectedStatus.has(i)).length;
+ const labels=[selectedComponents.size+' component'+(selectedComponents.size===1?'':'s'),selectedPL.size+' product line'+(selectedPL.size===1?'':'s'),pageState==='both'?'Both':pageState==='offline'?'Offline':'Online',statusCount+' of '+(STATUSES.length+1)+' statuses'];
+ $('#filter-selection').innerHTML=labels.map(label=>`<span>${esc(label)}</span>`).join('');
+}
+function renderAll(){applyPageFilter();renderStatusChips();refreshData();updateFilterSummary();renderHeat();charts.forEach(renderCard);}
 $$('[data-pages]').forEach(b=>b.onclick=()=>{pageState=b.dataset.pages;try{localStorage.setItem('ptp-pages',pageState);}catch{}renderAll();});
 $('.status-chips').onchange=e=>{const v=Number(e.target.value);if(e.target.checked)selectedStatus.add(v);else selectedStatus.delete(v);try{localStorage.setItem('ptp-status',JSON.stringify([...selectedStatus]));}catch{}renderAll();};
 function syncPicker(){
@@ -253,9 +271,10 @@ $('[data-preset="all"]').textContent='All '+DATA.components.length;
 $('.component-chips').innerHTML=DATA.components.map(c=>`<label class="component-chip"><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`).join('');
 $('.component-chips').onchange=e=>{if(e.target.checked)selectedComponents.add(e.target.value);else selectedComponents.delete(e.target.value);saveSelection();};
 $$('[data-preset]').forEach(el=>el.onclick=e=>{e.preventDefault();selectedComponents.clear();(el.dataset.preset==='key'?DATA.keyComponents:DATA.components).forEach(c=>selectedComponents.add(c));saveSelection();});
-const phoneFilters=matchMedia('(max-width:700px)');
-function fitPickers(){ $('#component-picker').open=!phoneFilters.matches; }
-fitPickers();phoneFilters.addEventListener('change',fitPickers);
+const filterPanel=$('#filters-panel');
+let savedFiltersOpen=null;try{savedFiltersOpen=localStorage.getItem('ptp-filters-open');}catch{}
+filterPanel.open=savedFiltersOpen==='true'||(savedFiltersOpen!=='false'&&!matchMedia('(max-width:700px)').matches);
+filterPanel.addEventListener('toggle',()=>{try{localStorage.setItem('ptp-filters-open',String(filterPanel.open));}catch{}});
 function syncScopePicker(){
  $$('#scope-picker [data-pl]').forEach(el=>el.checked=selectedPL.has(el.value));
  $$('#scope-picker [data-bl]').forEach(el=>{
