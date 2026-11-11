@@ -345,14 +345,18 @@
     {% for dim, opts, sel, name in [("Business line", bls, sel_bl, "bl"),
                                     ("Product line", pls, sel_pl, "pl"),
                                     ("Segment", segs, sel_seg, "seg")] %}
-    {% if opts|length > 1 %}
-    <details class="dd" name="filters">
+    {#- Each owner field only lists values that the other filters still let
+        in (Type = PTP hides SURF and the whole Segment dropdown). -#}
+    {% if opts|length > 1 or sel %}
+    <details class="dd" name="filters" data-owner="{{ name }}"
+             {% if not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
       <summary>{{ dim }}{% if sel %}<span class="fbadge">{{ sel|length }}</span>{% endif %}</summary>
       <div class="panel">
         {% for o in opts %}
-        <label data-opt><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
+        {% set _n = facets.get('o_' + name + '_' + o.v, o.n) %}
+        <label data-opt class="ownopt" {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
                  {% if o.v in sel %}checked{% endif %}> {{ o.label }}
-          <span class="cnt">{{ '{:,}'.format(o.n) }}</span></label>
+          <span class="cnt" data-av="o_{{ name }}_{{ o.v }}">{{ '{:,}'.format(_n) }}</span></label>
         {% endfor %}
       </div>
     </details>
@@ -1136,7 +1140,8 @@ refreshCount();
       var q = form.querySelector('input[name=q]');
       if (q && q.value.trim()) p.set('q', q.value.trim());
       form.querySelectorAll('input[name=ptype]:checked, input[name=status]:checked,'
-                          + ' input[name=attr]:checked')
+                          + ' input[name=attr]:checked, input[name=bl]:checked,'
+                          + ' input[name=pl]:checked, input[name=seg]:checked')
           .forEach(function (c) { p.append(c.name, c.value); });
       var mine = ++seq;
       fetch(location.origin + '{{ url_for("dash_avail") }}?' + p.toString(),
@@ -1151,15 +1156,25 @@ refreshCount();
             var lab = el.closest('label');
             var box = lab && lab.querySelector('input');
             if (!box) return;
+            if (lab.classList.contains('ownopt')) {
+              // owner values outside the current pages are not dimmed but gone
+              lab.style.display = (n === 0 && !box.checked) ? 'none' : '';
+              return;
+            }
             lab.classList.toggle('optdim', n === 0 && !box.checked);
             box.disabled = (n === 0 && !box.checked);
+          });
+          form.querySelectorAll('details[data-owner]').forEach(function (dd) {
+            var shown = Array.prototype.some.call(dd.querySelectorAll('label.ownopt'),
+              function (l) { return l.style.display !== 'none'; });
+            dd.style.display = shown ? '' : 'none';
           });
         })
         .catch(function (e) { console.warn('facet counts failed', e); });
     }, 90);
   }
   form.addEventListener('change', function (ev) {
-    if (['ptype', 'status', 'attr'].indexOf(ev.target.name) >= 0) refreshFacets();
+    if (['ptype', 'status', 'attr', 'bl', 'pl', 'seg'].indexOf(ev.target.name) >= 0) refreshFacets();
   });
   var qbox = form.querySelector('input[name=q]');
   if (qbox) qbox.addEventListener('input', refreshFacets);

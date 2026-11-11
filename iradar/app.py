@@ -2088,7 +2088,8 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
         conds = []
         for v in vals:
             if v == _UNASSIGNED:
-                conds.append(f"IFNULL(u.{col},'')=''")
+                # the same pages the option counts: expected to carry it
+                conds.append(f"(IFNULL(u.{col},'')='' AND {_OWNER_EXPECTED[col]})")
             else:
                 conds.append(f"u.{col}=?")
                 params.append(v)
@@ -2103,12 +2104,41 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
 _UNASSIGNED = "__unassigned__"
 
 
+# The owner fields work like PIM attributes that belong to a family: a field
+# only applies to certain pages, and only those can be "missing" it.
+#  - values: the pages a field's values are read from, and for BL the closed
+#    list of business lines on the ES chart (SURF is a partner tag, not a BL)
+#  - expected: the live pages that SHOULD carry it - "(not assigned)" counts
+#    only these, so a promo page or a paused offline part never pads it
+ES_BLS = ("DSI", "ICW", "MMS", "RF")
+_PRODUCT_PAGES = ("(u.ptype IN ('Product','Part')"
+                  " OR u.url LIKE '%infineon.com/product-table/%')")
+_APP_PAGES = "IFNULL(u.ptype,'')='Application'"
+_OWNER_VALUES = {
+    "bl": "IFNULL(u.ptype,'')<>'Application' AND u.bl IN ('DSI','ICW','MMS','RF')",
+    "pl": "IFNULL(u.ptype,'')<>'Application' AND IFNULL(u.pl,'')<>''",
+    "segment": _APP_PAGES + " AND IFNULL(u.segment,'')<>''"}
+_OWNER_EXPECTED = {"bl": _PRODUCT_PAGES + " AND u.active=1",
+                   "pl": _PRODUCT_PAGES + " AND u.active=1",
+                   "segment": _APP_PAGES + " AND u.active=1"}
+_OWNER_FIELDS = (("bl", "bl"), ("pl", "pl"), ("seg", "segment"))
+
+
+def _owner_scope(col):
+    """Pages that count in a field's dropdown: a real value, or expected and
+    empty (the "(not assigned)" option)."""
+    return (f"(({_OWNER_VALUES[col]}) OR (IFNULL(u.{col},'')=''"
+            f" AND {_OWNER_EXPECTED[col]}))")
+
+
 def _owner_values(con, col):
-    """Every BL (or PL) in use, with how many pages carry it, plus the
-    unassigned count. Read from the data rather than configured, so a value
-    that appears in a new import needs no code change to become filterable."""
+    """Every BL (or PL, or segment) in use within its pages, with how many
+    pages carry it, plus the unassigned count. Read from the data rather than
+    configured, so a value that appears in a new import needs no code change
+    to become filterable."""
     rows = con.execute(
-        f"SELECT IFNULL({col},'') v, COUNT(*) n FROM urls"
+        f"SELECT IFNULL({col},'') v, COUNT(*) n FROM urls u"
+        f" WHERE {_owner_scope(col)}"
         f" GROUP BY v ORDER BY (v='') ASC, n DESC").fetchall()
     out = []
     for r in rows:
@@ -6006,9 +6036,9 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
                            [] if skip == "status" else statuses,
                            [] if skip == "type" else ptypes,
                            [] if skip == "attr" else attrs,
-                           () if skip == "owner" else bls,
-                           () if skip == "owner" else pls,
-                           () if skip == "owner" else segs)
+                           () if skip in ("owner", "bl") else bls,
+                           () if skip in ("owner", "pl") else pls,
+                           () if skip in ("owner", "seg") else segs)
 
     out = {"s_" + k: 0 for k in STATUS_FILTERS}
     out.update({"a_" + k: 0 for k in ATTR_FILTERS})
@@ -6063,6 +6093,18 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=()):
     out["t_Products & Eval Boards"] = (out.get("t_Product", 0)
                                        + out.get("t_PTP", 0)
                                        + out.get("t_EB", 0))
+    # owner values, each within its own pages (_owner_scope): o_bl_DSI,
+    # o_seg___unassigned__ ... and o_bl = the dropdown's total, 0 = hide it
+    for name, col in _OWNER_FIELDS:
+        w, params = where(name)
+        tot = 0
+        for r in con.execute(
+                f"SELECT IFNULL(u.{col},'') v, COUNT(*) n FROM urls u " + w
+                + (" AND " if w else " WHERE ") + _owner_scope(col)
+                + " GROUP BY v", params):
+            out[f"o_{name}_{r['v'] or _UNASSIGNED}"] = r["n"]
+            tot += r["n"]
+        out["o_" + name] = tot
     w, params = where(None)
     out["_total"] = con.execute("SELECT COUNT(*) FROM urls u " + w,
                                 params).fetchone()[0]

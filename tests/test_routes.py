@@ -672,7 +672,40 @@ def test_segment_filter_narrows_like_bl_and_pl():
     w, p = app._url_filter("", [], [], [], pls=["81"], segs=["C3"])
     assert _ids(w, p) == ["a"]
     w, p = app._url_filter("", [], [], [], segs=[app._UNASSIGNED])
-    assert _ids(w, p) == ["d"]
+    assert _ids(w, p) == [], "parts are never expected to carry a segment"
+
+
+def test_owner_dropdowns_only_count_their_own_pages():
+    """Segment belongs to application pages, BL/PL to everything else: products
+    never pad the segment list and SURF on an application page never reaches
+    the BL list, and a Type filter hides a dropdown that has nothing left."""
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status,"
+                " bl, segment) VALUES('https://www.infineon.com/application/x',"
+                " 1, 'Application', 'x', 'unchanged', 'SURF', 'C3')")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status,"
+                " bl) VALUES('https://www.infineon.com/partners/design-partner/p',"
+                " 1, '', 'x', 'unchanged', 'SURF')")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
+                " VALUES('https://www.infineon.com/promo/q', 1, 'Promo', 'x',"
+                " 'unchanged')")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
+                " VALUES('https://www.infineon.com/part/gone', 0, 'Part', 'x',"
+                " 'notlive')")
+    con.commit()
+    seg = {v["label"]: v["n"] for v in app._owner_values(con, "segment")}
+    bl = {v["label"]: v["n"] for v in app._owner_values(con, "bl")}
+    assert seg == {"C3": 1}, "parts must not show up as unassigned segments"
+    assert "SURF" not in bl, "SURF is not a business line on the ES chart"
+    assert bl == {"ICW": 2, "DSI": 1, "(not assigned)": 1}, \
+        "only the live part d is missing a BL - not the promo or the paused part"
+    f = app._dash_facets(con, "", [], ["Part"], [])
+    assert f["o_seg"] == 0, "Type = Part leaves the Segment dropdown empty"
+    assert f["o_bl_ICW"] == 2 and "o_bl_SURF" not in f
+    f = app._dash_facets(con, "", [], ["Application"], [])
+    assert f["o_bl"] == 0 and f["o_seg_C3"] == 1
+    con.close()
 
 
 def test_an_unfiltered_list_still_holds_everything():
