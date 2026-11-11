@@ -516,12 +516,12 @@ def _apply_page_pl(con, url_id, page_url, res, dead):
                 con.execute(
                     "UPDATE urls SET pl=?, bl=CASE WHEN ?<>'' THEN ? ELSE bl END,"
                     " meta_flag=? WHERE id=?",
-                    (seen, bl, bl, f"infineon.com moved this part from PL {pl}"
+                    (seen, bl, bl, f"PIM moved this part from PL {pl}"
                      f" to {seen}" + ("" if bl else " - not on the ES chart"),
                      url_id))
             else:
                 con.execute("UPDATE urls SET meta_flag=? WHERE id=?",
-                            (f"infineon.com changed the PL to {seen}"
+                            (f"PIM changed the PL to {seen}"
                              f" (iRadar: {pl}, set by hand)", url_id))
     con.execute("UPDATE urls SET page_pl=? WHERE id=?", (seen, url_id))
 

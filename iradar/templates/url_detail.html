@@ -245,7 +245,7 @@
     {% for f in meta_fields %}
     <span class="ownfield">
       <span class="ownlbl">{{ meta_labels.get(f, f) }}</span>
-      {% if u[f] %}<span class="ownval">{{ u[f] | pl_label if f == 'pl' else u[f] }}</span>{% if f == 'pl' and u.pl_source in pl_sources %}<span class="plsrc plsrc-{{ u.pl_source }}" title="{{ 'Set by hand - runs never change it' if u.pl_source == 'manual' else 'From the part\'s own infineon.com page - follows it' }}">{{ pl_sources[u.pl_source] }}</span>{% endif %}
+      {% if u[f] %}<span class="ownval">{{ u[f] | pl_label if f == 'pl' else u[f] }}</span>{% if f == 'pl' and u.pl_source in pl_sources %}<span class="plsrc plsrc-{{ u.pl_source }}" title="{{ 'Set by hand - runs never change it' if u.pl_source == 'manual' else 'From PIM, as the part\'s page shows it - follows it' }}">{{ pl_sources[u.pl_source] }}</span>{% endif %}
       {% else %}<span class="ownval ownval-none" title="Not set">not set</span>{% endif %}
     </span>
     {% endfor %}
