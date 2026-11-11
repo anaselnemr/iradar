@@ -600,6 +600,10 @@ def init_db():
     # The PL the page itself showed at its last capture (automatic BL/PL):
     # only a CHANGE in it raises an ownership check, never a known difference
     _ensure_column(con, "urls", "page_pl", "TEXT DEFAULT ''")
+    # Where a part's / board's PL came from: 'page' = its own infineon.com
+    # page, 'manual' = set by a person (in iRadar or from PIM). A run never
+    # changes a manual PL; a page-sourced one follows the page.
+    _ensure_column(con, "urls", "pl_source", "TEXT DEFAULT ''")
     # A part's / board's status badge text, mirrored out of flags so the
     # dashboard filters it like BL/PL. Filled from flags once when it appears.
     if _ensure_column(con, "urls", "pstatus", "TEXT DEFAULT ''"):

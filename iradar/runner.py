@@ -459,14 +459,22 @@ _PART_OR_BOARD = ("/part/", "/evaluation-board/")
 def _apply_page_pl(con, url_id, page_url, res, dead):
     """Keep a part's / board's BL and PL in step with what its own page says.
 
-    - no PL yet and the page names one: fill PL, and BL from the ES chart
-    - the page names no PL and we have none: flag it ("No PL source") -
-      never guessed
-    - we already have a PL: never overwritten. Many were set from PIM by
-      decision. Only when INFINEON CHANGES the page's PL (it differs from what
-      the page said last time) is the page flagged for a human to look at -
-      a known, accepted difference is not re-raised every run.
-    urls.page_pl remembers what the page said, which is what makes that work.
+    Every PL carries its source (urls.pl_source):
+      'manual' - set by a person (in iRadar, or from PIM). A run NEVER changes
+                 it. If Infineon later changes the page's PL, the page is
+                 flagged for a look, nothing more.
+      'page'   - read from the part's own infineon.com page. It follows the
+                 page: when Infineon moves the part, PL and BL move with it
+                 and the page is flagged so the move is seen.
+    Other cases:
+      - no PL yet and the page names one: filled, source 'page'
+      - the page names no PL and we have none: flagged "No PL source" - never
+        guessed
+      - first time a page is read (no source yet): a PL equal to the page's is
+        'page'; one that differs, or that the page cannot back, was set by a
+        person - 'manual'.
+    urls.page_pl remembers what the page said, so only a CHANGE on Infineon's
+    side raises anything - a known difference is never re-raised every run.
     """
     if dead or not any(s in (page_url or "") for s in _PART_OR_BOARD):
         return
@@ -478,28 +486,43 @@ def _apply_page_pl(con, url_id, page_url, res, dead):
     flags = res.get("flags") or {}
     if "page_pl" not in flags:
         return                     # an older capture that never read it
-    seen = PL_ALIASES.get((flags["page_pl"] or {}).get("text") or "",
-                          (flags["page_pl"] or {}).get("text") or "")
-    row = con.execute("SELECT bl, pl, page_pl, meta_flag FROM urls WHERE id=?",
-                      (url_id,)).fetchone()
+    raw_pl = (flags["page_pl"] or {}).get("text") or ""
+    seen = PL_ALIASES.get(raw_pl, raw_pl)
+    row = con.execute("SELECT bl, pl, page_pl, pl_source, meta_flag FROM urls"
+                      " WHERE id=?", (url_id,)).fetchone()
     if not row:
         return
     pl, before = (row["pl"] or "").strip(), (row["page_pl"] or "").strip()
-    flag = (row["meta_flag"] or "").strip()
+    src, flag = (row["pl_source"] or "").strip(), (row["meta_flag"] or "").strip()
     if not pl and seen:
         bl = PL_TO_BL.get(seen, "")
         con.execute("UPDATE urls SET pl=?, bl=CASE WHEN ?<>'' THEN ? ELSE bl END,"
-                    " meta_flag=? WHERE id=?",
+                    " pl_source='page', meta_flag=? WHERE id=?",
                     (seen, bl, bl,
                      "" if bl else f"PL {seen} not on the ES chart - no BL",
                      url_id))
-    elif not pl and not seen and not flag:
-        con.execute("UPDATE urls SET meta_flag='No PL source' WHERE id=?",
-                    (url_id,))
-    elif pl and seen and before and seen != before and seen != pl:
-        con.execute("UPDATE urls SET meta_flag=? WHERE id=?",
-                    (f"infineon.com changed the PL to {seen} (iRadar: {pl})",
+    elif not pl and not seen:
+        if not flag:
+            con.execute("UPDATE urls SET meta_flag='No PL source' WHERE id=?",
+                        (url_id,))
+    else:
+        if not src:
+            # first read of this page: name where the existing PL came from
+            src = "page" if seen and seen == pl else "manual"
+            con.execute("UPDATE urls SET pl_source=? WHERE id=?", (src, url_id))
+        if seen and before and seen != before and seen != pl:
+            if src == "page":
+                bl = PL_TO_BL.get(seen, "")
+                con.execute(
+                    "UPDATE urls SET pl=?, bl=CASE WHEN ?<>'' THEN ? ELSE bl END,"
+                    " meta_flag=? WHERE id=?",
+                    (seen, bl, bl, f"infineon.com moved this part from PL {pl}"
+                     f" to {seen}" + ("" if bl else " - not on the ES chart"),
                      url_id))
+            else:
+                con.execute("UPDATE urls SET meta_flag=? WHERE id=?",
+                            (f"infineon.com changed the PL to {seen}"
+                             f" (iRadar: {pl}, set by hand)", url_id))
     con.execute("UPDATE urls SET page_pl=? WHERE id=?", (seen, url_id))
 
 

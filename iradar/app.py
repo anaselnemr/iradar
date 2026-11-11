@@ -1635,6 +1635,8 @@ COMPONENTS = [
 COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
 # Every value infineon.com shows in a part's status badge (190 product tables,
 # 11 Nov 2026), in the order the charts list them.
+# how a PL's origin reads, on the page and in the export
+PL_SOURCE_LABELS = {"page": "infineon.com", "manual": "set by hand"}
 PRODUCT_STATUSES = ["Active and preferred", "Active", "Not for new design",
                     "Discontinued", "Coming soon", "On request"]
 # category name -> component key, for turning captured categories into components
@@ -3654,6 +3656,7 @@ def url_detail(url_id):
     return render_template("url_detail.html", u=u, snaps=snaps, changes=changes,
                            latest=latest, library=library, cat_tree=cat_tree,
                            redirect_to=redirect_to, flags=flags,
+                           pl_sources=PL_SOURCE_LABELS,
                            copy_flags=copy_flags, copy_labels=copy_labels,
                            copy_chars=copy_chars,
                            components=comp_rows, price=(u["price"] or ""),
@@ -5003,10 +5006,16 @@ def url_set_meta(url_id):
     con = db.connect()
     if not con.execute("SELECT 1 FROM urls WHERE id=?", (url_id,)).fetchone():
         con.close(); abort(404)
+    before = con.execute("SELECT bl, pl FROM urls WHERE id=?",
+                         (url_id,)).fetchone()
     for f in ("bl", "pl", "segment", "cm", "owner"):
         if f in request.form:
             con.execute(f"UPDATE urls SET {f}=? WHERE id=?",
                         ((request.form.get(f) or "").strip()[:200], url_id))
+    # a PL or BL a person typed is theirs: tagged, and no run will change it
+    if any(f in request.form and (request.form.get(f) or "").strip()
+           != (before[f] or "").strip() for f in ("bl", "pl")):
+        con.execute("UPDATE urls SET pl_source='manual' WHERE id=?", (url_id,))
     con.execute("UPDATE urls SET meta_flag='' WHERE id=?", (url_id,))
     con.commit(); con.close()
     flash("Ownership fields saved.")
@@ -7091,8 +7100,8 @@ def hierarchy():
 
 def _export_meta_cols():
     """The ownership columns, in the order the CSS report used."""
-    return [("bl", "BL"), ("pl", "PL"), ("segment", "Segment"), ("cm", "CM"),
-            ("owner", "Owner")]
+    return [("bl", "BL"), ("pl", "PL"), ("pl_source", "PL source"),
+            ("segment", "Segment"), ("cm", "CM"), ("owner", "Owner")]
 
 
 # an Excel cell holds 32,767 characters; a page with two hundred documents can
@@ -7133,7 +7142,8 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
     want_page = [k for k, _l in PAGE_FIELDS if k in cols]
 
     cat_of = {k: a for k, _l, kind, a in registry if kind == "cat"}
-    q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.segment, u.cm,"
+    q = ("SELECT u.id, u.url, u.ptype, u.level, u.bl, u.pl, u.pl_source,"
+         " u.segment, u.cm,"
          " u.owner,"
          " u.components, u.detail_tabs, u.flags, u.last_status, u.last_http,"
          " u.last_checked, u.price, u.active,"
@@ -7201,7 +7211,9 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                "status": p["last_status"] or "", "vals": [],
                "tag": _page_state_tag(p)}
         for k in want_meta:
-            row["vals"].append(pl_label(p[k]) if k == "pl" else (p[k] or ""))
+            row["vals"].append(pl_label(p[k]) if k == "pl"
+                               else PL_SOURCE_LABELS.get(p[k] or "", "")
+                               if k == "pl_source" else (p[k] or ""))
         for k in want_page:
             if k == "live":
                 # Three answers, not two. A blank page answered - it is not a

@@ -147,6 +147,9 @@
   .ownlbl::after { content: ":"; font-weight: 700; }
   .ownval { color: var(--ink); }
   .ownval-none { color: var(--muted); font-style: italic; }
+  .plsrc { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+           border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .plsrc-manual { color: var(--ink); border-color: var(--muted); }
   .ownpen > summary { list-style: none; cursor: pointer; padding: 2px 5px;
                       border-radius: 6px; line-height: 1; }
   .ownpen > summary::-webkit-details-marker { display: none; }
@@ -242,7 +245,7 @@
     {% for f in meta_fields %}
     <span class="ownfield">
       <span class="ownlbl">{{ meta_labels.get(f, f) }}</span>
-      {% if u[f] %}<span class="ownval">{{ u[f] | pl_label if f == 'pl' else u[f] }}</span>
+      {% if u[f] %}<span class="ownval">{{ u[f] | pl_label if f == 'pl' else u[f] }}</span>{% if f == 'pl' and u.pl_source in pl_sources %}<span class="plsrc plsrc-{{ u.pl_source }}" title="{{ 'Set by hand - runs never change it' if u.pl_source == 'manual' else 'From the part\'s own infineon.com page - follows it' }}">{{ pl_sources[u.pl_source] }}</span>{% endif %}
       {% else %}<span class="ownval ownval-none" title="Not set">not set</span>{% endif %}
     </span>
     {% endfor %}

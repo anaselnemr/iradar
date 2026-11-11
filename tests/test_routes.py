@@ -2770,3 +2770,38 @@ def test_a_new_part_takes_its_pl_and_bl_from_its_own_page():
     runner._apply_page_pl(con, 951, "https://www.infineon.com/part/NOPL", held, False)
     assert get(951)["meta_flag"] == ""
     con.close()
+
+
+def test_a_hand_set_pl_is_tagged_and_never_changed_by_a_run():
+    import runner
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    con.execute("INSERT INTO urls(id, url, active, ptype, level) VALUES"
+                " (960, 'https://www.infineon.com/part/FROMPAGE', 1, 'Part', 'PTP'),"
+                " (961, 'https://www.infineon.com/part/BYHAND', 1, 'Part', 'PTP')")
+    con.commit()
+    res = lambda pl: {"flags": {"page_pl": {"exists": bool(pl), "text": pl}},
+                      "http_status": 200}
+    get = lambda i: dict(con.execute("SELECT bl, pl, pl_source, meta_flag FROM urls"
+                                     " WHERE id=?", (i,)).fetchone())
+    for uid in (960, 961):
+        runner._apply_page_pl(con, uid, f"https://www.infineon.com/part/X{uid}", res("44"), False)
+    con.commit()
+    assert get(960)["pl_source"] == "page" and get(960)["pl"] == "44"
+    # a person sets 961's PL by hand in iRadar
+    _client.post("/url/961/meta", data={"bl": "MMS", "pl": "42", "cm": "", "owner": "", "_csrf": _csrf()})
+    assert get(961)["pl_source"] == "manual" and get(961)["pl"] == "42"
+    # saving the form without touching BL/PL is not a hand-set PL
+    _client.post("/url/960/meta", data={"bl": "MMS", "pl": "44", "cm": "someone", "owner": "", "_csrf": _csrf()})
+    assert get(960)["pl_source"] == "page"
+    # Infineon moves both parts to 92
+    for uid in (960, 961):
+        runner._apply_page_pl(con, uid, f"https://www.infineon.com/part/X{uid}", res("92"), False)
+    con.commit()
+    assert get(960)["pl"] == "92" and get(960)["bl"] == "ICW", "a page PL follows the page"
+    assert "moved this part from PL 44 to 92" in get(960)["meta_flag"]
+    assert get(961)["pl"] == "42" and get(961)["bl"] == "MMS", "a hand-set PL never moves"
+    assert "set by hand" in get(961)["meta_flag"]
+    html = _ok("/url/961").data.decode("utf-8", "replace")
+    assert "set by hand" in html
+    con.close()
