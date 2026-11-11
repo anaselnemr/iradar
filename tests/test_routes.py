@@ -686,6 +686,9 @@ def test_owner_dropdowns_only_count_their_own_pages():
                 " bl, segment) VALUES('https://www.infineon.com/application/x',"
                 " 1, 'Application', 'x', 'unchanged', 'SURF', 'C3')")
     con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status,"
+                " segment) VALUES('https://www.infineon.com/application/y',"
+                " 1, 'Application', 'x', 'unchanged', 'I2')")
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status,"
                 " bl) VALUES('https://www.infineon.com/partners/design-partner/p',"
                 " 1, '', 'x', 'unchanged', 'SURF')")
     con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
@@ -697,7 +700,7 @@ def test_owner_dropdowns_only_count_their_own_pages():
     con.commit()
     seg = {v["label"]: v["n"] for v in app._owner_values(con, "segment")}
     bl = {v["label"]: v["n"] for v in app._owner_values(con, "bl")}
-    assert seg == {"C3": 1}, "parts must not show up as unassigned segments"
+    assert seg == {"C3": 1, "I2": 1}, "parts must not show up as unassigned segments"
     assert "SURF" not in bl, "SURF is not a business line on the ES chart"
     assert bl == {"ICW": 2, "DSI": 1, "(not assigned)": 1}, \
         "only the live part d is missing a BL - not the promo or the paused part"
