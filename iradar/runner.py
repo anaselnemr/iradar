@@ -446,7 +446,7 @@ def _restore_page_meta(con, url_id, prev):
 
 
 # BL from PL, by the ES chart (effective 1 Oct 2026). PL 30 is retired: Anas
-# moved every PL 30 page to 92 (MUC) on 10 Nov, so a page that still says 30
+# moved every PL 30 page to 92 (MCU) on 10 Nov, so a page that still says 30
 # is filed under 92 the same way.
 PL_TO_BL = {"80": "DSI", "81": "DSI",
             "92": "ICW", "82": "ICW", "91": "ICW", "94": "ICW",
