@@ -736,6 +736,24 @@ def test_the_owner_values_are_read_from_the_data():
     assert labels.get("(not assigned)") == 1, "unassigned must be offered"
 
 
+def test_the_pl_filter_lists_lines_in_number_order():
+    db.add_urls(["https://www.infineon.com/part/p1", "https://www.infineon.com/part/p2",
+                 "https://www.infineon.com/part/p3", "https://www.infineon.com/part/p4",
+                 "https://www.infineon.com/part/p5"])
+    con = db.connect()
+    for tail, pl in [("p1", "92"), ("p2", "92"), ("p3", "41"), ("p4", "55"), ("p5", None)]:
+        con.execute("UPDATE urls SET bl='X', ptype='Part', active=1, pl=? WHERE url LIKE ?",
+                    (pl, "%/" + tail))
+    con.commit()
+    vals = [v["v"] for v in app._owner_values(con, "pl")]
+    con.close()
+    lines = [v for v in vals if v != app._UNASSIGNED]
+    assert {"41", "55", "92"} <= set(lines)
+    assert lines == sorted(lines, key=lambda v: [int(x) for x in v.split("/")]), \
+        "by PL number, not by page count"
+    assert vals[-1] == app._UNASSIGNED
+
+
 def test_eval_board_filter_reads_the_links_already_captured():
     _pages_with_owners()
     con = db.connect()

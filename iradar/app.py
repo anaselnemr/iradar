@@ -2179,6 +2179,11 @@ def _owner_values(con, col):
                     "label": ((pl_label(r["v"]) if col == "pl" else r["v"])
                               or _UNASSIGNED_LABEL.get(col, "(not assigned)")),
                     "n": r["n"]})
+    if col == "pl":
+        # PLs read in number order (a multi-line value by its lines), the
+        # unassigned bucket last
+        out.sort(key=lambda o: (o["v"] == _UNASSIGNED, [
+            int(x) if x.strip().isdigit() else 999 for x in o["v"].split("/")]))
     return out
 
 
