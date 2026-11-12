@@ -8564,31 +8564,50 @@ def export_copy_limits():
 # ---------------------------------------------------------------- charts
 # Completion charts per page type, built from the live data on every view
 # (cached until the next run or edit), so the page never shows a stale export.
-# Only PTPs for now; each page type gets its own tab when its charts exist.
-CHART_TYPES = [("ptp", "PTP")]
+# One tab per page type; each has its own key components.
+CHART_TYPES = [("ptp", "PTP"), ("eb", "EB")]
+_CHART_LEVEL = {"ptp": "PTP", "eb": "EB"}
+# the component matrix names boards by their page type, not their level
+_CHART_MATRIX = {"ptp": "PTP", "eb": "Evaluation board"}
 KEY_COMPONENTS = ["Hero image", "Description", "Subheadline", "Key features",
                   "Benefits", "Applications", "Parametrics"]
+# The three key components for boards. "Images" is not a page component: a
+# board has it when at least one picture of its own was captured (the hero
+# alone is not one).
+EB_KEY_COMPONENTS = ["Bill of material", "Images", "Videos"]
 _CHARTS_CACHE = {}
 
 
 def _charts_ptp_data(con):
+    return _charts_data(con, "ptp")
+
+
+def _charts_data(con, kind):
     """{asOf, components, keyComponents, keyNote, pls:[{pl,label,bl,ptps,have,allKey,bits}]}
     for every live PTP with a BL and PL. A component counts only when it has
     content: a placeholder hero image or an empty block is missing."""
     # any edit to a PTP's BL/PL must show: a length sum would miss 30 -> 92,
     # so the signature hashes the actual values
+    level = _CHART_LEVEL[kind]
+    key_list = EB_KEY_COMPONENTS if kind == "eb" else KEY_COMPONENTS
     sig = (con.execute("SELECT IFNULL(MAX(id),0) FROM runs").fetchone()[0],
            con.execute("SELECT COUNT(*), IFNULL(MAX(last_checked),'')"
-                       " FROM urls WHERE level='PTP'").fetchone()[:],
+                       " FROM urls WHERE level=?", (level,)).fetchone()[:],
            hash(con.execute("SELECT group_concat(id || ':' || IFNULL(bl,'') || ':'"
                             " || IFNULL(pl,'') || ':' || IFNULL(last_status,'')"
-                            " || ':' || active) FROM urls WHERE level='PTP'")
+                            " || ':' || active) FROM urls WHERE level=?", (level,))
                 .fetchone()[0]))
-    hit = _CHARTS_CACHE.get("ptp")
+    hit = _CHARTS_CACHE.get(kind)
     if hit and hit[0] == sig:
         return hit[1]
-    matrix = _effective_matrix(con).get("PTP", set())
-    registry = [(k, l) for k, l, _kd, _a in _all_components() if k in matrix]
+    matrix = _effective_matrix(con).get(_CHART_MATRIX[kind], set())
+    registry = [(k, l) for k, l, _kd, _a in _all_components()
+                if k in matrix or l in key_list]
+    if kind == "eb":
+        registry.append(("images", "Images"))
+        # the key three lead the picker, in their own order
+        registry.sort(key=lambda kl: (key_list.index(kl[1]) if kl[1] in key_list
+                                      else len(key_list)))
     keys = [k for k, _l in registry]
     labels = [l for _k, l in registry]
     # Live PTPs and offline ones (404/410): the charts filter Online / Offline /
@@ -8596,11 +8615,11 @@ def _charts_ptp_data(con):
     # with every component missing - which is what a visitor gets.
     meta = {}
     for r in con.execute(
-            "SELECT id, bl, pl, flags, last_status FROM urls WHERE level='PTP'"
+            "SELECT id, bl, pl, flags, last_status FROM urls WHERE level=?"
             " AND ((active=1 AND IFNULL(last_status,'') NOT IN"
             "       ('notlive','blank','error',''))"
             "      OR last_status='notlive')"
-            " AND IFNULL(bl,'')<>'' AND IFNULL(pl,'')<>'' AND instr(pl,'/')=0"):
+            " AND IFNULL(bl,'')<>'' AND IFNULL(pl,'')<>'' AND instr(pl,'/')=0", (level,)):
         try:
             st = ((json.loads(r["flags"] or "{}").get("product_status") or {})
                   .get("text") or "")
@@ -8610,10 +8629,17 @@ def _charts_ptp_data(con):
                          0 if r["last_status"] == "notlive" else 1,
                          PRODUCT_STATUSES.index(st) if st in PRODUCT_STATUSES else -1)
     rows, _wm, wc, _wp = _export_rows(con, None, keys, ids=list(meta))
+    with_images = set()
+    if kind == "eb" and meta:
+        with_images = {r[0] for r in con.execute(
+            "SELECT DISTINCT url_id FROM items WHERE " + _BROWSE_SQL["images"]
+            + " AND url_id IN (%s)" % ",".join(map(str, meta)))}
     pls = {}
     for r in rows:
         bl, pl, online, st = meta[r["id"]]
         got = dict(zip(wc, r["vals"]))
+        if kind == "eb":
+            got["images"] = "yes" if r["id"] in with_images else "no"
         p = pls.setdefault(pl, {"pl": pl, "label": pl_label(pl), "bl": bl, "ptps": 0,
                                 "have": {l: 0 for l in labels}, "allKey": 0, "bits": [],
                                 "on": [], "st": []})
@@ -8626,7 +8652,7 @@ def _charts_ptp_data(con):
                 p["have"][l] += 1
                 bits |= 1 << i
         p["bits"].append(bits)
-        if all(got.get(k) == "yes" for k, l in registry if l in KEY_COMPONENTS):
+        if all(got.get(k) == "yes" for k, l in registry if l in key_list):
             p["allKey"] += 1
     last = con.execute("SELECT finished FROM runs WHERE finished IS NOT NULL"
                        " ORDER BY id DESC LIMIT 1").fetchone()
@@ -8636,11 +8662,12 @@ def _charts_ptp_data(con):
     except Exception:
         as_of = datetime.now(timezone.utc).strftime("%d %b %Y")
     data = {"asOf": as_of, "components": labels, "statuses": PRODUCT_STATUSES,
-            "keyComponents": [c for c in KEY_COMPONENTS if c in labels],
-            "keyNote": {"Hero image": ["Real image", "Placeholder image"],
-                        "Description": ["Description tab", "No description tab"]},
+            "keyComponents": [c for c in key_list if c in labels],
+            "keyNote": ({} if kind == "eb" else
+                        {"Hero image": ["Real image", "Placeholder image"],
+                         "Description": ["Description tab", "No description tab"]}),
             "pls": sorted(pls.values(), key=lambda p: (p["bl"], int(p["pl"]) if p["pl"].isdigit() else 999))}
-    _CHARTS_CACHE["ptp"] = (sig, data)
+    _CHARTS_CACHE[kind] = (sig, data)
     return data
 
 
@@ -8651,19 +8678,30 @@ def charts_page(kind="ptp"):
         abort(404)
     return render_template("charts.html", kind=kind, chart_types=CHART_TYPES)
 
+def _chart_frame_words(raw, kind, data):
+    """One chart workspace for every page type: the page's own words and its
+    component counts go in at serve time; each type remembers its own picks."""
+    raw = (raw.replace(">Key 7<", ">Key %d<" % len(data["keyComponents"]))
+              .replace(">All 17<", ">All %d<" % len(data["components"])))
+    if kind == "eb":
+        raw = (raw.replace("'ptp-", "'eb-")
+                  .replace("PTP", "EB"))
+    return raw
+
 
 @app.route("/charts/<kind>/frame")
 def charts_frame(kind):
     """The chart workspace itself, shown inside the Charts page. Its own
     document, so its styles and downloads never touch the app's."""
-    if kind != "ptp":
+    if kind not in _CHART_LEVEL:
         abort(404)
     con = db.connect()
     try:
-        data = _charts_ptp_data(con)
+        data = _charts_data(con, kind)
     finally:
         con.close()
     raw = (Path(app.root_path) / "templates" / "charts_ptp_frame.html").read_text(encoding="utf-8")
+    raw = _chart_frame_words(raw, kind, data)
     payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
     resp = app.response_class(raw.replace("__CHARTS_DATA__", payload, 1), mimetype="text/html")
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"

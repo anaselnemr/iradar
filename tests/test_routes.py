@@ -2613,6 +2613,26 @@ def test_charts_page_frames_the_ptp_charts_with_live_data():
     assert _client.get("/charts/nope").status_code == 404
 
 
+def test_charts_have_an_evaluation_board_tab_with_its_own_key_components():
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("UPDATE urls SET level='EB'")
+    con.commit()
+    con.close()
+    page = _client.get("/charts/eb")
+    assert page.status_code == 200
+    assert b">EB<" in page.data and b"<h1>Charts</h1>" not in page.data
+    body = _client.get("/charts/eb/frame").data.decode("utf-8")
+    import json as _j, re as _r
+    data = _j.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
+    assert data["keyComponents"] == ["Bill of material", "Images", "Videos"]
+    assert "Images" in data["components"]
+    assert sum(p["ptps"] for p in data["pls"]) == 3
+    assert "EB completion" in body and "PTP" not in body
+    assert "'eb-selected-components'" in body and "'ptp-" not in body
+    assert ">Key 3<" in body and (">All %d<" % len(data["components"])) in body
+
+
 def test_search_ignores_spaces_and_dashes_in_part_names():
     """People type 'SLE 78CFX1M10PH'; the page address says SLE-78CFX1M10PH."""
     con = db.connect()

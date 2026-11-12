@@ -18,7 +18,6 @@
   @media (prefers-reduced-motion: reduce) { .chspin { animation-duration:2.4s; } }
 </style>
 <div class="chhead">
-  <h1>Charts</h1>
   <nav class="chtabs" aria-label="Page type">
     {% for k, label in chart_types %}
     <a href="{{ url_for('charts_page', kind=k) }}" class="{{ 'on' if k == kind }}"
