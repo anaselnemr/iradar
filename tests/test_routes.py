@@ -2951,3 +2951,15 @@ def test_pager_and_per_page_links_keep_every_filter():
         keep = app._dash_keep_args()
     assert keep == {"bl": ["ICW"], "ps": ["Active and preferred"], "bt": ["dist"],
                     "pc": "Hero image"}
+
+
+def test_product_line_list_leaves_out_multi_line_product_tables():
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status, bl, pl)"
+                " VALUES('https://www.infineon.com/product-table/x',1,'Product','x',"
+                "'unchanged','MMS','41/42')")
+    con.commit()
+    vals = [o["v"] for o in app._owner_values(con, "pl")]
+    con.close()
+    assert "41/42" not in vals and "81" in vals

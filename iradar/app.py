@@ -2397,6 +2397,12 @@ def _owner_values(con, col):
         if col == "pl" and r["v"] and not all(
                 p.strip() in PL_NAMES for p in r["v"].split("/")):
             continue
+        # a product table spanning several lines ("32 / 38 / 41") is not a
+        # product line of its own: offering every combination made the list
+        # twice as long for one page each (Anas, 18 Nov 2026). The Charts
+        # leave them out the same way.
+        if col == "pl" and "/" in r["v"]:
+            continue
         out.append({"v": r["v"] or _UNASSIGNED,
                     "label": ((pl_label(r["v"]) if col == "pl" else r["v"])
                               or _UNASSIGNED_LABEL.get(col, "(not assigned)")),
@@ -7428,7 +7434,8 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
     # whole set rather than one per page
     cats = {}
     texts = {}
-    if want_comps and pages:
+    want_perfect = any(k in want_page for k in ("perfect", "perfect_surf", "missing_key"))
+    if (want_comps or want_perfect) and pages:
         ids = [p["id"] for p in pages]
         for i in range(0, len(ids), 800):
             chunk = ids[i:i + 800]
@@ -7461,6 +7468,12 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                "ptype": p["ptype"] or "", "level": p["level"] or "",
                "status": p["last_status"] or "", "vals": [],
                "tag": _page_state_tag(p)}
+        states = None
+        if want_comps or want_perfect:
+            states = _page_component_states(
+                p["components"], p["detail_tabs"], flags,
+                cats.get(p["id"], set()), registry,
+                captured_at=p["last_checked"], price=_price_text(p))
         for k in want_meta:
             row["vals"].append(pl_label(p[k]) if k == "pl"
                                else PL_SOURCE_LABELS.get(p[k] or "", "")
@@ -7481,13 +7494,12 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                                    or "not captured yet")
             elif k == "last_captured":
                 row["vals"].append((p["last_checked"] or "")[:19])
+            elif k in ("perfect", "perfect_surf", "missing_key"):
+                row["vals"].append(_perfect_cell(k, p, states, cats.get(p["id"], set()),
+                                                 registry))
             else:
                 row["vals"].append(open_changes.get(p["id"], 0))
         if want_comps:
-            states = _page_component_states(
-                p["components"], p["detail_tabs"], flags,
-                cats.get(p["id"], set()), registry,
-                captured_at=p["last_checked"], price=_price_text(p))
             for k in want_comps:
                 st = states.get(k, "absent")
                 # "empty" is its own answer here too - a column of yes/no
@@ -7520,11 +7532,42 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
                         else ("real image" if h.get("has_content")
                               else "placeholder"))
                     row["vals"].append(src or word)
+                elif k in ("buy_button", "primary_document", "package_link",
+                           "meta_description"):
+                    # what the block says: the buy box's buttons ("Add to
+                    # cart · View distributor's inventory"), the document's
+                    # type, the package's name, the description itself
+                    f = flags.get(k) or {}
+                    t = (f.get("text") or "").strip()
+                    row["vals"].append(t[:_CELL_CAP] if (t and f.get("exists")) else word)
                 else:
                     # a nav label: a link, so present or not is all there is
                     row["vals"].append(word)
         out.append(row)
     return out, want_meta, want_comps, want_page
+
+
+def _perfect_cell(field, p, states, cats, registry):
+    """One perfect-page cell for a page, by the Charts' own standard."""
+    url = p["url"] or ""
+    kind = ("ptp" if p["ptype"] == "Part" and "/part/" in url else
+            "eb" if p["ptype"] == "Part" and "/evaluation-board/" in url else "")
+    if not kind or field == "perfect_surf" and kind != "ptp":
+        return "—"
+    key_of = {l: k for k, l, _kd, _a in registry}
+
+    def has(label):
+        if label == "Images":
+            return "images" in cats
+        return (states or {}).get(key_of.get(label, ""), "absent") == "content"
+    if field == "perfect_surf":
+        need = KEY_COMPONENTS + _SURF["extra"]
+    else:
+        need = KEY_COMPONENTS if kind == "ptp" else EB_KEY_COMPONENTS
+    missing = [l for l in need if not has(l)]
+    if field == "missing_key":
+        return ", ".join(missing)
+    return "no" if missing else "yes"
 
 
 def _xl_link(ws, text, url):
@@ -8905,6 +8948,15 @@ for _ps in PERFECT_SETS:
         "Not perfect %s" % _ps["name"],
         "(" + _ps["scope"] + " AND NOT (" + _all_have(_ps["default"]) + "))")
 PERFECT_KEYS = [k + "_" + _ps["st"] for _ps in PERFECT_SETS for k in ("perfect", "notperfect")]
+# The same standard in the spreadsheet: a PTP is judged by Key 11, a board by
+# EB Key 3 (other page types have no standard and say so), SURF key 12 on top
+# for PTPs, and which key components a page is missing - the to-do itself.
+PAGE_FIELDS.extend([
+    ("perfect", "Perfect page (PTP key %d / EB key %d)" % (len(KEY_COMPONENTS),
+                                                          len(EB_KEY_COMPONENTS))),
+    ("perfect_surf", "Perfect (SURF key %d)" % (len(KEY_COMPONENTS) + len(_SURF["extra"]))),
+    ("missing_key", "Missing key components"),
+])
 
 
 def _perfect_rows(con=None):

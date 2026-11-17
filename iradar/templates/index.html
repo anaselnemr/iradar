@@ -677,6 +677,7 @@
     {% for g in sel_seg %}<input type="hidden" name="seg" value="{{ g }}">{% endfor %}
     {% for g in sel_ps %}<input type="hidden" name="ps" value="{{ g }}">{% endfor %}
     {% for g in sel_bt %}<input type="hidden" name="bt" value="{{ g }}">{% endfor %}
+    {% for r in perfect_rows if r.custom %}<input type="hidden" name="{{ r.param }}" value="{{ r.sel|join(',') }}">{% endfor %}
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
