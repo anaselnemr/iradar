@@ -8722,7 +8722,7 @@ def _charts_data(con, kind):
         as_of = datetime.now(timezone.utc).strftime("%d %b %Y")
     data = {"asOf": as_of, "components": labels, "statuses": PRODUCT_STATUSES,
             "keyComponents": [c for c in key_list if c in labels],
-            "clusters": [] if kind == "eb" else [
+            "clusters": [
                 {"name": c["name"], "bls": c["bls"],
                  "extra": [l for l in c["extra"] if l in labels]}
                 for c in CHART_CLUSTERS],

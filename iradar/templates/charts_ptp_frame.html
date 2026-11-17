@@ -12,7 +12,9 @@
 @media(max-width:700px){main{padding:22px 16px 40px}.masthead{margin-bottom:26px}.page-heading{align-items:start;flex-direction:column;gap:23px;margin-bottom:25px}h1{font-size:29px}.stats{width:100%;gap:0;justify-content:space-between}.stat strong{font-size:25px}.stat span{font-size:11px}nav{gap:24px;margin-bottom:22px}nav a{font-size:12px}.card-head{padding:19px 18px 15px;gap:12px}.card-head .chart-title{flex-basis:100%;font-size:16px}.card-actions{margin-left:auto}.toolbar{padding:0 18px 18px;gap:10px}.toolbar>.control-label{width:100%;justify-content:space-between}.toolbar>.control-label select{width:calc(100% - 75px);font-size:12px}.toolbar>button{flex:1}.spacer{display:none}.export-settings{width:100%;justify-content:space-between;border-top:1px solid var(--line);padding-top:13px;margin-top:2px}.heat-scroll{padding-left:16px;padding-right:16px}.heat-footer{padding:10px 18px 18px}.chart-grid{grid-template-columns:1fr;gap:18px}.chart-body{padding:0 10px 15px}section{margin-top:28px}section h2{font-size:19px}.section-heading span{font-size:11px}.dialog-options{grid-template-columns:1fr}.brand{font-size:13px}.theme-button{font-size:12px;padding:0 10px}}
 
 [hidden]{display:none!important}
-.card-total{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}.scope-row{padding:0 26px 18px;display:flex;align-items:center;gap:12px}.scope-row label{font-size:12px;color:var(--muted)}.scope-row select{flex:1;min-width:0;max-width:320px}#key-components{margin-top:0}#key-components .chart-body{padding:0 26px 20px}
+.drill-bar.filter-panel{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:start;gap:14px 18px;padding:20px}.drill-row{display:contents}.drill-bar select{justify-self:start;min-width:180px;height:var(--filter-height);min-height:var(--filter-height);font-size:12px}.drill-pick{display:flex;align-items:start;justify-content:space-between;gap:12px;min-width:0}.drill-chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}#drill-grid .card.solo{grid-column:1/-1}
+@media(max-width:700px){.drill-bar.filter-panel{grid-template-columns:1fr;gap:10px;padding:16px}.drill-bar select{justify-self:stretch}.drill-pick{flex-direction:column}}
+.card-total{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}.scope-row{padding:0 26px 18px;display:flex;align-items:center;gap:12px}.scope-row label{font-size:12px;color:var(--muted)}.scope-row select{flex:1;min-width:0;max-width:320px}#overview{margin-top:0}#overview .chart-body{padding:0 26px 20px}
 .filter-panel{--filter-height:34px;--filter-radius:6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:0 0 24px;min-width:0;box-shadow:0 2px 5px #00000003}
 .filter-summary{display:flex;align-items:center;gap:24px;min-height:64px;padding:16px 20px;list-style:none;cursor:pointer;border-radius:11px;transition:background .15s ease}
 .filter-summary::-webkit-details-marker{display:none}.filter-summary:hover{background:var(--soft)}.filter-summary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
@@ -38,7 +40,7 @@
 @media(max-width:700px){.cluster-row{grid-template-columns:1fr;gap:10px;margin-bottom:16px}.cluster-row select{justify-self:stretch}}
 .chip-n{color:var(--muted);font-variant-numeric:tabular-nums;border-left:1px solid var(--line);padding-left:7px;margin-left:1px}
 @media(max-width:1100px) and (min-width:701px){.shared-filters{grid-template-columns:1fr;gap:20px}.scope-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){.scope-row{padding:0 18px 16px}.scope-row select{max-width:none}#key-components .chart-body{padding:0 18px 18px}.card-total{margin-right:auto}
+@media(max-width:700px){.scope-row{padding:0 18px 16px}.scope-row select{max-width:none}#overview .chart-body{padding:0 18px 18px}.card-total{margin-right:auto}
 .filter-panel{margin-bottom:20px}.filter-summary{display:grid;grid-template-columns:1fr auto;gap:10px 12px;padding:14px 16px}.filter-title{font-size:14px}.filter-disclosure{grid-column:2;grid-row:1}.filter-selection{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}.filter-selection span+span::before{content:none}.filter-selection span{font-size:12px}
 .filter-content{padding:16px}.shared-filters{grid-template-columns:1fr;gap:20px}.picker-heading{margin-bottom:10px}.scope-group{grid-template-columns:64px minmax(0,1fr);gap:6px}.page-filters{grid-template-columns:1fr;gap:10px;margin-top:20px;padding-top:16px}.pf-label{min-height:20px}.pf-group>div{justify-self:stretch}.pf-group+.pf-group .pf-label{margin-top:6px}.seg-buttons button{flex:1}.filter-panel .seg-buttons button{padding:0 12px}
 }
@@ -49,8 +51,8 @@
 <main>
  <header>
   <div class="masthead"><div class="brand"></div><button id="theme" class="theme-button" aria-label="Switch page theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg><span>Dark</span></button></div>
-  <div class="page-heading"><h1>PTP completion</h1><div class="stats"><div class="stat"><strong id="stat-ptps"></strong><span id="stat-ptps-label">Live PTPs</span></div><div class="stat"><strong id="stat-completion"></strong><span>Components in place</span></div><div class="stat"><strong id="stat-pls">14</strong><span>Product lines</span></div></div></div>
-  <nav aria-label="Chart sections"><a href="#key-components">Key components</a><a href="#heatmap">Heatmap</a><a href="#business-lines">Business lines</a><a href="#product-lines">Product lines</a><a href="#components">Components</a></nav>
+  <div class="page-heading"><h1>PTP completion</h1><div class="stats"><div class="stat"><strong id="stat-ptps"></strong><span id="stat-ptps-label">Live PTPs</span></div><div class="stat"><strong id="stat-completion"></strong><span>Perfect pages</span></div><div class="stat"><strong id="stat-pls">14</strong><span>Product lines</span></div></div></div>
+  <nav aria-label="Chart sections"><a href="#overview">Overview</a><a href="#heatmap">Heatmap</a><a href="#drill-down">Drill-down</a></nav>
  </header>
  <details id="filters-panel" class="filter-panel">
  <summary class="filter-summary"><span class="filter-title"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14M7 3v4m6 1v4m-6 1v4"/></svg>Filters</span><span id="filter-selection" class="filter-selection" aria-live="polite" aria-atomic="true"></span><span class="filter-disclosure"><span class="filter-expand">Expand</span><span class="filter-collapse">Collapse</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></span></summary>
@@ -66,7 +68,7 @@
  </div>
  </div>
  </details>
- <section id="key-components"><div id="key-grid" class="chart-grid"></div></section>
+ <section id="overview"><div id="key-grid" class="chart-grid"></div></section>
  <article style="margin-top:34px" id="heatmap" class="card">
   <div class="card-head"><h2 class="chart-title" contenteditable="plaintext-only" spellcheck="false" aria-label="Heatmap chart title">Components by product line</h2><div class="card-actions"><button data-export="png" data-card="heatmap" aria-label="Download heatmap PNG">PNG ↓</button><button data-export="svg" data-card="heatmap" aria-label="Download heatmap SVG">SVG ↓</button></div></div>
   <div class="toolbar">
@@ -78,10 +80,7 @@
   <div class="heat-scroll" aria-label="Component completion heatmap" tabindex="0"></div>
   <div class="heat-footer"><span>0%</span><div class="spectrum" aria-hidden="true"></div><span>100%</span></div>
  </article>
- <section id="overview"><div class="section-heading"><h2>Overview</h2><span>4,249 PTPs</span></div><div class="chart-grid" id="overview-grid"></div></section>
- <section id="business-lines"><div class="section-heading"><h2>Business lines</h2><span>4 business lines</span></div><div class="chart-grid" id="bl-grid"></div></section>
- <section id="product-lines"><div class="section-heading"><h2>Product lines</h2><span>14 product lines</span></div><div class="chart-grid" id="pl-grid"></div></section>
- <section id="components"><div class="section-heading"><h2>Components</h2><span id="component-count">7 components</span></div><div class="chart-grid" id="component-grid"></div></section>
+ <section id="drill-down"><div class="drill-bar filter-panel"><div class="drill-row"><span class="pf-label">View</span><select id="drill-kind" aria-label="Drill-down by"><option value="bl">Business line</option><option value="pl">Product line</option><option value="component">Component</option></select></div><div class="drill-row"><span class="pf-label">Show</span><div class="drill-pick"><div class="drill-chips" role="group" aria-label="Drill-down items"></div><div class="quick-buttons"><button type="button" data-drill="all">All</button><button type="button" data-drill="none">None</button></div></div></div></div><div class="chart-grid" id="drill-grid"></div></section>
 </main>
 <dialog id="filter-dialog" aria-labelledby="filter-title"><div class="dialog-head"><h2 id="filter-title"></h2><button id="close-filter" aria-label="Close selection">×</button></div><div class="dialog-options"></div><div class="dialog-actions"><div><button id="select-all">All</button><button id="select-none">None</button></div><button id="apply-filter" class="primary">Apply</button></div></dialog>
 <div id="tooltip" role="tooltip"></div>
@@ -90,7 +89,7 @@
 const DATA = __CHARTS_DATA__;
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const BLS=['DSI','ICW','MMS','RF'], sum=(a,f)=>a.reduce((s,x)=>s+f(x),0), fmt=n=>n.toLocaleString('en-US'), pct=n=>(n*100).toFixed(1)+'%';
-const totalPTPs=sum(DATA.pls,p=>p.ptps), totalHave=sum(DATA.pls,p=>sum(DATA.components,c=>p.have[c])), totalExpected=totalPTPs*DATA.components.length;
+const totalPTPs=sum(DATA.pls,p=>p.ptps);
 const selectedPL=new Set(DATA.pls.map(p=>p.pl)),selectedComponents=new Set(DATA.keyComponents), charts=new Map();
 try{const saved=JSON.parse(localStorage.getItem('ptp-components-v2'));if(Array.isArray(saved)&&saved.every(c=>DATA.components.includes(c))){selectedComponents.clear();saved.forEach(c=>selectedComponents.add(c));}}catch{}
 try{const saved=JSON.parse(localStorage.getItem('ptp-selected-pls'));if(Array.isArray(saved)&&saved.every(id=>DATA.pls.some(p=>p.pl===id))){selectedPL.clear();saved.forEach(id=>selectedPL.add(id));}}catch{}
@@ -111,7 +110,7 @@ const activeBLs=()=>BLS.filter(bl=>activePLs().some(p=>p.bl===bl));
 const activeComponents=()=>[...DATA.keyComponents,...DATA.components.filter(c=>!DATA.keyComponents.includes(c))].filter(c=>selectedComponents.has(c));
 const selectedMask=()=>DATA.components.reduce((mask,c,i)=>selectedComponents.has(c)?mask|(1<<i):mask,0);
 function allCount(pls){const mask=selectedMask();return sum(pls,p=>sum(p.bits,b=>(b&mask)===mask?1:0));}
-function allEntry(pls,label='All of the above',group){const total=sum(pls,p=>p.ptps),have=allCount(pls);return {label,group,have,total,value:total?have/total:0,unit:'PTPs',all:true};}
+function allEntry(pls,label='Perfect pages',group){const total=sum(pls,p=>p.ptps),have=allCount(pls);return {label,group,have,total,value:total?have/total:0,unit:'PTPs',all:true};}
 let accent='#087e8b' ,pageDark=matchMedia('(prefers-color-scheme: dark)').matches, manualTheme=false;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 function palette(dark){return dark?{bg:'#18242c',ink:'#edf3f6',muted:'#a9b8c1',line:'#35434c',track:'#34434c'}:{bg:'#ffffff',ink:'#202d36',muted:'#5e6e79',line:'#dce3e6',track:'#e7edef'};}
@@ -130,7 +129,7 @@ function metricValue(h,n){switch($('#metric').value){case'have':return fmt(h);ca
 function heatmap(dark=false){
  const p=palette(dark),pls=activePLs(), grouped=$('#group').checked,rows=DATA.components.filter(c=>selectedComponents.has(c));
  const numerator=c=>sum(pls,p=>p.have[c]);if($('#order').value!=='page')rows.sort((a,b)=>($('#order').value==='desc'?-1:1)*(numerator(a)-numerator(b)));
- rows.push('All of the above');
+ rows.push('Perfect pages');
  const both=$('#metric').value==='both',w=1240,left=184,right=12,top=grouped?93:63,rowH=both?44:34,gap=3,groupGap=grouped?10:3, usable=w-left-right;
  if(!pls.length)return svgRoot(w,150,text(w/2,80,!pls.length?'No product lines selected':'No components selected',{anchor:'middle',fill:p.muted,size:16}),p,'Component completion heatmap');
  const gaps=pls.slice(1).map((pl,i)=>grouped&&pl.bl!==pls[i].bl?groupGap:gap),cw=(usable-sum(gaps,x=>x))/pls.length;
@@ -139,13 +138,10 @@ function heatmap(dark=false){
  const tab='style="font-variant-numeric:tabular-nums"';
  pls.forEach((pl,i)=>{let ly=grouped?59:29;body+=text(coords[i]+cw/2,ly,pl.label,{fill:p.muted,size:11,anchor:'middle'});body+=text(coords[i]+cw/2,ly+15,fmt(pl.ptps)+' PTPs',{fill:p.ink,size:11,weight:600,anchor:'middle',extra:tab});});
  const mid=Math.round((rowH-3)/2+4);
- rows.forEach((c,j)=>{let y=top+j*rowH+(c==='All of the above'?14:0);if(c==='All of the above')body+=line(12,y-8,w-12,y-8,p.line);body+=text(left-15,y+mid,c,{fill:p.ink,size:12,anchor:'end'});pls.forEach((pl,i)=>{let have=c==='All of the above'?allCount([pl]):pl.have[c],ratio=have/pl.ptps,v=['missing','missingPercent'].includes($('#metric').value)?1-ratio:ratio,cx=coords[i]+cw/2,ink=cellInk(v),value=both?`${fmt(have)} · ${Math.round(ratio*100)}%`:metricValue(have,pl.ptps),cell=both?text(cx,y+18,fmt(have),{fill:ink,size:12,weight:650,anchor:'middle',extra:tab})+text(cx,y+33,Math.round(ratio*100)+'%',{fill:ink,size:10,anchor:'middle',extra:tab}):text(cx,y+mid,value,{fill:ink,size:11,anchor:'middle',extra:tab});body+=`<g ${tipAttr([value,`${fmt(have)} of ${fmt(pl.ptps)} PTPs`,`${fmt(pl.ptps-have)} missing`,`${c} · ${pl.label}`])}><rect x="${coords[i]}" y="${y}" width="${cw}" height="${rowH-3}" rx="3" fill="${magnitude(v)}"/>${cell}</g>`;});});
+ rows.forEach((c,j)=>{let y=top+j*rowH+(c==='Perfect pages'?14:0);if(c==='Perfect pages')body+=line(12,y-8,w-12,y-8,p.line);body+=text(left-15,y+mid,c,{fill:p.ink,size:12,anchor:'end',weight:c==='Perfect pages'?650:400});pls.forEach((pl,i)=>{let have=c==='Perfect pages'?allCount([pl]):pl.have[c],ratio=have/pl.ptps,v=['missing','missingPercent'].includes($('#metric').value)?1-ratio:ratio,cx=coords[i]+cw/2,ink=cellInk(v),value=both?`${fmt(have)} · ${Math.round(ratio*100)}%`:metricValue(have,pl.ptps),cell=both?text(cx,y+18,fmt(have),{fill:ink,size:12,weight:650,anchor:'middle',extra:tab})+text(cx,y+33,Math.round(ratio*100)+'%',{fill:ink,size:10,anchor:'middle',extra:tab}):text(cx,y+mid,value,{fill:ink,size:11,anchor:'middle',extra:tab});body+=`<g ${tipAttr([value,`${fmt(have)} of ${fmt(pl.ptps)} PTPs`,`${fmt(pl.ptps-have)} missing`,`${c} · ${pl.label}`])}><rect x="${coords[i]}" y="${y}" width="${cw}" height="${rowH-3}" rx="3" fill="${magnitude(v)}"/>${cell}</g>`;});});
  return svgRoot(w,top+rows.length*rowH+21,body,p,'Component completion by product line');
 }
-function completion(pls,label,group){let n=sum(pls,p=>p.ptps)*selectedComponents.size,h=sum(pls,p=>sum(activeComponents(),c=>p.have[c]));return {label,group,value:n?h/n:0,have:h,total:n,unit:'components'};}
-let overviewEntries=[completion(DATA.pls,'All PTPs'),...BLS.map(bl=>completion(DATA.pls.filter(p=>p.bl===bl),bl))];
 function componentEntries(pls){let n=sum(pls,p=>p.ptps);return activeComponents().map(c=>({label:c,have:sum(pls,p=>p.have[c]),total:n,value:n?sum(pls,p=>p.have[c])/n:0,unit:'PTPs'}));}
-function percentComponents(){return componentEntries(activePLs());}
 function chartTip(e,percent){return tipAttr([percent?pct(e.value):fmt(e.have),`${fmt(e.have)} of ${fmt(e.total)} ${e.unit}`,`${fmt(e.total-e.have)} missing`,e.label]);}
 function roundedBar(x,y,w,h,vertical){if(!w||!h)return '';let r=Math.min(4,w/2,h/2);return vertical?`M${x},${y+h}V${y+r}Q${x},${y} ${x+r},${y}H${x+w-r}Q${x+w},${y} ${x+w},${y+r}V${y+h}Z`:`M${x},${y}H${x+w-r}Q${x+w},${y} ${x+w},${y+r}V${y+h-r}Q${x+w},${y+h} ${x+w-r},${y+h}H${x}Z`;}
 function wrapLabel(s,max=18){let words=s.split(' '),lines=[''];for(let word of words){if(lines.at(-1).length+word.length+1>max&&lines.at(-1))lines.push(word);else lines[lines.length-1]+=(lines.at(-1)?' ':'')+word;}return lines;}
@@ -154,7 +150,6 @@ function barChart(spec,w,dark){
  if((spec.pls&&!spec.pls.length)||!activePLs().length)return svgRoot(w,100,text(w/2,55,'No product lines selected',{fill:p.muted,anchor:'middle'}),p,spec.title);
  if(type==='split')return keyChart(spec,w,dark);
  if(!entries.length)return svgRoot(w,100,text(w/2,55,'No components selected',{fill:p.muted,anchor:'middle'}),p,spec.title);
- if(type==='donut')return donutChart(spec,w,dark);
  const max=percent?1:Math.max(...entries.map(e=>e.total)),n=entries.length;
  let body='',h;
  if(type==='bars'){
@@ -177,20 +172,6 @@ function barChart(spec,w,dark){
  if(spec.axisLabel){body+=text(w/2,h+14,spec.axisLabel,{fill:p.muted,size:10,anchor:'middle'});h+=22;}
  return svgRoot(w,h,body,p,spec.title);
 }
-function donutChart(spec,w,dark){
- const p=palette(dark),entries=spec.entries,cols=w<430?1:w<750?3:5,cellW=w/cols,cellH=262,rows=Math.ceil(entries.length/cols);let body='';
- entries.forEach((e,i)=>{let ox=(i%cols)*cellW,oy=Math.floor(i/cols)*cellH,cx=ox+cellW/2,cy=oy+93,r=58,circ=2*Math.PI*r,gap=2,r1=e.total?e.have/e.total:0,ink=accent;
- body+=text(cx,oy+18,e.label,{fill:p.ink,size:13,weight:600,anchor:'middle'});
- body+=`<g ${tipAttr([pct(r1),`${fmt(e.have)} of ${fmt(e.total)} components`,`${fmt(e.total-e.have)} missing`,e.label])}><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${p.track}" stroke-width="11"/>`;
- if(r1>0&&r1<1){body+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${ink}" stroke-width="11" stroke-dasharray="${Math.max(0,circ*r1-gap)} ${circ}" stroke-dashoffset="${-gap/2}" transform="rotate(-90 ${cx} ${cy})"/>`;
- // Surface separators create a true 2px gap at each boundary.
- [0,r1*2*Math.PI].forEach(a=>{let x=cx+Math.sin(a)*r,y=cy-Math.cos(a)*r;body+=line(cx+Math.sin(a)*(r-6),cy-Math.cos(a)*(r-6),cx+Math.sin(a)*(r+6),cy-Math.cos(a)*(r+6),p.bg).replace('stroke-width="1"','stroke-width="2"');});
- }else if(r1===1)body+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${ink}" stroke-width="11"/>`;
- body+=text(cx,cy+9,pct(r1),{fill:p.ink,size:27,weight:600,anchor:'middle'})+'</g>';
- const lx=cx-Math.min(cellW/2-14,78),rx=cx+Math.min(cellW/2-14,78);
- [['In place',e.have,ink],['Missing',e.total-e.have,p.track]].forEach(([name,count,color],j)=>{let y=oy+191+j*25;body+=`<rect x="${lx}" y="${y-8}" width="7" height="7" rx="1" fill="${color}"/>`+text(lx+14,y,name,{fill:p.muted,size:11})+text(rx,y,fmt(count),{fill:p.ink,size:11,anchor:'end',extra:'style="font-variant-numeric:tabular-nums"'});});
- });return svgRoot(w,rows*cellH,body,p,spec.title);
-}
 
 const wording=c=>DATA.keyNote[c]||['Has '+c.toLowerCase(),'No '+c.toLowerCase()];
 function keyChart(spec,w,dark){
@@ -204,33 +185,43 @@ function keyChart(spec,w,dark){
  body+='</g>';
  });
  const e=allEntry(spec.pls);body+=line(0,lastY-3,w,lastY-3,p.line);
- body+=`<g ${chartTip(e,true)}><rect y="${lastY}" width="${w}" height="48" fill="${p.bg}"/>`+text(2,lastY+28,'All of the above',{fill:p.ink,size:13,weight:650})+text(w-2,lastY+28,fmt(e.have)+' · '+pct(e.value),{fill:p.ink,size:15,weight:650,anchor:'end'})+'</g>';
+ body+=`<g ${chartTip(e,true)}><rect y="${lastY}" width="${w}" height="48" fill="${p.bg}"/>`+text(2,lastY+28,'Perfect pages',{fill:p.ink,size:13,weight:650})+text(w-2,lastY+28,fmt(e.have)+' · '+pct(e.value),{fill:p.ink,size:15,weight:650,anchor:'end'})+'</g>';
  return svgRoot(w,lastY+49,body,p,spec.title);
 }
 
-function addCard(id,title,entries,{type='bars',percent=false,wide=false,donut=false,axisLabel='',target,split=false,pls=null}={}){
- let article=document.createElement('article');article.id=id;article.className='card'+(wide?' span-all':'');article.innerHTML=`<div class="card-head"><h3 class="chart-title" contenteditable="plaintext-only" spellcheck="false" aria-label="${esc(title)} chart title">${esc(title)}</h3><div class="card-actions"><select aria-label="${esc(title)} chart type" data-type="${id}">${(split?['split','columns','bars']:donut?['donut','columns','bars']:['columns','bars']).map(t=>`<option value="${t}" ${t===type?'selected':''}>${t==='split'?'Has / Missing':t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select><button data-export="png" data-card="${id}" aria-label="Download ${esc(title)} PNG">PNG ↓</button><button data-export="svg" data-card="${id}" aria-label="Download ${esc(title)} SVG">SVG ↓</button></div></div><div class="chart-body"></div>`;
+function addCard(id,title,entries,{type='bars',percent=false,wide=false,axisLabel='',target,split=false,pls=null}={}){
+ let article=document.createElement('article');article.id=id;article.className='card'+(wide?' span-all':'');article.innerHTML=`<div class="card-head"><h3 class="chart-title" contenteditable="plaintext-only" spellcheck="false" aria-label="${esc(title)} chart title">${esc(title)}</h3><div class="card-actions"><select aria-label="${esc(title)} chart type" data-type="${id}">${(split?['split','columns','bars']:['columns','bars']).map(t=>`<option value="${t}" ${t===type?'selected':''}>${t==='split'?'Has / Missing':t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select><button data-export="png" data-card="${id}" aria-label="Download ${esc(title)} PNG">PNG ↓</button><button data-export="svg" data-card="${id}" aria-label="Download ${esc(title)} SVG">SVG ↓</button></div></div><div class="chart-body"></div>`;
  $(target).append(article);charts.set(id,{id,title,entries,type,percent,axisLabel,article,pls});
 }
+addCard('all-by-bl','Perfect pages, by business line',[allEntry(DATA.pls,'All PTPs'),...BLS.map(bl=>allEntry(DATA.pls.filter(p=>p.bl===bl),bl))],{type:'bars',percent:true,wide:true,target:'#key-grid'});
+addCard('all-by-pl','Perfect pages, by product line',DATA.pls.map(p=>allEntry([p],p.label,p.bl)),{type:'columns',percent:true,wide:true,target:'#key-grid'});
 addCard('key-summary','Key components',componentEntries(DATA.pls),{type:'split',split:true,percent:true,wide:true,pls:DATA.pls,target:'#key-grid'});
-addCard('all-by-pl','All of the above, by product line',DATA.pls.map(p=>allEntry([p],p.label,p.bl)),{type:'columns',percent:true,wide:true,target:'#overview-grid'});
-addCard('completion-overview','Completion overview',overviewEntries,{type:'donut',percent:true,wide:true,donut:true,target:'#overview-grid'});
-addCard('completion-bl','Completion by business line',BLS.map(bl=>completion(DATA.pls.filter(p=>p.bl===bl),bl)),{type:'columns',percent:true,target:'#overview-grid'});
-addCard('completion-component','Completion by component',percentComponents(),{type:'bars',percent:true,target:'#overview-grid'});
-addCard('completion-pl','Completion by product line',DATA.pls.map(p=>completion([p],p.label,p.bl)),{type:'columns',percent:true,wide:true,target:'#overview-grid'});
-BLS.forEach(bl=>addCard('bl-'+bl,bl+' · PTPs by component',componentEntries(DATA.pls.filter(p=>p.bl===bl)),{type:'split',split:true,pls:DATA.pls.filter(p=>p.bl===bl),percent:true,axisLabel:'Share of PTPs (%)',target:'#bl-grid'}));
-DATA.pls.forEach(pl=>addCard('pl-'+pl.pl,pl.label+' · PTPs by component',componentEntries([pl]),{type:'split',split:true,pls:[pl],percent:true,axisLabel:'Share of PTPs (%)',target:'#pl-grid'}));
-DATA.components.forEach((c,i)=>addCard('component-'+i,c,DATA.pls.map(pl=>({label:pl.label,group:pl.bl,have:pl.have[c],total:pl.ptps,value:pl.have[c]/pl.ptps,unit:'PTPs'})),{type:'columns',percent:true,target:'#component-grid'}));
+BLS.forEach(bl=>addCard('bl-'+bl,bl+' · PTPs by component',componentEntries(DATA.pls.filter(p=>p.bl===bl)),{type:'split',split:true,pls:DATA.pls.filter(p=>p.bl===bl),percent:true,axisLabel:'Share of PTPs (%)',target:'#drill-grid'}));
+DATA.pls.forEach(pl=>addCard('pl-'+pl.pl,pl.label+' · PTPs by component',componentEntries([pl]),{type:'split',split:true,pls:[pl],percent:true,axisLabel:'Share of PTPs (%)',target:'#drill-grid'}));
+DATA.components.forEach((c,i)=>addCard('component-'+i,c,DATA.pls.map(pl=>({label:pl.label,group:pl.bl,have:pl.have[c],total:pl.ptps,value:pl.have[c]/pl.ptps,unit:'PTPs'})),{type:'columns',percent:true,target:'#drill-grid'}));
+// Drill-down: tick one or more business lines, product lines or components.
+let drillKind='bl',drillItems=null;try{const v=JSON.parse(localStorage.getItem('ptp-drill-v2'));if(v&&['bl','pl','component'].includes(v.kind)){drillKind=v.kind;if(Array.isArray(v.items))drillItems=new Set(v.items.map(String));}}catch{}
+function drillOptions(){return drillKind==='bl'?activeBLs().map(b=>[b,b]):drillKind==='pl'?activePLs().map(p=>[p.pl,p.label]):activeComponents().map(c=>[c,c]);}
+const drillId=v=>drillKind==='component'?'component-'+DATA.components.indexOf(v):drillKind+'-'+v;
+function syncDrill(){
+ const opts=drillOptions();if(!drillItems)drillItems=new Set(opts.slice(0,1).map(o=>o[0]));
+ const box=$('.drill-chips'),html=opts.map(([v,l])=>`<label class="component-chip"><input type="checkbox" value="${esc(v)}">${esc(l)}</label>`).join('');if(box.dataset.html!==html){box.innerHTML=html;box.dataset.html=html;}
+ $$('.drill-chips input').forEach(el=>el.checked=drillItems.has(el.value));$('#drill-kind').value=drillKind;
+ const ids=new Set(opts.filter(o=>drillItems.has(o[0])).map(o=>drillId(o[0])));
+ charts.forEach(s=>{if(/^(bl|pl|component)-/.test(s.id)&&!ids.has(s.id))s.article.hidden=true;});
+ const shown=[...charts.values()].filter(s=>/^(bl|pl|component)-/.test(s.id)&&!s.article.hidden);shown.forEach(s=>s.article.classList.toggle('solo',shown.length===1));
+ $$('[data-drill]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.drill==='all'?opts.length>0&&opts.every(o=>drillItems.has(o[0])):!opts.some(o=>drillItems.has(o[0])))));
+}
+function saveDrill(){try{localStorage.setItem('ptp-drill-v2',JSON.stringify({kind:drillKind,items:[...drillItems]}));}catch{}renderAll();}
+$('#drill-kind').onchange=e=>{drillKind=e.target.value;drillItems=new Set(drillOptions().slice(0,1).map(o=>o[0]));saveDrill();};
+$('.drill-chips').onchange=e=>{if(!e.target.matches('input'))return;if(e.target.checked)drillItems.add(e.target.value);else drillItems.delete(e.target.value);saveDrill();};
+$$('[data-drill]').forEach(b=>b.onclick=()=>{drillItems=new Set(b.dataset.drill==='all'?drillOptions().map(o=>o[0]):[]);saveDrill();});
 function renderHeat(){ $('.heat-scroll').innerHTML=heatmap(pageDark);$('.spectrum').innerHTML=Array.from({length:8},(_,i)=>`<i style="background:${magnitude(i/7)}"></i>`).join('');}
 function renderCard(spec){if(spec.article.hidden)return;let el=spec.article.querySelector('.chart-body'),w=Math.round(el.clientWidth-parseFloat(getComputedStyle(el).paddingLeft)-parseFloat(getComputedStyle(el).paddingRight));if(w<100)return;spec.width=w;el.innerHTML=barChart(spec,w,pageDark);if(spec.pls){let total=spec.article.querySelector('.card-total');if(!total){total=document.createElement('span');total.className='card-total';spec.article.querySelector('.card-actions').before(total);}total.textContent=fmt(sum(spec.pls,p=>p.ptps))+' PTPs';}}
 function refreshData(){
  const pls=activePLs(),bls=activeBLs(),n=sum(pls,p=>p.ptps);
- overviewEntries=[completion(pls,'All PTPs'),...bls.map(bl=>completion(pls.filter(p=>p.bl===bl),bl))];
- charts.get('completion-overview').entries=overviewEntries;
- charts.get('completion-bl').entries=overviewEntries.slice(1);
- charts.get('completion-pl').entries=pls.map(p=>completion([p],p.label,p.bl));
- charts.get('completion-component').entries=percentComponents();
  charts.get('all-by-pl').entries=pls.map(p=>allEntry([p],p.label,p.bl));
+ charts.get('all-by-bl').entries=[allEntry(pls,cluster||'All PTPs'),...bls.map(bl=>allEntry(pls.filter(p=>p.bl===bl),bl))];
  charts.forEach(s=>{
   if(s.id==='key-summary')s.pls=pls;
   if(s.id.startsWith('bl-')){s.pls=pls.filter(p=>p.bl===s.id.slice(3));s.article.hidden=!s.pls.length;}
@@ -242,15 +233,11 @@ function refreshData(){
    s.entries=pls.map(p=>({label:p.label,group:p.bl,have:p.have[c],total:p.ptps,value:p.have[c]/p.ptps,unit:'PTPs'}));
   }
  });
- $('#component-count').textContent=selectedComponents.size+' components';
  $('#stat-ptps').textContent=fmt(n);
  $('#stat-pls').textContent=pls.length;
- $('#overview .section-heading span').textContent=fmt(n)+' PTPs';
- $('#business-lines .section-heading span').textContent=bls.length+' business lines';
- $('#product-lines .section-heading span').textContent=pls.length+' product lines';
  $('#choose-pl').textContent='Product lines · '+pls.length;
- const selectedHave=sum(pls,p=>sum(activeComponents(),c=>p.have[c]));
- $('#stat-completion').textContent=pct(n&&selectedComponents.size?selectedHave/(n*selectedComponents.size):0);
+ $('#stat-completion').textContent=pct(n?allCount(pls)/n:0);
+ syncDrill();
 }
 function renderStatusChips(){
  const cnt=new Map();DATA.pls.forEach((p,k)=>{if(!selectedPL.has(p.pl))return;const r=RAW[k];r.st.forEach((s,i)=>{if(pageOk(r.on[i]))cnt.set(s,(cnt.get(s)||0)+1);});});
@@ -272,12 +259,13 @@ $('.status-chips').onchange=e=>{const v=Number(e.target.value);if(e.target.check
 const CLUSTERS=DATA.clusters||[];
 let cluster='';try{const v=localStorage.getItem('ptp-cluster');if(CLUSTERS.some(c=>c.name===v))cluster=v;}catch{}
 const clusterOf=()=>CLUSTERS.find(c=>c.name===cluster);
+const KEY_WORD=$('[data-preset="key"]').textContent.split(' ')[0];
 const keyOf=()=>[...DATA.keyComponents,...((clusterOf()||{}).extra||[])];
 const shownComponents=()=>DATA.components;
 function renderComponentChips(){
  const chip=c=>`<label class="component-chip"><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`,cl=clusterOf();
  $('.component-chips').innerHTML=DATA.components.map(chip).join('');
- if(CLUSTERS.length)$('[data-preset="key"]').textContent=(cl?cl.name:'Global')+' '+keyOf().length;
+ if(CLUSTERS.length)$('[data-preset="key"]').textContent=(cl?cl.name:KEY_WORD)+' '+keyOf().length;
  $('[data-preset="all"]').textContent='All '+shownComponents().length;
 }
 function syncPicker(){
@@ -318,7 +306,7 @@ $$('[data-scope-preset]').forEach(el=>el.onclick=()=>{selectedPL.clear();if(el.d
 syncScopePicker();
 syncPicker();
 function applyTheme(){document.body.dataset.theme=pageDark?'dark':'light';$('#theme span').textContent=pageDark?'Light':'Dark';$('#theme').setAttribute('aria-label',`Switch to ${pageDark?'light':'dark'} page theme`);renderAll();}
-$('#stat-ptps').textContent=fmt(totalPTPs);$('#stat-completion').textContent=pct(totalHave/totalExpected);
+$('#stat-ptps').textContent=fmt(totalPTPs);
 $('#theme').onclick=()=>{pageDark=!pageDark;manualTheme=true;applyTheme();};
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{if(!manualTheme){pageDark=e.matches;applyTheme();}});
 $('#metric').onchange=renderHeat;$('#order').onchange=renderHeat;$('#group').onchange=renderHeat;
@@ -355,7 +343,6 @@ applyTheme();
 <style>
   html.embedded main { max-width: none; padding: 14px 4px 28px; }
   html.embedded, html.embedded body { overflow: hidden; }
-  #overview { display: none !important; }
   html.tabbed nav a:first-child { border-bottom: 2px solid transparent; color: var(--muted); }
   html.tabbed nav a.on { border-bottom: 2px solid var(--accent); color: var(--ink); }
   html.tabbed main > section[id], html.tabbed main > article#heatmap { margin-top: 8px !important; }
