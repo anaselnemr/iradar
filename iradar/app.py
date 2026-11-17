@@ -8664,9 +8664,9 @@ def _charts_data(con, kind):
     if kind == "eb":
         registry.append(("images", "Images"))
     # the key components lead the picker in their own order, cluster extras
-    # come last (the sort is stable, so the rest keep the page's order)
+    # right after them (the sort is stable, so the rest keep the page's order)
     registry.sort(key=lambda kl: (key_list.index(kl[1]) if kl[1] in key_list
-                                  else len(key_list) + (1 if kl[1] in extras else 0)))
+                                  else len(key_list) + (0 if kl[1] in extras else 1)))
     keys = [k for k, _l in registry]
     labels = [l for _k, l in registry]
     # Live PTPs and offline ones (404/410): the charts filter Online / Offline /

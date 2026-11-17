@@ -36,7 +36,6 @@
 .filter-panel .seg-buttons button{border:1px solid transparent;border-radius:3px;min-height:0;padding:0 15px;font-size:12px;background:transparent;color:var(--muted)}.filter-panel .seg-buttons button:hover{color:var(--ink)}.filter-panel .seg-buttons button[aria-pressed=true]{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:0 1px 2px #00000008}
 .cluster-row{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:18px;margin-bottom:20px}.cluster-row select{justify-self:start;min-width:180px;height:var(--filter-height);min-height:var(--filter-height);font-size:12px}
 @media(max-width:700px){.cluster-row{grid-template-columns:1fr;gap:10px;margin-bottom:16px}.cluster-row select{justify-self:stretch}}
-.extra-chips{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}.extra-label{font-size:12px;font-weight:650;line-height:var(--filter-height)}.extra-list{display:flex;flex-wrap:wrap;gap:6px}
 .chip-n{color:var(--muted);font-variant-numeric:tabular-nums;border-left:1px solid var(--line);padding-left:7px;margin-left:1px}
 @media(max-width:1100px) and (min-width:701px){.shared-filters{grid-template-columns:1fr;gap:20px}.scope-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.scope-row{padding:0 18px 16px}.scope-row select{max-width:none}#key-components .chart-body{padding:0 18px 18px}.card-total{margin-right:auto}
@@ -58,7 +57,7 @@
  <div class="filter-content">
  <div class="cluster-row" id="cluster-row" hidden><span class="pf-label">Cluster</span><select id="cluster" aria-label="Cluster"><option value="">All ES</option></select></div>
  <div class="shared-filters">
- <fieldset id="component-picker" aria-label="Components"><div class="picker-heading"><span>Components</span><div class="quick-buttons"><button type="button" data-preset="key">Key 7</button><button type="button" data-preset="all">All 17</button></div></div><div class="component-chips"></div><div class="extra-chips" hidden><span class="extra-label"></span><div class="extra-list"></div></div></fieldset>
+ <fieldset id="component-picker" aria-label="Components"><div class="picker-heading"><span>Components</span><div class="quick-buttons"><button type="button" data-preset="key">Key 7</button><button type="button" data-preset="all">All 17</button></div></div><div class="component-chips"></div></fieldset>
  <fieldset id="scope-picker" aria-label="Scope"><div class="picker-heading"><span>Scope</span><div class="quick-buttons"><button type="button" data-scope-preset="all">All</button><button type="button" data-scope-preset="none">None</button></div></div><div class="scope-groups"></div></fieldset>
  </div>
  <div class="page-filters">
@@ -267,34 +266,32 @@ function updateFilterSummary(){
 function renderAll(){applyPageFilter();renderStatusChips();refreshData();updateFilterSummary();renderHeat();charts.forEach(renderCard);}
 $$('[data-pages]').forEach(b=>b.onclick=()=>{pageState=b.dataset.pages;try{localStorage.setItem('ptp-pages',pageState);}catch{}renderAll();});
 $('.status-chips').onchange=e=>{const v=Number(e.target.value);if(e.target.checked)selectedStatus.add(v);else selectedStatus.delete(v);try{localStorage.setItem('ptp-status-v2',JSON.stringify([...selectedStatus]));}catch{}renderAll();};
-// Clusters: the global standard plus each cluster's own extras. The extras
-// are always on offer to tick; choosing a cluster narrows the scope to its
-// business lines and ticks its extras (leaving it unticks them again).
-const CLUSTERS=DATA.clusters||[],EXTRAS=new Set(CLUSTERS.flatMap(c=>c.extra));
+// Clusters: every component is always on offer; a cluster's key set is the
+// global standard plus its own extras. Choosing a cluster narrows the scope
+// to its business lines and ticks its key set (still freely editable).
+const CLUSTERS=DATA.clusters||[];
 let cluster='';try{const v=localStorage.getItem('ptp-cluster');if(CLUSTERS.some(c=>c.name===v))cluster=v;}catch{}
 const clusterOf=()=>CLUSTERS.find(c=>c.name===cluster);
-const baseComponents=DATA.components.filter(c=>!EXTRAS.has(c));
+const keyOf=()=>[...DATA.keyComponents,...((clusterOf()||{}).extra||[])];
 const shownComponents=()=>DATA.components;
 function renderComponentChips(){
- const chip=c=>`<label class="component-chip"><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`;
- $('.component-chips').innerHTML=baseComponents.map(chip).join('');
- $('.extra-chips').hidden=!EXTRAS.size;
- $('.extra-label').textContent='Extras';$('.extra-list').innerHTML=[...EXTRAS].map(chip).join('');
+ const chip=c=>`<label class="component-chip"><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`,cl=clusterOf();
+ $('.component-chips').innerHTML=DATA.components.map(chip).join('');
+ if(CLUSTERS.length)$('[data-preset="key"]').textContent=(cl?cl.name:'Global')+' '+keyOf().length;
  $('[data-preset="all"]').textContent='All '+shownComponents().length;
 }
 function syncPicker(){
  $$('#component-picker input').forEach(el=>el.checked=selectedComponents.has(el.value));
- $$('[data-preset]').forEach(el=>{let list=el.dataset.preset==='key'?DATA.keyComponents:shownComponents();el.setAttribute('aria-pressed',String(list.length===selectedComponents.size&&list.every(c=>selectedComponents.has(c))));});
+ $$('[data-preset]').forEach(el=>{let list=el.dataset.preset==='key'?keyOf():shownComponents();el.setAttribute('aria-pressed',String(list.length===selectedComponents.size&&list.every(c=>selectedComponents.has(c))));});
 }
 function saveSelection(){try{localStorage.setItem('ptp-components-v2',JSON.stringify([...selectedComponents]));}catch{}syncPicker();renderAll();}
 renderComponentChips();
 $('#component-picker').onchange=e=>{if(!e.target.matches('input[type=checkbox]'))return;if(e.target.checked)selectedComponents.add(e.target.value);else selectedComponents.delete(e.target.value);saveSelection();};
-$$('[data-preset]').forEach(el=>el.onclick=e=>{e.preventDefault();selectedComponents.clear();(el.dataset.preset==='key'?DATA.keyComponents:shownComponents()).forEach(c=>selectedComponents.add(c));saveSelection();});
+$$('[data-preset]').forEach(el=>el.onclick=e=>{e.preventDefault();selectedComponents.clear();(el.dataset.preset==='key'?keyOf():shownComponents()).forEach(c=>selectedComponents.add(c));saveSelection();});
 if(CLUSTERS.length){$('#cluster-row').hidden=false;$('#cluster').insertAdjacentHTML('beforeend',CLUSTERS.map(c=>`<option value="${esc(c.name)}">${esc(c.name)} · ${esc(c.bls.join(' + '))}</option>`).join(''));$('#cluster').value=cluster;}
 $('#cluster').onchange=()=>{
- ((clusterOf()||{}).extra||[]).forEach(c=>selectedComponents.delete(c));
  cluster=$('#cluster').value;try{localStorage.setItem('ptp-cluster',cluster);}catch{}
- const cl=clusterOf();((cl||{}).extra||[]).forEach(c=>selectedComponents.add(c));selectedPL.clear();DATA.pls.forEach(p=>{if(!cl||cl.bls.includes(p.bl))selectedPL.add(p.pl);});
+ const cl=clusterOf();selectedComponents.clear();keyOf().forEach(c=>selectedComponents.add(c));selectedPL.clear();DATA.pls.forEach(p=>{if(!cl||cl.bls.includes(p.bl))selectedPL.add(p.pl);});
  try{localStorage.setItem('ptp-selected-pls',JSON.stringify([...selectedPL]));localStorage.setItem('ptp-components-v2',JSON.stringify([...selectedComponents]));}catch{}
  renderComponentChips();syncScopePicker();syncPicker();renderAll();
 };

@@ -2653,7 +2653,7 @@ def test_charts_have_an_evaluation_board_tab_with_its_own_key_components():
 
 def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
     """The perfect-page standard: eleven global components lead, SURF's PCB
-    design sits apart as a cluster extra, and a part counts its buy button only
+    design follows them as SURF's own key component, and a part counts its buy button only
     when the box offers a way to buy."""
     import json
     _pages_with_owners()
@@ -2673,7 +2673,7 @@ def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
     data = json.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
     assert data["keyComponents"] == app.KEY_COMPONENTS and len(app.KEY_COMPONENTS) == 11
     assert data["components"][:11] == app.KEY_COMPONENTS
-    assert data["components"][-1] == "PCB design"
+    assert data["components"][11] == "PCB design"
     assert data["clusters"] == [{"name": "SURF", "bls": ["MMS", "RF"],
                                  "extra": ["PCB design"]}]
     assert ">Global 11<" in body
