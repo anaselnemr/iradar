@@ -2063,7 +2063,8 @@ def _squash_sql(col, chars=_SQUASH_CHARS):
     return expr
 
 
-def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=()):
+def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=(),
+                bts=()):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
 
     bl and pl are their own dimensions rather than attributes, because they
@@ -2151,6 +2152,9 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=()):
                 conds.append(f"u.{col}=?")
                 params.append(v)
         where.append("(" + " OR ".join(conds) + ")")
+    bconds = [c for c in (_buy_type_sql(v) for v in bts) if c]
+    if bconds:
+        where.append("(" + " OR ".join(bconds) + ")")
     for a in attrs:
         if a in ATTR_FILTERS:
             where.append("(" + ATTR_FILTERS[a][1] + ")")
@@ -2189,6 +2193,85 @@ _OWNER_EXPECTED["pstatus"] = (
 _OWNER_FIELDS = (("bl", "bl"), ("pl", "pl"), ("seg", "segment"),
                  ("ps", "pstatus"))
 _UNASSIGNED_LABEL = {"pstatus": "No product status"}
+
+# Buy button type (Nov 2026): the labels a part's buy box shows. A box can
+# show several at once (View replacement + View distributor's inventory), so
+# ticking two types means either, the way two statuses do. "No buy box" counts
+# only live parts whose capture already READ the box.
+BUY_TYPES = [("cart", "Add to cart", "add to cart"),
+             ("sales", "Contact sales", "contact sales"),
+             ("stock", "Out of stock", "out of stock"),
+             ("options", "View buying options", "view buying options"),
+             ("dist", "View distributor's inventory", "distributor"),
+             ("repl", "View replacement", "view replacement"),
+             ("family", "View product family", "view product family")]
+_BUY_SCOPE = ("u.url LIKE '%/part/%' AND u.active=1 AND u.flags IS NOT NULL"
+              " AND u.flags<>'' AND json_type(u.flags, '$.buy_button') IS NOT NULL")
+_BUY_TEXT = "lower(IFNULL(json_extract(u.flags, '$.buy_button.text'), ''))"
+
+
+def _buy_type_sql(v):
+    if v == _UNASSIGNED:
+        return ("(" + _BUY_SCOPE + " AND " + _KNOWN_GOOD + " AND NOT "
+                + _flag("buy_button", "exists") + ")")
+    for k, _label, needle in BUY_TYPES:
+        if k == v:
+            return f"({_BUY_SCOPE} AND instr({_BUY_TEXT}, '{needle}') > 0)"
+    return None
+
+
+def _tri_rows(keys):
+    """The Content / Components filters as one row per block: its has /
+    empty / no states side by side instead of three rows each, and the
+    over-its-limit checks as one row of fields."""
+    rows, at = [], {}
+    for k in keys:
+        lab = ATTR_FILTERS[k][0]
+        m = re.match(r"(has|empty|no)(.+)$", k)
+        if k.startswith("over_"):
+            stem, kind, short = "over_", "over", lab.replace(" over its limit", "")
+        elif m:
+            kind, stem = m.group(1), m.group(2)
+            short = ("Default" if k == "emptyhero" else
+                     {"has": "Has", "empty": "Empty", "no": "No"}[kind])
+        else:
+            stem, kind, short = k, "has", lab
+        if stem not in at:
+            at[stem] = len(rows)
+            rows.append({"label": "Over its limit" if stem == "over_" else "",
+                         "opts": []})
+        row = rows[at[stem]]
+        if kind == "has" and not row["label"]:
+            name = re.sub(r"^Has (an |the )?", "", lab)
+            row["label"] = name[:1].upper() + name[1:]
+        row["opts"].append({"key": k, "short": short, "full": lab, "kind": kind})
+    rank = {"has": 0, "no": 1, "empty": 2, "over": 3}
+    for row in rows:
+        row["label"] = row["label"] or row["opts"][0]["full"]
+        row["opts"].sort(key=lambda o: rank[o["kind"]])
+    return rows
+
+
+@app.template_global()
+def dash_url_minus(key, value):
+    """This dashboard's address with one filter value taken out (and the page
+    number dropped, since the result set changes) - the cross on its chip."""
+    from urllib.parse import urlencode
+    args = [(k, v) for k, v in request.args.items(multi=True)
+            if k != "page" and not (k == key and v == value)]
+    return url_for("index") + ("?" + urlencode(args) if args else "")
+
+
+def _buy_type_options(con, where="", params=()):
+    """Each buy-button type with how many parts show it (a part showing two
+    counts under both), then the parts with no buy box at all."""
+    conds = [(k, label, _buy_type_sql(k)) for k, label, _n in BUY_TYPES]
+    conds.append((_UNASSIGNED, "No buy box", _buy_type_sql(_UNASSIGNED)))
+    cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
+                     for i, (_k, _l, c) in enumerate(conds))
+    row = con.execute(f"SELECT {cols} FROM urls u {where}", list(params)).fetchone()
+    return [{"v": k, "label": label, "n": row[f"k{i}"] or 0}
+            for i, (k, label, _c) in enumerate(conds)]
 
 
 def _owner_scope(col):
@@ -2281,6 +2364,7 @@ def index():
     sel_pl = request.args.getlist("pl")
     sel_seg = request.args.getlist("seg")
     sel_ps = request.args.getlist("ps")
+    sel_bt = request.args.getlist("bt")
     attrs = [a for a in request.args.getlist("attr") if a in ATTR_FILTERS]
     sort = request.args.get("sort", "page")
     # Sort by page ADDRESS, not title: the URL is the site's own path, so
@@ -2302,7 +2386,7 @@ def index():
         page = 1
 
     wsql, params = _url_filter(q, statuses, sel_types, attrs, sel_bl, sel_pl,
-                               sel_seg, sel_ps)
+                               sel_seg, sel_ps, sel_bt)
 
     con = db.connect()
     total_match = con.execute(
@@ -2401,6 +2485,7 @@ def index():
     bl_opts, pl_opts = _owner_values(con, "bl"), _owner_values(con, "pl")
     seg_opts = _owner_values(con, "segment")
     ps_opts = _owner_values(con, "pstatus")
+    bt_opts = _buy_type_options(con)
     con.close()
     con2 = db.connect()
     # content/component has/no counts come from cat_pages: has = pages with the
@@ -2468,7 +2553,7 @@ def index():
     # pages are in that state, not how many are left after the other filters.
     try:
         facets = _dash_facets(con2, q, statuses, sel_types, attrs,
-                              sel_bl, sel_pl, sel_seg, sel_ps)
+                              sel_bl, sel_pl, sel_seg, sel_ps, sel_bt)
     finally:
         con2.close()
     con3 = db.connect()
@@ -2493,6 +2578,7 @@ def index():
                            facets=facets,
                            bls=bl_opts, pls=pl_opts, segs=seg_opts,
                            pss=ps_opts, sel_ps=sel_ps,
+                           bts=bt_opts, sel_bt=sel_bt,
                            sel_bl=sel_bl, sel_pl=sel_pl, sel_seg=sel_seg,
                            unassigned=_UNASSIGNED,
                            last_run=last_run, total_open=total_open,
@@ -2510,6 +2596,8 @@ def index():
                            sel_attrs=attrs, status_filters=STATUS_FILTERS,
                            attr_filters=ATTR_FILTERS,
                            content_keys=CONTENT_KEYS, component_keys=COMPONENT_KEYS,
+                           content_rows=_tri_rows(CONTENT_KEYS),
+                           component_rows=_tri_rows(COMPONENT_KEYS),
                            status_attr_keys=STATUS_ATTR_KEYS,
                            sel_content_n=sum(1 for a in attrs if a in CONTENT_KEYS),
                            sel_comp_n=sum(1 for a in attrs if a in COMPONENT_KEYS),
@@ -2534,7 +2622,8 @@ def urls_bulk():
                                    request.form.getlist("bl"),
                                    request.form.getlist("pl"),
                                    request.form.getlist("seg"),
-                                   request.form.getlist("ps"))
+                                   request.form.getlist("ps"),
+                                   request.form.getlist("bt"))
         con0 = db.connect()
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
@@ -6109,7 +6198,7 @@ def _dash_counts(con):
 
 
 def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
-                 pss=()):
+                 pss=(), bts=()):
     """What each filter option would still be worth, given the others.
 
     Faceted, not flat: a dimension is narrowed by the OTHER dimensions and
@@ -6128,7 +6217,8 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
                            () if skip in ("owner", "bl") else bls,
                            () if skip in ("owner", "pl") else pls,
                            () if skip in ("owner", "seg") else segs,
-                           () if skip in ("owner", "ps") else pss)
+                           () if skip in ("owner", "ps") else pss,
+                           () if skip in ("owner", "bt") else bts)
 
     out = {"s_" + k: 0 for k in STATUS_FILTERS}
     out.update({"a_" + k: 0 for k in ATTR_FILTERS})
@@ -6195,6 +6285,12 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
             out[f"o_{name}_{r['v'] or _UNASSIGNED}"] = r["n"]
             tot += r["n"]
         out["o_" + name] = tot
+    w, params = where("bt")
+    tot = 0
+    for o in _buy_type_options(con, w, params):
+        out[f"o_bt_{o['v']}"] = o["n"]
+        tot += o["n"]
+    out["o_bt"] = tot
     w, params = where(None)
     out["_total"] = con.execute("SELECT COUNT(*) FROM urls u " + w,
                                 params).fetchone()[0]
@@ -6223,7 +6319,8 @@ def urls_range():
             request.args.getlist("ptype"),
             [x for x in request.args.getlist("attr") if x in ATTR_FILTERS],
             request.args.getlist("bl"), request.args.getlist("pl"),
-            request.args.getlist("seg"), request.args.getlist("ps"))
+            request.args.getlist("seg"), request.args.getlist("ps"),
+            request.args.getlist("bt"))
         order = _dash_order(request.args.get("sort", "page"))
         rows = con.execute(
             "SELECT u.id FROM urls u " + where + " ORDER BY " + order
@@ -6244,7 +6341,8 @@ def dash_avail():
             request.args.getlist("ptype"),
             [a for a in request.args.getlist("attr") if a in ATTR_FILTERS],
             request.args.getlist("bl"), request.args.getlist("pl"),
-            request.args.getlist("seg"), request.args.getlist("ps"))
+            request.args.getlist("seg"), request.args.getlist("ps"),
+            request.args.getlist("bt"))
     finally:
         con.close()
     return jsonify(data)
@@ -7358,7 +7456,8 @@ def _wanted_ids():
                                    request.form.getlist("bl"),
                                    request.form.getlist("pl"),
                                    request.form.getlist("seg"),
-                                   request.form.getlist("ps"))
+                                   request.form.getlist("ps"),
+                                   request.form.getlist("bt"))
         con = db.connect()
         try:
             return [r["id"] for r in
@@ -8673,6 +8772,7 @@ def _charts_data(con, kind):
     # Both. An offline page keeps nothing of its content, so it counts as a PTP
     # with every component missing - which is what a visitor gets.
     meta = {}
+    buy_of = {}
     for r in con.execute(
             "SELECT id, bl, pl, flags, last_status FROM urls WHERE level=?"
             " AND ((active=1 AND IFNULL(last_status,'') NOT IN"
@@ -8680,10 +8780,15 @@ def _charts_data(con, kind):
             "      OR last_status='notlive')"
             " AND IFNULL(bl,'')<>'' AND IFNULL(pl,'')<>'' AND instr(pl,'/')=0", (level,)):
         try:
-            st = ((json.loads(r["flags"] or "{}").get("product_status") or {})
-                  .get("text") or "")
+            fl = json.loads(r["flags"] or "{}")
+            st = (fl.get("product_status") or {}).get("text") or ""
+            bt = ((fl.get("buy_button") or {}).get("text") or "").lower()
         except Exception:
-            st = ""
+            st, bt = "", ""
+        # which buy-box labels the page shows, one bit per BUY_TYPES entry:
+        # the charts let you choose which of them count as a buy button
+        buy_of[r["id"]] = sum(1 << i for i, (_k, _l, needle)
+                              in enumerate(BUY_TYPES) if needle in bt)
         meta[r["id"]] = (r["bl"] or "", r["pl"] or "",
                          0 if r["last_status"] == "notlive" else 1,
                          PRODUCT_STATUSES.index(st) if st in PRODUCT_STATUSES else -1)
@@ -8701,8 +8806,9 @@ def _charts_data(con, kind):
             got["images"] = "yes" if r["id"] in with_images else "no"
         p = pls.setdefault(pl, {"pl": pl, "label": pl_label(pl), "bl": bl, "ptps": 0,
                                 "have": {l: 0 for l in labels}, "allKey": 0, "bits": [],
-                                "on": [], "st": []})
+                                "on": [], "st": [], "bt": []})
         p["on"].append(online)
+        p["bt"].append(buy_of.get(r["id"], 0))
         p["st"].append(st)
         p["ptps"] += 1
         bits = 0
@@ -8722,6 +8828,11 @@ def _charts_data(con, kind):
         as_of = datetime.now(timezone.utc).strftime("%d %b %Y")
     data = {"asOf": as_of, "components": labels, "statuses": PRODUCT_STATUSES,
             "keyComponents": [c for c in key_list if c in labels],
+            # the buy-box labels, and the ones that count as a buy button by
+            # default (Add to cart ... View distributor's inventory)
+            "buyTypes": [l for _k, l, _n in BUY_TYPES],
+            "buyDefault": [i for i, (k, _l, _n) in enumerate(BUY_TYPES)
+                           if k not in ("repl", "family")],
             "clusters": [
                 {"name": c["name"], "bls": c["bls"],
                  "extra": [l for l in c["extra"] if l in labels]}

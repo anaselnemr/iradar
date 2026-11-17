@@ -713,9 +713,9 @@ def test_owner_dropdowns_only_count_their_own_pages():
     assert f["o_bl"] == 0 and f["o_seg_C3"] == 1
     con.close()
     html = _client.get("/?ptype=Part").data.decode("utf-8", "replace")
-    seg = re.search(r'<details[^>]*data-owner="seg"[^>]*>', html)
+    seg = re.search(r'<section[^>]*data-owner="seg"[^>]*>', html)
     assert seg and "display:none" in seg.group(0), \
-        "the Segment dropdown is hidden when only parts are shown"
+        "the Segment section is hidden when only parts are shown"
     c3 = re.search(r'<label[^>]*>(?=<input[^>]*name="seg" value="C3")', html)
     assert c3 and "display:none" in c3.group(0)
 

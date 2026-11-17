@@ -28,7 +28,7 @@
 .picker-heading>span,.pf-label{font-size:12px;font-weight:650;line-height:18px}
 .quick-buttons{display:flex;gap:4px}.filter-panel .quick-buttons button{height:var(--filter-height);min-height:var(--filter-height);padding:0 10px;border-radius:var(--filter-radius);font-size:12px;background:var(--surface)}
 .filter-panel .quick-buttons button[aria-pressed=true]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
-.component-chips,.pl-chips,.status-chips{display:flex;flex-wrap:wrap;gap:6px}
+.component-chips,.pl-chips,.status-chips,.buy-chips{display:flex;flex-wrap:wrap;gap:6px}
 .filter-panel .component-chip{display:inline-flex;align-items:center;gap:7px;min-height:var(--filter-height);padding:6px 9px;border:1px solid var(--line);border-radius:var(--filter-radius);background:var(--surface);font-size:12px;line-height:20px;cursor:pointer;white-space:nowrap;transition:border-color .15s ease,background .15s ease}
 .filter-panel .component-chip:has(input:checked),.filter-panel .component-chip:has(input:indeterminate){border-color:color-mix(in srgb,var(--accent) 32%,var(--line));background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
 .filter-panel .component-chip:hover{border-color:var(--accent);background:var(--soft)}.filter-panel .component-chip:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:2px}.filter-panel input[type=checkbox]{width:14px;height:14px;flex-shrink:0;cursor:pointer;outline-offset:2px}
@@ -65,6 +65,7 @@
  <div class="page-filters">
   <div class="pf-group" role="group" aria-label="Pages"><span class="pf-label">Pages</span><div class="seg-buttons"><button type="button" data-pages="online">Online</button><button type="button" data-pages="offline">Offline</button><button type="button" data-pages="both">Both</button></div></div>
   <div class="pf-group" role="group" aria-label="Product status"><span class="pf-label">Product status</span><div class="status-chips"></div></div>
+  <div class="pf-group" role="group" aria-label="Buy button" id="buy-group" hidden><span class="pf-label">Buy button</span><div class="buy-chips"></div></div>
  </div>
  </div>
  </details>
@@ -96,14 +97,21 @@ try{const saved=JSON.parse(localStorage.getItem('ptp-selected-pls'));if(Array.is
 // Online / Offline / Both and the product status narrow the PTPs themselves:
 // every chart reads p.ptps, p.have and p.bits, so those are recomputed from
 // the full per-PTP lists (bits, on = online, st = status index, -1 = none).
-const RAW=DATA.pls.map(p=>({bits:p.bits.slice(),on:p.on||p.bits.map(()=>1),st:p.st||p.bits.map(()=>-1)}));
+const RAW=DATA.pls.map(p=>({bits:p.bits.slice(),on:p.on||p.bits.map(()=>1),st:p.st||p.bits.map(()=>-1),bt:p.bt||p.bits.map(()=>0)}));
+// Which buy-box labels count as a buy button: a page has the Buy button
+// component when it shows any ticked label.
+const BUY_TYPES=DATA.buyTypes||[],BUY_BIT=DATA.components.indexOf('Buy button');
+const selectedBuy=new Set(DATA.buyDefault||[]);
+try{const v=JSON.parse(localStorage.getItem('ptp-buy'));if(Array.isArray(v)){selectedBuy.clear();v.forEach(x=>selectedBuy.add(x));}}catch{}
+const buyMask=()=>[...selectedBuy].reduce((m,i)=>m|(1<<i),0);
+const withBuy=(b,t)=>BUY_BIT<0?b:(b&~(1<<BUY_BIT))|((t&buyMask())?1<<BUY_BIT:0);
 const STATUSES=DATA.statuses||[];
 let pageState='online';try{const v=localStorage.getItem('ptp-pages');if(['online','offline','both'].includes(v))pageState=v;}catch{}
 // Active and preferred is the default focus (Dominik, Nov 2026)
 const selectedStatus=new Set(STATUSES.includes('Active and preferred')?[STATUSES.indexOf('Active and preferred')]:[...STATUSES.map((_,i)=>i),-1]);
 try{const v=JSON.parse(localStorage.getItem('ptp-status-v2'));if(Array.isArray(v)){selectedStatus.clear();v.forEach(x=>selectedStatus.add(x));}}catch{}
 const pageOk=on=>pageState==='both'||(pageState==='online')===!!on;
-function applyPageFilter(){DATA.pls.forEach((p,k)=>{const r=RAW[k],bits=[];r.bits.forEach((b,i)=>{if(pageOk(r.on[i])&&selectedStatus.has(r.st[i]))bits.push(b);});p.bits=bits;p.ptps=bits.length;p.have={};DATA.components.forEach((c,ci)=>{p.have[c]=bits.reduce((n,b)=>n+(b>>ci&1),0);});});}
+function applyPageFilter(){DATA.pls.forEach((p,k)=>{const r=RAW[k],bits=[];r.bits.forEach((b,i)=>{if(pageOk(r.on[i])&&selectedStatus.has(r.st[i]))bits.push(withBuy(b,r.bt[i]));});p.bits=bits;p.ptps=bits.length;p.have={};DATA.components.forEach((c,ci)=>{p.have[c]=bits.reduce((n,b)=>n+(b>>ci&1),0);});});}
 applyPageFilter();
 const activePLs=()=>DATA.pls.filter(p=>selectedPL.has(p.pl)&&p.ptps>0);
 const activeBLs=()=>BLS.filter(bl=>activePLs().some(p=>p.bl===bl));
@@ -242,6 +250,9 @@ function refreshData(){
 function renderStatusChips(){
  const cnt=new Map();DATA.pls.forEach((p,k)=>{if(!selectedPL.has(p.pl))return;const r=RAW[k];r.st.forEach((s,i)=>{if(pageOk(r.on[i]))cnt.set(s,(cnt.get(s)||0)+1);});});
  $('.status-chips').innerHTML=[...STATUSES.map((s,i)=>[i,s]),[-1,'No product status']].map(([i,s])=>`<label class="component-chip"><input type="checkbox" value="${i}" ${selectedStatus.has(i)?'checked':''}>${esc(s)} <span class="chip-n">${fmt(cnt.get(i)||0)}</span></label>`).join('');
+ const bcnt=BUY_TYPES.map(()=>0);DATA.pls.forEach((p,k)=>{if(!selectedPL.has(p.pl))return;const r=RAW[k];r.bt.forEach((t,i)=>{if(pageOk(r.on[i])&&selectedStatus.has(r.st[i]))BUY_TYPES.forEach((_,j)=>{if(t>>j&1)bcnt[j]++;});});});
+ $('#buy-group').hidden=BUY_BIT<0||!BUY_TYPES.length;
+ $('.buy-chips').innerHTML=BUY_TYPES.map((s,i)=>`<label class="component-chip"><input type="checkbox" value="${i}" ${selectedBuy.has(i)?'checked':''}>${esc(s)} <span class="chip-n">${fmt(bcnt[i])}</span></label>`).join('');
  $$('[data-pages]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.pages===pageState)));
  $('#stat-ptps-label').textContent=pageState==='online'?'Live PTPs':pageState==='offline'?'Offline PTPs':'PTPs';
 }
@@ -252,6 +263,7 @@ function updateFilterSummary(){
 }
 function renderAll(){applyPageFilter();renderStatusChips();refreshData();updateFilterSummary();renderHeat();charts.forEach(renderCard);}
 $$('[data-pages]').forEach(b=>b.onclick=()=>{pageState=b.dataset.pages;try{localStorage.setItem('ptp-pages',pageState);}catch{}renderAll();});
+$('.buy-chips').onchange=e=>{const v=Number(e.target.value);if(e.target.checked)selectedBuy.add(v);else selectedBuy.delete(v);try{localStorage.setItem('ptp-buy',JSON.stringify([...selectedBuy]));}catch{}renderAll();};
 $('.status-chips').onchange=e=>{const v=Number(e.target.value);if(e.target.checked)selectedStatus.add(v);else selectedStatus.delete(v);try{localStorage.setItem('ptp-status-v2',JSON.stringify([...selectedStatus]));}catch{}renderAll();};
 // Clusters: every component is always on offer; a cluster's key set is the
 // global standard plus its own extras. Choosing a cluster narrows the scope

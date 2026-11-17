@@ -330,40 +330,138 @@
        none" is an answer - but stops looking like something worth ticking */
     .dd .panel label.optdim { opacity: .4; }
     .dd .panel label.optdim .cnt { text-decoration: line-through; }
+    /* Grouped filters (Nov 2026): one dropdown per family of questions, each
+       family split into titled sections that sit side by side on a laptop
+       and stack on a phone. */
+    .dd .panel.grp { display: flex; align-items: flex-start; gap: 4px 14px;
+                     max-height: none; overflow: visible; padding: 8px; }
+    .dd .panel.grp.right { left: auto; right: 0; }
+    .ddsec { min-width: 230px; max-height: 340px; overflow: auto; }
+    .dd .panel[hidden], .ddsec[hidden] { display: none !important; }
+    /* Each block's states as one joined control right beside its name:
+       names in one column, controls in the next, so every row lines up */
+    .tgrid { display: grid; grid-template-columns: max-content max-content;
+             align-items: center; gap: 4px 16px; padding: 2px 9px 6px; }
+    .tname { font-size: 13.5px; white-space: nowrap; }
+    .seg { display: inline-flex; justify-self: start; border: 1px solid var(--line); border-radius: 8px;
+           overflow: hidden; background: var(--panel); }
+    .dd .panel .seg label.tp { position: relative; gap: 6px; padding: 4px 10px;
+                               flex: 0 0 86px; border-radius: 0; font-size: 12.5px;
+                               justify-content: space-between; }
+    .dd .panel .seg label.tp + label.tp { border-left: 1px solid var(--line); }
+    .dd .panel .seg label.tp .cnt { margin-left: 0; font-size: 11px; }
+    .dd .panel .seg label.tp:hover { background: var(--bg); }
+    .tp input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+    .dd .panel .seg label.tp:has(input:checked) { background: var(--accent); color: #fff; }
+    .dd .panel .seg label.tp:has(input:checked) .cnt { color: rgba(255,255,255,.85); }
+    .seg:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .ddsec h4.sub { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+    /* an empty-state nobody has is noise, not an answer */
+    .dd .panel label.tp-empty.optdim { display: none; }
+    .trow { display: contents; }
+    /* a block no page in view has either way, and a limit nobody is over,
+       are not choices */
+    .trow:not(:has(label.tp:not(.optdim))), .dd .panel label.overopt.optdim { display: none; }
+    /* a dimmed zero reads as zero, not as a struck-through glyph */
+    .dd .panel .seg label.optdim .cnt { text-decoration: none; }
+    .dd .panel, .ddsec { scrollbar-width: thin; }
+    .ddsec h4 { margin: 6px 9px 4px; font-size: 11px; font-weight: 650;
+                letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .ddsec + .ddsec { border-left: 1px solid var(--line); padding-left: 10px; }
+    /* PTP / EB facts wait for a PTP or EB type: visible, so you know they
+       exist, but closed until they mean something */
+    .dd.locked > summary { color: var(--muted); border-style: dashed; }
+    .dd:not(.locked) > summary .lock { display: none; }
+    .dd.locked > summary svg { width: 12px; height: 12px; margin-right: 5px;
+                               vertical-align: -1px; }
+    .dd .panel.lockmsg { min-width: 240px; padding: 12px 14px; font-size: 13px; }
+    .dd .panel.lockmsg button { margin-top: 10px; }
+    /* the filters in force, each one click from gone */
+    .fchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+              margin-top: 10px; }
+    .fchip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+             padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12.5px;
+             color: var(--ink); text-decoration: none; border: 1px solid
+             color-mix(in srgb, var(--accent) 35%, var(--line));
+             background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+    .fchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fchip i { font-style: normal; color: var(--muted); }
+    .fchip svg { width: 16px; height: 16px; flex: none; padding: 3px;
+                 border-radius: 999px; color: var(--muted); }
+    .fchip:hover svg { background: color-mix(in srgb, var(--accent) 18%, transparent);
+                       color: var(--ink); }
+    .fchips .fclear { font-size: 12.5px; margin-left: 4px; }
+    @media (max-width: 640px) {
+      /* two equal columns that never outgrow the card; the widest group
+         takes a row of its own */
+      form.toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      form.toolbar .dd > summary { overflow: hidden; text-overflow: ellipsis; }
+      form.toolbar .dd.wide { grid-column: 1 / -1; }
+      form.toolbar .dd .panel.grp, form.toolbar .dd .panel.grp.right { left: 0; right: 0; }
+      .dd .panel.grp { flex-direction: column; max-height: 70vh; overflow: auto; }
+      .tgrid { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
+      .tname { margin-top: 6px; }
+      .seg { display: flex; }
+      .dd .panel .seg label.tp { flex: 1 1 0; min-width: 0; padding: 6px 10px; }
+      .ddsec, .ddsec.tri { min-width: 0; width: 100%; max-height: none; overflow: visible; }
+      .ddsec + .ddsec { border-left: 0; padding-left: 0;
+                        border-top: 1px solid var(--line); padding-top: 4px; }
+    }
   </style>
+  {#- one titled list of value checkboxes (BL, PL, segment, product status,
+      buy button): ticking two values means either -#}
+  {% macro owner_sec(dim, opts, sel, name, needs='') %}
+    {% if opts|length > 1 or sel %}
+    <section class="ddsec" data-owner="{{ name }}" {% if needs %}data-needs="{{ needs }}"{% endif %}
+             {% if not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
+      <h4>{{ dim }}</h4>
+      {% for o in opts %}
+      {% set _n = facets.get('o_' + name + '_' + o.v, 0 if ('o_' + name) in facets else o.n) %}
+      <label data-opt class="ownopt" {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
+               {% if o.v in sel %}checked{% endif %}> {{ o.label }}
+        <span class="cnt" data-av="o_{{ name }}_{{ o.v }}">{{ '{:,}'.format(_n) }}</span></label>
+      {% endfor %}
+    </section>
+    {% endif %}
+  {% endmacro %}
+  {#- one block per row, its states as toggles: Has / Empty / No -#}
+  {% macro attr_sec(title, rows) %}
+    <section class="ddsec tri">
+      {% if title %}<h4>{{ title }}</h4>{% endif %}
+      <div class="tgrid">
+      {% for r in rows if r.opts[0].kind != 'over' %}
+        <div class="trow"><span class="tname" title="{{ r.label }}">{{ r.label }}</span>
+        <span class="seg" role="group" aria-label="{{ r.label }}">
+        {% for o in r.opts %}
+        {% set _n = facets.get('a_' + o.key, 0) %}
+        <label data-opt class="tp tp-{{ o.kind }} {{ 'optdim' if not _n and o.key not in sel_attrs }}" title="{{ o.full }}"><input type="checkbox" name="attr" value="{{ o.key }}"
+                 {% if o.key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}>{{ o.short }}<span class="cnt" data-av="a_{{ o.key }}">{{ '{:,}'.format(_n) }}</span></label>
+        {% endfor %}
+        </span></div>
+      {% endfor %}
+      </div>
+      {% for r in rows if r.opts[0].kind == 'over' %}
+      <h4 class="sub">{{ r.label }}</h4>
+      {% for o in r.opts %}
+      {% set _n = facets.get('a_' + o.key, 0) %}
+      <label data-opt class="overopt {{ 'optdim' if not _n and o.key not in sel_attrs }}"><input type="checkbox" name="attr" value="{{ o.key }}"
+               {% if o.key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ o.short }}
+        <span class="cnt" data-av="a_{{ o.key }}">{{ '{:,}'.format(_n) }}</span></label>
+      {% endfor %}
+      {% endfor %}
+    </section>
+  {% endmacro %}
+  {% set _ptp_on = ('PTP' in sel_types) or ('Products & Eval Boards' in sel_types) %}
+  {% set _part_on = _ptp_on or ('EB' in sel_types) %}
+  {% set _own_n = sel_bl|length + sel_pl|length + sel_seg|length %}
+  {% set _part_n = sel_ps|length + sel_bt|length %}
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
     <span class="sbar grow"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       <input type="text" name="q" value="{{ q }}"
              placeholder="Search pages — name, title or address…"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
     </span>
 
-    {#- Business line and product line. Values, not yes/no, so they are their
-        own dropdowns rather than attribute chips: ticking two business lines
-        has to mean "either". "(not assigned)" is offered explicitly because a
-        third of pages carry no BL, and a filter that silently hid them would
-        be answering a different question. -#}
-    {% for dim, opts, sel, name in [("Business line", bls, sel_bl, "bl"),
-                                    ("Product line", pls, sel_pl, "pl"),
-                                    ("Segment", segs, sel_seg, "seg"),
-                                    ("Product status", pss, sel_ps, "ps")] %}
-    {#- Each owner field only lists values that the other filters still let
-        in (Type = PTP hides SURF and the whole Segment dropdown). -#}
-    {% if opts|length > 1 or sel %}
-    <details class="dd" name="filters" data-owner="{{ name }}"
-             {% if not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
-      <summary>{{ dim }}{% if sel %}<span class="fbadge">{{ sel|length }}</span>{% endif %}</summary>
-      <div class="panel">
-        {% for o in opts %}
-        {% set _n = facets.get('o_' + name + '_' + o.v, 0 if ('o_' + name) in facets else o.n) %}
-        <label data-opt class="ownopt" {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
-                 {% if o.v in sel %}checked{% endif %}> {{ o.label }}
-          <span class="cnt" data-av="o_{{ name }}_{{ o.v }}">{{ '{:,}'.format(_n) }}</span></label>
-        {% endfor %}
-      </div>
-    </details>
-    {% endif %}
-    {% endfor %}
-
+    {#- Type leads: it decides which of the other filters mean anything -#}
     <details class="dd" name="filters">
       <summary>Type{% if sel_types %}<span class="fbadge">{{ sel_types|length }}</span>{% endif %}</summary>
       <div class="panel">
@@ -388,6 +486,32 @@
       </div>
     </details>
 
+    {#- Who owns the page: values, not yes/no, so ticking two means either.
+        "(not assigned)" is offered because a third of pages carry no BL. -#}
+    <details class="dd" name="filters" data-group>
+      <summary>Ownership{% if _own_n %}<span class="fbadge">{{ _own_n }}</span>{% endif %}</summary>
+      <div class="panel grp">
+        {{ owner_sec("Business line", bls, sel_bl, "bl") }}
+        {{ owner_sec("Product line", pls, sel_pl, "pl") }}
+        {{ owner_sec("Segment", segs, sel_seg, "seg") }}
+      </div>
+    </details>
+
+    {#- What only a part page has: its status badge and its buy box. Locked
+        until Type includes PTPs or EBs - the buy box is a PTP's alone. -#}
+    <details class="dd {{ '' if _part_on else 'locked' }}" name="filters" data-group data-part>
+      <summary><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>PTP / EB{% if _part_n %}<span class="fbadge">{{ _part_n }}</span>{% endif %}</summary>
+      <div class="panel lockmsg" {% if _part_on %}hidden{% endif %}>
+        <div>Pick PTP or EB under Type.</div>
+        <button type="button" data-unlock="PTP">PTPs</button>
+        <button type="button" class="btn-ghost" data-unlock="EB">EBs</button>
+      </div>
+      <div class="panel grp" {% if not _part_on %}hidden{% endif %}>
+        {{ owner_sec("Product status", pss, sel_ps, "ps", "PTP EB") }}
+        {{ owner_sec("Buy button", bts, sel_bt, "bt", "PTP") }}
+      </div>
+    </details>
+
     <details class="dd" name="filters">
       <summary>Status{% if sel_status %}<span class="fbadge">{{ sel_status|length }}</span>{% endif %}</summary>
       <div class="panel">
@@ -409,35 +533,38 @@
       </div>
     </details>
 
-    <details class="dd" name="filters">
-      <summary>Content{% if sel_content_n %}<span class="fbadge">{{ sel_content_n }}</span>{% endif %}</summary>
-      <div class="panel">
-        {% for key in content_keys %}
-        {% set _n = facets.get('a_' + key, 0) %}
-        <label data-opt class="{{ 'optdim' if not _n and key not in sel_attrs }}"><input type="checkbox" name="attr" value="{{ key }}"
-                 {% if key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt" data-av="a_{{ key }}">{{ '{:,}'.format(facets.get('a_' + key, 0)) }}</span></label>
-        {% endfor %}
-      </div>
-    </details>
-
-    <details class="dd" name="filters">
-      <summary>Components{% if sel_comp_n %}<span class="fbadge">{{ sel_comp_n }}</span>{% endif %}</summary>
-      <div class="panel">
-        {% for key in component_keys %}
-        {% set _n = facets.get('a_' + key, 0) %}
-        <label data-opt class="{{ 'optdim' if not _n and key not in sel_attrs }}"><input type="checkbox" name="attr" value="{{ key }}"
-                 {% if key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ attr_filters[key][0] }}
-          <span class="cnt" data-av="a_{{ key }}">{{ '{:,}'.format(facets.get('a_' + key, 0)) }}</span></label>
-        {% endfor %}
+    {#- What is on the page: the library (documents, videos ...) and the
+        page's own blocks, side by side -#}
+    <details class="dd wide" name="filters">
+      <summary>Content &amp; components{% if sel_content_n + sel_comp_n %}<span class="fbadge">{{ sel_content_n + sel_comp_n }}</span>{% endif %}</summary>
+      <div class="panel grp right">
+        {{ attr_sec("Content", content_rows) }}
+        {{ attr_sec("Components", component_rows) }}
       </div>
     </details>
 
     <button>Apply</button>
-    {% if q or sel_status or sel_types or sel_attrs %}
-      <a class="btn btn-ghost" href="{{ url_for('index') }}">Clear</a>
-    {% endif %}
   </form>
+
+  {#- every filter in force as a chip; its cross drops that one alone -#}
+  {% set _fc = [] %}
+  {% if q %}{% set _ = _fc.append(("Search", q, dash_url_minus("q", q))) %}{% endif %}
+  {% for t in sel_types %}{% set _ = _fc.append(("Type", t, dash_url_minus("ptype", t))) %}{% endfor %}
+  {% for v in sel_bl %}{% set _ = _fc.append(("BL", "(not assigned)" if v == "__unassigned__" else v, dash_url_minus("bl", v))) %}{% endfor %}
+  {% for v in sel_pl %}{% set _l = (pls|selectattr("v", "equalto", v)|map(attribute="label")|first) or v %}{% set _ = _fc.append(("PL", _l, dash_url_minus("pl", v))) %}{% endfor %}
+  {% for v in sel_seg %}{% set _ = _fc.append(("Segment", "(not assigned)" if v == "__unassigned__" else v, dash_url_minus("seg", v))) %}{% endfor %}
+  {% for v in sel_ps %}{% set _ = _fc.append(("Product status", "none" if v == "__unassigned__" else v, dash_url_minus("ps", v))) %}{% endfor %}
+  {% for v in sel_bt %}{% set _l = (bts|selectattr("v", "equalto", v)|map(attribute="label")|first) or v %}{% set _ = _fc.append(("Buy button", _l, dash_url_minus("bt", v))) %}{% endfor %}
+  {% for s in sel_status %}{% set _ = _fc.append(("Status", status_filters[s][0], dash_url_minus("status", s))) %}{% endfor %}
+  {% for a in sel_attrs %}{% set _ = _fc.append(("", attr_filters[a][0], dash_url_minus("attr", a))) %}{% endfor %}
+  {% if _fc %}
+  <div class="fchips">
+    {% for k, v, href in _fc %}
+    <a class="fchip" href="{{ href }}" title="Remove"><span>{% if k %}<i>{{ k }}:</i> {% endif %}{{ v }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></a>
+    {% endfor %}
+    <a class="fclear" href="{{ url_for('index') }}">Clear all</a>
+  </div>
+  {% endif %}
 
   <div class="quickchips">
     {% for c in quick_chips %}
@@ -447,9 +574,6 @@
          title="{{ 'Click again to drop this filter' if c.on else 'Adds to the filters already set' }}"
          href="{{ c.href }}">{{ c.label }} <b>{{ c.n }}</b></a>
     {% endfor %}
-    {% if sel_status or sel_types or sel_attrs or q %}
-      <a class="chip" href="{{ url_for('index') }}">✕ clear</a>
-    {% endif %}
   </div>
 
   {% if not urls %}
@@ -466,6 +590,7 @@
     {% for l in sel_pl %}<input type="hidden" name="pl" value="{{ l }}">{% endfor %}
     {% for g in sel_seg %}<input type="hidden" name="seg" value="{{ g }}">{% endfor %}
     {% for g in sel_ps %}<input type="hidden" name="ps" value="{{ g }}">{% endfor %}
+    {% for g in sel_bt %}<input type="hidden" name="bt" value="{{ g }}">{% endfor %}
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
@@ -1125,6 +1250,52 @@ async function poll() {
 poll();
 refreshCount();
 
+// PTP / EB facts (product status, buy button) open once Type includes a part
+// type: the buy box is a PTP's alone, the status badge a PTP's or an EB's.
+// Until then the dropdown stays visible but locked, its ticks not sent.
+function dashGates() {
+  var form = document.querySelector('form.toolbar');
+  var dd = form && form.querySelector('details[data-part]');
+  if (!dd) return;
+  var types = Array.prototype.map.call(
+    form.querySelectorAll('input[name=ptype]:checked'), function (c) { return c.value; });
+  var all = types.indexOf('Products & Eval Boards') >= 0, any = false;
+  dd.querySelectorAll('[data-needs]').forEach(function (sec) {
+    var on = all || sec.dataset.needs.split(' ').some(function (t) { return types.indexOf(t) >= 0; });
+    sec.hidden = !on;
+    sec.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+    if (on) any = true;
+  });
+  dd.classList.toggle('locked', !any);
+  dd.querySelector('.lockmsg').hidden = any;
+  dd.querySelector('.grp').hidden = !any;
+}
+document.addEventListener('change', function (e) {
+  if (e.target.name === 'ptype' && e.target.closest('form.toolbar')) dashGates();
+});
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-unlock]');
+  if (!b) return;
+  var box = document.querySelector('form.toolbar input[name=ptype][value="' + b.dataset.unlock + '"]');
+  if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event('change', {bubbles: true})); }
+  dashGates();
+});
+dashGates();
+// A grouped panel is wide: opened under its own button it can run past the
+// toolbar's right edge. Slide it back left just enough to stay inside.
+document.addEventListener('toggle', function (e) {
+  var dd = e.target;
+  if (!dd.open || !dd.matches || !dd.matches('form.toolbar details.dd')) return;
+  dd.querySelectorAll('.panel').forEach(function (p) {
+    p.style.transform = '';
+    if (p.hidden || window.matchMedia('(max-width: 640px)').matches) return;
+    var bar = dd.closest('form.toolbar').getBoundingClientRect();
+    var r = p.getBoundingClientRect();
+    var over = r.right - Math.min(bar.right, document.documentElement.clientWidth - 8);
+    if (over > 0) p.style.transform = 'translateX(' + (-Math.min(over, r.left - 8)) + 'px)';
+  });
+}, true);
+
 // Every filter option says how many pages it would still let in, given the
 // other filters already set - so you can see what a tick is worth before
 // applying it. Faceted: a dropdown is never narrowed by its own selections,
@@ -1132,20 +1303,24 @@ refreshCount();
 // pick a second. An option worth nothing dims and stops being tickable, but
 // one already ticked stays live so you can untick it.
 (function () {
-  var form = document.querySelector('form.toolbar');
-  if (!form) return;
+  // the bar is re-rendered with every filter change (the panel swaps in place),
+  // so it is looked up on each use - a reference kept from page load pointed at
+  // the replaced bar and the counts stopped moving after the first Apply
+  if (!document.querySelector('form.toolbar')) return;
   var timer = null, seq = 0;
   function refreshFacets() {
     clearTimeout(timer);
     timer = setTimeout(function () {
+      var form = document.querySelector('form.toolbar');
+      if (!form) return;
       var p = new URLSearchParams();
       var q = form.querySelector('input[name=q]');
       if (q && q.value.trim()) p.set('q', q.value.trim());
       form.querySelectorAll('input[name=ptype]:checked, input[name=status]:checked,'
                           + ' input[name=attr]:checked, input[name=bl]:checked,'
                           + ' input[name=pl]:checked, input[name=seg]:checked,'
-                          + ' input[name=ps]:checked')
-          .forEach(function (c) { p.append(c.name, c.value); });
+                          + ' input[name=ps]:checked, input[name=bt]:checked')
+          .forEach(function (c) { if (!c.disabled) p.append(c.name, c.value); });
       var mine = ++seq;
       fetch(location.origin + '{{ url_for("dash_avail") }}?' + p.toString(),
             {credentials: 'same-origin'})
@@ -1169,20 +1344,28 @@ refreshCount();
             lab.classList.toggle('optdim', n === 0 && !box.checked);
             box.disabled = (n === 0 && !box.checked);
           });
-          form.querySelectorAll('details[data-owner]').forEach(function (dd) {
-            var shown = Array.prototype.some.call(dd.querySelectorAll('label.ownopt'),
+          form.querySelectorAll('[data-owner]').forEach(function (sec) {
+            var shown = Array.prototype.some.call(sec.querySelectorAll('label.ownopt'),
               function (l) { return l.style.display !== 'none'; });
-            dd.style.display = shown ? '' : 'none';
+            sec.style.display = shown ? '' : 'none';
+          });
+          // a group with no section left (Ownership on a type with no owners)
+          form.querySelectorAll('details[data-group]:not([data-part])').forEach(function (dd) {
+            var any = Array.prototype.some.call(dd.querySelectorAll('.ddsec'),
+              function (s) { return s.style.display !== 'none'; });
+            dd.style.display = any ? '' : 'none';
           });
         })
         .catch(function (e) { console.warn('facet counts failed', e); });
     }, 90);
   }
-  form.addEventListener('change', function (ev) {
-    if (['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps'].indexOf(ev.target.name) >= 0) refreshFacets();
+  document.addEventListener('change', function (ev) {
+    if (!ev.target.closest || !ev.target.closest('form.toolbar')) return;
+    if (['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps', 'bt'].indexOf(ev.target.name) >= 0) refreshFacets();
   });
-  var qbox = form.querySelector('input[name=q]');
-  if (qbox) qbox.addEventListener('input', refreshFacets);
+  document.addEventListener('input', function (ev) {
+    if (ev.target.name === 'q' && ev.target.closest('form.toolbar')) refreshFacets();
+  });
   refreshFacets();
 })();
 </script>
