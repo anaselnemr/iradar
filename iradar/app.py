@@ -1513,6 +1513,34 @@ ATTR_FILTERS["hasstatus"] = ("Has product status",
 ATTR_FILTERS["nostatus"] = ("No product status",
                             _noflag("product_status", "exists"))
 
+
+# The perfect-page standard's four page facts and the SURF extra (Nov 2026).
+# "No X" counts only pages whose capture already READ the block: a page
+# captured before these existed is unread, not missing.
+def _flag_read(block):
+    return (f"(u.flags IS NOT NULL AND u.flags<>''"
+            f" AND json_type(u.flags, '$.{block}') IS NOT NULL)")
+
+
+STANDARD_FLAG_ATTRS = [
+    # stem, block, label, empty label (None = no middle state)
+    ("metadata", "meta_description", "metadata", "Meta description tag but empty"),
+    ("primarydoc", "primary_document", "primary document", None),
+    ("package", "package_link", "package page link", None),
+    ("buy", "buy_button", "buy button",
+     "Only View replacement / View product family"),
+    ("pcb", "pcb_design", "PCB design data", None),
+]
+for _stem, _block, _label, _empty in STANDARD_FLAG_ATTRS:
+    ATTR_FILTERS["has" + _stem] = ("Has " + _label, _flag(_block, "has_content"))
+    if _empty:
+        ATTR_FILTERS["empty" + _stem] = (
+            _empty, "(" + _flag(_block, "exists") + " AND NOT "
+            + _flag(_block, "has_content") + ")")
+    ATTR_FILTERS["no" + _stem] = (
+        "No " + _label, _KNOWN_GOOD + " AND " + _flag_read(_block)
+        + " AND NOT " + _flag(_block, "has_content" if not _empty else "exists"))
+
 # Components read from the page's own section-nav / Product-details sub-tabs
 # (urls.components / urls.detail_tabs, filled by the component re-capture).
 # "No X" is guarded on the column being non-empty: '' = the page has not been
@@ -1569,6 +1597,9 @@ for _stem, _c, _l in _COMPONENT_ATTRS:
 for _stem in ("table", "community", "hero"):
     COMPONENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
 COMPONENT_KEYS += ["hasstatus", "nostatus"]
+for _stem, _b, _l, _empty in STANDARD_FLAG_ATTRS:
+    COMPONENT_KEYS += (["has" + _stem] + (["empty" + _stem] if _empty else [])
+                       + ["no" + _stem])
 COMPONENT_KEYS += ["hasprice", "noprice"]
 # A nav entry is a LINK, not a container: there is nothing inside it to be
 # empty, so these two states are the whole truth for them.
@@ -1631,6 +1662,13 @@ COMPONENTS = [
     ("register_product",   "Register product",      "nav",  "register product"),
     ("view_products",      "View products",         "nav",  "view products"),
     ("bom",                "Bill of material",      "nav",  "bill of material"),
+    # the ES perfect-page standard (Dominik, 16 Nov 2026): four page facts
+    # read from the header and the buy box, and SURF's PCB design data
+    ("meta_description",   "Metadata",              "flag", "meta_description"),
+    ("primary_document",   "Primary document",      "flag", "primary_document"),
+    ("package_link",       "Package page link",     "flag", "package_link"),
+    ("buy_button",         "Buy button",            "flag", "buy_button"),
+    ("pcb_design",         "PCB design",            "flag", "pcb_design"),
 ]
 COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
 # Every value infineon.com shows in a part's status badge (190 product tables,
@@ -1900,7 +1938,8 @@ def _component_counts(con):
         except Exception:
             fl = {}
         for block in ("product_table", "developer_community", "hero_image",
-                      "product_status"):
+                      "product_status", "meta_description", "primary_document",
+                      "package_link", "buy_button", "pcb_design"):
             if (fl.get(block) or {}).get("exists"):
                 bump(et, block)
         def _loadset(j):
@@ -8574,8 +8613,18 @@ CHART_TYPES = [("ptp", "PTP"), ("eb", "EB")]
 _CHART_LEVEL = {"ptp": "PTP", "eb": "EB"}
 # the component matrix names boards by their page type, not their level
 _CHART_MATRIX = {"ptp": "PTP", "eb": "Evaluation board"}
+# The global ES standard for a PTP (Dominik, 16 Nov 2026): the first seven,
+# then the four he added - every PTP should carry all eleven.
 KEY_COMPONENTS = ["Hero image", "Description", "Subheadline", "Key features",
-                  "Benefits", "Applications", "Parametrics"]
+                  "Benefits", "Applications", "Parametrics", "Metadata",
+                  "Primary document", "Package page link", "Buy button"]
+# Cluster-specific extras on top of the global standard. The Charts always
+# offer them to tick; choosing a cluster narrows the scope to its business
+# lines and ticks its extras. SURF = the MMS and RF lines (PL 32/38/41/42/44/53/55, the PLs of the
+# SURF asset export). More clusters are one line each.
+CHART_CLUSTERS = [
+    {"name": "SURF", "bls": ["MMS", "RF"], "extra": ["PCB design"]},
+]
 # The three key components for boards. "Images" is not a page component: a
 # board has it when at least one picture of its own was captured (the hero
 # alone is not one).
@@ -8606,13 +8655,18 @@ def _charts_data(con, kind):
     if hit and hit[0] == sig:
         return hit[1]
     matrix = _effective_matrix(con).get(_CHART_MATRIX[kind], set())
+    extras = ([] if kind == "eb" else
+              [l for c in CHART_CLUSTERS for l in c["extra"]])
+    # product status is the charts' own filter, not a component to complete
     registry = [(k, l) for k, l, _kd, _a in _all_components()
-                if k in matrix or l in key_list]
+                if (k in matrix or l in key_list or l in extras)
+                and k != "product_status"]
     if kind == "eb":
         registry.append(("images", "Images"))
-        # the key three lead the picker, in their own order
-        registry.sort(key=lambda kl: (key_list.index(kl[1]) if kl[1] in key_list
-                                      else len(key_list)))
+    # the key components lead the picker in their own order, cluster extras
+    # come last (the sort is stable, so the rest keep the page's order)
+    registry.sort(key=lambda kl: (key_list.index(kl[1]) if kl[1] in key_list
+                                  else len(key_list) + (1 if kl[1] in extras else 0)))
     keys = [k for k, _l in registry]
     labels = [l for _k, l in registry]
     # Live PTPs and offline ones (404/410): the charts filter Online / Offline /
@@ -8668,9 +8722,14 @@ def _charts_data(con, kind):
         as_of = datetime.now(timezone.utc).strftime("%d %b %Y")
     data = {"asOf": as_of, "components": labels, "statuses": PRODUCT_STATUSES,
             "keyComponents": [c for c in key_list if c in labels],
+            "clusters": [] if kind == "eb" else [
+                {"name": c["name"], "bls": c["bls"],
+                 "extra": [l for l in c["extra"] if l in labels]}
+                for c in CHART_CLUSTERS],
             "keyNote": ({} if kind == "eb" else
                         {"Hero image": ["Real image", "Placeholder image"],
-                         "Description": ["Description tab", "No description tab"]}),
+                         "Description": ["Description tab", "No description tab"],
+                         "PCB design": ["Has PCB design data", "No PCB design data"]}),
             "pls": sorted(pls.values(), key=lambda p: (p["bl"], int(p["pl"]) if p["pl"].isdigit() else 999))}
     _CHARTS_CACHE[kind] = (sig, data)
     return data
@@ -8686,7 +8745,8 @@ def charts_page(kind="ptp"):
 def _chart_frame_words(raw, kind, data):
     """One chart workspace for every page type: the page's own words and its
     component counts go in at serve time; each type remembers its own picks."""
-    raw = (raw.replace(">Key 7<", ">Key %d<" % len(data["keyComponents"]))
+    raw = (raw.replace(">Key 7<", ">%s %d<" % ("Key" if kind == "eb" else "Global",
+                                                len(data["keyComponents"])))
               .replace(">All 17<", ">All %d<" % len(data["components"])))
     if kind == "eb":
         raw = (raw.replace("'ptp-", "'eb-")

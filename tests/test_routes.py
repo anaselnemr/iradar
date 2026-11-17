@@ -2647,8 +2647,47 @@ def test_charts_have_an_evaluation_board_tab_with_its_own_key_components():
     assert "Images" in data["components"]
     assert sum(p["ptps"] for p in data["pls"]) == 3
     assert "EB completion" in body and "PTP" not in body
-    assert "'eb-selected-components'" in body and "'ptp-" not in body
+    assert "'eb-components-v2'" in body and "'ptp-" not in body
     assert ">Key 3<" in body and (">All %d<" % len(data["components"])) in body
+
+
+def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
+    """The perfect-page standard: eleven global components lead, SURF's PCB
+    design sits apart as a cluster extra, and a part counts its buy button only
+    when the box offers a way to buy."""
+    import json
+    _pages_with_owners()
+    con = db.connect()
+    con.execute("UPDATE urls SET level='PTP'")
+    ids = [r[0] for r in con.execute("SELECT id FROM urls ORDER BY id")]
+    flags = {"meta_description": {"exists": True, "has_content": True},
+             "buy_button": {"exists": True, "has_content": False,
+                            "text": "View replacement"},
+             "pcb_design": {"exists": True, "has_content": True, "count": 2}}
+    con.execute("UPDATE urls SET flags=? WHERE id=?", (json.dumps(flags), ids[0]))
+    con.commit()
+    con.close()
+    app._CHARTS_CACHE.clear()
+    body = _client.get("/charts/ptp/frame").data.decode("utf-8")
+    import re as _r
+    data = json.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
+    assert data["keyComponents"] == app.KEY_COMPONENTS and len(app.KEY_COMPONENTS) == 11
+    assert data["components"][:11] == app.KEY_COMPONENTS
+    assert data["components"][-1] == "PCB design"
+    assert data["clusters"] == [{"name": "SURF", "bls": ["MMS", "RF"],
+                                 "extra": ["PCB design"]}]
+    assert ">Global 11<" in body
+    have = {c: sum(p["have"][c] for p in data["pls"]) for c in data["components"]}
+    assert have["Metadata"] == 1 and have["PCB design"] == 1
+    assert have["Buy button"] == 0          # View replacement alone is not a buy
+
+
+def test_the_no_metadata_filter_skips_pages_not_read_yet():
+    """'No metadata' means the capture read the head and found none - a page
+    captured before the field existed is unknown, not missing."""
+    sql = app.ATTR_FILTERS["nometadata"][1]
+    assert "json_type(u.flags, '$.meta_description') IS NOT NULL" in sql
+    assert {"hasbuy", "emptybuy", "nobuy", "haspcb", "nopcb"} <= set(app.COMPONENT_KEYS)
 
 
 def test_search_ignores_spaces_and_dashes_in_part_names():

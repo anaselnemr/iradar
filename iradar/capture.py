@@ -739,6 +739,53 @@ IMAGES_JS = r"""
 }
 """
 
+# The ES "perfect product page" standard (Dominik, 16 Nov 2026) adds four
+# things a part's page must carry beyond the key seven. Each is read from the
+# rendered page and stored as a flag {exists, has_content, text}, the way the
+# hero image is, so the charts and the dashboard count them like any other
+# component. One script, shared with the one-off pass that filled them in for
+# pages captured before this existed (out.flags must already be an object).
+#   meta_description - the head's meta description (what search shows)
+#   primary_document - the header's document link; text = its type, which is
+#                      a datasheet on most parts but not all
+#   package_link     - the header's link to the part's /package/ page
+#   buy_button       - the buy box's call to action. Add to cart, Contact
+#                      sales, Out of stock and View buying options (several
+#                      OPNs, each with its own cart button) count; View
+#                      replacement or View product family alone do not. text =
+#                      every label the box shows, so each state is filterable.
+STANDARD_JS = r"""
+  try {
+    const mEl = document.querySelector('meta[name="description" i]');
+    const md = mEl ? (mEl.getAttribute('content') || '').trim() : '';
+    out.flags.meta_description = {exists: !!mEl, has_content: !!md, text: md.slice(0, 80)};
+  } catch (e) {}
+  try {
+    const hd = document.querySelector('[class*="product-type-header-datasheet"][data-label-en]');
+    const ha = hd ? hd.closest('a') : null;
+    const hl = hd ? (hd.getAttribute('data-label-en') || hd.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    out.flags.primary_document = {exists: !!hd,
+      has_content: !!(ha && (ha.getAttribute('href') || '').trim()), text: hl.slice(0, 60)};
+  } catch (e) {}
+  try {
+    const pk = document.querySelector('a[data-package-flag="true"]');
+    const ph = pk ? (pk.getAttribute('href') || '') : '';
+    out.flags.package_link = {exists: !!pk, has_content: /\/package\/./i.test(ph),
+      text: ph.replace(/^.*\/package\//i, '').slice(0, 60)};
+  } catch (e) {}
+  try {
+    const box = document.querySelector('[class*="price-container" i]');
+    const labels = [];
+    if (box) box.querySelectorAll('.add-to-cart-btn, .contact-sales-cta, [class*="out-of-stock" i]').forEach(b => {
+      if (b.offsetParent === null) return;
+      const t = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t && t.length < 40 && !labels.some(x => x.toLowerCase() === t.toLowerCase())) labels.push(t);
+    });
+    const buy = labels.some(t => /^(add to cart|contact sales|out of stock|view buying options)$/i.test(t));
+    out.flags.buy_button = {exists: labels.length > 0, has_content: buy, text: labels.join(' · ')};
+  } catch (e) {}
+"""
+
 # Structured extraction: documents / design resources / news & highlights /
 # trainings & webinars / videos / images - each with title + URL (+ row meta
 # like size/date for document tables). This is the per-page content library.
@@ -1836,6 +1883,7 @@ SECTIONS_JS = r"""
     pagePl = (cands.map(c => c.trim()).find(c => /^\d{2,3}$/.test(c))) || '';
   } catch (e) { pagePl = ''; }
   out.flags.page_pl = {exists: !!pagePl, has_content: !!pagePl, text: pagePl};
+""" + STANDARD_JS + r"""
 
   // The page's OWN section navigation is the authoritative list of the
   // components it carries - read here, after full render, so it reflects the
@@ -3110,6 +3158,16 @@ async def capture_one(browser, url, out_dir):
         # built with one query instead of opening 4,145 snapshot files
         result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
                                 if isinstance(b, dict) and b.get("title")]
+        # PCB design data (the SURF extra of the perfect-page standard): a
+        # Design resources group of that name with at least one file in it
+        try:
+            _pcb = [it for it in sections.get("design_resources") or []
+                    if isinstance(it, dict) and re.match(
+                        r"^pcb design data$", (it.get("grp") or "").strip(), re.I)]
+            sections.setdefault("flags", {})["pcb_design"] = {
+                "exists": bool(_pcb), "has_content": bool(_pcb), "count": len(_pcb)}
+        except Exception:
+            pass
         result["flags"] = sections.get("flags") or {}
         # authoritative component list (the page's own section nav) + the
         # Product-details sub-tabs + price text, for the per-type component map
