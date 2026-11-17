@@ -791,7 +791,8 @@ STANDARD_JS = r"""
 # The buy box is filled by its own late request, which can land after every
 # settle above: 3 parts (XMC1302/XMC1401) read as having no button on runs of
 # Nov 2026 while the live page showed Add to cart. A page whose box shows no
-# button at all gets one bounded wait for it and is read again.
+# counted button (empty, or View replacement alone - the distributor button
+# can follow it) gets one bounded wait for one and is read again.
 BUY_BUTTON_JS = ("() => { const out = {flags: {}};"
                  + STANDARD_JS[STANDARD_JS.rindex("  try {", 0, STANDARD_JS.index("price-container")):]
                  + " return out.flags.buy_button; }")
@@ -2961,7 +2962,7 @@ async def capture_one(browser, url, out_dir):
         # which is loud, correct, and recoverable. Never store a lie.
         sections = await page.evaluate(SECTIONS_JS)
         bb = (sections.get("flags") or {}).get("buy_button")
-        if bb is not None and not bb.get("exists"):
+        if bb is not None and not bb.get("has_content"):
             try:
                 await page.wait_for_function(BUY_WAIT_JS, timeout=BUY_WAIT_MS)
                 sections["flags"]["buy_button"] = await page.evaluate(BUY_BUTTON_JS)
