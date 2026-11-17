@@ -1618,7 +1618,11 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
     # A capture where a section's items got replaced by the "could not be
     # loaded" apology is a FAILED render, not a suspected update: keep the
     # good baseline, report an error so it is loud, retry next run.
+    # ...unless the baseline is a 404: a page coming BACK has nothing to be
+    # compared with, and its "could not be loaded" pane is the page's own state
+    # (6 boards 404 on 16 Nov, back on 18 Nov, kept rejected by this guard)
     if result["any_changed"] and not dead \
+            and (prev["http_status"] or 0) not in (404, 410) \
             and _load_failure_added(prev["dir"], snap_dir, db.get_settings()):
         con.execute("UPDATE urls SET last_checked=? WHERE id=?",
                     (now, url_id))   # status untouched: the run tail decides
@@ -1957,7 +1961,8 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
 
         if not recapture or vres["status"] != "ok" \
                 or vres.get("walk_errors") \
-                or _load_failure_added(prev["dir"], vdir, settings_now):
+                or ((prev["http_status"] or 0) not in (404, 410)
+                    and _load_failure_added(prev["dir"], vdir, settings_now)):
             # Verification capture failed - or rendered a section as the
             # "could not be loaded" apology, which is the same failure wearing
             # a 200. Keep the original detection rather than risk missing a
