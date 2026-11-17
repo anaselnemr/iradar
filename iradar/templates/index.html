@@ -3,9 +3,9 @@
 {#- how this table builds a page link; everything else about the pager is
     shared with the Content library and the export table -#}
 {% macro purl(n) %}{{ url_for('index', page=n, per=per_page, q=q or None,
-   status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}{% endmacro %}
+   status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort, **_dash_keep_args()) }}{% endmacro %}
 {% macro perurl(n) %}{{ url_for('index', page=1, per=n, q=q or None,
-   status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort) }}{% endmacro %}
+   status=sel_status, ptype=sel_types, attr=sel_attrs, sort=sort, **_dash_keep_args()) }}{% endmacro %}
 {#- Per page, behind the same icon the content library uses. No Size here:
     these are tables, there is nothing to make bigger or smaller. -#}
 {% macro viewopts() %}

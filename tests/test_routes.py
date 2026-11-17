@@ -2934,3 +2934,20 @@ def test_a_changed_perfect_standard_only_asks_for_the_ticked_components():
     with app.app.test_request_context("/?pc=" + quote(pc)):
         assert _ids(*app._url_filter("", [], [], ["perfect_ptp"])) == ["full", "nobuy"]
         assert _ids(*app._url_filter("", [], [], ["notperfect_ptp"])) == []
+
+
+def test_pager_and_per_page_links_keep_every_filter():
+    """Page 2, the rows-per-page picker and the quick chips used to drop the
+    business line, product status, buy button and perfect standard."""
+    _pages_with_owners()
+    q = "/?ptype=PTP&bl=ICW&ps=Active+and+preferred&bt=dist&pc=Hero+image"
+    body = _client.get(q).data.decode("utf-8", "replace")
+    chips = re.findall(r'<a class="chip[^"]*"[^>]*href="([^"]*)"', body)
+    assert chips, "the quick chips are on the page"
+    for h in chips:
+        h = h.replace("&amp;", "&")
+        assert "bl=ICW" in h and "bt=dist" in h and "pc=Hero" in h and "ps=Active" in h, h
+    with app.app.test_request_context(q):
+        keep = app._dash_keep_args()
+    assert keep == {"bl": ["ICW"], "ps": ["Active and preferred"], "bt": ["dist"],
+                    "pc": "Hero image"}

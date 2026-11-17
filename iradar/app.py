@@ -2334,6 +2334,25 @@ def dash_views_delete():
 
 
 @app.template_global()
+def _dash_keep_args():
+    """The Dashboard filters a pager, rows-per-page or quick-chip link must
+    carry along besides search / type / status / content. Those links used to
+    rebuild the address from the first four alone, so page 2 - or the
+    remembered rows-per-page, which follows that link on arrival - silently
+    dropped the business line, product line, segment, product status, buy
+    button and perfect-page standard."""
+    out = {}
+    for k in ("bl", "pl", "seg", "ps", "bt"):
+        v = request.args.getlist(k)
+        if v:
+            out[k] = v
+    for k in ("pc", "pce"):
+        if request.args.get(k) is not None:
+            out[k] = request.args.get(k)
+    return out
+
+
+@app.template_global()
 def dash_url_minus(key, value):
     """This dashboard's address with one filter value taken out (and the page
     number dropped, since the result set changes) - the cross on its chip."""
@@ -2624,7 +2643,8 @@ def index():
         c["href"] = url_for(
             "index", q=q or None, ptype=sel_types or None,
             status=(nxt if c["kind"] == "status" else statuses) or None,
-            attr=(nxt if c["kind"] == "attr" else attrs) or None)
+            attr=(nxt if c["kind"] == "attr" else attrs) or None,
+            **_dash_keep_args())
 
     # The dropdown numbers are the FACETED ones, worked out here rather than
     # left to the browser to correct after paint. Shipping corpus-wide counts
