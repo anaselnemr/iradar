@@ -277,7 +277,7 @@ const shownComponents=()=>DATA.components;
 function renderComponentChips(){
  const chip=c=>`<label class="component-chip"><input type="checkbox" value="${esc(c)}">${esc(c)}</label>`,cl=clusterOf();
  $('.component-chips').innerHTML=DATA.components.map(chip).join('');
- if(CLUSTERS.length)$('[data-preset="key"]').textContent=(cl?cl.name:KEY_WORD)+' '+keyOf().length;
+ if(CLUSTERS.length)$('[data-preset="key"]').textContent=(cl?cl.name+' key':KEY_WORD)+' '+keyOf().length;
  $('[data-preset="all"]').textContent='All '+shownComponents().length;
 }
 function syncPicker(){

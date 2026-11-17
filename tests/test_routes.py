@@ -2676,7 +2676,7 @@ def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
     assert data["components"][11] == "PCB design"
     assert data["clusters"] == [{"name": "SURF", "bls": ["MMS", "RF"],
                                  "extra": ["PCB design"]}]
-    assert ">Global 11<" in body
+    assert ">Key 11<" in body
     have = {c: sum(p["have"][c] for p in data["pls"]) for c in data["components"]}
     assert have["Metadata"] == 1 and have["PCB design"] == 1
     assert have["Buy button"] == 0          # View replacement alone is not a buy
@@ -2882,3 +2882,55 @@ def test_a_hand_set_pl_is_tagged_and_never_changed_by_a_run():
     html = _ok("/url/961").data.decode("utf-8", "replace")
     assert "set by hand" in html
     con.close()
+
+
+def test_perfect_page_filter_is_every_key_component_and_not_perfect_the_rest():
+    """A part with every Global key component is perfect; one missing any is
+    not; a board or an application is neither (Nov 2026)."""
+    import json as _json
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    con.execute("DELETE FROM items")
+    full = {"hero_image": {"exists": True, "has_content": True},
+            "meta_description": {"exists": True, "has_content": True},
+            "primary_document": {"exists": True, "has_content": True},
+            "package_link": {"exists": True, "has_content": True},
+            "buy_button": {"exists": True, "has_content": True}}
+    tabs = _json.dumps(["Description", "Parametrics"])
+    for name, flags in (("full", full), ("nobuy", dict(full, buy_button={"exists": False, "has_content": False}))):
+        cur = con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status,"
+                          " flags, detail_tabs, components) VALUES(?,1,'Part','x','unchanged',?,?,?)",
+                          ("https://www.infineon.com/part/" + name, _json.dumps(flags), tabs,
+                           _json.dumps(["Product details"])))
+        for cat in ("subheadline", "features", "benefits", "applications"):
+            con.execute("INSERT INTO items(url_id, category, title) VALUES(?,?,?)",
+                        (cur.lastrowid, cat, "x"))
+    con.execute("INSERT INTO urls(url, active, ptype, last_checked, last_status)"
+                " VALUES('https://www.infineon.com/application/a',1,'Application','x','unchanged')")
+    con.commit()
+    con.close()
+    assert _ids(*app._url_filter("", [], [], ["perfect_ptp"])) == ["full"]
+    assert _ids(*app._url_filter("", [], [], ["notperfect_ptp"])) == ["nobuy"]
+
+
+def test_saved_views_keep_only_filter_parameters_and_can_be_deleted():
+    r = _client.post("/dash/views", data={"_csrf": _csrf(), "name": "My view",
+                                          "query": "?ptype=PTP&attr=nobuy&page=4&evil=1"})
+    assert r.status_code == 200 and r.get_json()["ok"]
+    v = [x for x in app._saved_views() if x["name"] == "My view"]
+    assert v and v[0]["query"] == "ptype=PTP&attr=nobuy", "page and unknown keys dropped"
+    assert _client.post("/dash/views", data={"_csrf": _csrf(), "name": "Empty",
+                                             "query": ""}).status_code == 400
+    _client.post("/dash/views/delete", data={"_csrf": _csrf(), "name": "My view"})
+    assert not [x for x in app._saved_views() if x["name"] == "My view"]
+
+
+def test_a_changed_perfect_standard_only_asks_for_the_ticked_components():
+    """?pc= narrows what "perfect" demands: with the buy button left out, the
+    part missing only its buy button is perfect too."""
+    test_perfect_page_filter_is_every_key_component_and_not_perfect_the_rest()
+    from urllib.parse import quote
+    pc = ",".join(c for c in app.KEY_COMPONENTS if c != "Buy button")
+    with app.app.test_request_context("/?pc=" + quote(pc)):
+        assert _ids(*app._url_filter("", [], [], ["perfect_ptp"])) == ["full", "nobuy"]
+        assert _ids(*app._url_filter("", [], [], ["notperfect_ptp"])) == []

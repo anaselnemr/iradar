@@ -336,8 +336,54 @@
     .dd .panel.grp { display: flex; align-items: flex-start; gap: 4px 14px;
                      max-height: none; overflow: visible; padding: 8px; }
     .dd .panel.grp.right { left: auto; right: 0; }
-    .ddsec { min-width: 230px; max-height: 340px; overflow: auto; }
-    .dd .panel[hidden], .ddsec[hidden] { display: none !important; }
+    .ddsec { min-width: 230px; max-height: 340px; overflow: hidden auto; }
+    .dd .panel[hidden], .ddsec[hidden], .trow[hidden],
+    .dd .panel .findout, .pexp[hidden] { display: none !important; }
+    /* Global / SURF open to the components they stand for; untick one and the
+       perfect count leaves it out */
+    .pexp-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center;
+                gap: 4px; font: inherit; font-weight: 600; }
+    .pexp-btn svg { width: 13px; height: 13px; color: var(--muted); transition: transform .15s; }
+    .pexp-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
+    .pexp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+    .pexp-btn b { font-weight: 650; }
+    /* the open picker needs its full height, not the list cap */
+    .dd[data-part] .ddsec.tri { max-height: min(72vh, 620px); }
+    .pexp-btn .pnow { font-weight: 400; color: var(--muted); }
+    .pexp-btn .pnow::before { content: "·"; margin: 0 5px; }
+    .pexp { grid-column: 1 / -1; margin: 2px 0 10px 4px; padding-left: 10px;
+            border-left: 2px solid var(--line); }
+    .ppresets { display: flex; gap: 4px; margin: 2px 0 6px; }
+    .ppreset { padding: 3px 10px; font-size: 12px; border-radius: 999px; background: var(--panel);
+               color: var(--ink); border: 1px solid var(--line); }
+    .ppreset[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+    .pboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; }
+    .dd .panel .pboxes label { padding: 4px 6px; font-size: 13px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+               overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+    /* beats the site-wide input[type=search] padding, which pushed it past the list */
+    .dd .ddsec input.secfind { display: block; box-sizing: border-box; width: calc(100% - 12px);
+               margin: 0 6px 6px; padding: 6px 9px;
+               font-size: 13px; border: 1px solid var(--line); border-radius: 7px;
+               background: var(--bg); color: var(--ink); }
+    .secfind:focus { outline: none; border-color: var(--accent); background: var(--panel); }
+    .dd.views > summary svg { width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px; }
+    .dd.views .vcount { margin-left: 6px; color: var(--muted); font-size: 12px; }
+    .dd .panel.vpanel { left: auto; right: 0; min-width: 280px; padding: 6px; }
+    .vrow { display: flex; align-items: center; gap: 4px; border-radius: 6px; }
+    .vrow:hover { background: var(--bg); }
+    .vlink { flex: 1; min-width: 0; padding: 7px 9px; font-size: 13.5px; color: var(--ink);
+             text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .vdel { flex: none; width: 26px; height: 26px; padding: 5px; border: 0; border-radius: 6px;
+            background: transparent; color: var(--muted); cursor: pointer; }
+    .vdel:hover { background: var(--line); color: var(--ink); }
+    .vdel svg { width: 16px; height: 16px; }
+    .vsave { display: flex; gap: 6px; padding: 6px; margin-top: 4px; border-top: 1px solid var(--line); }
+    .vrow + .vsave, .vsave:first-child { margin-top: 0; }
+    .vsave:first-child { border-top: 0; }
+    .vname { flex: 1; min-width: 0; padding: 6px 9px; font-size: 13px; border: 1px solid var(--line);
+             border-radius: 7px; background: var(--panel); color: var(--ink); }
+    .vsave button { padding: 6px 12px; font-size: 13px; }
     /* Each block's states as one joined control right beside its name:
        names in one column, controls in the next, so every row lines up */
     .tgrid { display: grid; grid-template-columns: max-content max-content;
@@ -415,6 +461,7 @@
     <section class="ddsec" data-owner="{{ name }}" {% if needs %}data-needs="{{ needs }}"{% endif %}
              {% if not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
       <h4>{{ dim }}</h4>
+      {% if opts|length > 12 %}<input class="secfind" type="search" placeholder="Find" aria-label="Find a {{ dim|lower }}" autocomplete="off">{% endif %}
       {% for o in opts %}
       {% set _n = facets.get('o_' + name + '_' + o.v, 0 if ('o_' + name) in facets else o.n) %}
       <label data-opt class="ownopt" {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
@@ -428,16 +475,37 @@
   {% macro attr_sec(title, rows) %}
     <section class="ddsec tri">
       {% if title %}<h4>{{ title }}</h4>{% endif %}
+      {% if rows|length > 12 %}<input class="secfind" type="search" placeholder="Find" aria-label="Find a {{ (title or 'block')|lower }} block" autocomplete="off">{% endif %}
       <div class="tgrid">
       {% for r in rows if r.opts[0].kind != 'over' %}
-        <div class="trow"><span class="tname" title="{{ r.label }}">{{ r.label }}</span>
+        <div class="trow" {% if r.needs %}data-needs="{{ r.needs }}"{% endif %}>
+        {%- if r.components -%}
+        <span class="tname"><button type="button" class="pexp-btn" aria-expanded="false" data-exp="{{ r.name }}"><b>{{ r.name }}</b><span class="pnow">{{ r.preset }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></span>
+        {%- else -%}
+        <span class="tname" title="{{ r.label }}">{{ r.label }}</span>
+        {%- endif %}
         <span class="seg" role="group" aria-label="{{ r.label }}">
         {% for o in r.opts %}
         {% set _n = facets.get('a_' + o.key, 0) %}
         <label data-opt class="tp tp-{{ o.kind }} {{ 'optdim' if not _n and o.key not in sel_attrs }}" title="{{ o.full }}"><input type="checkbox" name="attr" value="{{ o.key }}"
                  {% if o.key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}>{{ o.short }}<span class="cnt" data-av="a_{{ o.key }}">{{ '{:,}'.format(_n) }}</span></label>
         {% endfor %}
-        </span></div>
+        </span>
+        {%- if r.components %}
+        <div class="pexp" hidden data-default="{{ r.default|join(',') }}">
+          <div class="ppresets">
+            {% for pn, pl in r.presets %}
+            <button type="button" class="ppreset" data-pick="{{ pl|join(',') }}" aria-pressed="{{ 'true' if pl|sort == r.sel|sort else 'false' }}">{{ pn }}</button>
+            {% endfor %}
+          </div>
+          <div class="pboxes">
+          {% for c in r.components %}
+          <label><input type="checkbox" class="pcbox" value="{{ c }}" {% if c in r.sel %}checked{% endif %}> {{ c }}</label>
+          {% endfor %}
+          </div>
+          <input type="hidden" class="pcval" name="{{ r.param }}" value="{{ r.sel|join(',') }}" {% if not r.custom %}disabled{% endif %}>
+        </div>
+        {%- endif %}</div>
       {% endfor %}
       </div>
       {% for r in rows if r.opts[0].kind == 'over' %}
@@ -454,7 +522,7 @@
   {% set _ptp_on = ('PTP' in sel_types) or ('Products & Eval Boards' in sel_types) %}
   {% set _part_on = _ptp_on or ('EB' in sel_types) %}
   {% set _own_n = sel_bl|length + sel_pl|length + sel_seg|length %}
-  {% set _part_n = sel_ps|length + sel_bt|length %}
+  {% set _part_n = sel_ps|length + sel_bt|length + (sel_attrs|select("in", perfect_keys)|list|length) %}
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
     <span class="sbar grow"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       <input type="text" name="q" value="{{ q }}"
@@ -507,6 +575,7 @@
         <button type="button" class="btn-ghost" data-unlock="EB">EBs</button>
       </div>
       <div class="panel grp" {% if not _part_on %}hidden{% endif %}>
+        {{ attr_sec("Perfect page", perfect_rows) }}
         {{ owner_sec("Product status", pss, sel_ps, "ps", "PTP EB") }}
         {{ owner_sec("Buy button", bts, sel_bt, "bt", "PTP") }}
       </div>
@@ -543,7 +612,21 @@
       </div>
     </details>
 
-    <button>Apply</button>
+    {#- the team's saved filter sets, and saving the one in force -#}
+    <details class="dd views" name="filters">
+      <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Views{% if saved_views %}<span class="vcount">{{ saved_views|length }}</span>{% endif %}</summary>
+      <div class="panel vpanel">
+        {% for v in saved_views %}
+        <div class="vrow"><a href="{{ url_for('index') }}?{{ v.query }}" class="vlink" title="{{ v.by }}">{{ v.name }}</a><button type="button" class="vdel" data-view-del="{{ v.name }}" aria-label="Delete view {{ v.name }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg></button></div>
+        {% endfor %}
+        <div class="vsave">
+          <input type="text" class="vname" maxlength="60" placeholder="Name this view" aria-label="View name" autocomplete="off">
+          <button type="button" data-view-save>Save</button>
+        </div>
+      </div>
+    </details>
+    {#- filters apply as you tick; Enter in the search box still submits -#}
+    <button type="submit" class="sr-only" tabindex="-1">Apply</button>
   </form>
 
   {#- every filter in force as a chip; its cross drops that one alone -#}
@@ -555,8 +638,11 @@
   {% for v in sel_seg %}{% set _ = _fc.append(("Segment", "(not assigned)" if v == "__unassigned__" else v, dash_url_minus("seg", v))) %}{% endfor %}
   {% for v in sel_ps %}{% set _ = _fc.append(("Product status", "none" if v == "__unassigned__" else v, dash_url_minus("ps", v))) %}{% endfor %}
   {% for v in sel_bt %}{% set _l = (bts|selectattr("v", "equalto", v)|map(attribute="label")|first) or v %}{% set _ = _fc.append(("Buy button", _l, dash_url_minus("bt", v))) %}{% endfor %}
+  {% set _pfull = {} %}{% for r in perfect_rows %}{% for o in r.opts %}{% set _ = _pfull.update({o.key: o.full}) %}{% endfor %}{% endfor %}
+  {#- a changed standard gets its own chip only while no perfect filter shows it -#}
+  {% for r in perfect_rows if r.custom and not (r.opts|map(attribute="key")|select("in", sel_attrs)|list) %}{% set _ = _fc.append((r.name ~ " standard", r.preset, dash_url_minus(r.param, request.args.get(r.param, "")))) %}{% endfor %}
   {% for s in sel_status %}{% set _ = _fc.append(("Status", status_filters[s][0], dash_url_minus("status", s))) %}{% endfor %}
-  {% for a in sel_attrs %}{% set _ = _fc.append(("", attr_filters[a][0], dash_url_minus("attr", a))) %}{% endfor %}
+  {% for a in sel_attrs %}{% set _ = _fc.append(("", _pfull.get(a) or attr_filters[a][0], dash_url_minus("attr", a))) %}{% endfor %}
   {% if _fc %}
   <div class="fchips">
     {% for k, v, href in _fc %}
@@ -949,6 +1035,40 @@ function sortBy(key) {
   pjax('{{ url_for("index") }}?' + p.toString());
   return false;
 }
+let PJAX_SEQ = 0;
+// Filters apply as they are ticked, so the toolbar is re-rendered under the
+// user's hands: the dropdown they are in stays open, scrolled where it was,
+// and a box they were typing in keeps its text and caret.
+function toolbarState() {
+  const f = document.querySelector('form.toolbar');
+  if (!f) return null;
+  const dds = [...f.querySelectorAll('details.dd')];
+  const open = dds.findIndex(d => d.open);
+  const a = document.activeElement;
+  return {
+    open, scroll: open >= 0 ? [...dds[open].querySelectorAll('.panel, .ddsec')].map(p => p.scrollTop) : [],
+    finds: [...f.querySelectorAll('.secfind')].map(i => i.value),
+    exp: [...f.querySelectorAll('.pexp-btn[aria-expanded="true"]')].map(b => b.dataset.exp),
+    focus: a && f.contains(a) ? (a.name === 'q' ? 'q' : a.classList.contains('secfind')
+           ? 'find:' + [...f.querySelectorAll('.secfind')].indexOf(a) : null) : null,
+    caret: a && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null,
+  };
+}
+function restoreToolbar(s) {
+  const f = document.querySelector('form.toolbar');
+  if (!f || !s) return;
+  const dds = [...f.querySelectorAll('details.dd')];
+  if (s.open >= 0 && dds[s.open]) {
+    dds[s.open].open = true;
+    [...dds[s.open].querySelectorAll('.panel, .ddsec')].forEach((p, i) => { p.scrollTop = s.scroll[i] || 0; });
+  }
+  f.querySelectorAll('.secfind').forEach((i, k) => { if (s.finds[k]) { i.value = s.finds[k]; findIn(i); } });
+  (s.exp || []).forEach(x => { const b = f.querySelector('.pexp-btn[data-exp="' + x + '"]'); if (b) toggleExp(b, true); });
+  let el = null;
+  if (s.focus === 'q') el = f.querySelector('input[name=q]');
+  else if (s.focus && s.focus.indexOf('find:') === 0) el = f.querySelectorAll('.secfind')[+s.focus.slice(5)];
+  if (el) { el.focus(); if (s.caret) try { el.setSelectionRange(s.caret[0], s.caret[1]); } catch (e) {} }
+}
 function pjax(url) {
   // carry the active sort through filter/pager/chip clicks that don't set one
   try {
@@ -962,13 +1082,17 @@ function pjax(url) {
     }
   } catch (e) {}
   panel.style.opacity = '0.55';
+  const mine = ++PJAX_SEQ;
   fetch(url, {headers: {'X-Requested-With': 'fetch'}})
     .then(r => r.text())
     .then(html => {
+      if (mine !== PJAX_SEQ) return;          // a newer filter change is on its way
       const fresh = new DOMParser().parseFromString(html, 'text/html')
         .getElementById('trackpanel');
       if (!fresh) { window.location.href = url; return; }
+      const keep = toolbarState();
       panel.innerHTML = fresh.innerHTML;
+      restoreToolbar(keep);
       // keep the bulk "select all N matching" count in step with the new filter.
       // Read it from the panel's own data-total, which the server stamps with
       // the filtered count - the old regex hunted for "Showing X of Y" text
@@ -1261,17 +1385,117 @@ function dashGates() {
     form.querySelectorAll('input[name=ptype]:checked'), function (c) { return c.value; });
   var all = types.indexOf('Products & Eval Boards') >= 0, any = false;
   dd.querySelectorAll('[data-needs]').forEach(function (sec) {
+    if (sec.classList.contains('trow') && sec.closest('[data-needs]:not(.trow)')) return;
     var on = all || sec.dataset.needs.split(' ').some(function (t) { return types.indexOf(t) >= 0; });
     sec.hidden = !on;
     sec.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
     if (on) any = true;
   });
   dd.classList.toggle('locked', !any);
+  // the Perfect page heading goes when none of its rows applies
+  dd.querySelectorAll('.ddsec.tri').forEach(function (sec) {
+    sec.hidden = !sec.querySelector('.trow:not([hidden])');
+  });
   dd.querySelector('.lockmsg').hidden = any;
   dd.querySelector('.grp').hidden = !any;
 }
 document.addEventListener('change', function (e) {
   if (e.target.name === 'ptype' && e.target.closest('form.toolbar')) dashGates();
+});
+// Instant apply: a tick filters the list a beat later (several quick ticks
+// make one request); typing in the search box waits for a pause.
+var APPLY_T = null;
+function applySoon(ms) {
+  clearTimeout(APPLY_T);
+  APPLY_T = setTimeout(function () {
+    var f = document.querySelector('form.toolbar');
+    if (f) f.requestSubmit();
+  }, ms);
+}
+document.addEventListener('change', function (e) {
+  var f = e.target.closest && e.target.closest('form.toolbar');
+  if (f && ['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps', 'bt'].indexOf(e.target.name) >= 0) applySoon(350);
+});
+document.addEventListener('input', function (e) {
+  if (e.target.name === 'q' && e.target.closest('form.toolbar')) applySoon(600);
+  if (e.target.classList && e.target.classList.contains('secfind')) findIn(e.target);
+});
+// Global / SURF expand to their components; unticking one leaves it out of
+// "perfect" everywhere (one list for both, SURF is Global plus PCB design)
+function toggleExp(b, on) {
+  var row = b.closest('.trow'), box = row && row.querySelector('.pexp');
+  if (!box) return;
+  on = on === undefined ? box.hidden : on;
+  box.hidden = !on;
+  b.setAttribute('aria-expanded', String(on));
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('.pexp-btn');
+  if (b) { e.preventDefault(); toggleExp(b); }
+});
+function writePicker(box) {
+  var picked = [...box.querySelectorAll('.pcbox:checked')].map(function (x) { return x.value; });
+  var def = (box.dataset.default || '').split(',');
+  var same = picked.length === def.length && picked.every(function (v) { return def.indexOf(v) >= 0; });
+  var val = box.querySelector('.pcval');
+  val.value = picked.join(','); val.disabled = same;
+  box.querySelectorAll('.ppreset').forEach(function (b) {
+    var l = b.dataset.pick.split(',');
+    b.setAttribute('aria-pressed', String(l.length === picked.length
+      && l.every(function (v) { return picked.indexOf(v) >= 0; })));
+  });
+  applySoon(400);
+}
+document.addEventListener('change', function (e) {
+  if (e.target.classList && e.target.classList.contains('pcbox')) writePicker(e.target.closest('.pexp'));
+});
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('.ppreset');
+  if (!b) return;
+  var box = b.closest('.pexp'), want = b.dataset.pick.split(',');
+  box.querySelectorAll('.pcbox').forEach(function (x) { x.checked = want.indexOf(x.value) >= 0; });
+  writePicker(box);
+});
+// Find-box: narrows its own list as you type, nothing is sent
+function findIn(box) {
+  var q = box.value.trim().toLowerCase(), sec = box.closest('.ddsec');
+  sec.querySelectorAll('label.ownopt, .trow').forEach(function (el) {
+    var t = (el.classList.contains('trow') ? el.querySelector('.tname') : el).textContent.toLowerCase();
+    el.classList.toggle('findout', !!q && t.indexOf(q) < 0);
+  });
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && e.target.classList && (e.target.classList.contains('secfind')
+      || e.target.classList.contains('vname'))) {
+    e.preventDefault();
+    if (e.target.classList.contains('vname')) saveView(e.target);
+  }
+});
+// Saved views: shared by the team; saving takes the filters in force now
+function saveView(box) {
+  var name = (box.value || '').trim();
+  if (!name) { box.focus(); return; }
+  var fd = new FormData();
+  fd.append('name', name);
+  fd.append('query', location.search);
+  fetch('{{ url_for("dash_views_save") }}', {method: 'POST', body: fd, credentials: 'same-origin'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok) { box.setCustomValidity(d.error || 'Could not save'); box.reportValidity();
+                   setTimeout(function () { box.setCustomValidity(''); }, 2500); return; }
+      pjax(location.pathname + location.search);
+    });
+}
+document.addEventListener('click', function (e) {
+  var s = e.target.closest('[data-view-save]');
+  if (s) { saveView(s.parentElement.querySelector('.vname')); return; }
+  var d = e.target.closest('[data-view-del]');
+  if (d) {
+    var fd = new FormData();
+    fd.append('name', d.dataset.viewDel);
+    fetch('{{ url_for("dash_views_delete") }}', {method: 'POST', body: fd, credentials: 'same-origin'})
+      .then(function () { pjax(location.pathname + location.search); });
+  }
 });
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-unlock]');
@@ -1321,6 +1545,9 @@ document.addEventListener('toggle', function (e) {
                           + ' input[name=pl]:checked, input[name=seg]:checked,'
                           + ' input[name=ps]:checked, input[name=bt]:checked')
           .forEach(function (c) { if (!c.disabled) p.append(c.name, c.value); });
+      // a changed perfect-page standard counts too
+      form.querySelectorAll('input.pcval:not(:disabled)')
+          .forEach(function (c) { p.append(c.name, c.value); });
       var mine = ++seq;
       fetch(location.origin + '{{ url_for("dash_avail") }}?' + p.toString(),
             {credentials: 'same-origin'})

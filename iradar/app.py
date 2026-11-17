@@ -23,7 +23,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from flask import (Flask, Response, abort, flash, jsonify, redirect,
-                   render_template, request, send_file, session, url_for)
+                   render_template, request, send_file, session, url_for, has_request_context)
 from rapidfuzz import fuzz, process
 
 import auth
@@ -1582,6 +1582,17 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # not images - so the one group that should have been three things and their
 # opposites was four unrelated ones. Content is now the three kinds of asset;
 # Components is every component; Status is every state.
+# View buying options is a buy-box label (several OPNs, each with its own
+# cart button), not a section in the page's own nav: read it where the Charts
+# read it. Looked for in the nav it matched no page at all.
+ATTR_FILTERS["hasbuyopts"] = ("Has view buying options",
+                              "(" + _flag("buy_button", "exists") + " AND instr(lower(IFNULL("
+                              "json_extract(u.flags, '$.buy_button.text'), '')),"
+                              " 'view buying options') > 0)")
+ATTR_FILTERS["nobuyopts"] = ("No view buying options",
+                             _KNOWN_GOOD + " AND u.flags IS NOT NULL AND u.flags<>''"
+                             " AND json_type(u.flags, '$.buy_button') IS NOT NULL AND NOT ("
+                             + ATTR_FILTERS["hasbuyopts"][1] + ")")
 CONTENT_KEYS = []
 for _stem, _c, _l in _CONTENT_ATTRS:
     CONTENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
@@ -2157,8 +2168,38 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=(),
         where.append("(" + " OR ".join(bconds) + ")")
     for a in attrs:
         if a in ATTR_FILTERS:
-            where.append("(" + ATTR_FILTERS[a][1] + ")")
+            where.append("(" + (_perfect_sql(a) if a.startswith(("perfect_", "notperfect_"))
+                                else ATTR_FILTERS[a][1]) + ")")
     return ("WHERE " + " AND ".join(where)) if where else "", params
+
+
+def _req_pc(ps):
+    """The components a page type's perfect standard needs for this request:
+    ?pc= (PTP) / ?pce= (EB) when the picker was changed, else the default.
+    Read from the request so the list, the counts, select-all and export all
+    agree without each one passing it along."""
+    if has_request_context() and ps["param"] in request.values:
+        raw = request.values.get(ps["param"], "") or ""
+        want = {v.strip() for v in raw.split(",")}
+        return [c for c in ps["components"] if c in want]
+    return list(ps["default"])
+
+
+def _perfect_sql(key):
+    """A perfect / not-perfect filter against the ticked components."""
+    neg, st = key.startswith("not"), key.split("_", 1)[1]
+    for ps in PERFECT_SETS:
+        if ps["st"] == st:
+            have = _all_have(_req_pc(ps))
+            return "(" + ps["scope"] + " AND " + ("NOT (" + have + ")" if neg else have) + ")"
+    return ATTR_FILTERS[key][1]
+    neg, st = key.startswith("not"), key.split("_", 1)[1]
+    for _st, _lab, scope, keys, _needs in PERFECT_SETS:
+        if _st == st:
+            kept = [k for k in keys if k not in px]
+            have = _all_have(kept) if kept else "1=1"
+            return "(" + scope + " AND " + ("NOT (" + have + ")" if neg else have) + ")"
+    return ATTR_FILTERS[key][1]
 
 
 # the sentinel a "(none)" tick sends, kept out of the value space itself
@@ -2250,6 +2291,46 @@ def _tri_rows(keys):
         row["label"] = row["label"] or row["opts"][0]["full"]
         row["opts"].sort(key=lambda o: rank[o["kind"]])
     return rows
+
+
+def _saved_views():
+    """The team's saved Dashboard views: [{name, query}], oldest first."""
+    try:
+        v = json.loads(db.get_settings().get("dash_views") or "[]")
+        return [x for x in v if isinstance(x, dict) and x.get("name")]
+    except Exception:
+        return []
+
+
+@app.route("/dash/views", methods=["POST"])
+def dash_views_save():
+    """Save (or overwrite by name) a Dashboard view: the filters in its query."""
+    from urllib.parse import parse_qsl, urlencode
+    name = (request.form.get("name") or "").strip()[:60]
+    query = (request.form.get("query") or "").lstrip("?")
+    # keep only the dashboard's own filter and sort parameters
+    keep = {"q", "ptype", "status", "attr", "bl", "pl", "seg", "ps", "bt", "pc", "pce",
+            "sort", "per"}
+    pairs = [(k, v) for k, v in parse_qsl(query, keep_blank_values=False) if k in keep]
+    if not name or not pairs:
+        return jsonify({"ok": False, "error": "A view needs a name and at least one filter."}), 400
+    views = [v for v in _saved_views() if v["name"].lower() != name.lower()]
+    u = current_user()
+    try:
+        by = (u["name"] or u["email"] or "") if u is not None else ""
+    except Exception:
+        by = ""
+    views.append({"name": name, "query": urlencode(pairs), "by": by})
+    db.set_setting("dash_views", json.dumps(views[-40:], ensure_ascii=False))
+    return jsonify({"ok": True, "views": views[-40:]})
+
+
+@app.route("/dash/views/delete", methods=["POST"])
+def dash_views_delete():
+    name = (request.form.get("name") or "").strip()
+    views = [v for v in _saved_views() if v["name"] != name]
+    db.set_setting("dash_views", json.dumps(views, ensure_ascii=False))
+    return jsonify({"ok": True})
 
 
 @app.template_global()
@@ -2597,6 +2678,9 @@ def index():
                            attr_filters=ATTR_FILTERS,
                            content_keys=CONTENT_KEYS, component_keys=COMPONENT_KEYS,
                            content_rows=_tri_rows(CONTENT_KEYS),
+                           perfect_rows=_perfect_rows(),
+                           perfect_keys=PERFECT_KEYS,
+                           saved_views=_saved_views(),
                            component_rows=_tri_rows(COMPONENT_KEYS),
                            status_attr_keys=STATUS_ATTR_KEYS,
                            sel_content_n=sum(1 for a in attrs if a in CONTENT_KEYS),
@@ -6247,6 +6331,11 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
         "SELECT COUNT(DISTINCT i.url_id) n FROM items i JOIN urls u"
         " ON u.id=i.url_id " + w + (" AND " if w else " WHERE ")
         + "i.category IN ('videos','news')", params).fetchone()["n"]
+    pk = PERFECT_KEYS
+    cols = ", ".join(f"SUM(CASE WHEN {_perfect_sql(k)} THEN 1 ELSE 0 END) AS k{i}"
+                     for i, k in enumerate(pk))
+    row = con.execute(f"SELECT {cols} FROM urls u {w}", params).fetchone()
+    out.update({"a_" + k: (row[f"k{i}"] or 0) for i, k in enumerate(pk)})
     checked = out.get("a_checked", 0)
     # derived exactly as index() derives the static ones, so the live count
     # and the page you land on after Apply cannot disagree
@@ -8730,6 +8819,94 @@ CHART_CLUSTERS = [
 EB_KEY_COMPONENTS = ["Bill of material", "Images", "Videos"]
 _CHARTS_CACHE = {}
 
+# Perfect page on the Dashboard (Nov 2026): the same standard the Charts count,
+# as a filter, so the pages behind "Perfect pages 4.6%" can be listed and
+# worked through. Each key component maps to its own "Has" filter, so a page
+# is perfect here exactly when every one of those says yes.
+# Every component the Charts offer, mapped to the Dashboard filter that says a
+# page has it. Checked against the Charts' own counts on the live data
+# (17 Nov 2026): all 22 PTP and 19 EB components agree page for page.
+_KEY_HAS = {"Hero image": "hashero", "Description": "hasdescr",
+            "Subheadline": "hassubheadline", "Key features": "hasfeatures",
+            "Benefits": "hasbenefits", "Applications": "hasapps",
+            "Parametrics": "hasparametrics", "Metadata": "hasmetadata",
+            "Primary document": "hasprimarydoc", "Package page link": "haspackage",
+            "Buy button": "hasbuy", "PCB design": "haspcb",
+            "Bill of material": "hasbom", "Images": "hasimages", "Videos": "hasvideos",
+            "Ordering": "hasordering", "Diagram": "hasdiagrams", "Documents": "hasdocs",
+            "Design resources": "hasdesign", "Partner solutions": "haspartners",
+            "Developer community": "hascommunity", "News & highlights": "hasnews",
+            "View buying options": "hasbuyopts", "Product details": "haspdetails",
+            "Featured products": "hasfeatured", "Register product": "hasregister"}
+# the Charts' component lists, in the Charts' order
+PTP_COMPONENTS = KEY_COMPONENTS + ["PCB design", "Ordering", "Diagram", "Documents",
+                                   "Design resources", "Partner solutions",
+                                   "Developer community", "News & highlights",
+                                   "View buying options", "Product details",
+                                   "Featured products"]
+EB_COMPONENTS = EB_KEY_COMPONENTS + ["Subheadline", "Hero image", "Parametrics", "Ordering",
+                                     "Description", "Key features", "Benefits",
+                                     "Applications", "Diagram", "Documents",
+                                     "Design resources", "Partner solutions",
+                                     "Developer community", "News & highlights",
+                                     "Product details", "Register product"]
+_LIVE_PTP = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
+             " AND u.url LIKE '%/part/%'")
+_LIVE_EB = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
+            " AND u.url LIKE '%/evaluation-board/%'")
+
+
+def _all_have(labels):
+    return " AND ".join("(" + ATTR_FILTERS[_KEY_HAS[l]][1] + ")" for l in labels) or "1=1"
+
+
+_SURF = CHART_CLUSTERS[0]
+# Perfect page on the Dashboard (Nov 2026): the Charts' standard as a filter,
+# one per page type, each with the Charts' component picker - a page is
+# perfect when it has every ticked component. ?pc= / ?pce= carry a picker
+# that differs from its default.
+PERFECT_SETS = [
+    {"st": "ptp", "name": "PTP", "needs": "PTP", "param": "pc", "scope": _LIVE_PTP,
+     "components": PTP_COMPONENTS, "default": KEY_COMPONENTS,
+     "presets": [("Key %d" % len(KEY_COMPONENTS), KEY_COMPONENTS),
+                 ("%s key %d" % (_SURF["name"], len(KEY_COMPONENTS) + len(_SURF["extra"])),
+                  KEY_COMPONENTS + _SURF["extra"]),
+                 ("All %d" % len(PTP_COMPONENTS), PTP_COMPONENTS)]},
+    {"st": "eb", "name": "EB", "needs": "EB", "param": "pce", "scope": _LIVE_EB,
+     "components": EB_COMPONENTS, "default": EB_KEY_COMPONENTS,
+     "presets": [("Key %d" % len(EB_KEY_COMPONENTS), EB_KEY_COMPONENTS),
+                 ("All %d" % len(EB_COMPONENTS), EB_COMPONENTS)]},
+]
+for _ps in PERFECT_SETS:
+    ATTR_FILTERS["perfect_" + _ps["st"]] = (
+        "Perfect %s" % _ps["name"],
+        "(" + _ps["scope"] + " AND " + _all_have(_ps["default"]) + ")")
+    ATTR_FILTERS["notperfect_" + _ps["st"]] = (
+        "Not perfect %s" % _ps["name"],
+        "(" + _ps["scope"] + " AND NOT (" + _all_have(_ps["default"]) + "))")
+PERFECT_KEYS = [k + "_" + _ps["st"] for _ps in PERFECT_SETS for k in ("perfect", "notperfect")]
+
+
+def _perfect_rows(con=None):
+    """The Perfect page rows as this request has them: each type's ticked
+    components, and the preset it matches (or "Custom N")."""
+    rows = []
+    for ps in PERFECT_SETS:
+        sel = _req_pc(ps)
+        name = next((n for n, l in ps["presets"] if set(l) == set(sel)),
+                    "Custom %d" % len(sel))
+        rows.append({"label": ps["name"] + " · " + name, "name": ps["name"],
+                     "preset": name, "needs": ps["needs"], "param": ps["param"],
+                     "components": ps["components"], "default": ps["default"],
+                     "presets": ps["presets"], "sel": sel,
+                     "custom": set(sel) != set(ps["default"]),
+                     "opts": [{"key": "perfect_" + ps["st"], "short": "Perfect", "kind": "has",
+                               "full": "Perfect %s (%s)" % (ps["name"], name)},
+                              {"key": "notperfect_" + ps["st"], "short": "Not perfect",
+                               "kind": "no",
+                               "full": "Not perfect %s (%s)" % (ps["name"], name)}]})
+    return rows
+
 
 def _charts_ptp_data(con):
     return _charts_data(con, "ptp")
@@ -8856,7 +9033,7 @@ def charts_page(kind="ptp"):
 def _chart_frame_words(raw, kind, data):
     """One chart workspace for every page type: the page's own words and its
     component counts go in at serve time; each type remembers its own picks."""
-    raw = (raw.replace(">Key 7<", ">%s %d<" % ("Key" if kind == "eb" else "Global",
+    raw = (raw.replace(">Key 7<", ">%s %d<" % ("Key",
                                                 len(data["keyComponents"])))
               .replace(">All 17<", ">All %d<" % len(data["components"])))
     if kind == "eb":
