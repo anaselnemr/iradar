@@ -750,10 +750,11 @@ IMAGES_JS = r"""
 #                      a datasheet on most parts but not all
 #   package_link     - the header's link to the part's /package/ page
 #   buy_button       - the buy box's call to action. Add to cart, Contact
-#                      sales, Out of stock and View buying options (several
-#                      OPNs, each with its own cart button) count; View
-#                      replacement or View product family alone do not. text =
-#                      every label the box shows, so each state is filterable.
+#                      sales, Out of stock, View buying options (several
+#                      OPNs, each with its own cart button) and View
+#                      distributor's inventory count; View replacement or
+#                      View product family alone do not. text = every label
+#                      the box shows, so each state is filterable.
 STANDARD_JS = r"""
   try {
     const mEl = document.querySelector('meta[name="description" i]');
@@ -776,15 +777,28 @@ STANDARD_JS = r"""
   try {
     const box = document.querySelector('[class*="price-container" i]');
     const labels = [];
-    if (box) box.querySelectorAll('.add-to-cart-btn, .contact-sales-cta, [class*="out-of-stock" i]').forEach(b => {
+    if (box) box.querySelectorAll('.add-to-cart-btn, .contact-sales-cta, [class*="out-of-stock" i], .request-samples-btn').forEach(b => {
       if (b.offsetParent === null) return;
       const t = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim();
+      if (b.classList.contains('request-samples-btn') && !/distributor/i.test(t)) return;
       if (t && t.length < 40 && !labels.some(x => x.toLowerCase() === t.toLowerCase())) labels.push(t);
     });
-    const buy = labels.some(t => /^(add to cart|contact sales|out of stock|view buying options)$/i.test(t));
+    const buy = labels.some(t => /^(add to cart|contact sales|out of stock|view buying options|view distributor[’']s inventory)$/i.test(t));
     out.flags.buy_button = {exists: labels.length > 0, has_content: buy, text: labels.join(' · ')};
   } catch (e) {}
 """
+
+# The buy box is filled by its own late request, which can land after every
+# settle above: 3 parts (XMC1302/XMC1401) read as having no button on runs of
+# Nov 2026 while the live page showed Add to cart. A page whose box shows no
+# button at all gets one bounded wait for it and is read again.
+BUY_BUTTON_JS = ("() => { const out = {flags: {}};"
+                 + STANDARD_JS[STANDARD_JS.rindex("  try {", 0, STANDARD_JS.index("price-container")):]
+                 + " return out.flags.buy_button; }")
+BUY_WAIT_JS = ("() => [...document.querySelectorAll('[class*=\"price-container\" i] .add-to-cart-btn, "
+               "[class*=\"price-container\" i] .contact-sales-cta, [class*=\"price-container\" i] .request-samples-btn')]"
+               ".some(b => b.offsetParent !== null)")
+BUY_WAIT_MS = 8000
 
 # Structured extraction: documents / design resources / news & highlights /
 # trainings & webinars / videos / images - each with title + URL (+ row meta
@@ -2946,6 +2960,13 @@ async def capture_one(browser, url, out_dir):
         # bugs. Let it raise: the page is then reported as an error and retried,
         # which is loud, correct, and recoverable. Never store a lie.
         sections = await page.evaluate(SECTIONS_JS)
+        bb = (sections.get("flags") or {}).get("buy_button")
+        if bb is not None and not bb.get("exists"):
+            try:
+                await page.wait_for_function(BUY_WAIT_JS, timeout=BUY_WAIT_MS)
+                sections["flags"]["buy_button"] = await page.evaluate(BUY_BUTTON_JS)
+            except Exception:
+                pass
         # merge documents collected across the table's pages + clean titles.
         # Distinct documents may share a title (language variants), so entries
         # are NEVER merged across different links - only exact repeats are
