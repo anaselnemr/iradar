@@ -585,7 +585,7 @@ def run_report(con, run, since=None):
     for key in ("live", "paused", "paused_blank", "paused_offline", "notlive", "blank"):
         d[key] = counts[key] or 0
     d["open_updates"] = con.execute(
-        "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
+        "SELECT COUNT(*) " + db.OPEN_UPDATES_FROM).fetchone()[0]
     d["open_files"] = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0").fetchone()[0]
     d["errors_total"] = (d["notlive"] + d["blank"] + (d["errors"] or 0))

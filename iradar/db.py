@@ -161,6 +161,14 @@ def open_run(con, include_stopped=False):
 IN_INVENTORY = "IFNULL(archived,'')=''"
 
 
+# OPEN UPDATES: unreviewed updates on pages in the inventory. An archived
+# page's update is not work in the queue - the Archive hides the page, so a
+# count that included it said "3 awaiting review" over an empty list.
+# Every "awaiting review" number reads this one definition.
+OPEN_UPDATES_FROM = ("FROM changes c JOIN urls u ON u.id=c.url_id"
+                     " WHERE IFNULL(c.reviewed,0)=0 AND IFNULL(u.archived,'')=''")
+
+
 def redirect_list(raw):
     """The old addresses a page answers to, oldest first. redirect_from holds
     one per line: a page can be reached from several retired links."""

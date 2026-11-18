@@ -3160,3 +3160,27 @@ def test_file_updates_review_select_all_and_reopen():
     con.execute("DELETE FROM asset_changes WHERE id IN (%s)" % ",".join(map(str, ids)))
     con.commit()
     con.close()
+
+
+def test_awaiting_review_leaves_out_archived_pages():
+    """An archived page's open update is not in the review queue: the count
+    and the Awaiting review list must agree (3 counted over an empty list)."""
+    con = db.connect()
+    uid = con.execute("INSERT INTO urls(url, active, ptype, last_status, last_http, archived)"
+                      " VALUES('https://www.infineon.com/evaluation-board/GONE', 0, 'Part',"
+                      " 'notlive', 404, 'x')").lastrowid
+    con.execute("INSERT INTO changes(url_id, ts, reviewed) VALUES(?, 't', 0)", (uid,))
+    con.commit()
+    n_all = con.execute("SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
+    n_open = con.execute("SELECT COUNT(*) " + db.OPEN_UPDATES_FROM).fetchone()[0]
+    con.close()
+    assert n_open == n_all - 1
+    with app.app.test_request_context("/?status=review"):
+        assert "GONE" not in " ".join(_ids(*app._url_filter("", ["review"], [], [])))
+    with app.app.test_request_context("/?status=review&archive=1"):
+        assert "GONE" in " ".join(_ids(*app._url_filter("", ["review"], [], [])))
+    con = db.connect()
+    con.execute("DELETE FROM changes WHERE url_id=?", (uid,))
+    con.execute("DELETE FROM urls WHERE id=?", (uid,))
+    con.commit()
+    con.close()

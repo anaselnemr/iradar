@@ -1201,7 +1201,7 @@ def _queue_reminder(now=None):
     con = db.connect()
     try:
         updates = con.execute(
-            "SELECT COUNT(*), MIN(ts) FROM changes WHERE reviewed=0").fetchone()
+            "SELECT COUNT(*), MIN(c.ts) " + db.OPEN_UPDATES_FROM).fetchone()
         files = con.execute(
             "SELECT COUNT(*), MIN(ts) FROM asset_changes"
             " WHERE IFNULL(reviewed,0)=0").fetchone()
@@ -2465,7 +2465,7 @@ def _bar_extras(con):
     if not run:
         return 0, 0, 0, 0, 0
     open_n = con.execute(
-        "SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
+        "SELECT COUNT(*) " + db.OPEN_UPDATES_FROM + " AND c.ts>=?",
         (run["started"],)).fetchone()[0]
     fu = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
@@ -2483,8 +2483,8 @@ def _bar_extras(con):
     hit = _BAR_EXTRAS_CACHE.get(key)
     if hit is None:
         rows = con.execute(
-            "SELECT summary, text_changed, images_added, images_removed"
-            " FROM changes WHERE IFNULL(reviewed,0)=0 AND ts>=?",
+            "SELECT c.summary, c.text_changed, c.images_added, c.images_removed "
+            + db.OPEN_UPDATES_FROM + " AND c.ts>=?",
             (run["started"],)).fetchall()
         items, _w, _c = mailer._content_items(rows)
         delta = db.run_pages_delta(con, run, tracked)
@@ -2613,7 +2613,7 @@ def index():
     counts = st["counts"]
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
-        "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
+        "SELECT COUNT(*) " + db.OPEN_UPDATES_FROM).fetchone()[0]
     comp_pending, pending_total = st["comp_pending"], st["pending_total"]
     ptypes_raw, lvl_counts = st["ptypes_raw"], st["lvl_counts"]
     _SCHEMES = {"Product": PRODUCT_LEVELS, "Application": APP_LEVELS,
@@ -9738,12 +9738,11 @@ def guide_page():
             # built-in method, and formatting it throws
             "tracked": q("SELECT COUNT(*) FROM items WHERE category"
                          " NOT IN " + _NON_ASSET_SQL),
-            "open": q("SELECT COUNT(*) FROM changes WHERE IFNULL(reviewed,0)=0"),
+            "open": q("SELECT COUNT(*) " + db.OPEN_UPDATES_FROM),
             # updates and PAGES are different numbers - one page can carry
             # more than one. The tile links to the page list, so it has to
             # count what that list will show or the two disagree on screen.
-            "open_pages": q("SELECT COUNT(DISTINCT url_id) FROM changes"
-                            " WHERE IFNULL(reviewed,0)=0"),
+            "open_pages": q("SELECT COUNT(DISTINCT c.url_id) " + db.OPEN_UPDATES_FROM),
             "people": q("SELECT COUNT(*) FROM users WHERE active=1"),
         }
         last = con.execute(
