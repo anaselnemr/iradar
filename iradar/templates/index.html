@@ -461,8 +461,13 @@
                   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); cursor: pointer; }
     .selall-btn:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
     /* the filters in force, each one click from gone */
-    .fchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-              margin-top: 10px; }
+    /* one line, never two: in the pager's row the chips scroll sideways if
+       there are many, so the row keeps its height */
+    .fchips { display: flex; flex: 1; min-width: 0; flex-wrap: nowrap; align-items: center;
+              gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    .fchips::-webkit-scrollbar { display: none; }
+    .fchip { flex: 0 0 auto; }
+    .fchips .fclear { flex: 0 0 auto; white-space: nowrap; }
     .fchip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
              padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12.5px;
              color: var(--ink); text-decoration: none; border: 1px solid
@@ -692,14 +697,15 @@
   {% for r in perfect_rows if r.custom and not (r.opts|map(attribute="key")|select("in", sel_attrs)|list) %}{% set _ = _fc.append((r.name ~ " standard", r.preset, dash_url_minus(r.param, request.args.get(r.param, "")))) %}{% endfor %}
   {% for s in sel_status %}{% set _ = _fc.append(("Status", status_filters[s][0], dash_url_minus("status", s))) %}{% endfor %}
   {% for a in sel_attrs %}{% set _ = _fc.append(("", _pfull.get(a) or attr_filters[a][0], dash_url_minus("attr", a))) %}{% endfor %}
-  {% if _fc %}
-  <div class="fchips">
+  {#- the filters in force live in the pager's row (below), which is always
+      there: a row of their own appeared with the first filter and pushed the
+      whole table down -#}
+  {% set fchips_html %}{% if _fc %}
     {% for k, v, href in _fc %}
     <a class="fchip" href="{{ href }}" title="Remove"><span>{% if k %}<i>{{ k }}:</i> {% endif %}{{ v }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></a>
     {% endfor %}
     <a class="fclear" href="{{ url_for('index', archive=1) if in_archive else url_for('index') }}">Clear all</a>
-  </div>
-  {% endif %}
+  {% endif %}{% endset %}
 
   <div class="quickchips">
     {% for c in (quick_chips if not in_archive else []) %}
@@ -709,6 +715,13 @@
          title="{{ 'Click again to drop this filter' if c.on else 'Adds to the filters already set' }}"
          href="{{ c.href }}">{{ c.label }} <b>{{ c.n }}</b></a>
     {% endfor %}
+  </div>
+
+  {# one line above the table, always there: the filters in force on the
+     left, the pager on the right - nothing below it moves as they change #}
+  <div class="tabletop">
+    <div class="fchips">{{ fchips_html }}</div>
+    {{ pg.pager(page, pages, total_match, per_page, purl, 'top', viewopts) }}
   </div>
 
   {% if not urls %}
@@ -755,11 +768,6 @@
     <button class="btn-ghost btn-sm" onclick="clearSel()" title="Clear the selection (Esc)">Done</button>
   </div>
 
-  {# one clean line above the table: count on the left, compact pager right #}
-  <div class="tabletop">
-    <span style="flex:1"></span>
-    {{ pg.pager(page, pages, total_match, per_page, purl, 'top', viewopts) }}
-  </div>
 
   {#- A cell's max-width is only a hint to a table: one very long address in
       the page column and the whole table grows past the card holding it,
