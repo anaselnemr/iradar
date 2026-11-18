@@ -124,17 +124,28 @@ def _follow_redirect(con, url_id, old_url, final_url):
         # source report re-adds the legacy URL on every import, the next run
         # deletes it again, and 60-odd rows churn back and forth forever. The
         # importer matches redirect_from, so one round of this ends the loop.
-        if not (existing["redirect_from"] or "").strip():
+        # Every retired address is kept, not only the first: a page reached
+        # from two old links answers to both.
+        stale_rf = con.execute("SELECT redirect_from FROM urls WHERE id=?",
+                               (url_id,)).fetchone()
+        merged = db.redirect_add(existing["redirect_from"], old_url,
+                                 stale_rf["redirect_from"] if stale_rf else "")
+        if merged != (existing["redirect_from"] or ""):
             con.execute("UPDATE urls SET redirect_from=? WHERE id=?",
-                        (old_url, existing["id"]))
+                        (merged, existing["id"]))
         for s in con.execute("SELECT dir FROM snapshots WHERE url_id=?",
                              (url_id,)).fetchall():
             if s["dir"]:
                 shutil.rmtree(s["dir"], ignore_errors=True)
         con.execute("DELETE FROM urls WHERE id=?", (url_id,))
         return True, f"{old_url} redirects to already-tracked {final_url} - removed"
+    # the row now lives at its final address; the address it had - and any it
+    # was already reached from - stay on it as redirects
+    prev_rf = con.execute("SELECT redirect_from FROM urls WHERE id=?",
+                          (url_id,)).fetchone()
     con.execute("UPDATE urls SET url=?, redirect_from=? WHERE id=?",
-                (final_url, old_url, url_id))
+                (final_url, db.redirect_add(prev_rf["redirect_from"] if prev_rf
+                                            else "", old_url), url_id))
     # the destination can be a DIFFERENT KIND of page (a retired part often
     # 301s to the evaluation-board finder - a design-resources page). Keeping
     # the old type would dress a finder tool up as a PTP, so re-type the row

@@ -242,6 +242,15 @@ def test_offline_delta_appears_only_when_it_changed_and_reads_by_direction():
         return next(t for t in tiles
                     if t.find("div[@class='l']").text == label_text)
 
+    # four pages offline now: the badge never claims more new offline pages
+    # than the Offline count still holds (archived ones have left it)
+    con = db.connect()
+    off_ids = [con.execute("INSERT INTO urls(url, active, ptype, last_http, last_status)"
+                           " VALUES(?, 1, 'Part', 404, 'notlive')",
+                           ("https://www.infineon.com/part/off%d" % i,)).lastrowid
+               for i in range(4)]
+    con.commit()
+    con.close()
     try:
         for delta, label, colour in [(4, "+4", "var(--err)"),
                                      (-4, "−4", "var(--ok)")]:
@@ -259,8 +268,20 @@ def test_offline_delta_appears_only_when_it_changed_and_reads_by_direction():
         # unchanged: no badge at all
         tile = tile_for(0, "Offline")
         assert tile.find("div[@class='n']/span[@class='delta']") is None,             "an unchanged offline count must carry no delta badge"
+        # all of them archived: an offline count of 0 wears no "+4"
+        con = db.connect()
+        con.execute("UPDATE urls SET archived='x' WHERE id IN (%s)"
+                    % ",".join(map(str, off_ids)))
+        con.commit()
+        con.close()
+        tile = tile_for(4, "Offline")
+        assert tile.find("div[@class='n']/span[@class='delta']") is None
     finally:
         app._bar_extras = original
+        con = db.connect()
+        con.execute("DELETE FROM urls WHERE id IN (%s)" % ",".join(map(str, off_ids)))
+        con.commit()
+        con.close()
 
 
 def test_sentiment_page_renders():
@@ -2963,3 +2984,73 @@ def test_product_line_list_leaves_out_multi_line_product_tables():
     vals = [o["v"] for o in app._owner_values(con, "pl")]
     con.close()
     assert "41/42" not in vals and "81" in vals
+
+
+def test_archived_pages_leave_every_count_and_live_on_the_archive_view():
+    """An offline page set aside is out of Total, Offline, Paused and the list;
+    the Archive view shows it alone, and Restore brings it back."""
+    _pages_with_owners()
+    con = db.connect()
+    cid = con.execute("SELECT id FROM urls WHERE url LIKE '%/c'").fetchone()[0]
+    con.execute("UPDATE urls SET last_http=404, last_status='notlive', active=0"
+                " WHERE id=?", (cid,))
+    con.commit()
+    before = db.dashboard_counts(con)
+    con.close()
+    assert before["total"] == 4 and before["notlive"] == 1 and before["paused"] == 1
+    r = _client.post("/urls/bulk", data={"_csrf": _csrf(), "action": "archive",
+                                         "ids": [str(cid)], "next": "/"})
+    assert r.status_code in (302, 303)
+    con = db.connect()
+    after = db.dashboard_counts(con)
+    row = con.execute("SELECT active, archived FROM urls WHERE id=?", (cid,)).fetchone()
+    con.close()
+    assert row["archived"] and row["active"] == 0
+    assert (after["total"], after["notlive"], after["paused"], after["archived"]) == (3, 0, 0, 1)
+    assert _ids(*app._url_filter("", [], [], [])) == ["a", "b", "d"]
+    with app.app.test_request_context("/?archive=1"):
+        assert _ids(*app._url_filter("", [], [], [])) == ["c"]
+        assert app._dash_keep_args().get("archive") == "1"
+    body = _client.get("/?archive=1").data.decode("utf-8", "replace")
+    assert ">Archive" in body and "Back to all pages" in body and "Restore" in body
+    assert _client.get("/").status_code == 200
+    _client.post("/urls/bulk", data={"_csrf": _csrf(), "action": "unarchive",
+                                     "archive": "1", "ids": [str(cid)], "next": "/"})
+    con = db.connect()
+    row = con.execute("SELECT active, archived FROM urls WHERE id=?", (cid,)).fetchone()
+    back = db.dashboard_counts(con)
+    con.close()
+    assert row["archived"] == "" and row["active"] == 1 and back["archived"] == 0
+
+
+def test_a_page_keeps_every_address_that_redirects_to_it():
+    """The list always tracks the final address; each retired link that leads
+    there is kept on the page, not only the first one."""
+    import runner
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    keep = con.execute("INSERT INTO urls(url, active, ptype, redirect_from)"
+                       " VALUES('https://www.infineon.com/products/new',1,'Product',"
+                       "'https://www.infineon.com/products/old0')").lastrowid
+    stale = con.execute("INSERT INTO urls(url, active, ptype)"
+                        " VALUES('https://www.infineon.com/products/old1',1,'Product')").lastrowid
+    gone, _msg = runner._follow_redirect(con, stale, "https://www.infineon.com/products/old1",
+                                         "https://www.infineon.com/products/new")
+    assert gone
+    rf = con.execute("SELECT redirect_from FROM urls WHERE id=?", (keep,)).fetchone()[0]
+    assert db.redirect_list(rf) == ["https://www.infineon.com/products/old0",
+                                    "https://www.infineon.com/products/old1"]
+    # a repoint keeps what the row was already reached from
+    moved = con.execute("INSERT INTO urls(url, active, ptype, redirect_from)"
+                        " VALUES('https://www.infineon.com/products/b',1,'Product',"
+                        "'https://www.infineon.com/products/a')").lastrowid
+    runner._follow_redirect(con, moved, "https://www.infineon.com/products/b",
+                            "https://www.infineon.com/products/c")
+    r = con.execute("SELECT url, redirect_from FROM urls WHERE id=?", (moved,)).fetchone()
+    con.commit()
+    con.close()
+    assert r["url"] == "https://www.infineon.com/products/c"
+    assert db.redirect_list(r["redirect_from"]) == ["https://www.infineon.com/products/a",
+                                                    "https://www.infineon.com/products/b"]
+    body = _client.get(f"/url/{keep}").data.decode("utf-8", "replace")
+    assert "products/old0" in body and "products/old1" in body

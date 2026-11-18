@@ -21,6 +21,9 @@
   .rd-why { color: var(--muted); font-size: 13px; line-height: 1.5;
             margin-top: 3px; }
   @media (max-width: 560px) { .rd-row { grid-template-columns: 1fr; gap: 3px; } }
+  .archform { display: inline; margin: 0 0 0 6px; }
+  .archform .linkbtn { font-size: inherit; }
+  .badge.b-arch { background: var(--hover); color: var(--muted); }
 </style>
 <nav class="bcrumb" aria-label="Where this page sits">
   <a class="bc-back" href="{{ url_for('index') }}" title="Back to the dashboard">←</a>
@@ -233,6 +236,11 @@
 
   <div class="muted pgfacts">Added {{ u.created_at|localtime }} · Last checked: {{ u.last_checked|localtime }} · Status:
     {{ u.last_status or 'not checked' }}
+    {% if u.archived %} · <span class="badge b-arch" title="Set aside on {{ u.archived|localtime }}: out of every count, list, chart and export, and not checked">archived</span>{% endif %}
+    <form class="archform" method="post" action="{{ url_for('urls_archive', url_id=u.id) }}">
+      <input type="hidden" name="on" value="{{ '0' if u.archived else '1' }}">
+      <button class="linkbtn" title="{{ 'Back into the inventory; the next check reads it again' if u.archived else 'Set aside: out of every count, list, chart and export, and no longer checked' }}">{{ 'Restore' if u.archived else 'Archive' }}</button>
+    </form>
     {% if u.canonical_url %} · <span title="The page's long/canonical address from its own breadcrumb — used for duplicate detection, search and the AEM link">long URL: <a href="{{ u.canonical_url }}" target="_blank">{{ u.canonical_url }}</a></span>{% endif %}
   </div>
 
@@ -592,18 +600,19 @@
     301 look like something had gone wrong, on pages where nothing had: a
     redirect is a fact about the address, not a problem with the content. It
     sits with the other facts now, closed unless there is something in it. -#}
-{% if redirect_to or u.redirect_from %}
+{% set rd_from = (u.redirect_from or '').splitlines()|map('trim')|select|list %}
+{% if redirect_to or rd_from %}
 <details class="card rdbox"{% if redirect_to %} open{% endif %}>
   <summary>
     <span>Redirects</span>
-    <span class="rd-n">{{ (1 if redirect_to else 0) + (1 if u.redirect_from else 0) }}</span>
+    <span class="rd-n">{{ (1 if redirect_to else 0) + rd_from|length }}</span>
   </summary>
   <div class="rd-body">
-    {% if u.redirect_from %}
+    {% if rd_from %}
     <div class="rd-row">
       <span class="rd-lbl">Reached from</span>
       <div>
-        <a href="{{ u.redirect_from }}" target="_blank">{{ u.redirect_from }}</a>
+        {% for rf in rd_from %}<div><a href="{{ rf }}" target="_blank">{{ rf }}</a></div>{% endfor %}
         <div class="rd-why">A 301 sent us here, so the list tracks this
           destination rather than the old address.</div>
       </div>

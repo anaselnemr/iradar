@@ -2033,7 +2033,7 @@ def _bulk_counts(con, filters):
         return {}
     cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
                      for i, c in enumerate(conds.values()))
-    row = con.execute(f"SELECT {cols} FROM urls u").fetchone()
+    row = con.execute(f"SELECT {cols} FROM urls u WHERE {_scope_sql()}").fetchone()
     return {k: (row[f"k{i}"] or 0) for i, k in enumerate(conds)}
 
 
@@ -2074,6 +2074,18 @@ def _squash_sql(col, chars=_SQUASH_CHARS):
     return expr
 
 
+def _in_archive():
+    """True on the Archive view (?archive=1): the dashboard, its counts, its
+    bulk actions and its export then speak about archived pages only."""
+    return has_request_context() and request.values.get("archive") == "1"
+
+
+def _scope_sql(alias="u."):
+    """This view's pages: the Archive, or the inventory (everything else)."""
+    return (f"IFNULL({alias}archived,'')<>''" if _in_archive()
+            else f"IFNULL({alias}archived,'')=''")
+
+
 def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=(),
                 bts=()):
     """statuses OR'd, types OR'd, attributes AND'd - all multi-select.
@@ -2090,7 +2102,9 @@ def _url_filter(q, statuses, ptypes, attrs, bls=(), pls=(), segs=(), pss=(),
     such filter with another quietly drop every other filter. That is the
     "multiple filters not working" the user saw.
     """
-    where, params = [], []
+    # archived pages live on the Archive view alone; everywhere else they are
+    # not part of the inventory
+    where, params = [_scope_sql()], []
     if q:
         # The page's OWN TITLE, which is the thing on screen and the thing
         # people type. Searching only url/label meant "page not found" matched
@@ -2310,7 +2324,7 @@ def dash_views_save():
     query = (request.form.get("query") or "").lstrip("?")
     # keep only the dashboard's own filter and sort parameters
     keep = {"q", "ptype", "status", "attr", "bl", "pl", "seg", "ps", "bt", "pc", "pce",
-            "sort", "per"}
+            "sort", "per", "archive"}
     pairs = [(k, v) for k, v in parse_qsl(query, keep_blank_values=False) if k in keep]
     if not name or not pairs:
         return jsonify({"ok": False, "error": "A view needs a name and at least one filter."}), 400
@@ -2349,6 +2363,8 @@ def _dash_keep_args():
     for k in ("pc", "pce"):
         if request.args.get(k) is not None:
             out[k] = request.args.get(k)
+    if _in_archive():
+        out["archive"] = "1"
     return out
 
 
@@ -2369,6 +2385,8 @@ def _buy_type_options(con, where="", params=()):
     conds.append((_UNASSIGNED, "No buy box", _buy_type_sql(_UNASSIGNED)))
     cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
                      for i, (_k, _l, c) in enumerate(conds))
+    if not where:
+        where = "WHERE " + _scope_sql()
     row = con.execute(f"SELECT {cols} FROM urls u {where}", list(params)).fetchone()
     return [{"v": k, "label": label, "n": row[f"k{i}"] or 0}
             for i, (k, label, _c) in enumerate(conds)]
@@ -2388,7 +2406,7 @@ def _owner_values(con, col):
     to become filterable."""
     rows = con.execute(
         f"SELECT IFNULL({col},'') v, COUNT(*) n FROM urls u"
-        f" WHERE {_owner_scope(col)}"
+        f" WHERE {_owner_scope(col)} AND {_scope_sql()}"
         f" GROUP BY v ORDER BY (v='') ASC, n DESC").fetchall()
     out = []
     for r in rows:
@@ -2437,10 +2455,13 @@ def _bar_extras(con):
     fu = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0"
         " AND ts>=?", (run["started"],)).fetchone()[0]
-    tracked = con.execute("SELECT COUNT(*) FROM urls").fetchone()[0]
+    tracked = con.execute("SELECT COUNT(*) FROM urls WHERE "
+                          + db.IN_INVENTORY).fetchone()[0]
+    archived_n = con.execute("SELECT COUNT(*) FROM urls WHERE NOT ("
+                             + db.IN_INVENTORY + ")").fetchone()[0]
     # A file review or a watch-list edit can happen without changing open_n;
     # both belong in the key so the bar never holds their old numbers.
-    key = (run["id"], open_n, fu, tracked)
+    key = (run["id"], open_n, fu, tracked, archived_n)
     # read ONCE into a local: checking membership and then indexing let a
     # second request's clear() land between the two, and the dashboard 500'd
     # with a KeyError on a page that only wanted a cached number
@@ -2543,14 +2564,16 @@ def index():
         "SELECT COUNT(*) FROM urls WHERE active=1 AND (last_checked IS NULL"
         " OR IFNULL(last_status,'') IN ('blank','error'))"
     ).fetchone()[0]
+    scope = _scope_sql("")
     ptypes_raw = con.execute(
-        "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' GROUP BY ptype"
-        " ORDER BY n DESC").fetchall()
+        "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' AND " + scope +
+        " GROUP BY ptype ORDER BY n DESC").fetchall()
     # per-level counts, so the Type dropdown can nest each general type's
     # detail levels (Product > PC/PFP/PSFP/PEFP, ...) under it
     lvl_counts = {(r["ptype"], r["level"]): r["n"] for r in con.execute(
         "SELECT ptype, level, COUNT(*) n FROM urls"
-        " WHERE ptype<>'' AND IFNULL(level,'')<>'' GROUP BY ptype, level")}
+        " WHERE ptype<>'' AND IFNULL(level,'')<>'' AND " + scope +
+        " GROUP BY ptype, level")}
     _SCHEMES = {"Product": PRODUCT_LEVELS, "Application": APP_LEVELS,
                 "Design resources": DR_LEVELS}
     # products and parts are ONE taxonomy - a part type page is its bottom -
@@ -2561,9 +2584,10 @@ def index():
     n_ptp = n_eb = 0
     if part_total:
         n_ptp = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
-                            " AND url LIKE '%/part/%'").fetchone()[0]
+                            " AND url LIKE '%/part/%' AND " + scope).fetchone()[0]
         n_eb = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
-                           " AND url LIKE '%/evaluation-board/%'").fetchone()[0]
+                           " AND url LIKE '%/evaluation-board/%' AND " + scope
+                           ).fetchone()[0]
     ptypes, merged_done = [], False
     for r in ptypes_raw:
         if r["ptype"] in ("Part", "Product"):
@@ -2712,7 +2736,7 @@ def index():
                            sel_content_n=sum(1 for a in attrs if a in CONTENT_KEYS),
                            sel_comp_n=sum(1 for a in attrs if a in COMPONENT_KEYS),
                            status_counts=status_counts, attr_counts=attr_counts,
-                           quick_chips=quick_chips)
+                           quick_chips=quick_chips, in_archive=_in_archive())
 
 
 @app.route("/urls/bulk", methods=["POST"])
@@ -2757,6 +2781,14 @@ def urls_bulk():
                     [1 if action == "resume" else 0] + ids)
         con.commit()
         flash(f"{'Resumed' if action == 'resume' else 'Paused'} {len(ids)} URL(s).")
+    elif action == "archive":
+        n = _archive_pages(con, ids, True)
+        flash(f"Archived {n} page(s). They are out of every count now;"
+              " the Archive keeps them.")
+    elif action == "unarchive":
+        n = _archive_pages(con, ids, False)
+        flash(f"Restored {n} page(s) from the Archive. The next check reads"
+              " them again.")
     elif action == "accept":
         con.execute(f"UPDATE changes SET reviewed=1, resolution='approve'"
                     f" WHERE url_id IN ({marks}) AND reviewed=0", ids)
@@ -2822,6 +2854,37 @@ def urls_delete(url_id):
     shutil.rmtree(db.CHANGE_DIR / str(url_id), ignore_errors=True)
     flash("URL removed (including its stored snapshots).")
     return redirect(url_for("index"))
+
+
+def _archive_pages(con, ids, on):
+    """Archive (or restore) pages. An archived page is not checked - it is
+    paused too - and a restored one is watched again, so the next check
+    tells whether it is still offline."""
+    if not ids:
+        return 0
+    marks = ",".join("?" * len(ids))
+    if on:
+        cur = con.execute(f"UPDATE urls SET archived=?, active=0 WHERE id IN ({marks})"
+                          " AND IFNULL(archived,'')=''", [db.now_iso()] + list(ids))
+    else:
+        cur = con.execute(f"UPDATE urls SET archived='', active=1 WHERE id IN ({marks})"
+                          " AND IFNULL(archived,'')<>''", list(ids))
+    con.commit()
+    _BAR_EXTRAS_CACHE.clear()
+    return cur.rowcount
+
+
+@app.route("/urls/<int:url_id>/archive", methods=["POST"])
+def urls_archive(url_id):
+    """The page's own Archive / Restore button."""
+    con = db.connect()
+    try:
+        on = request.form.get("on", "1") == "1"
+        _archive_pages(con, [url_id], on)
+    finally:
+        con.close()
+    flash("Page archived." if on else "Page restored from the Archive.")
+    return redirect(url_for("url_detail", url_id=url_id))
 
 
 @app.route("/urls/<int:url_id>/toggle", methods=["POST"])
@@ -5300,11 +5363,12 @@ def _redirect_aliases(con):
     out = {}
     for r in con.execute("SELECT url, canonical_url, redirect_from FROM urls"
                          " WHERE IFNULL(redirect_from,'')<>''"):
-        old = _tax_norm(r["redirect_from"])
         new = _tax_norm(r["canonical_url"] or r["url"])
-        if (old.startswith("/products/") and new.startswith("/products/")
-                and old != new):
-            out[old] = new
+        for rf in db.redirect_list(r["redirect_from"]):
+            old = _tax_norm(rf)
+            if (old.startswith("/products/") and new.startswith("/products/")
+                    and old != new):
+                out[old] = new
     return out
 
 
@@ -6303,7 +6367,7 @@ def _dash_counts(con):
             "attr": _bulk_counts(con, ATTR_FILTERS),
         }
 
-    d = _cached_by_db("dash", build)
+    d = _cached_by_db("dash_archive" if _in_archive() else "dash", build)
     return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
 
 
@@ -7420,8 +7484,11 @@ def _export_rows(con, levels, cols, verbose=False, ids=None):
         q += " WHERE u.id IN (" + ",".join("?" * len(ids)) + ")"
         args += list(ids)
     elif levels:
-        q += " WHERE IFNULL(u.level,'') IN (" + ",".join("?" * len(levels)) + ")"
+        q += (" WHERE IFNULL(u.archived,'')='' AND IFNULL(u.level,'') IN ("
+              + ",".join("?" * len(levels)) + ")")
         args += levels
+    else:
+        q += " WHERE IFNULL(u.archived,'')=''"
     q += " ORDER BY u.level, lower(COALESCE(NULLIF(u.title_override,''), u.url))"
     pages = con.execute(q, args).fetchall()
 
@@ -8089,8 +8156,8 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
         lv_sql = (" AND IFNULL(level,'') IN ("
                   + ",".join("?" * len(levels)) + ")")
         lv_args = list(levels)
-    total = con.execute("SELECT COUNT(*) FROM urls WHERE 1" + lv_sql,
-                        lv_args).fetchone()[0]
+    total = con.execute("SELECT COUNT(*) FROM urls WHERE IFNULL(archived,'')=''"
+                        + lv_sql, lv_args).fetchone()[0]
     out["_total"] = total
 
     # It has to narrow BOTH ways. Picking Evaluation board told you which
@@ -8128,7 +8195,7 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
     where = (" AND " + " AND ".join(conds)) if conds else ""
     for r in con.execute(
             "SELECT IFNULL(u.level,'') lv, COUNT(*) n FROM urls u"
-            " WHERE 1" + where + " GROUP BY lv", cargs):
+            " WHERE IFNULL(u.archived,'')=''" + where + " GROUP BY lv", cargs):
         out["lv_" + r["lv"]] = r["n"]
     for k, _l in _export_meta_cols():
         out[k] = con.execute(
@@ -8146,7 +8213,8 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
     navs = [(k, a) for k, _l, kind, a in _all_components() if kind in ("nav", "tab")]
     if navs:
         rows = con.execute(
-            "SELECT components, detail_tabs FROM urls WHERE 1" + lv_sql,
+            "SELECT components, detail_tabs FROM urls WHERE IFNULL(archived,'')=''"
+            + lv_sql,
             lv_args).fetchall()
         pools = []
         for r in rows:
@@ -8164,6 +8232,7 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
     for k, a in [(k, a) for k, _l, kind, a in _all_components() if kind == "flag"]:
         out[k] = con.execute(
             "SELECT COUNT(*) FROM urls WHERE json_valid(flags)"
+            " AND IFNULL(archived,'')=''"
             f" AND json_extract(flags, '$.{a}.exists') = 1" + lv_sql,
             lv_args).fetchone()[0]
     return out
@@ -8195,7 +8264,8 @@ def export_builder():
     """
     con = db.connect()
     lv_rows = con.execute(
-        "SELECT IFNULL(level,'') lv, COUNT(*) n FROM urls GROUP BY lv").fetchall()
+        "SELECT IFNULL(level,'') lv, COUNT(*) n FROM urls"
+        " WHERE IFNULL(archived,'')='' GROUP BY lv").fetchall()
     counts = {r["lv"]: r["n"] for r in lv_rows}
     # taxonomy order, so the rows read top-down the way the site nests:
     # product levels, then parts, then applications, then design resources
@@ -8997,7 +9067,8 @@ def _charts_data(con, kind):
                        " FROM urls WHERE level=?", (level,)).fetchone()[:],
            hash(con.execute("SELECT group_concat(id || ':' || IFNULL(bl,'') || ':'"
                             " || IFNULL(pl,'') || ':' || IFNULL(last_status,'')"
-                            " || ':' || active) FROM urls WHERE level=?", (level,))
+                            " || ':' || active || ':' || IFNULL(archived,''))"
+                            " FROM urls WHERE level=?", (level,))
                 .fetchone()[0]))
     hit = _CHARTS_CACHE.get(kind)
     if hit and hit[0] == sig:
@@ -9024,6 +9095,7 @@ def _charts_data(con, kind):
     buy_of = {}
     for r in con.execute(
             "SELECT id, bl, pl, flags, last_status FROM urls WHERE level=?"
+            " AND IFNULL(archived,'')=''"
             " AND ((active=1 AND IFNULL(last_status,'') NOT IN"
             "       ('notlive','blank','error',''))"
             "      OR last_status='notlive')"
@@ -9250,9 +9322,10 @@ def _normalize_urls():
                            " FROM urls WHERE rtrim(url,'/')=? AND id<>?",
                            (clean.rstrip("/"), r["id"])).fetchone()
         if twin:
-            if r["redirect_from"] and not twin["redirect_from"]:
+            merged = db.redirect_add(twin["redirect_from"], r["redirect_from"])
+            if merged != (twin["redirect_from"] or ""):
                 con.execute("UPDATE urls SET redirect_from=? WHERE id=?",
-                            (r["redirect_from"], twin["id"]))
+                            (merged, twin["id"]))
             # the junk row may be the one the CSS report landed its ownership
             # on - carry it over, filling only what the keeper is missing
             for f in ("bl", "pl", "segment", "cm", "owner"):

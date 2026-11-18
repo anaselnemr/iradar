@@ -34,10 +34,10 @@
 <div class="card dashboard-summary">
   <style>
     /* The shared summary header lives in base.html; this page keeps only
-       what is its own: its two extra stat colours, seven figures instead of
+       what is its own: its two extra stat colours, eight figures instead of
        four, and the run button's split menu. */
     .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed;
-                         --stat-cols:7; }
+                         --stat-cols:8; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
     .run-split { display:inline-flex; align-items:stretch; }
     .run-launch { display:flex; margin:0; }
@@ -61,14 +61,15 @@
     .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
                      font-size:11px; cursor:pointer; white-space:nowrap; }
     .report-choice input { margin:0; }
-    /* seven figures do not divide by four, three or two: the last one takes
-       the slack so the grid never ends in a hole */
+    /* eight figures divide by four and two; on three across the last one
+       takes the slack so the grid never ends in a hole */
     /* the Paused note is the longest line in the row: a touch smaller on the
-       seven-across layout so it never breaks onto a second line */
-    @media (min-width:1101px) { .report-stat:last-child .detail { font-size:10.5px; } }
-    @media (max-width:1100px) { .report-stat:last-child { grid-column:span 2; } }
-    @media (max-width:760px)  { .report-stat:last-child { grid-column:span 3; } }
-    @media (max-width:520px)  { .report-stat:last-child { grid-column:span 2; } }
+       eight-across layout so it never breaks onto a second line */
+    @media (min-width:1101px) { .report-stat.st-paused .detail { font-size:10.5px; } }
+    @media (max-width:760px) and (min-width:521px) { .report-stat:last-child { grid-column:span 2; } }
+    /* the Archive sits apart from the live inventory: a quiet rule before it */
+    @media (min-width:1101px) { .report-stat.st-archive { border-left:1px solid var(--line); border-radius:0; } }
+    .report-stat.st-archive.on { background:var(--hover); }
     @media (max-width:360px) {
       .run-actions { gap:4px; }
       .run-launch button { padding:8px 6px; font-size:11px; }
@@ -78,7 +79,7 @@
 
   <div class="summary-overview">
   <div class="report-stats" aria-label="iRadar page and update summary">
-    <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages. The delta counts pages added or removed since the previous full check; pausing a page does not change it.">
+    <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages but not the Archive. The delta counts pages added or removed since the previous full check; pausing or archiving a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Total pages</div>
       <div class="detail">{{ '{:,}'.format(counts.checked or 0) }} captured</div>
@@ -88,8 +89,8 @@
       <div class="l">Live</div>
       <div class="detail">{{ (((counts.live or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
     </a>
-    <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="All pages answering HTTP 404 or 410, paused or not. The run delta is newly offline pages minus pages that came back live.">
-      <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
+    <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="Pages answering HTTP 404 or 410 that are not archived yet. Select them and choose Archive to set them aside. The run delta is newly offline pages minus pages that came back live.">
+      <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% set offline_delta = [offline_delta or 0, counts.notlive or 0]|min if (offline_delta or 0) > 0 else offline_delta %}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
       <div class="l">Offline</div>
       <div class="detail">{{ (((counts.notlive or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
     </a>
@@ -106,7 +107,7 @@
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
       <div class="n" style="color:{{ 'var(--stat-content)' if content_updates else 'var(--muted)' }}">{{ '{:,}'.format(content_updates or 0) }}</div>
       <div class="l">Content</div>
-      <div class="detail">items in the latest report</div>
+      <div class="detail">in the latest report</div>
     </a>
     {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
     <a class="report-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
@@ -114,12 +115,17 @@
       <div class="l">Updated files</div>
       <div class="detail">{{ '{:,}'.format(asset_open or 0) }} awaiting review</div>
     </a>
-    <a class="report-stat" href="{{ url_for('index', status='paused') }}" title="Pages excluded from automatic and full manual checks. They stay in the inventory and can be resumed.">
+    <a class="report-stat st-paused" href="{{ url_for('index', status='paused') }}" title="Pages excluded from automatic and full manual checks. They stay in the inventory and can be resumed. Archived pages are not counted here.">
       <div class="n" style="color:var(--muted)">{{ '{:,}'.format(counts.paused or 0) }}</div>
       <div class="l">Paused</div>
       {%- set others = (counts.paused or 0) - (counts.paused_offline or 0) %}
       {%- set off = 'all offline' if counts.paused_offline and counts.paused_offline == counts.notlive else '{:,}'.format(counts.paused_offline or 0) ~ ' offline' %}
-      <div class="detail">{% if counts.paused %}incl. {{ off }}{% if others %} + {{ '{:,}'.format(others) }} other{% endif %}{% else %}none paused{% endif %}</div>
+      <div class="detail">{% if counts.paused and not counts.paused_offline %}none offline{% elif counts.paused %}incl. {{ off }}{% if others %} + {{ '{:,}'.format(others) }} other{% endif %}{% else %}none paused{% endif %}</div>
+    </a>
+    <a class="report-stat st-archive{{ ' on' if in_archive }}" href="{{ url_for('index', archive=1) }}" title="Offline pages set aside. They are not checked and count in no other figure, list, chart or export. Open one and choose Restore to bring it back.">
+      <div class="n" style="color:var(--muted)">{{ '{:,}'.format(counts.archived or 0) }}</div>
+      <div class="l">Archive</div>
+      <div class="detail">not in totals</div>
     </a>
   </div>
 
@@ -290,7 +296,7 @@
 
 <div class="card" id="trackpanel" data-total="{{ total_match }}">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
-    <h2 style="margin:0">Tracked pages
+    <h2 style="margin:0">{{ 'Archive' if in_archive else 'Tracked pages' }}
       <span class="muted" style="font-weight:400; font-size:14px">— {{ '{:,}'.format(total_match) }} shown</span>
       {#- reloading is about THIS table's counts, so the control belongs on it.
           An SVG, not the ⟳ character: a text glyph renders at a different
@@ -304,7 +310,8 @@
         </svg>
       </button></h2>
     <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
-      <button type="button" class="btn" onclick="toggleAdd()">＋ Add pages</button>
+      {% if in_archive %}<a href="{{ url_for('index') }}">Back to all pages</a>
+      {% else %}<button type="button" class="btn" onclick="toggleAdd()">＋ Add pages</button>{% endif %}
       
     </div>
   </div>
@@ -524,6 +531,7 @@
   {% set _own_n = sel_bl|length + sel_pl|length + sel_seg|length %}
   {% set _part_n = sel_ps|length + sel_bt|length + (sel_attrs|select("in", perfect_keys)|list|length) %}
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
+    {% if in_archive %}<input type="hidden" name="archive" value="1">{% endif %}
     <span class="sbar grow"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       <input type="text" name="q" value="{{ q }}"
              placeholder="Search pages — name, title or address…"><button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
@@ -648,12 +656,12 @@
     {% for k, v, href in _fc %}
     <a class="fchip" href="{{ href }}" title="Remove"><span>{% if k %}<i>{{ k }}:</i> {% endif %}{{ v }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></a>
     {% endfor %}
-    <a class="fclear" href="{{ url_for('index') }}">Clear all</a>
+    <a class="fclear" href="{{ url_for('index', archive=1) if in_archive else url_for('index') }}">Clear all</a>
   </div>
   {% endif %}
 
   <div class="quickchips">
-    {% for c in quick_chips %}
+    {% for c in (quick_chips if not in_archive else []) %}
       {# href and on are worked out server-side: a chip keeps every other
          filter and toggles only its own #}
       <a class="chip {{ ('chip-' + c.tone) if c.tone }} {{ 'chip-on' if c.on }}"
@@ -679,6 +687,7 @@
     {% for g in sel_bt %}<input type="hidden" name="bt" value="{{ g }}">{% endfor %}
     {% for r in perfect_rows if r.custom %}<input type="hidden" name="{{ r.param }}" value="{{ r.sel|join(',') }}">{% endfor %}
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
+    {% if in_archive %}<input type="hidden" name="archive" value="1">{% endif %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
   </form>
 
@@ -692,8 +701,13 @@
     <span style="flex:1"></span>
     <button class="btn-ghost btn-sm act" onclick="bulk('check', this)">Capture</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)">Approve updates</button>
+    {% if in_archive %}
+    <button class="btn-ghost btn-sm act" onclick="bulk('unarchive', this)" title="Back into the inventory; the next check reads them again">Restore</button>
+    {% else %}
     <button class="btn-ghost btn-sm act" onclick="bulk('pause', this)">Pause</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('resume', this)">Resume</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('archive', this)" title="Set aside: out of every count, list, chart and export, and no longer checked. The Archive keeps them.">Archive</button>
+    {% endif %}
     <button class="btn-ghost btn-sm" onclick="exportSel()"
             title="The selected pages as a spreadsheet — one row each, with every document, component, the main image and its owners spelled out">Export</button>
     <button class="btn-ghost btn-sm act" style="color:#dc2626" onclick="bulk('delete', this)">Remove</button>
@@ -832,7 +846,8 @@
         {% endif %}
       </td>
       <td>
-        {% if not u.active %}<span class="badge b-off">paused</span>
+        {% if u.archived %}<span class="badge b-off" title="Archived {{ u.archived|localtime }}">archived</span>
+        {% elif not u.active %}<span class="badge b-off">paused</span>
         {% elif u.last_status == 'changed' %}<span class="badge b-changed">updated</span>
         {% elif u.last_status == 'rejected' %}<span class="badge b-unchanged" title="An update was rejected: that capture is not the baseline, the old version stays current">unchanged</span>
         {% elif u.last_status in ('unchanged', 'baseline') %}<span class="badge b-unchanged">unchanged</span>
@@ -1547,7 +1562,7 @@ document.addEventListener('toggle', function (e) {
                           + ' input[name=ps]:checked, input[name=bt]:checked')
           .forEach(function (c) { if (!c.disabled) p.append(c.name, c.value); });
       // a changed perfect-page standard counts too
-      form.querySelectorAll('input.pcval:not(:disabled)')
+      form.querySelectorAll('input.pcval:not(:disabled), input[name=archive]')
           .forEach(function (c) { p.append(c.name, c.value); });
       var mine = ++seq;
       fetch(location.origin + '{{ url_for("dash_avail") }}?' + p.toString(),

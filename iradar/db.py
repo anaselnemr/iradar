@@ -119,8 +119,35 @@ def reconcile_live_statuses(con):
     ).rowcount
 
 
+# The inventory: every page that is not archived. Archived pages are offline
+# pages set aside on purpose - they count nowhere but the Archive.
+IN_INVENTORY = "IFNULL(archived,'')=''"
+
+
+def redirect_list(raw):
+    """The old addresses a page answers to, oldest first. redirect_from holds
+    one per line: a page can be reached from several retired links."""
+    out = []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if line and line not in out:
+            out.append(line)
+    return out
+
+
+def redirect_add(raw, *urls):
+    """redirect_from with these addresses added (no repeats, order kept)."""
+    out = redirect_list(raw)
+    for u in urls:
+        for x in redirect_list(u):
+            if x not in out:
+                out.append(x)
+    return "\n".join(out)
+
+
 def dashboard_counts(con):
-    """The same current inventory and health readings for web and email."""
+    """The same current inventory and health readings for web and email.
+    Archived pages are outside the inventory: only `archived` counts them."""
     return con.execute("""
         SELECT COUNT(*) AS total,
           SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS watched,
@@ -142,21 +169,30 @@ def dashboard_counts(con):
           -- not live = the server says GONE (404/410). Blank bodies and
           -- blocked captures (403/429/5xx) are their own states, never this
           SUM(CASE WHEN last_http IN (404,410)
-                   THEN 1 ELSE 0 END) AS notlive
-        FROM urls""").fetchone()
+                   THEN 1 ELSE 0 END) AS notlive,
+          (SELECT COUNT(*) FROM urls WHERE NOT (""" + IN_INVENTORY + """))
+            AS archived
+        FROM urls WHERE """ + IN_INVENTORY).fetchone()
 
 
 def run_pages_delta(con, run, tracked=None):
     """Inventory change since the preceding full check, independent of pauses."""
     if tracked is None:
-        tracked = con.execute("SELECT COUNT(*) FROM urls").fetchone()[0]
+        tracked = con.execute("SELECT COUNT(*) FROM urls WHERE "
+                              + IN_INVENTORY).fetchone()[0]
     prev = con.execute(
         "SELECT finished, tracked_total FROM runs WHERE finished IS NOT NULL AND id<?"
         " AND total>=50 ORDER BY id DESC LIMIT 1", (run["id"],)).fetchone()
     if not prev:
         return 0
     if prev["tracked_total"] is not None:
-        return tracked - prev["tracked_total"]
+        # archiving moves a page out of the inventory, it does not remove a
+        # page from the site: pages archived since then are added back so the
+        # delta still reads pages added minus pages gone
+        archived_since = con.execute(
+            "SELECT COUNT(*) FROM urls WHERE IFNULL(archived,'')>?",
+            (prev["finished"],)).fetchone()[0]
+        return tracked - prev["tracked_total"] + archived_since
     # Legacy runs recorded workload, not inventory; use actual additions.
     return con.execute("SELECT COUNT(*) FROM urls WHERE created_at>?",
                        (prev["finished"],)).fetchone()[0]
@@ -166,7 +202,7 @@ def inventory_counts(con):
     """All tracked pages and genuine HTTP 404/410s, including paused pages."""
     row = con.execute(
         "SELECT COUNT(*) total, COALESCE(SUM(last_http IN (404,410)),0) offline"
-        " FROM urls").fetchone()
+        " FROM urls WHERE " + IN_INVENTORY).fetchone()
     return row["total"], row["offline"]
 
 
@@ -588,6 +624,10 @@ def init_db():
     # when a listed address 301'd here, the address it came from - so the row
     # can wear a "redirect" sign: we track the destination, not the stale link
     _ensure_column(con, "urls", "redirect_from", "TEXT DEFAULT ''")
+    # when the page was ARCHIVED (UTC), '' while it is in the inventory. An
+    # archived page - an offline page set aside - leaves every count, list,
+    # chart and export; it lives on the Archive view only, and is not checked.
+    _ensure_column(con, "urls", "archived", "TEXT DEFAULT ''")
     # ownership metadata from the CSS Pages report (per page type): BL business
     # line, PL product line, CM content manager, Owner. Imported by URL match,
     # then hand-editable on the page like the level. meta_flag holds an import

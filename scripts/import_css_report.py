@@ -27,7 +27,9 @@ for r in con.execute("SELECT id,url,canonical_url,redirect_from FROM urls"):
         # address that 301s to one we already track. Without this the importer
         # re-adds that address every run, the next run deletes it again, and the
         # ownership on it never reaches the real page.
-        if r[alt]: byurl.setdefault(norm(r[alt]), r["id"])
+        # redirect_from holds one retired address per line
+        for v in (r[alt] or "").splitlines():
+            if v.strip(): byurl.setdefault(norm(v.strip()), r["id"])
 
 wb=load_workbook(PATH, read_only=True, data_only=True)
 def rows(title):

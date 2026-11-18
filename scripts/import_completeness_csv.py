@@ -54,8 +54,10 @@ def index_pages(con):
         val = (r["id"], r["bl"] or "", r["pl"] or "")
         out[norm(r["url"])] = val
         for alt in ("canonical_url", "redirect_from"):
-            if r[alt]:
-                out.setdefault(norm(r[alt]), val)
+            # redirect_from holds one retired address per line
+            for v in (r[alt] or "").splitlines():
+                if v.strip():
+                    out.setdefault(norm(v.strip()), val)
     return out
 
 
