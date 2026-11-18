@@ -846,7 +846,7 @@ def render_report(d, base_url, when_label):
     # news (Paused, Archive). No Live: with offline pages archived, Total
     # pages is the live inventory.
     readings = [
-        ("Total pages", pages, _ACCENT, "{:,} captured".format(d.get("captured", 0)),
+        ("Live pages", pages, _ACCENT, "{:,} captured".format(d.get("captured", 0)),
          suffix(delta, _GOOD if delta > 0 else _BAD if delta < 0 else _MUT)),
         ("Recently offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
          "%d%% of all pages" % round(d.get("notlive", 0) * 100 / (pages or 1)),

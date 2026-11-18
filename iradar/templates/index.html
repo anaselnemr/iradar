@@ -36,7 +36,7 @@
     /* The shared summary header lives in base.html; this page keeps only
        what is its own: its two extra stat colours, seven figures instead of
        four, and the run button's split menu. No Live figure: with offline
-       pages in the Archive, Total pages are the live inventory. */
+       pages in the Archive, the first figure - Live pages - is the inventory. */
     .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed;
                          --stat-cols:7; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
@@ -84,7 +84,7 @@
   <div class="report-stats" aria-label="iRadar page and update summary">
     <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages but not the Archive. The delta counts pages added or removed since the previous full check; pausing or archiving a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
-      <div class="l">Total pages</div>
+      <div class="l">Live pages</div>
       <div class="detail">{{ '{:,}'.format(counts.checked or 0) }} captured</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="Pages answering HTTP 404 or 410 that are not archived yet. Select them and choose Archive to set them aside. The run delta is newly offline pages minus pages that came back live.">
