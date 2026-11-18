@@ -6628,13 +6628,15 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
     # over items - twenty correlated subqueries per row takes seconds, so they
     # come from one GROUP BY over the pages that survive the other filters
     w, params = where("attr")
+    # the pages first, then their items through the (url_id, category)
+    # index: joining from items scanned all 336k of them, 0.2 s a click
+    pages_in = "SELECT u.id FROM urls u " + w
     cat_n = {r["category"]: r["n"] for r in con.execute(
-        "SELECT i.category, COUNT(DISTINCT i.url_id) n FROM items i"
-        " JOIN urls u ON u.id=i.url_id " + w + " GROUP BY i.category", params)}
+        "SELECT category, COUNT(DISTINCT url_id) n FROM items"
+        " WHERE url_id IN (" + pages_in + ") GROUP BY category", params)}
     vid_n = con.execute(
-        "SELECT COUNT(DISTINCT i.url_id) n FROM items i JOIN urls u"
-        " ON u.id=i.url_id " + w + (" AND " if w else " WHERE ")
-        + "i.category IN ('videos','news')", params).fetchone()["n"]
+        "SELECT COUNT(DISTINCT url_id) n FROM items WHERE url_id IN ("
+        + pages_in + ") AND category IN ('videos','news')", params).fetchone()["n"]
     pk = PERFECT_KEYS
     cols = ", ".join(f"SUM(CASE WHEN {_perfect_sql(k)} THEN 1 ELSE 0 END) AS k{i}"
                      for i, k in enumerate(pk))
