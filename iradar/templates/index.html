@@ -484,7 +484,9 @@
     /* Buy button: Has / None, then the labels once one is picked */
     .buyhas { padding: 2px 9px 8px; }
     .buyhas .seg label.tp { flex-basis: 96px; }
-    .ddsec.unpicked .ownlist { display: none; }
+    /* nothing picked in the PTP / EB pill: the pill alone, no empty panel */
+    .dd .panel.ptgrp.nopt { grid-template-columns: auto; min-height: 0; }
+    .dd .panel.ptgrp.nopt > :not(.ptswitch) { display: none !important; }
     /* a combination is two labels: it wraps rather than hiding its count,
        and the list is short enough to show whole */
     .dd[data-part] .ddsec[data-owner="bt"] { max-height: none; overflow: visible; }
@@ -517,7 +519,7 @@
       buy button): ticking two values means either -#}
   {% macro owner_sec(dim, opts, sel, name, needs='', lead='', picked=true) %}
     {% if opts|length > 1 or sel or lead %}
-    <section class="ddsec{{ '' if picked else ' unpicked' }}" data-owner="{{ name }}" {% if needs %}data-needs="{{ needs }}"{% endif %}
+    <section class="ddsec" data-owner="{{ name }}" {% if needs %}data-needs="{{ needs }}"{% endif %}
              {% if not lead and not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
       <h4>{{ dim }}</h4>
       {{ lead }}
@@ -540,7 +542,7 @@
       {% if rows|length > 12 %}<input class="secfind" type="search" placeholder="Find" aria-label="Find a {{ (title or 'block')|lower }} block" autocomplete="off">{% endif %}
       <div class="tgrid">
       {% for r in rows if r.opts[0].kind != 'over' %}
-        <div class="trow" {% if r.needs %}data-needs="{{ r.needs }}"{% endif %}>
+        <div class="trow" {% if r.needs %}data-needs="{{ r.needs }}"{% if not ('Products & Eval Boards' in sel_types or r.needs in sel_types) %} hidden{% endif %}{% endif %}>
         {%- if r.components -%}
         <span class="tname"><b>{{ r.name }}</b></span>
         {%- else -%}
@@ -556,7 +558,7 @@
         {%- if r.components %}
         {#- the picker waits for Perfect / Not perfect: ticking components
             before there is anything for them to change only reloaded the list -#}
-        <div class="pexp" data-default="{{ r.default|join(',') }}" {% if not (r.opts|map(attribute='key')|select('in', sel_attrs)|list) %}hidden{% endif %}>
+        <div class="pexp" data-default="{{ r.default|join(',') }}">
           <div class="ppresets">
             {% for pn, pl in r.presets %}
             <button type="button" class="ppreset" data-pick="{{ pl|join(',') }}" aria-pressed="{{ 'true' if pl|sort == r.sel|sort else 'false' }}">{{ pn }}</button>
@@ -644,7 +646,7 @@
         until Type includes PTPs or EBs. -#}
     <details class="dd {{ '' if _part_on else 'locked' }}" name="filters" data-group data-part>
       <summary><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>PTP / EB{% if _part_n %}<span class="fbadge">{{ _part_n }}</span>{% endif %}</summary>
-      <div class="panel grp ptgrp">
+      <div class="panel grp ptgrp{{ '' if _part_on else ' nopt' }}">
         {#- which part pages these facts are about: a switch, not a one-off
             button - it stays here after a pick so you can flip between them -#}
         <div class="ptswitch" role="group" aria-label="PTP or EB">
@@ -1239,7 +1241,7 @@ function pjax(url) {
       panel.innerHTML = fresh.innerHTML;
       const nf = panel.querySelector('form.toolbar');
       if (inside && nf) { syncToolbar(live, nf); nf.replaceWith(live); }
-      else { restoreToolbar(keep); revealPicks(); }
+      else { restoreToolbar(keep); dashGates(); }
       // keep the bulk "select all N matching" count in step with the new filter.
       // Read it from the panel's own data-total, which the server stamps with
       // the filtered count - the old regex hunted for "Showing X of Y" text
@@ -1548,6 +1550,8 @@ function dashGates() {
     if (on) any = true;
   });
   dd.classList.toggle('locked', !any);
+  var grp = dd.querySelector('.ptgrp');
+  if (grp) grp.classList.toggle('nopt', !any);
   // the Perfect page heading goes when none of its rows applies
   dd.querySelectorAll('.ddsec.tri').forEach(function (sec) {
     sec.hidden = !sec.querySelector('.trow:not([hidden])');
@@ -1604,7 +1608,9 @@ function writePicker(box) {
     b.setAttribute('aria-pressed', String(l.length === picked.length
       && l.every(function (v) { return picked.indexOf(v) >= 0; })));
   });
-  applySoon(250);
+  // until Perfect / Not perfect is picked the components change nothing in
+  // the list: they are kept and go with the next request
+  if (box.closest('.trow').querySelector('.seg input:checked')) applySoon(250);
 }
 document.addEventListener('change', function (e) {
   if (e.target.classList && e.target.classList.contains('pcbox')) writePicker(e.target.closest('.pexp'));
@@ -1680,12 +1686,10 @@ document.addEventListener('click', function (e) {
   flip(other, false);
   flip(want, !alone);
   dashGates();
-  revealPicks();
 });
 dashGates();
 // A row of toggles (Has / No, Perfect / Not perfect) holds one pick at a
-// time, and a second click on it lets it go. What depends on a pick - the
-// component picker, the buy-box labels - shows once there is one.
+// time, and a second click on it lets it go.
 document.addEventListener('change', function (e) {
   var t = e.target;
   if (!t.closest || !t.closest('form.toolbar')) return;
@@ -1693,18 +1697,7 @@ document.addEventListener('change', function (e) {
   if (seg && t.checked) seg.querySelectorAll('input').forEach(function (x) {
     if (x !== t) x.checked = false;
   });
-  revealPicks();
 });
-function revealPicks() {
-  var f = document.querySelector('form.toolbar');
-  if (!f) return;
-  f.querySelectorAll('.trow .pexp').forEach(function (box) {
-    box.hidden = !box.closest('.trow').querySelector('.seg input:checked');
-  });
-  f.querySelectorAll('.ddsec[data-owner="bt"]').forEach(function (sec) {
-    sec.classList.toggle('unpicked', !sec.querySelector('.buyhas input:checked, .ownlist input:checked'));
-  });
-}
 // A grouped panel is wide: opened under its own button it can run past the
 // toolbar's right edge. Slide it back left just enough to stay inside.
 document.addEventListener('toggle', function (e) {
