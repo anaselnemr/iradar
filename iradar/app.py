@@ -1365,8 +1365,8 @@ TEST_PAGE_IDS = (283, 144, 167, 92, 97, 155, 1, 3, 5, 1078, 1079, 1608, 1610,
                  269, 244, 278, 298, 535, 193, 194, 4233)
 
 STATUS_FILTERS = {
-    "metaflag":  ("⚠ Ownership check", "IFNULL(u.meta_flag,'')<>''"
-                  " AND u.active=1"),
+    # in the order of the Dashboard figures: updates, then Offline and
+    # Paused, then the capture problems, the ownership check last
     "changed":   ("Updated", "u.last_status='changed' AND u.active=1"),
     # every page with an update nobody has reviewed yet, WHATEVER its status
     # now: a page that went 404 carries its "removed" update as "Not live",
@@ -1376,11 +1376,14 @@ STATUS_FILTERS = {
     # no 'rejected' state: rejecting a capture means "not this one as the
     # baseline", after which the page is dealt with and reads as unchanged
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
-    "notlive":   ("Offline (404/410)", "u.last_http IN (404,410)"),
+    # pages a run found offline (404/410) that are not archived yet
+    "notlive":   ("Offline", "u.last_http IN (404,410)"),
+    "paused":    ("Paused", "u.active=0"),
     "blank":     ("Blank page", "u.last_status='blank'"),
     "error":     ("Capture error", "u.last_status='error'"),
-    "paused":    ("Paused", "u.active=0"),
     "new":       ("Not captured", "u.last_checked IS NULL"),
+    "metaflag":  ("⚠ Ownership check", "IFNULL(u.meta_flag,'')<>''"
+                  " AND u.active=1"),
 }
 
 # What we captured from a page, in two filter groups the dashboard shows
@@ -1623,7 +1626,10 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # Page states that live in ATTR_FILTERS rather than STATUS_FILTERS. They are
 # still statuses, so they are shown with the statuses - the dropdown renders
 # them as attr checkboxes because that is the parameter they filter on.
-STATUS_ATTR_KEYS = ["checked", "live"]
+# Captured and Live used to sit in the Status list too. With offline pages
+# in the Archive both are simply every page, so the list no longer offers them
+# (the attr filters still answer old links and saved views).
+STATUS_ATTR_KEYS = []
 
 # The canonical component registry - the ONE list of trackable components and,
 # for each, how we know it is present on a page:
@@ -2642,8 +2648,6 @@ def index():
     # no "everything" chip: an unfiltered table is the table's normal state,
     # and the stat card above already carries the total
     quick_chips = [c for c in (
-        {"kind": "attr", "vals": ["live"], "label": "Live",
-         "n": attr_counts["live"], "tone": "good"},
         {"kind": "status", "vals": ["unchanged"], "label": "Unchanged",
          "n": status_counts["unchanged"], "always": True},
         {"kind": "status", "vals": ["changed"], "label": "Updated",

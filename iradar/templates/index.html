@@ -34,10 +34,11 @@
 <div class="card dashboard-summary">
   <style>
     /* The shared summary header lives in base.html; this page keeps only
-       what is its own: its two extra stat colours, eight figures instead of
-       four, and the run button's split menu. */
+       what is its own: its two extra stat colours, seven figures instead of
+       four, and the run button's split menu. No Live figure: with offline
+       pages in the Archive, Total pages are the live inventory. */
     .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed;
-                         --stat-cols:8; }
+                         --stat-cols:7; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
     .run-split { display:inline-flex; align-items:stretch; }
     .run-launch { display:flex; margin:0; }
@@ -61,12 +62,14 @@
     .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
                      font-size:11px; cursor:pointer; white-space:nowrap; }
     .report-choice input { margin:0; }
-    /* eight figures divide by four and two; on three across the last one
-       takes the slack so the grid never ends in a hole */
+    /* seven figures do not divide by four, three or two: the last one takes
+       the slack so the grid never ends in a hole */
     /* the Paused note is the longest line in the row: a touch smaller on the
-       eight-across layout so it never breaks onto a second line */
+       seven-across layout so it never breaks onto a second line */
     @media (min-width:1101px) { .report-stat.st-paused .detail { font-size:10.5px; } }
-    @media (max-width:760px) and (min-width:521px) { .report-stat:last-child { grid-column:span 2; } }
+    @media (max-width:1100px) { .report-stat:last-child { grid-column:span 2; } }
+    @media (max-width:760px)  { .report-stat:last-child { grid-column:span 3; } }
+    @media (max-width:520px)  { .report-stat:last-child { grid-column:span 2; } }
     /* the Archive sits apart from the live inventory: a quiet rule before it */
     @media (min-width:1101px) { .report-stat.st-archive { border-left:1px solid var(--line); border-radius:0; } }
     .report-stat.st-archive.on { background:var(--hover); }
@@ -83,11 +86,6 @@
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Total pages</div>
       <div class="detail">{{ '{:,}'.format(counts.checked or 0) }} captured</div>
-    </a>
-    <a class="report-stat" href="{{ url_for('index', attr='live') }}" title="Pages a visitor actually gets — HTTP OK, not blank, not erroring">
-      <div class="n" style="color:var(--ok)">{{ '{:,}'.format(counts.live or 0) }}</div>
-      <div class="l">Live</div>
-      <div class="detail">{{ (((counts.live or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="Pages answering HTTP 404 or 410 that are not archived yet. Select them and choose Archive to set them aside. The run delta is newly offline pages minus pages that came back live.">
       <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% set offline_delta = [offline_delta or 0, counts.notlive or 0]|min if (offline_delta or 0) > 0 else offline_delta %}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
@@ -427,8 +425,16 @@
     .dd:not(.locked) > summary .lock { display: none; }
     .dd.locked > summary svg { width: 12px; height: 12px; margin-right: 5px;
                                vertical-align: -1px; }
-    .dd .panel.lockmsg { min-width: 240px; padding: 12px 14px; font-size: 13px; }
-    .dd .panel.lockmsg button { margin-top: 10px; }
+    .dd .panel.ptgrp { display: grid; grid-template-columns: repeat(3, max-content);
+                       align-items: start; }
+    .ptswitch { grid-column: 1 / -1; display: flex; margin: 2px 2px 4px; }
+    .ptswitch button { padding: 6px 18px; font-size: 13px; font-weight: 600;
+                       background: var(--panel); color: var(--ink);
+                       border: 1px solid var(--line); border-radius: 0; }
+    .ptswitch button:first-child { border-radius: 8px 0 0 8px; }
+    .ptswitch button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+    .ptswitch button[aria-pressed="true"] { background: var(--accent); color: #fff;
+                                           border-color: var(--accent); }
     /* the filters in force, each one click from gone */
     .fchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
               margin-top: 10px; }
@@ -444,6 +450,11 @@
     .fchip:hover svg { background: color-mix(in srgb, var(--accent) 18%, transparent);
                        color: var(--ink); }
     .fchips .fclear { font-size: 12.5px; margin-left: 4px; }
+    .dd .panel.stpanel { max-height: none; }
+    .dd .panel a.starch { display: flex; justify-content: space-between; align-items: center;
+                          margin-top: 6px; padding: 8px 8px 4px; border-top: 1px solid var(--line);
+                          font-size: 13.5px; color: var(--ink); text-decoration: none; }
+    .dd .panel a.starch:hover { color: var(--accent); }
     @media (max-width: 640px) {
       /* two equal columns that never outgrow the card; the widest group
          takes a row of its own */
@@ -452,6 +463,7 @@
       form.toolbar .dd.wide { grid-column: 1 / -1; }
       form.toolbar .dd .panel.grp, form.toolbar .dd .panel.grp.right { left: 0; right: 0; }
       .dd .panel.grp { flex-direction: column; max-height: 70vh; overflow: auto; }
+      .dd .panel.ptgrp { grid-template-columns: minmax(0, 1fr); }
       .tgrid { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
       .tname { margin-top: 6px; }
       .seg { display: flex; }
@@ -487,7 +499,7 @@
       {% for r in rows if r.opts[0].kind != 'over' %}
         <div class="trow" {% if r.needs %}data-needs="{{ r.needs }}"{% endif %}>
         {%- if r.components -%}
-        <span class="tname"><button type="button" class="pexp-btn" aria-expanded="false" data-exp="{{ r.name }}"><b>{{ r.name }}</b><span class="pnow">{{ r.preset }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></span>
+        <span class="tname"><button type="button" class="pexp-btn" aria-expanded="true" data-exp="{{ r.name }}"><b>{{ r.name }}</b><span class="pnow">{{ r.preset }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></span>
         {%- else -%}
         <span class="tname" title="{{ r.label }}">{{ r.label }}</span>
         {%- endif %}
@@ -499,7 +511,7 @@
         {% endfor %}
         </span>
         {%- if r.components %}
-        <div class="pexp" hidden data-default="{{ r.default|join(',') }}">
+        <div class="pexp" data-default="{{ r.default|join(',') }}">
           <div class="ppresets">
             {% for pn, pl in r.presets %}
             <button type="button" class="ppreset" data-pick="{{ pl|join(',') }}" aria-pressed="{{ 'true' if pl|sort == r.sel|sort else 'false' }}">{{ pn }}</button>
@@ -569,7 +581,7 @@
       <div class="panel grp">
         {{ owner_sec("Business line", bls, sel_bl, "bl") }}
         {{ owner_sec("Product line", pls, sel_pl, "pl") }}
-        {{ owner_sec("Segment", segs, sel_seg, "seg") }}
+        {{ owner_sec("Segment (applications)", segs, sel_seg, "seg") }}
       </div>
     </details>
 
@@ -577,12 +589,13 @@
         until Type includes PTPs or EBs - the buy box is a PTP's alone. -#}
     <details class="dd {{ '' if _part_on else 'locked' }}" name="filters" data-group data-part>
       <summary><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>PTP / EB{% if _part_n %}<span class="fbadge">{{ _part_n }}</span>{% endif %}</summary>
-      <div class="panel lockmsg" {% if _part_on %}hidden{% endif %}>
-        <div>Pick PTP or EB under Type.</div>
-        <button type="button" data-unlock="PTP">PTPs</button>
-        <button type="button" class="btn-ghost" data-unlock="EB">EBs</button>
-      </div>
-      <div class="panel grp" {% if not _part_on %}hidden{% endif %}>
+      <div class="panel grp ptgrp">
+        {#- which part pages these facts are about: a switch, not a one-off
+            button - it stays here after a pick so you can flip between them -#}
+        <div class="ptswitch" role="group" aria-label="PTP or EB">
+          <button type="button" data-pt="PTP" aria-pressed="{{ 'true' if _ptp_on else 'false' }}">PTPs</button>
+          <button type="button" data-pt="EB" aria-pressed="{{ 'true' if ('EB' in sel_types or 'Products & Eval Boards' in sel_types) else 'false' }}">EBs</button>
+        </div>
         {{ attr_sec("Perfect page", perfect_rows) }}
         {{ owner_sec("Product status", pss, sel_ps, "ps", "PTP EB") }}
         {{ owner_sec("Buy button", bts, sel_bt, "bt", "PTP") }}
@@ -591,7 +604,7 @@
 
     <details class="dd" name="filters">
       <summary>Status{% if sel_status %}<span class="fbadge">{{ sel_status|length }}</span>{% endif %}</summary>
-      <div class="panel">
+      <div class="panel stpanel">
         {% for key, sf in status_filters.items() %}
         {% set _n = facets.get('s_' + key, 0) %}
         <label data-opt class="{{ 'optdim' if not _n and key not in sel_status }}"><input type="checkbox" name="status" value="{{ key }}"
@@ -607,6 +620,9 @@
                  {% if key in sel_attrs %}checked{% elif not _n %}disabled{% endif %}> {{ attr_filters[key][0] }}
           <span class="cnt" data-av="a_{{ key }}">{{ '{:,}'.format(facets.get('a_' + key, 0)) }}</span></label>
         {% endfor %}
+        {#- the Archive is not a status of the inventory but the place offline
+            pages go: one link out of the list, past a rule -#}
+        <a class="starch" href="{{ url_for('index') if in_archive else url_for('index', archive=1) }}">{% if in_archive %}Back to all pages{% else %}Archive<span class="cnt">{{ '{:,}'.format(counts.archived or 0) }}</span>{% endif %}</a>
       </div>
     </details>
 
@@ -1404,7 +1420,13 @@ function dashGates() {
     if (sec.classList.contains('trow') && sec.closest('[data-needs]:not(.trow)')) return;
     var on = all || sec.dataset.needs.split(' ').some(function (t) { return types.indexOf(t) >= 0; });
     sec.hidden = !on;
-    sec.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+    sec.querySelectorAll('input').forEach(function (i) {
+      if (i.classList.contains('pcval')) {
+        var box = i.closest('.pexp');
+        var def = ((box && box.dataset.default) || '').split(',').sort().join(',');
+        i.disabled = !on || i.value.split(',').sort().join(',') === def;
+      } else i.disabled = !on;
+    });
     if (on) any = true;
   });
   dd.classList.toggle('locked', !any);
@@ -1412,8 +1434,10 @@ function dashGates() {
   dd.querySelectorAll('.ddsec.tri').forEach(function (sec) {
     sec.hidden = !sec.querySelector('.trow:not([hidden])');
   });
-  dd.querySelector('.lockmsg').hidden = any;
-  dd.querySelector('.grp').hidden = !any;
+  var has = function (t) { return all || types.indexOf(t) >= 0; };
+  dd.querySelectorAll('[data-pt]').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(has(b.dataset.pt)));
+  });
 }
 document.addEventListener('change', function (e) {
   if (e.target.name === 'ptype' && e.target.closest('form.toolbar')) dashGates();
@@ -1514,10 +1538,20 @@ document.addEventListener('click', function (e) {
   }
 });
 document.addEventListener('click', function (e) {
-  var b = e.target.closest('[data-unlock]');
+  // the PTP / EB switch: one of the two, the other one (and the merged
+  // Products & Eval Boards group, which means both) let go
+  var b = e.target.closest('[data-pt]');
   if (!b) return;
-  var box = document.querySelector('form.toolbar input[name=ptype][value="' + b.dataset.unlock + '"]');
-  if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event('change', {bubbles: true})); }
+  e.preventDefault();
+  var f = document.querySelector('form.toolbar');
+  var want = b.dataset.pt, other = want === 'PTP' ? 'EB' : 'PTP';
+  var flip = function (v, on) {
+    var box = f.querySelector('input[name=ptype][value="' + v + '"]');
+    if (box && box.checked !== on) { box.checked = on; box.dispatchEvent(new Event('change', {bubbles: true})); }
+  };
+  flip('Products & Eval Boards', false);
+  flip(other, false);
+  flip(want, true);
   dashGates();
 });
 dashGates();
