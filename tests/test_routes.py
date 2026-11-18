@@ -3230,8 +3230,8 @@ def test_buy_button_has_or_none_splits_ptps_and_ebs():
     finally:
         c.close()
     assert opts == {"Add to cart": ("is:cart", 2),
-                    "Contact sales + Product family": ("is:sales,family", 1),
-                    "Replacement": ("is:repl", 1)}, opts
+                    "Contact sales + View product family": ("is:sales,family", 1),
+                    "View replacement": ("is:repl", 1)}, opts
     assert names(bts=["is:sales,family"]) == ["TWO"]
     assert names(bts=["is:sales"]) == [], "Contact sales alone - TWO also shows family"
     assert names(bts=["is:cart", "is:repl"]) == ["BUY", "EBBUY", "REPL"]

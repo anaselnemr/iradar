@@ -485,9 +485,12 @@
     .buyhas { padding: 2px 9px 8px; }
     .buyhas .seg label.tp { flex-basis: 96px; }
     .ddsec.unpicked .ownlist { display: none; }
-    /* short names keep every combination on one line; the list is short
-       enough to show whole */
+    /* a combination is two labels: it wraps rather than hiding its count,
+       and the list is short enough to show whole */
     .dd[data-part] .ddsec[data-owner="bt"] { max-height: none; overflow: visible; }
+    .ddsec[data-owner="bt"] label.ownopt { align-items: flex-start; white-space: normal;
+                                           line-height: 1.3; }
+    .ddsec[data-owner="bt"] label.ownopt input { margin-top: 2px; flex: none; }
     .dd .panel a.starch { display: flex; justify-content: space-between; align-items: center;
                           margin-top: 6px; padding: 8px 8px 4px; border-top: 1px solid var(--line);
                           font-size: 13.5px; color: var(--ink); text-decoration: none; }
@@ -522,7 +525,7 @@
       {% if opts|length > 12 %}<input class="secfind" type="search" placeholder="Find" aria-label="Find a {{ dim|lower }}" autocomplete="off">{% endif %}
       {% for o in opts %}
       {% set _n = facets.get('o_' + name + '_' + o.v, 0 if ('o_' + name) in facets else o.n) %}
-      <label data-opt class="ownopt" {% if o.title %}title="{{ o.title }}"{% endif %} {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
+      <label data-opt class="ownopt" {% if not _n and o.v not in sel %}style="display:none"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ o.v }}"
                {% if o.v in sel %}checked{% endif %}> {{ o.label }}
         <span class="cnt" data-av="o_{{ name }}_{{ o.v }}">{{ '{:,}'.format(_n) }}</span></label>
       {% endfor %}
