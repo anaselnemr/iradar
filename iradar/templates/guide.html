@@ -220,6 +220,8 @@
   .rel ul li { font-size: 14px; line-height: 1.55; margin-bottom: 5px; }
   .rel ul li:last-child { margin-bottom: 0; }
   @media (max-width: 620px) { .rel > li { grid-template-columns: 1fr; gap: 4px; } }
+  /* a small picture (the pill) at its own size, not stretched to the card */
+  .gd figure.fit img { width: 404px; max-width: 100%; }
 </style>
 
 <div class="gd">
@@ -227,45 +229,34 @@
   <nav class="toc" aria-label="On this page">
     <h4>On this page</h4>
     <ol>
-      <li><a href="#check"><span class="n">01</span>What happens on a check</a></li>
-      <li><a href="#signals"><span class="n">02</span>What it notices</a></li>
-      <li><a href="#review"><span class="n">03</span>Reviewing an update</a></li>
-      <li><a href="#dashboard"><span class="n">04</span>Finding pages</a></li>
-      <li><a href="#perfect"><span class="n">05</span>Perfect pages</a></li>
-      <li><a href="#charts"><span class="n">06</span>Charts</a></li>
-      <li><a href="#owners"><span class="n">07</span>Who owns a page</a></li>
-      <li><a href="#content"><span class="n">08</span>Content &amp; file updates</a></li>
-      <li><a href="#pagepage"><span class="n">09</span>A page&rsquo;s own page</a></li>
-      <li><a href="#offline"><span class="n">10</span>Offline, paused, archived</a></li>
-      <li><a href="#writing-notes"><span class="n">11</span>Leaving a note</a></li>
+      <li><a href="#pill"><span class="n">01</span>The PTP / EB pill</a></li>
+      <li><a href="#dashboard"><span class="n">02</span>Finding pages</a></li>
+      <li><a href="#perfect"><span class="n">03</span>Perfect pages</a></li>
+      <li><a href="#charts"><span class="n">04</span>Charts</a></li>
+      <li><a href="#check"><span class="n">05</span>How a check works</a></li>
+      <li><a href="#signals"><span class="n">06</span>What counts as a change</a></li>
+      <li><a href="#review"><span class="n">07</span>Reviewing an update</a></li>
+      <li><a href="#owners"><span class="n">08</span>Who owns a page</a></li>
+      <li><a href="#content"><span class="n">09</span>Content &amp; files</a></li>
+      <li><a href="#pagepage"><span class="n">10</span>A page&rsquo;s own page</a></li>
+      <li><a href="#offline"><span class="n">11</span>Offline, paused, archived</a></li>
       <li><a href="#export"><span class="n">12</span>Export</a></li>
-      <li><a href="#email"><span class="n">13</span>What it emails</a></li>
+      <li><a href="#email"><span class="n">13</span>Emails</a></li>
       <li><a href="#settings"><span class="n">14</span>Settings</a></li>
-      <li><a href="#where"><span class="n">15</span>Where things are</a></li>
-      <li><a href="#account"><span class="n">16</span>Your account</a></li>
-      <li><a href="#know"><span class="n">17</span>Worth knowing</a></li>
-      <li><a href="#limits"><span class="n">18</span>What it does not do</a></li>
+      <li><a href="#know"><span class="n">15</span>Good to know</a></li>
     </ol>
   </nav>
 
   <div class="gdmain">
-  <!-- what it is, and where it stands right now -->
   <section id="overview" class="card gd-hero">
     <div class="figs">
-      {#- the same colours the Dashboard uses for the same facts: accent for
-          the count of pages, green for what is live, orange for what needs
-          you. One number should not change colour depending on which screen
-          you read it on. -#}
-      <a class="fig" href="{{ url_for('index') }}"
-         title="Every page iRadar watches">
+      <a class="fig" href="{{ url_for('index') }}" title="Every page iRadar watches">
         <div class="n" style="color:var(--accent)">{{ '{:,}'.format(f.pages) }}</div>
         <div class="l">pages watched</div></a>
-      <a class="fig" href="{{ url_for('search_items') }}"
-         title="Documents, videos, boards and images across all of them">
+      <a class="fig" href="{{ url_for('search_items') }}" title="Documents, videos, boards and images across all of them">
         <div class="n" style="color:#16a34a">{{ '{:,}'.format(f.tracked) }}</div>
         <div class="l">items tracked</div></a>
-      <a class="fig" href="{{ url_for('index', status='review') }}"
-         title="Pages with an update waiting for your review">
+      <a class="fig" href="{{ url_for('index', status='review') }}" title="Pages with an update waiting for your review">
         <div class="n" style="color:{{ '#ea580c' if f.open_pages else 'var(--muted)' }}">{{ '{:,}'.format(f.open_pages) }}</div>
         <div class="l">waiting for you</div></a>
       <div class="fig" title="When the next check runs on its own">
@@ -274,77 +265,119 @@
     </div>
   </section>
 
+  <!-- the pill -->
+  <section id="pill" class="card">
+    <h2><span class="secn">01</span>The PTP / EB pill</h2>
+    <p class="lede">Most questions are about part pages (PTPs) or evaluation
+      boards (EBs). The pill is how you tell the Dashboard which one you mean.</p>
+
+    <ol class="flow">
+      <li><b>Open PTP / EB</b>
+        <p>The lock on the button means nothing is picked yet, so all you see
+          is the pill, with how many of each there are.</p></li>
+      <li><b>Click PTPs or EBs</b>
+        <p>The list narrows to those pages, and the menu opens up with what only
+          they have: <b>Perfect page</b>, <b>Product status</b> and <b>Buy
+          button</b>.</p></li>
+      <li><b>Flip or let go</b>
+        <p>Click the other side to switch. Your other filters stay put. Click
+          the lit side again to go back to every page.</p></li>
+    </ol>
+
+    <figure class="fit">
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/pill.png') }}" alt="PTP / EB opened with nothing picked: just the pill, PTPs and EBs">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/pill-dark.png') }}" alt="PTP / EB opened with nothing picked: just the pill, PTPs and EBs">
+      <figcaption>Before a pick: just the pill.</figcaption>
+    </figure>
+    <figure>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/filters.png') }}" alt="After picking PTPs: Perfect page, product status and buy button">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/filters-dark.png') }}" alt="After picking PTPs: Perfect page, product status and buy button">
+      <figcaption>After picking PTPs. Every number is how many pages you would
+        get.</figcaption>
+    </figure>
+    <div class="note"><p>Picking PTP or EB under <b>Type</b> does the same thing.</p></div>
+  </section>
+
+  <!-- the other filters -->
+  <section id="dashboard" class="card">
+    <h2><span class="secn">02</span>Finding pages</h2>
+    <p class="lede">Tick and the list follows. There's no Apply button. Every
+      filter you've set shows as a chip above the list, and its &times; removes
+      it.</p>
+    <ul class="map">
+      <li>Search<span>Name, title or address. <code>SLE 78CFX1M10PH</code> finds
+        SLE-78CFX1M10PH.</span></li>
+      <li>Type<span>Page type and level.</span></li>
+      <li>Ownership<span>Business line, product line, segment.</span></li>
+      <li>Status<span>Updated, awaiting review, offline, paused&hellip; and the
+        Archive.</span></li>
+      <li>Content &amp; components<span>What is on the page: documents, videos,
+        images, key features, design resources tabs and the rest, each as Has
+        or No.</span></li>
+      <li>Views<span>Save a set of filters under a name. The whole team sees
+        it.</span></li>
+    </ul>
+    <p style="margin-top:14px"><b>Many pages at once:</b> tick them (or
+      <b>Select all</b> for everything that matches), then Capture, Approve
+      updates, Pause, Archive, Export or Remove.</p>
+  </section>
+
+  <!-- perfect -->
+  <section id="perfect" class="card">
+    <h2><span class="secn">03</span>Perfect pages</h2>
+    <p class="lede">A page is perfect when it has every key component of its
+      standard. The Dashboard, the Charts and the export all use the same test.</p>
+    <ul class="lim">
+      {% for ps in psets %}
+      <li><b>{{ ps.name }}s, {{ ps.presets[0][0] }}:</b> {{ ps.presets[0][1]|join(', ') }}.
+        {% if ps.presets|length > 2 %}<br><span style="color:var(--muted)">{{ ps.presets[1][0] }}
+        adds {{ ps.presets[1][1]|reject('in', ps.presets[0][1])|join(', ') }} for SURF.</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <p style="margin-top:12px">In the pill&rsquo;s <b>Perfect page</b> box, pick
+      a preset or tick your own components (the number beside each is how many
+      pages have it), then <b>Perfect</b> or <b>Not perfect</b>.
+      <b>Not perfect</b> is your to-do list.</p>
+  </section>
+
+  <!-- charts -->
+  <section id="charts" class="card">
+    <h2><span class="secn">04</span>Charts</h2>
+    <p class="lede"><a href="{{ url_for('charts_page') }}">Explore &rarr; Charts</a>
+      shows how complete PTPs and EBs are, by business line, product line and
+      component. Live numbers.</p>
+    <figure>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/heatmap.png') }}" alt="The heatmap: key components by product line">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/heatmap-dark.png') }}" alt="The heatmap: key components by product line">
+      <figcaption>The Heatmap tab. Pale cells are the gaps.</figcaption>
+    </figure>
+    <ul class="lim" style="margin-top:12px">
+      <li><b>Overview, Heatmap, Drill-down</b>: three views of the same numbers.</li>
+      <li><b>Filters</b>: the components you measure, which lines, online or
+        offline, product status and buy button. <b>SURF</b> narrows to its
+        lines and adds PCB design data.</li>
+      <li><b>PNG / SVG</b> on every chart. Click a title to retype it for a
+        slide first.</li>
+    </ul>
+  </section>
+
   <!-- the run -->
   <section id="check" class="card">
-    <h2><span class="secn">01</span>What happens on a check</h2>
-    {#- NOT |capitalize: it lowercases the rest, so "every Monday" comes out
-        "Every monday". Starting the sentence with a word of our own instead. -#}
-    <p class="lede">Runs {{ every }} at {{ at_time }}, on its own, on iRadar&rsquo;s
-      own server: nobody starts it and no laptop has to stay on{% if run_hours %}.
-      It takes about {{ run_hours }}{% endif %}.</p>
-    <ol class="flow">
-      <li><b>Every page is opened in a real browser</b>
-        <p>Not downloaded as code, but rendered the way you would see it.
-          It scrolls to the bottom so anything that loads late appears, opens
-          tabs and accordions, waits for the images, and reads the buy box
-          only once it has stopped changing. Prices are always read in US
-          dollars, so a page never &ldquo;changes&rdquo; because of the
-          visitor&rsquo;s currency.</p>
-        <span class="aside">A page that only half-loads (most of its sections
-          or its library missing) is retried rather than saved.</span></li>
-
-      <li><b>What is on it is written down</b>
-        <p>The visible text, every image, the whole library (documents, videos,
-          boards, design resources, partners), the parametrics, the product
-          status, the price, the buy buttons and a full-page screenshot.</p></li>
-
-      <li><b>It is compared with last time</b>
-        <p>Six signals, below. Any one of them is enough to raise the page.</p></li>
-
-      <li><b>Anything raised goes to a vote</b>
-        <p>Before the run ends, the page is captured again, and the two
-          captures must agree on <b>what</b> changed, not merely that something
-          did. If they agree, the update is published. If they disagree, a
-          third capture breaks the tie. If the second capture shows nothing,
-          the update is dropped silently.</p>
-        <span class="aside">A page that LOST content is judged harder: unanimous
-          when the first two agree, because a half-loaded page looks exactly
-          like a page that lost half its content.</span></li>
-
-      <li><b>Pages that fail get two more tries</b>
-        <p>Retried at the end of the run. Only something that fails every
-          attempt is recorded as an error. One bad moment is not a verdict.</p></li>
-
-      <li><b>What survives lands in your queue</b>
-        <p>On the <a href="{{ url_for('index') }}">Dashboard</a>, marked
-          <b>Updated</b>. Nothing is altered or deleted. The previous version
-          stays until you decide.</p></li>
-    </ol>
+    <h2><span class="secn">05</span>How a check works</h2>
+    {#- NOT |capitalize: it lowercases the rest ("every monday") -#}
+    <p class="lede">Runs {{ every }} at {{ at_time }} on its own{% if run_hours %},
+      and takes about {{ run_hours }}{% endif %}. Each page is opened in a real
+      browser, read, and compared with last time.</p>
 
     {{ dia.flow() }}
     {{ dia.vote() }}
 
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/dashboard.png') }}" alt="The Dashboard: figures across the top, the filter row and the tracked pages below">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/dashboard-dark.png') }}" alt="The Dashboard: figures across the top, the filter row and the tracked pages below">
-      <figcaption>The figures across the top: <b>Live pages</b>,
-        <b>Recently offline</b>, <b>Updated</b> (with how many are still
-        awaiting review), <b>Content</b>, <b>Updated files</b>, <b>Paused</b>
-        and, set apart, the <b>Archive</b>. Each one is a link to the pages
-        behind it.</figcaption>
-    </figure>
+    <p style="margin-top:16px">Anything that looks different is captured a second
+      time. Only if both captures agree on <b>what</b> changed does it reach your
+      queue, so a page that loaded badly doesn&rsquo;t bother you. Pages that
+      fail get two more tries.</p>
 
-    <h3 style="margin:26px 0 6px; font-size:15px">The bar you watch while it runs</h3>
-    <p style="margin-top:0">While a check is going, the Dashboard shows one bar
-      with every page in it. Each page sits in exactly one colour, and the five
-      always add up to the total, so the bar answers &ldquo;how far along is
-      it&rdquo; without you reading any numbers.</p>
-
-    {#- a replica, not a screenshot: a picture of the bar is out of date the
-        first time the colours change, and would be wrong in one of the two
-        themes no matter which one it was taken in -#}
+    <h3>The bar while it runs</h3>
     <div class="barex" aria-hidden="true">
       <div class="bx"><i style="width:46%;background:#16a34a"></i><i
         style="width:6%;background:#ea580c"></i><i
@@ -352,743 +385,200 @@
         style="width:3%;background:#dc2626"></i></div>
     </div>
     <ul class="lim" style="margin-top:10px">
-      <li><span class="sw" style="background:#16a34a"></span><b>No update</b>:
-        captured, compared, nothing moved. On a normal check this is nearly the
-        whole bar.</li>
-      <li><span class="sw" style="background:#ea580c"></span><b>Updated</b>:
-        confirmed. It survived the second capture and is in your queue.</li>
-      <li><span class="sw" style="background:#7c3aed"></span><b>Reconfirming
-        updates</b>: the page looked different and is being held for a second
-        capture. <b>Not an update yet.</b> These are only settled at the very
-        end of the check, so this number climbs all the way through and then
-        empties in one go, most of it into <i>no update</i>.</li>
+      <li><span class="sw" style="background:#16a34a"></span><b>No update</b>,
+        almost everything.</li>
+      <li><span class="sw" style="background:#ea580c"></span><b>Updated</b>,
+        confirmed and in your queue.</li>
+      <li><span class="sw" style="background:#7c3aed"></span><b>Reconfirming</b>,
+        waiting for the second look. Not an update yet. It empties at the
+        end, mostly into no update.</li>
       <li><span class="sw" style="background:#dc2626"></span><b>Blocked, will
-        retry</b>: did not load this time. Every one gets two more tries at
-        the end, after a pause, and even failing all three only counts a
-        strike. A page is written down as a <b>Capture error</b> only after it
-        has failed every attempt in two checks in a row (six tries in all), so
-        this number usually falls near the end rather than rising.</li>
-      <li><span class="sw" style="background:var(--muted)"></span><b>Waiting</b>:
+        retry</b>, retried at the end.</li>
+      <li><span class="sw" style="background:var(--muted)"></span><b>Waiting</b>,
         not reached yet.</li>
     </ul>
-    <div class="note"><p>A big <b>reconfirming updates</b> number part way
-      through is normal. It does not mean hundreds of updates are waiting for
-      you. It is the holding pen, and the second capture is what empties it.</p></div>
-
-    <h3 style="margin:26px 0 4px; font-size:15px">Starting one yourself</h3>
-    <p style="margin-top:0"><b>Check all pages</b> runs everything now. The
-      arrow beside it offers partial runs, such as only the pages never
-      captured. Tick <b>Send report</b> first if you want this manual check to
-      email its report as well, which the scheduled one always does. To
-      re-read a handful of pages, tick them in the list and choose
+    <p style="margin-top:12px; color:var(--muted); font-size:13.5px">If the
+      server restarts mid-check, it carries on where it stopped. To run one
+      now, press <b>Check all pages</b>, or tick pages and choose
       <b>Capture</b>.</p>
-
-    <h3 style="margin:26px 0 4px; font-size:15px">If a check stops half way</h3>
-    <p style="margin-top:0">It picks up where it left off. Every page is recorded
-      as it is done, so a check that is interrupted (the server restarts or
-      redeploys) resumes from the first page it had not reached, rather than
-      starting again.</p>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>Pages already checked are not re-checked.</b> Their results stand.</li>
-      <li><b>Pages caught mid-capture are simply redone.</b> A half-written
-        capture is never kept, so an interruption cannot leave a corrupted
-        reference behind.</li>
-      <li><b>Updates already found are still in your queue.</b> Nothing waiting
-        for review is lost.</li>
-      <li><b>It starts itself again.</b> You do not have to notice, and you do
-        not have to press anything.</li>
-    </ul>
-    <p style="color:var(--muted); font-size:13.5px">The only way a check
-      stops for good is if you stop it. <b>Pause</b> holds it where it is, and
-      <b>End check</b> finishes it and keeps every page already captured.</p>
-
-    <h3 style="margin:26px 0 4px; font-size:15px">Page states you will see</h3>
-    <p style="margin-top:0; color:var(--muted); font-size:13.5px">Under
-      <b>Status</b> on the Dashboard, and as the chips under the search box.
-      Each one is a filter.</p>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>Unchanged</b>: checked, nothing moved. The normal state.</li>
-      <li><b>Updated</b>: something changed in the latest check.</li>
-      <li><b>Awaiting review</b>: every page with an update nobody has decided
-        yet, whatever its status is now. This is your real queue.</li>
-      <li><b>Recently offline</b>: the address answers 404 or 410. The page is
-        gone, or was never published. See <a href="#offline">Offline, paused,
-        archived</a>.</li>
-      <li><b>Paused</b>: deliberately not checked. Still listed.</li>
-      <li><b>Blank page</b>: the address answered but there was nothing on it.
-        Usually Infineon serving an empty shell. It is retried next check.</li>
-      <li><b>Capture error</b>: it failed every attempt in two checks in a row,
-        six tries in all. Almost always the site refusing us, not the page
-        being broken.</li>
-      <li><b>Not captured</b>: added but never read yet, so there is nothing
-        to compare against. It gets its first reading next check.</li>
-      <li><b>Ownership check</b>: the page&rsquo;s BL or PL could not be
-        confirmed. See <a href="#owners">Who owns a page</a>.</li>
-    </ul>
   </section>
 
-  <!-- the distinction people get wrong -->
+  <!-- signals -->
   <section id="signals" class="card">
-    <h2><span class="secn">02</span>What it notices, and what it lets pass</h2>
-    <p class="lede">The second list, ignored on purpose, is why something you
-      expected did not come up. Each one caused a flood of false alarms before
-      it was handled.</p>
+    <h2><span class="secn">06</span>What counts as a change</h2>
+    <p class="lede">Six signals raise a page. The things on the right are
+      ignored on purpose. Each one used to cause false alarms.</p>
     <div class="pair">
       <div>
-        <h3 style="margin:0 0 4px; font-size:14px"><span class="tick">✓</span>
-          Raises a page</h3>
+        <h3 style="margin:0 0 4px; font-size:14px"><span class="tick">✓</span> Raises a page</h3>
         <ul class="plist">
-          <li><b>Text</b><span>Wording added, removed or edited, including the
-            description, parametrics, product status and price. Text that only
-            <i>moved</i> does not count: same lines, new order, is layout.</span></li>
-          <li><b>Library</b><span>A document, video, board, design resource or
-            partner appears or disappears, or its version, date, size or price
-            changes.</span></li>
-          <li><b>Images</b><span>A picture appears on or disappears from the
-            page.</span></li>
-          <li><b>Screenshot</b><span>More than {{ s.visual_threshold }}% of
-            pixels differ, or the page height moves more than
-            {{ s.height_threshold }}px.</span></li>
-          <li><b>Products table</b><span>The table of parts changes shape:
-            the product count the page itself reports moves, or a column
-            appears or disappears. Columns dealt in a new order do not count.</span></li>
-          <li><b>File updates</b><span>A file republished at the same address.
-            The page is identical, but the datasheet behind it is new.</span></li>
+          <li><b>Text</b><span>Words added, removed or edited, including price and product status.</span></li>
+          <li><b>Library</b><span>A document, video, board or partner comes or goes.</span></li>
+          <li><b>Images</b><span>A picture comes or goes.</span></li>
+          <li><b>Screenshot</b><span>Over {{ s.visual_threshold }}% of pixels, or {{ s.height_threshold }}px of height.</span></li>
+          <li><b>Products table</b><span>Its parts count or columns change.</span></li>
+          <li><b>File updates</b><span>A new file behind the same link.</span></li>
         </ul>
       </div>
       <div>
-        <h3 style="margin:0 0 4px; font-size:14px"><span class="cross">✕</span>
-          Ignored on purpose</h3>
+        <h3 style="margin:0 0 4px; font-size:14px"><span class="cross">✕</span> Ignored on purpose</h3>
         <ul class="plist">
-          <li><b>Stock levels</b><span>&ldquo;4387 in stock&rdquo; reads 4382 by
-            morning. The price is still watched.</span></li>
-          <li><b>The community feed</b><span>Re-sorts itself constantly. Whether
-            the widget is present, empty or busy <i>is</i> tracked.</span></li>
-          <li><b>Latest news, the mega-menu</b><span>Identical on every page. One
-            retired thumbnail once raised 585 pages at once.</span></li>
-          <li><b>Tabs loading differently</b><span>Two visits can land on
-            different tabs. Their contents are tracked item by item
-            instead.</span></li>
-          <li><b>Timestamps, &ldquo;3 days ago&rdquo;</b><span>They change with
-            nobody editing anything.</span></li>
-          <li><b>The same words, set differently</b><span>Text that wraps at a
-            different word, a space added or dropped, an HTML code instead of
-            the character it stands for. Any changed word still counts.</span></li>
-          <li><b>The same values in a new order</b><span>A list or parameter
-            whose values are only dealt differently.</span></li>
-          <li><b>The same picture at a new size</b><span>The size travels in
-            the image&rsquo;s address, so one photo can arrive under several. A
-            different picture still counts.</span></li>
+          <li><b>Stock levels</b><span>They move every hour.</span></li>
+          <li><b>News, the menu, the community feed</b><span>Same on every page, or re-sorted constantly.</span></li>
+          <li><b>&ldquo;3 days ago&rdquo;</b><span>Changes with nobody editing.</span></li>
+          <li><b>Same content, new order or spacing</b><span>Layout, not an edit.</span></li>
+          <li><b>Same picture, new size</b><span>One photo, several addresses.</span></li>
         </ul>
       </div>
     </div>
   </section>
 
-  <!-- reviewing -->
+  <!-- review -->
   <section id="review" class="card">
-    <h2><span class="secn">03</span>Reviewing an update</h2>
-    <p class="lede">Open one from the Dashboard. It names what moved, component
-      by component (<i>page text &middot; Related products (+1/-1) &middot;
-      images (+2/-2)</i>), then shows each part: the wording before and after,
-      which items came and went, and each changed area up close, before on the
-      left and after on the right with the change outlined in amber. The full
-      screenshots underneath carry the same areas boxed in red.</p>
-
+    <h2><span class="secn">07</span>Reviewing an update</h2>
+    <p class="lede">Open one from the Dashboard. It tells you what moved, then
+      shows it: the text before and after, items in and out, and the changed
+      area side by side, outlined in amber.</p>
     <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/update.png') }}" alt="An update: what moved, the text and library changes, and the changed area before and after">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/update-dark.png') }}" alt="An update: what moved, the text and library changes, and the changed area before and after">
-      <figcaption>Only what actually changed is shown, so a page raised on
-        wording alone does not make you scroll past an unchanged
-        screenshot.</figcaption>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/update.png') }}" alt="An update: what moved, the text and library changes, and the changed area before and after">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/update-dark.png') }}" alt="An update: what moved, the text and library changes, and the changed area before and after">
     </figure>
-
-    <div class="note"><p><b>What earns a red box, and what deliberately does
-      not.</b> A box means the pixels are different <i>and</i> the difference
-      survived a battery of honesty checks. Things a reader cannot see are
-      never boxed: text re-rendered a hair differently, a row that slipped a
-      pixel when the page reflowed, a block that merely <i>moved</i>. A block
-      that moved <i>and</i> changed inside is still boxed, and a section that
-      was added or removed always is. If an update says TEXT but shows no
-      boxes, the change sits in a collapsed tab or accordion, and the page says
-      so where the boxes would have been.</p></div>
-
     <div class="choose">
       <div class="opt go">
         <h3><span class="dot"></span>Approve</h3>
-        <p>The new version is correct. It becomes the reference the next
-          check compares against.</p>
-        <p class="when">Use when the change is real, whether it matters or not.</p>
+        <p>The new version is right. Next check compares against it.</p>
+        <p class="when">The normal choice, whether the change matters or not.</p>
       </div>
       <div class="opt no">
         <h3><span class="dot"></span>Reject</h3>
-        <p>The old version was correct. It stays the reference.</p>
-        <p class="when">Use when the capture is wrong, or the change will be undone.</p>
+        <p>The old version is right. It stays the reference.</p>
+        <p class="when">When the capture is broken, or the change is a mistake
+          that will be fixed. It keeps coming up until it is.</p>
       </div>
     </div>
-
-    <h3 style="margin:22px 0 4px; font-size:15px">Two reasons to reject</h3>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>The capture is wrong.</b> Something did not load and iRadar saw
-        half a page. Next week it captures properly, matches the version you
-        kept, and says nothing.</li>
-      <li><b>The change is real but wrong, and will be put back.</b> Somebody
-        published a mistake. Reject it, tell whoever owns the page, and the
-        reference stays on the correct version, so when they fix it the page
-        matches again and goes quiet on its own.
-        <br><span style="color:var(--muted)">Until it is fixed the page comes
-        up again on every check. That is the point: it is a standing reminder
-        that the site still does not say what it should.</span></li>
-    </ul>
-
-    <div class="note warn"><p><b>Approve is the normal one.</b> Approving does
-      not endorse anything. It only records what the page says today. Every
-      decision records who made it and when, shown on the update.</p></div>
-
-    <p style="margin-top:16px"><b>Many at once:</b> tick pages on the Dashboard
-      (or <b>Select all</b> to take every page the filters match, not just the
-      ones on screen) and choose <b>Approve updates</b>.</p>
+    <p style="margin-top:14px; color:var(--muted); font-size:13.5px">Each
+      decision records who made it and when.</p>
   </section>
 
-  <!-- the dashboard's filters -->
-  <section id="dashboard" class="card">
-    <h2><span class="secn">04</span>Finding pages on the Dashboard</h2>
-    <p class="lede">One search box and a row of filters. Every option shows how
-      many pages it would give you before you tick it, and the list follows
-      as you tick, with no Apply button to press.</p>
-
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/filters.png') }}" alt="The PTP / EB filter open: the Perfect page standard, product status and buy button">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/filters-dark.png') }}" alt="The PTP / EB filter open: the Perfect page standard, product status and buy button">
-      <figcaption>The <b>PTP / EB</b> filter, open on part pages. Every filter
-        in force shows as a chip above the list, and its cross drops that one
-        alone.</figcaption>
-    </figure>
-
-    <ul class="map" style="margin-top:16px">
-      <li>Search
-        <span>Name, title or address. Part and board names can be typed with
-          spaces instead of dashes: <code>SLE 78CFX1M10PH</code> finds
-          SLE-78CFX1M10PH.</span></li>
-      <li>Type
-        <span>The page type, and the level under it (PTP, EB, PFP and so on).
-          It comes first because it decides which other filters mean
-          anything.</span></li>
-      <li>Ownership
-        <span>Business line, product line, and the segment for application
-          pages. Only values that apply to the pages in view are offered, and
-          <i>(not assigned)</i> finds the gaps.</span></li>
-      <li>PTP / EB
-        <span>Locked until you pick part pages or boards, with the switch at
-          the top. Then three things only those pages have: the
-          <a href="#perfect">Perfect page</a> standard, the <b>product
-          status</b> (Active and preferred, Not for new design, Discontinued
-          and the rest) and the <b>buy button</b>: whether there is one, and
-          exactly which buttons the box shows (Add to cart, Contact sales,
-          View distributor&rsquo;s inventory and their combinations).</span></li>
-      <li>Status
-        <span>The <a href="#check">page states</a>, and the way into the
-          <a href="#offline">Archive</a>.</span></li>
-      <li>Content &amp; components
-        <span>What is on the page. <b>Content</b> is the library (documents,
-          videos by where they sit, images, a linked eval board) plus
-          <i>over its limit</i> for copy that breaks the length rules.
-          <b>Components</b> are the page&rsquo;s own blocks: subheadline, key
-          features, benefits, parametrics, the Design resources tabs, metadata,
-          primary document, package page link and more. Each has
-          <b>Has</b>, <b>No</b> and, where it applies, <b>Empty</b>.</span></li>
-      <li>Views
-        <span>Save the filters in force under a name. Views are shared, so
-          everyone on the team sees the same list.</span></li>
-    </ul>
-
-    <h3>Doing things to many pages</h3>
-    <p>Tick pages, or <b>Select all</b> for every page the filters match, then
-      choose an action: <b>Capture</b> (re-read them now), <b>Approve
-      updates</b>, <b>Pause</b>, <b>Resume</b>, <b>Archive</b>, <b>Export</b>
-      or <b>Remove</b>.</p>
-  </section>
-
-  <!-- the perfect-page standard -->
-  <section id="perfect" class="card">
-    <h2><span class="secn">05</span>Perfect pages</h2>
-    <p class="lede">A part page or a board is <b>perfect</b> when it carries
-      every key component of its standard. It is one test, used identically by
-      the Dashboard filter, the Charts and the export, so the three never
-      disagree about a page.</p>
-
-    <ul class="lim">
-      {% for ps in psets %}
-      <li><b>{{ ps.name }}s: {{ ps.presets[0][0] }}.</b>
-        {{ ps.presets[0][1]|join(', ') }}.
-        {% if ps.presets|length > 2 %}<br><span style="color:var(--muted)">{{ ps.presets[1][0] }}
-        adds {{ ps.presets[1][1]|reject('in', ps.presets[0][1])|join(', ') }}, for
-        the SURF business lines.</span>{% endif %}</li>
-      {% endfor %}
-    </ul>
-
-    <h3>Picking your own standard</h3>
-    <p>Under <b>PTP / EB &rarr; Perfect page</b>, the presets
-      ({% for ps in psets %}{% for p in ps.presets %}<i>{{ p[0] }}</i>{{ ', ' if not loop.last }}{% endfor %} for {{ ps.name }}s{{ '; ' if not loop.last }}{% endfor %})
-      tick a set at once, or tick components one by one. The number beside
-      each component is how many live pages of that type have it, so you can
-      see which ones hold the rest back. Then pick <b>Perfect</b> or
-      <b>Not perfect</b> to list the pages.</p>
-    <div class="note"><p><b>Not perfect</b> is the to-do list. Narrow it to a
-      product line, or export it with the <i>Missing key components</i>
-      column, and each row says exactly what that page still needs.</p></div>
-  </section>
-
-  <!-- charts -->
-  <section id="charts" class="card">
-    <h2><span class="secn">06</span>Charts: how complete each page type is</h2>
-    <p class="lede"><a href="{{ url_for('charts_page') }}">Explore &rarr;
-      Charts</a>, with a tab for PTPs and one for EBs. The numbers are worked
-      out live from the latest captures.</p>
-
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/charts.png') }}" alt="PTP completion: headline figures, the filters card and perfect pages by business line">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/charts-dark.png') }}" alt="PTP completion: headline figures, the filters card and perfect pages by business line">
-      <figcaption>Live pages, the share that is perfect and the product lines
-        in scope across the top, then the filters, then the charts.</figcaption>
-    </figure>
-
-    <ul class="lim" style="margin-top:14px">
-      <li><b>Overview</b>: perfect pages by business line and by product line,
-        then each key component as has against missing.</li>
-      <li><b>Heatmap</b>: components down, product lines across, grouped by
-        business line. Each cell gives the pages and the percentage, so the
-        gaps show as pale cells.</li>
-      <li><b>Drill-down</b>: tick business lines, product lines or components
-        and compare just those.</li>
-    </ul>
-
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/heatmap.png') }}" alt="The heatmap: key components by product line">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/heatmap-dark.png') }}" alt="The heatmap: key components by product line">
-      <figcaption>Darker is more complete. The bottom row is perfect pages per
-        product line.</figcaption>
-    </figure>
-
-    <h3>The filters card</h3>
-    <p><b>Cluster</b> narrows to a group of business lines and ticks its extra
-      components (SURF adds PCB design data). <b>Components</b> is the standard
-      being measured, from the key set to all of them. <b>Scope</b> picks
-      business and product lines. <b>Pages</b> chooses online, offline or
-      both, and <b>Product status</b> and <b>Buy button</b> narrow it further.
-      The line at the top of the card says what is in force while it is
-      collapsed.</p>
-    <p>Every chart downloads as <b>PNG</b> or <b>SVG</b>, and a chart&rsquo;s
-      title can be clicked and retyped before you download it, for a slide.</p>
-  </section>
-
-  <!-- ownership -->
+  <!-- owners -->
   <section id="owners" class="card">
-    <h2><span class="secn">07</span>Who owns a page</h2>
-    <p class="lede">BL, PL, CM and the marketing owner. Shown on every page,
-      filterable on the Dashboard, scoped on the Charts and available as export
-      columns.</p>
+    <h2><span class="secn">08</span>Who owns a page</h2>
     <ul class="lim">
-      <li><b>Part pages and boards fill themselves.</b> Their PL comes from
-        PIM, as infineon.com shows it on the page, and the BL from the ES org
-        chart. A run fills an empty one, and follows the page when infineon.com
-        changes it. The small <b>PIM</b> tag beside the PL says where it came
-        from.</li>
-      <li><b>A PL set by hand stays.</b> Edit it with the pencil and it is
-        tagged <i>set by hand</i>. No run changes it after that.</li>
-      <li><b>Nothing is guessed.</b> A page with no source for its BL or PL, or
-        whose PL is not on the current ES chart, is flagged <b>Ownership
-        check</b> for a person to settle. Pages taken offline and document
-        pages never carry the flag.</li>
-      <li><b>Application pages carry a segment</b> (C3, A, I2 and their
-        combinations), editable on the page and filterable beside BL and PL.</li>
-      <li><b>Product lines read with their names</b>: <i>92 (MCU)</i>,
-        <i>44 (ENV)</i>, everywhere a PL appears.</li>
+      <li><b>Parts and boards fill in themselves.</b> PL from PIM, BL from the
+        ES chart. The small <b>PIM</b> tag says so.</li>
+      <li><b>Set one by hand and it stays.</b> No check overwrites it.</li>
+      <li><b>No source? It&rsquo;s flagged, never guessed.</b> Look for
+        <b>Ownership check</b> on the Dashboard.</li>
+      <li><b>Application pages also have a segment</b> (C3, A, I2).</li>
     </ul>
-    <p style="margin-top:12px; color:var(--muted); font-size:13.5px">Ownership
-      is our bookkeeping, not the page&rsquo;s content, so editing it never
-      raises an update.</p>
   </section>
 
-  <!-- the content library -->
+  <!-- content -->
   <section id="content" class="card">
-    <h2><span class="secn">08</span>Content: every document, and where it is used</h2>
-    <p class="lede">Every check reads the whole library off each page, so
-      <a href="{{ url_for('search_items') }}">Content</a> is not a separate list
-      somebody maintains. It is what the site actually says today.</p>
-
-    <p><b>It is organised by the thing, not by the page.</b> One datasheet used
-      on forty product pages is <i>one</i> entry with forty pages under it.
-      Open it and you get:</p>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>Which pages carry this document</b>: every one, with its type and
-        the heading it sits under on that page</li>
-      <li><b>Its details</b>: version, language, date, size, and whether it is
-        public or behind a MyInfineon login</li>
-      <li><b>A picture of the first page</b>, so you can tell whether it is the
-        right file without downloading it</li>
-      <li><b>Where to edit it</b>: the DAM and Windchill badges go straight to
-        the source system{% if is_admin %} (an admin sets those links under
-        Settings &rarr; Advanced){% endif %}</li>
-    </ul>
-
+    <h2><span class="secn">09</span>Content &amp; files</h2>
+    <p class="lede"><a href="{{ url_for('search_items') }}">Content</a> lists
+      every document, video, image and board once, with every page that uses
+      it. That&rsquo;s the answer to &ldquo;if I change this datasheet, what am I
+      touching?&rdquo;</p>
     <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/content.png') }}" alt="The Content library">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/content-dark.png') }}" alt="The Content library">
-      <figcaption>One row per <b>thing</b>, not per page. The pills narrow it to
-        documents, videos, images, design resources and boards or related
-        products.</figcaption>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/content.png') }}" alt="The Content library">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/content-dark.png') }}" alt="The Content library">
     </figure>
-
-    <div class="note"><p><b>This is what makes a removal visible.</b> When a
-      datasheet disappears from a page, iRadar knows because it compares the
-      whole library, not just the words. That is the <b>Library</b> signal.</p></div>
-
-    <h3 style="margin:26px 0 4px; font-size:15px">File updates: the other queue</h3>
-    <p style="margin-top:0">A datasheet can be replaced without the page
-      moving at all: same link, same title, new file behind it. iRadar asks
-      each file for its size and date without downloading it, and when those
-      move it goes to <a href="{{ url_for('assets_page') }}">File updates</a>.</p>
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/assets.png') }}" alt="File updates: each file, what changed, the pages it is used on">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/assets-dark.png') }}" alt="File updates: each file, what changed, the pages it is used on">
-      <figcaption>What changed (the size before and after, or the date it was
-        republished), the pages using it, and who reviewed it.</figcaption>
-    </figure>
-    <ul class="lim" style="margin-top:12px">
-      <li><b>Its own queue</b>, with <b>To review</b> and <b>Reviewed</b> tabs,
-        a search and Documents / Images chips, separate from page updates so a
-        quiet republish does not get lost among them.</li>
-      <li><b>Every page carrying that file is listed</b>. One replaced datasheet
-        can be forty pages&rsquo; worth of news.</li>
-      <li><b>Approve</b> records the new file as the one we know about.
-        <b>Reject</b> keeps the old reading, for when the server is reporting
-        nonsense rather than the file genuinely changing.</li>
-    </ul>
+    <p style="margin-top:14px"><a href="{{ url_for('assets_page') }}">File
+      updates</a> is a second queue for files replaced behind the same link.
+      The page looks identical, but the PDF is new. It has its own Approve and
+      Reject.</p>
   </section>
 
-  <!-- one page's own page -->
+  <!-- page view -->
   <section id="pagepage" class="card">
-    <h2><span class="secn">09</span>What a page&rsquo;s own page shows</h2>
-    <p class="lede">Click any row on the Dashboard for everything iRadar
-      knows about that one page.</p>
-
+    <h2><span class="secn">10</span>A page&rsquo;s own page</h2>
+    <p class="lede">Click any row for everything about one page.</p>
     <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/page.png') }}" alt="One page's own page: title, ownership, components, product status, price and buy button">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/page-dark.png') }}" alt="One page's own page: title, ownership, components, product status, price and buy button">
-      <figcaption>The ticks are the components found on it; the greyed ones
-        are what pages of its type can carry and this one does not.</figcaption>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/page.png') }}" alt="One page's own page: title, ownership, components, product status, price and buy button">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/page-dark.png') }}" alt="One page's own page: title, ownership, components, product status, price and buy button">
+      <figcaption>Green ticks are components it has, grey ones it doesn&rsquo;t.</figcaption>
     </figure>
-
-    <ul class="lim" style="margin-top:14px">
-      <li><b>Where it sits</b>: the breadcrumb, the way Infineon nests it.
-        The counter beside it opens the pages beside this one and under it.</li>
-      <li><b>Its name, address and badges</b>: <b>AEM</b> opens the page in the
-        author editor, <b>PIM</b> opens a part or board in PIM.</li>
-      <li><b>Ownership</b>: BL, PL with its source tag, CM, owner, and the
-        segment for application pages. All editable with the pencil.</li>
-      <li><b>Components, product status, price and buy button</b>, as the last
-        capture read them.</li>
-      <li><b>The library</b>: subheadline, description, parametrics, features,
-        documents, design resources, videos, images and the rest, each opening
-        to its items.</li>
-      <li><b>Sentiment analysis</b>: recent mentions of the product family
-        across the web, where there are any.</li>
-      <li><b>Detected updates</b>: every change ever raised on this page, with
-        its verdict. This is the page&rsquo;s history.</li>
-      <li><b>Stored snapshots</b>, <b>Redirects</b> when the address that
-        answered is not the one on the list, and <b>Notes</b> at the
-        bottom.</li>
-    </ul>
+    <p style="margin-top:14px">Below that you&rsquo;ll find the full library,
+      every update it has ever had, and a <b>notes</b> box. Leave a note for
+      whoever comes next: <i>&ldquo;checked with marketing, the new subheadline
+      is intentional&rdquo;</i>. Every note lands in
+      <a href="{{ url_for('notes_page') }}">Notes</a> too.</p>
   </section>
 
-  <!-- offline / paused / archive -->
+  <!-- offline -->
   <section id="offline" class="card">
-    <h2><span class="secn">10</span>Offline, paused, archived</h2>
-    <p class="lede">Three different reasons a page is not simply live and
-      checked, kept apart on purpose.</p>
+    <h2><span class="secn">11</span>Offline, paused, archived</h2>
     <ul class="map">
-      <li>Recently offline
-        <span>infineon.com answers 404 or 410. The page stays in the list,
-          is still looked at on every check (pages do come back), and drops
-          its ownership flag, since a gone page needs no owner. Pausing it is
-          a person&rsquo;s call, never automatic.</span></li>
-      <li>Paused
-        <span>Set aside by somebody, for a page known to be in flux. Still in
-          the inventory and every count, just not checked. <b>Resume</b> brings
-          it back. Document pages (a gated file rather than a page) are
-          paused automatically.</span></li>
-      <li>Archive
-        <span>Offline pages put away for good. An archived page leaves every
-          count, list, chart, email and export and is not checked at all. Find
-          them through <b>Status &rarr; Archive</b> or the Archive figure, and
-          bring one back with <b>Restore</b>.</span></li>
+      <li>Recently offline<span>The site says 404. Still checked, in case it
+        comes back.</span></li>
+      <li>Paused<span>Skipped on purpose, but still counted.</span></li>
+      <li>Archive<span>Gone for good. Out of every count, chart and export.
+        <b>Restore</b> brings one back.</span></li>
     </ul>
-    <p style="margin-top:12px">To clear out dead pages: filter
-      <b>Recently offline</b>, select all, choose <b>Archive</b>.</p>
+    <p style="margin-top:12px">To clear out dead pages: Status &rarr; Recently
+      offline, Select all, Archive.</p>
   </section>
 
-  <!-- notes -->
-  <section id="writing-notes" class="card">
-    <h2><span class="secn">11</span>Leaving a note</h2>
-    <p class="lede">Every page, document, board and update has a notes box at the
-      bottom.</p>
-    <p>It is for the reasoning, not the fact, for example: <i>&ldquo;checked
-      with marketing, the new subheadline is intentional, leaving
-      it&rdquo;</i>.</p>
-    <p>Edit or delete your own whenever, mark one <b>done</b> once it is handled,
-      and read everything anyone has written under
-      <a href="{{ url_for('notes_page') }}">Notes</a>. That is also where you
-      say something is broken, confusing or missing, in the box at the
-      top.</p>
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/notes.png') }}" alt="The notes box at the bottom of a page">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/notes-dark.png') }}" alt="The notes box at the bottom of a page">
-      <figcaption>Ctrl + Enter posts.</figcaption>
-    </figure>
-  </section>
-
-  <!-- getting it out as a spreadsheet -->
+  <!-- export -->
   <section id="export" class="card">
-    <h2><span class="secn">12</span>Export: getting it out as a spreadsheet</h2>
-    <p class="lede"><b>Download everything per page</b> gives one workbook with
-      every page and all of its content and owners, spelled out. Or build a
-      narrower table: you pick the rows and the columns, and the number beside
-      every option tells you how much you would get.</p>
-
+    <h2><span class="secn">12</span>Export</h2>
+    <p class="lede"><a href="{{ url_for('export_builder') }}">Explore &rarr;
+      Export</a>. One button gives you everything, or build your own table: pick
+      the rows, pick the columns.</p>
     <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/export.png') }}" alt="The export builder: rows on the left, columns on the right">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/export-dark.png') }}" alt="The export builder: rows on the left, columns on the right">
-      <figcaption>Rows on the left, columns on the right. The counts recount
-        against the rows you have ticked.</figcaption>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/export.png') }}" alt="The export builder: rows on the left, columns on the right">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/export-dark.png') }}" alt="The export builder: rows on the left, columns on the right">
+      <figcaption>The numbers tell you how full each column will be before you
+        download.</figcaption>
     </figure>
-
-    <ul class="lim" style="margin-top:14px">
-      <li><b>A row per page</b>: which pages have which components, and who
-        owns them. &ldquo;Is this page missing a datasheet?&rdquo;</li>
-      <li><b>A row per document, video or board</b>: where each one is used.
-        &ldquo;Which datasheet is on the most pages, or on none?&rdquo;</li>
-      <li><b>A row per page &times; document</b>: every pairing, with the
-        document&rsquo;s full metadata as columns.</li>
-    </ul>
-    <p style="margin-top:12px">Columns include ownership (with the PL source
-      and segment), status, every component, <b>Perfect page</b>
-      ({% for ps in psets %}{{ ps.name }} {{ ps.presets[0][0] }}{{ ' / ' if not loop.last }}{% endfor %}),
-      the SURF standard, <b>Missing key components</b>, and what the buy box,
-      primary document, package link and meta description actually say.
-      Paused and offline pages are marked in a <b>State</b> column rather than
-      left out.</p>
-    <p>From the Dashboard, <b>Export</b> on ticked pages exports just those.</p>
+    <p style="margin-top:14px">Useful columns: <b>Perfect page</b>, <b>Missing
+      key components</b> (the to-do per page) and who owns it.</p>
   </section>
 
-  <!-- emails -->
+  <!-- email -->
   <section id="email" class="card">
-    <h2><span class="secn">13</span>What it emails</h2>
-    <p class="lede">Two emails, both only to people who have <b>Email alerts</b>
-      switched on in their profile. Nothing else is ever sent.</p>
+    <h2><span class="secn">13</span>Emails</h2>
+    <p class="lede">Only if you switch on <b>Email alerts</b> in your profile.</p>
     <ul class="lim">
-      <li><b>The report, when a check finishes.</b> Every scheduled check sends
-        it. A check started by hand sends it only if <b>Send report</b> was
-        ticked. It gives the figures, what changed, and the queue.</li>
-      <li><b>A reminder on Friday at 08:00</b> (German time), only if updates or file updates
-        are still waiting, so the queue is cleared before the next check
-        reports on top of it. If the queue is empty, nothing is sent.</li>
+      <li><b>A report</b> after every scheduled check.</li>
+      <li><b>A Friday 08:00 reminder</b> (German time), only if updates are
+        still waiting.</li>
     </ul>
-    <p style="margin-top:12px; color:var(--muted); font-size:13.5px">Missed
-      one? <b>Send latest report</b> in your profile mails the last report to
-      you alone.</p>
+    <p style="margin-top:12px; color:var(--muted); font-size:13.5px">That&rsquo;s
+      all it ever sends.</p>
   </section>
 
-  <!-- what an admin can change -->
+  <!-- settings -->
   <section id="settings" class="card">
-    <h2><span class="secn">14</span>Settings: what you can change</h2>
-    <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings</a>
-      is{% else %}Settings is admin-only, and is{% endif %} four tabs.</p>
-
-    <h3>Schedule</h3>
-    <p>It runs <b>{{ every }} at {{ at_time }}</b> today.</p>
-    <ul class="lim">
-      <li><b>Repeat</b>: on set days (tick the weekdays) or every N days.
-        Weekly is the normal choice. Infineon does not republish most pages
-        most days.</li>
-      <li><b>Start at</b>: the hour, <b>in your time</b>. Overnight leaves the
-        check the night to finish in.</li>
-      <li><b>Parallel browser tabs</b>: how many pages are opened at once.
-        Higher is faster, but pages start coming back half-read.</li>
-      <li><b>Captures kept per page</b>: {{ s.keep_snapshots }} today. A
-        comparison needs two.</li>
-    </ul>
-    <div class="note warn"><p>Changing the schedule does not touch a check
-      already running. The next run simply starts at the new time.</p></div>
-
-    <h3>Sensitivity</h3>
-    <p>Two numbers, both about the screenshot: how much of the picture has to
-      differ (<b>{{ s.visual_threshold }}%</b> of pixels) and how far the page
-      height has to move (<b>{{ s.height_threshold }}px</b>). Text, library and
-      image changes are not thresholded. Raise them if pages keep coming up on
-      the picture alone with nothing you can see.</p>
-
-    <h3>Components</h3>
-    <p>A grid of page types against components{% if is_admin %}, under
-      <a href="{{ url_for('settings_components') }}">Settings &rarr;
-      Components</a>{% endif %}. Every cell says how many captured pages of
-      that type carry that component, and you tick what <b>should</b> be
-      there.</p>
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/matrix.png') }}" alt="The component matrix: page types across, components down">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/matrix-dark.png') }}" alt="The component matrix: page types across, components down">
-      <figcaption>Page types across, components down. Green is denser where a
-        component is normal for that type.</figcaption>
-    </figure>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>Untick never-seen</b> clears components that appear on zero pages
-        of a type. Do it after a check finishes, not during one.</li>
-      <li><b>Pages with no level yet</b> can be given one automatically from
-        their siblings, their depth and their components.</li>
-    </ul>
-
-    <h3>Advanced</h3>
-    <ul class="lim" style="margin-top:6px">
-      <li><b>The shared link</b>: a read-only link for people without an
-        account. They cannot change anything, reach Settings or download the
-        database.{% if is_admin %} Who used it shows under Manage people.{% endif %}</li>
-      <li><b>Copy limits</b>: the longest a description, sub-headline, meta
-        description, features, benefits or overview block may be, and how many
-        a page should carry. A page over a limit is flagged beside the block,
-        and the Dashboard&rsquo;s Content filter lists who is over.</li>
-      <li><b>Where your assets live</b>: the DAM, PIM, Windchill and AEM author
-        addresses that make the badges one-click links.</li>
-      <li><b>Backup</b>: a copy of the database, the part that cannot be
-        rebuilt.</li>
-    </ul>
-
-    <div class="note warn"><p><b>What you cannot change:</b> the six signals,
-      the double-check, the retry rounds, and the lines left out of the
-      comparison. Those decide whether iRadar is right, and they are not
-      knobs.</p></div>
-  </section>
-
-  <!-- where things live -->
-  <section id="where" class="card">
-    <h2><span class="secn">15</span>Where things are</h2>
+    <h2><span class="secn">14</span>Settings</h2>
+    <p class="lede">{% if is_admin %}<a href="{{ url_for('settings_view') }}">Settings</a>{% else %}Admins only{% endif %}.
+      Today it checks <b>{{ every }} at {{ at_time }}</b>.</p>
     <ul class="map">
-      <li><a href="{{ url_for('index') }}">Dashboard</a>
-        <span>Every tracked page, its state, the filters and your review
-          queue.</span></li>
-      <li><a href="{{ url_for('search_items') }}">Content</a>
-        <span>Every document, video, image and board across all pages, and which
-          pages each appears on.</span></li>
-      <li><a href="{{ url_for('notes_page') }}">Notes</a>
-        <span>Everything anyone has written, newest first, and the box for
-          telling us something is broken, confusing or missing.</span></li>
-      <li>Explore
-        <span><a href="{{ url_for('hierarchy') }}">Hierarchy</a>: the site as a
-          tree. <a href="{{ url_for('charts_page') }}">Charts</a>: how complete
-          each page type is. <a href="{{ url_for('export_builder') }}">Export</a>:
-          any of it as a spreadsheet. <a href="{{ url_for('history') }}">Run
-          history</a>: every check and what it found.
-          <a href="{{ url_for('sentiment_page') }}">Sentiment analysis</a>:
-          mentions of the product families across the web (still being
-          built).</span></li>
-      <li><a href="{{ url_for('assets_page') }}">File updates</a>
-        <span>From the Updated files figure on the Dashboard.</span></li>
-      <li>Your avatar
-        <span>Top right. Your profile and email alerts, Settings, sign
-          out{% if is_admin %}, and Manage people{% endif %}.</span></li>
-      <li>Times
-        <span>Everything on screen is your local time, not the server&rsquo;s.</span></li>
+      <li>Schedule<span>Which days and what hour, in your time.</span></li>
+      <li>Sensitivity<span>How different the screenshot must be:
+        {{ s.visual_threshold }}% / {{ s.height_threshold }}px.</span></li>
+      <li>Components<span>What each page type <i>should</i> have.</span></li>
+      <li>Advanced<span>Shared read-only link, copy length limits, DAM / PIM /
+        AEM links, database backup.</span></li>
     </ul>
   </section>
 
-  <!-- account -->
-  <section id="account" class="card">
-    <h2><span class="secn">16</span>Your account</h2>
-    <p class="lede">Sign in with your Infineon email address.</p>
-    <p>Your profile holds your name, your password and the <b>Email alerts</b>
-      switch. Changing your name also updates it on notes you have already
-      written.</p>
-    <figure>
-      <img class="m-light" loading="lazy"
-           src="{{ url_for('static', filename='guide/account.png') }}" alt="My profile: avatar, name, role and password">
-      <img class="m-dark" loading="lazy"
-           src="{{ url_for('static', filename='guide/account-dark.png') }}" alt="My profile: avatar, name, role and password">
-      <figcaption>Your profile, under the avatar, top right.</figcaption>
-    </figure>
-    <ul class="map" style="margin-top:8px">
-      <li>Admin<span>Everything: people, settings, the page list, and starting a
-        check by hand.</span></li>
-      <li>Editor<span>Review updates and edit page details. Not settings, the
-        page list, or runs.</span></li>
-    </ul>
-    <p style="margin-top:12px">Everyone can write notes.</p>
-    <div class="note"><p>Please use a <b>passphrase</b>: three or four random
-      words, like <code>harbour-cactus-lantern-42</code>. Long beats
-      complicated.</p></div>
-  </section>
-
-  <!-- the rest of it -->
+  <!-- the rest -->
   <section id="know" class="card">
-    <h2><span class="secn">17</span>Worth knowing</h2>
+    <h2><span class="secn">15</span>Good to know</h2>
     <ul class="lim">
-      <li><b>Only the last {{ s.keep_snapshots }} captures of a page are kept.</b>
-        Enough to compare and to show a before and after, not an archive.
-        <br><span style="color:var(--muted)">Anything an open update needs is
-        never removed, however old.</span></li>
-      <li><b>Numbers never shift the list.</b> The pager and the filter chips
-        always sit in one row above the table, so filtering never pushes the
-        rows down while you read.</li>
-      <li><b>Redirects are followed and merged.</b> If two addresses land on
-        the same page it is watched once. A <code>?tab=</code> on the end is
-        not a redirect, only the same page opening on a tab.</li>
-      <li><b>Videos count where they sit.</b> <i>Videos &middot; On
-        page</i>, <i>&middot; News &amp; highlights</i> and <i>&middot;
-        Training</i> are separate components, so a page is not credited with a
-        video that is only in its news strip.</li>
-      <li><b>The server&rsquo;s disk is not backed up by anything else</b>, so
-        somebody has to keep a copy. {% if is_admin %}<a href="{{ url_for('settings_backup') }}">Download
-        the database</a>: it holds the page list, the ownership, every
-        decision and every note.{% else %}An admin can download it from
-        Settings.{% endif %}</li>
-    </ul>
-  </section>
-
-  <!-- honest limits -->
-  <section id="limits" class="card">
-    <h2><span class="secn">18</span>What it does not do</h2>
-    <ul class="lim">
-      <li><b>It does not find new pages by itself.</b> iRadar watches the
-        {{ '{:,}'.format(f.pages) }} pages it has been given. If Infineon
-        publishes a new one, somebody has to add it{% if is_admin %} under
-        <i>Add pages</i>{% endif %}.</li>
-      <li><b>A few finder pages</b> only capture their first page of results.</li>
-      <li><b>Gated documents</b>, the ones behind a MyInfineon login, cannot be
-        previewed, because all we can see is the login wall.</li>
-      <li><b>It does not watch continuously.</b> A change published and undone
-        between two checks is a change nobody sees.</li>
-      <li><b>It does not chase anyone beyond two emails</b>: the report and
-        Friday&rsquo;s reminder, to those who switched alerts on. The queue
-        waits on the Dashboard until somebody opens it.</li>
-      <li><b>It reports; it does not judge.</b> Whether a change matters is your
-        call. iRadar only promises to notice it.</li>
+      <li><b>It only watches the pages it has.</b> New pages on infineon.com
+        need adding{% if is_admin %} with <i>Add pages</i>{% endif %}.</li>
+      <li><b>It keeps the last {{ s.keep_snapshots }} captures</b>, not a full
+        history.</li>
+      <li><b>It checks on a schedule</b>, so a change made and undone in
+        between is never seen.</li>
+      <li><b>Files behind a MyInfineon login</b> can&rsquo;t be previewed.</li>
+      <li><b>Admins</b> can do everything. <b>Editors</b> review and edit pages.
+        Everyone can leave notes.</li>
+      <li><b>Something broken or confusing?</b> Say so at the top of
+        <a href="{{ url_for('notes_page') }}">Notes</a>.</li>
     </ul>
   </section>
 
