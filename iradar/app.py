@@ -1434,13 +1434,18 @@ for _stem, _cat, _label in _CONTENT_ATTRS + _COMPONENT_ATTRS:
     ATTR_FILTERS["no" + _stem] = (
         "No " + _label,
         _nohas(_cat) + " AND NOT " + _offered(_label))
-# a video is a video wherever it appears - a video card inside News &
-# highlights counts too ("if a video is in the news it should also count").
-_VIDEO_SQL = ("EXISTS(SELECT 1 FROM items i WHERE i.url_id=u.id"
-              " AND i.category IN ('videos','news'))")
-ATTR_FILTERS["hasvideos"] = ("Has videos", _VIDEO_SQL)
-ATTR_FILTERS["novideos"] = ("No videos",
-                            _KNOWN_GOOD + " AND NOT " + _VIDEO_SQL)
+# Videos, by where they sit (18 Nov 2026): the page's own Videos section,
+# video cards in News & highlights, and videos in the Training tab are three
+# components, "Videos · On page / News & highlights / Training". News and
+# training videos are read into flags (vid_news / vid_training) by the
+# capture: only a card that is really a video counts, not every news card.
+VID = "Videos " + chr(183) + " "
+VID_PAGE = VID + "On page"
+for _k, _l in (("hasvideos", "Has " + VID_PAGE), ("emptyvideos", VID_PAGE + " present but empty"),
+               ("novideos", "No " + VID_PAGE)):
+    ATTR_FILTERS[_k] = (_l, ATTR_FILTERS[_k][1])
+VID_FLAGS = [("vidnews", "vid_news", "News & highlights"),
+             ("vidtrain", "vid_training", "Training")]
 # An EVAL BOARD linked in Design resources. The link is already captured on
 # every page; what identifies it is its address, because an evaluation board
 # lives under /evaluation-board/ whatever the entry happens to be titled.
@@ -1616,6 +1621,12 @@ ATTR_FILTERS["nobuyopts"] = ("No view buying options",
 CONTENT_KEYS = []
 for _stem, _c, _l in _CONTENT_ATTRS:
     CONTENT_KEYS += ["has" + _stem, "empty" + _stem, "no" + _stem]
+for _stem, _b, _l in VID_FLAGS:
+    ATTR_FILTERS["has" + _stem] = ("Has " + VID + _l, _flag(_b, "has_content"))
+    ATTR_FILTERS["no" + _stem] = ("No " + VID + _l, _KNOWN_GOOD + " AND " + _flag_read(_b)
+                                  + " AND NOT " + _flag(_b, "has_content"))
+_at = CONTENT_KEYS.index("novideos") + 1
+CONTENT_KEYS[_at:_at] = [k for _s, _b, _l in VID_FLAGS for k in ("has" + _s, "no" + _s)]
 # an eval board is content a page offers, so it lives with the content -
 # these existed as filters for a week with no way to reach them but a
 # hand-typed URL, which is a feature only for whoever built it
@@ -1674,7 +1685,9 @@ COMPONENTS = [
     # the status badge under a part's title (Active and preferred, Discontinued..)
     ("product_status",     "Product status",        "flag", "product_status"),
     # back by request (11 Nov 2026): videos on a page, mostly eval boards
-    ("videos",             "Videos",                "cat",  "videos"),
+    ("videos",             VID_PAGE,                "cat",  "videos"),
+    ("vid_news",           VID + "News & highlights", "flag", "vid_news"),
+    ("vid_training",       VID + "Training",        "flag", "vid_training"),
     ("overview",          "Overview",              "cat",  "overview"),
     ("parametrics",        "Parametrics",           "tab",  "parametrics"),
     ("ordering",           "Ordering",              "tab",  "ordering"),
@@ -1978,7 +1991,8 @@ def _component_counts(con):
         for block in ("product_table", "developer_community", "hero_image",
                       "product_status", "meta_description", "primary_document",
                       "package_link", "buy_button",
-                      *[_b for _s, _b, _l in DR_TABS]):
+                      *[_b for _s, _b, _l in DR_TABS],
+                      *[_b for _s, _b, _l in VID_FLAGS]):
             if (fl.get(block) or {}).get("exists"):
                 bump(et, block)
         def _loadset(j):
@@ -2715,9 +2729,6 @@ def index():
         has = cat_pages.get(_cat, 0)
         attr_counts["has" + _stem] = has
         attr_counts["no" + _stem] = checked - has
-    # videos filter spans videos + news cards, so its count must too
-    attr_counts["hasvideos"] = vid_pages
-    attr_counts["novideos"] = checked - vid_pages
 
     # "Not live" = the server answers 4xx. A blank page is its own state,
     # counted separately - not folded in here.
@@ -6678,9 +6689,6 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
     cat_n = {r["category"]: r["n"] for r in con.execute(
         "SELECT category, COUNT(DISTINCT url_id) n FROM items"
         " WHERE url_id IN (" + pages_in + ") GROUP BY category", params)}
-    vid_n = con.execute(
-        "SELECT COUNT(DISTINCT url_id) n FROM items WHERE url_id IN ("
-        + pages_in + ") AND category IN ('videos','news')", params).fetchone()["n"]
     pk = PERFECT_KEYS
     cols = ", ".join(f"SUM(CASE WHEN {_perfect_sql(k)} THEN 1 ELSE 0 END) AS k{i}"
                      for i, k in enumerate(pk))
@@ -6690,7 +6698,7 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
     # derived exactly as index() derives the static ones, so the live count
     # and the page you land on after Apply cannot disagree
     for _stem, _cat, _ in _CONTENT_ATTRS + _COMPONENT_ATTRS:
-        have = vid_n if _stem == "videos" else cat_n.get(_cat, 0)
+        have = cat_n.get(_cat, 0)
         out["a_has" + _stem] = have
         out["a_no" + _stem] = max(0, checked - have)
     # types, and the levels nested under them
@@ -9211,7 +9219,7 @@ CHART_CLUSTERS = [
 # hero) stays a component to tick, no longer a key one.
 EB_KEY_COMPONENTS = ["Metadata", "Buy button", "Parametrics", "Primary document",
                      "Hero image", "Description", "Key features", "Subheadline",
-                     "Benefits", "Bill of material", "Videos",
+                     "Benefits", "Bill of material", VID_PAGE,
                      DR + "Development tools", DR + "Embedded software"]
 _CHARTS_CACHE = {}
 
@@ -9228,7 +9236,8 @@ _KEY_HAS = {"Hero image": "hashero", "Description": "hasdescr",
             "Parametrics": "hasparametrics", "Metadata": "hasmetadata",
             "Primary document": "hasprimarydoc", "Package page link": "haspackage",
             "Buy button": "hasbuy",
-            "Bill of material": "hasbom", "Images": "hasimages", "Videos": "hasvideos",
+            "Bill of material": "hasbom", "Images": "hasimages", VID_PAGE: "hasvideos",
+            VID + "News & highlights": "hasvidnews", VID + "Training": "hasvidtrain",
             "Ordering": "hasordering", "Diagram": "hasdiagrams", "Documents": "hasdocs",
             "Design resources": "hasdesign", "Partner solutions": "haspartners",
             "Developer community": "hascommunity", "News & highlights": "hasnews",
@@ -9240,12 +9249,14 @@ PTP_COMPONENTS = KEY_COMPONENTS + [DR_PCB, "Ordering", "Diagram", "Documents",
                                    "Design resources", "Partner solutions",
                                    "Developer community", "News & highlights",
                                    "View buying options", "Product details",
-                                   "Featured products"] + [
+                                   "Featured products",
+                                   VID + "News & highlights", VID + "Training"] + [
                                    DR + _l for _s, _b, _l in DR_TABS[1:]]
 EB_COMPONENTS = EB_KEY_COMPONENTS + [c for c in [
     "Images", "Ordering", "Applications", "Diagram", "Documents", "Design resources",
     "Partner solutions", "Developer community", "News & highlights", "Product details",
-    "Register product", "Package page link"] + [DR + _l for _s, _b, _l in DR_TABS]
+    "Register product", "Package page link", VID + "News & highlights", VID + "Training"
+    ] + [DR + _l for _s, _b, _l in DR_TABS]
     if c not in EB_KEY_COMPONENTS]
 _LIVE_PTP = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
              " AND u.url LIKE '%/part/%'")

@@ -3305,3 +3305,36 @@ def test_the_parsed_flags_follow_every_write():
     con.execute("UPDATE urls SET flags='' WHERE id=960")
     assert con.execute("SELECT fj FROM urls WHERE id=960").fetchone()[0] is None
     con.close()
+
+
+def test_videos_split_by_where_they_sit():
+    """Videos · On page is the Videos section alone; video cards in News &
+    highlights and in Training are components of their own."""
+    import json as _json
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    rows = {"SEC": {}, "NEWS": {"vid_news": {"exists": True, "has_content": True, "count": 1}},
+            "NONE": {"vid_news": {"exists": False, "has_content": False, "count": 0}}}
+    for name, fl in rows.items():
+        con.execute("INSERT INTO urls(url, active, ptype, level, last_checked, last_status, flags)"
+                    " VALUES(?, 1, 'Part', 'PTP', 'x', 'unchanged', ?)",
+                    ("https://www.infineon.com/part/" + name, _json.dumps(fl)))
+    uid = con.execute("SELECT id FROM urls WHERE url LIKE '%/SEC'").fetchone()[0]
+    con.execute("INSERT INTO items(url_id, category, title, item_key) VALUES(?, 'videos', 'v', 'kv1')", (uid,))
+    con.commit()
+    con.close()
+
+    def names(attr):
+        w, p = app._url_filter("", [], [], [attr])
+        c = db.connect()
+        try:
+            return sorted(r[0].rsplit("/", 1)[-1] for r in c.execute("SELECT u.url FROM urls u " + w, p))
+        finally:
+            c.close()
+    assert names("hasvideos") == ["SEC"], "news videos are not the Videos section"
+    assert names("hasvidnews") == ["NEWS"]
+    assert names("novidnews") == ["NONE"], "SEC was never read for news videos"
+    import capture
+    assert capture._videolike_item({"url": "https://x/videos/abc", "meta": ""})
+    assert capture._videolike_item({"url": "", "meta": "Video | 3:21"})
+    assert not capture._videolike_item({"url": "", "meta": "Video Doorbell"})

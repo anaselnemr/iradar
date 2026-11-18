@@ -813,6 +813,15 @@ BUY_SETTLE_SAME = 3            # ...until this many reads in a row agree
 BUY_SETTLE_MAX_MS = 6000       # ...or this long has passed
 
 
+def _videolike_item(it):
+    """A news / training card that is really a video - the same four signals
+    as the app's _videolike."""
+    u = (it.get("url") or "").lower()
+    m = it.get("meta") or ""
+    return bool(".mp4" in u or "/videos/" in u or re.search(r"[0-9]:[0-9][0-9]", m)
+                or "|Video|" in "|" + m.replace(" ", "") + "|")
+
+
 async def _settled_buy_box(page, first):
     """The buy box once it stops changing: read every half second until
     three reads agree (1.5 s) or six seconds pass; the last read wins."""
@@ -3225,6 +3234,17 @@ async def capture_one(browser, url, out_dir):
                       sum(1 for it in sections.get("design_resources") or []
                           if isinstance(it, dict)
                           and (it.get("grp") or "").strip().lower() == _tab))
+                _fl[_block] = {"exists": _n > 0, "has_content": _n > 0, "count": _n}
+        except Exception:
+            pass
+        # Videos in News & highlights and in the Training tab, each its own
+        # component: only a card that is really a video (an .mp4, a /videos/
+        # path, an m:ss duration, or the site's own "Video" label)
+        try:
+            _fl = sections.setdefault("flags", {})
+            for _block, _cat in (("vid_news", "news"), ("vid_training", "trainings")):
+                _n = sum(1 for it in sections.get(_cat) or []
+                         if isinstance(it, dict) and _videolike_item(it))
                 _fl[_block] = {"exists": _n > 0, "has_content": _n > 0, "count": _n}
         except Exception:
             pass
