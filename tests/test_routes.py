@@ -262,7 +262,8 @@ def test_offline_delta_appears_only_when_it_changed_and_reads_by_direction():
             assert inline.text == label
             assert inline.get("style") == "color:" + colour,                 "%s should read %s" % (label, colour)
             assert inline.get("title") == "Change in offline pages this run"
-            assert (tile.find("div[@class='detail']").text or "").endswith("% of all pages")
+            # no line under it any more: only the review backlogs keep one
+            assert not (tile.find("div[@class='detail']").text or "").strip()
             # the standing count itself is ink, never an alarm colour
             n = tile.find("div[@class='n']")
             assert "var(--err)" not in (n.get("style") or ""),                 "the offline COUNT must not be red - only its change is"

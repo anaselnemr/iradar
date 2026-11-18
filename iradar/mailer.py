@@ -846,15 +846,16 @@ def render_report(d, base_url, when_label):
     # news (Paused, Archive). No Live: with offline pages archived, Total
     # pages is the live inventory.
     readings = [
-        ("Live pages", pages, _ACCENT, "{:,} captured".format(d.get("captured", 0)),
+        # only the review backlogs keep a line under the figure, as on the Dashboard
+        ("Live pages", pages, _ACCENT, "",
          suffix(delta, _GOOD if delta > 0 else _BAD if delta < 0 else _MUT)),
         ("Recently offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
-         "%d%% of all pages" % round(d.get("notlive", 0) * 100 / (pages or 1)),
+         "",
          suffix(d.get("offline_delta", 0), _BAD)),
         ("Updated", n, "#ea580c" if n else _MUT,
          "{:,} awaiting review".format(d.get("open_updates", n)), ""),
         ("Content", d.get("content_updates", 0), "#168b7d" if d.get("content_updates") else _MUT,
-         "in the latest report", ""),
+         "", ""),
         ("Updated files", fu, "#7c3aed" if fu else _MUT,
          "{:,} awaiting review".format(d.get("open_files", fu)), ""),
     ]

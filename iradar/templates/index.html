@@ -85,12 +85,15 @@
     <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages but not the Archive. The delta counts pages added or removed since the previous full check; pausing or archiving a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Live pages</div>
-      <div class="detail">{{ '{:,}'.format(counts.checked or 0) }} captured</div>
+      {#- only the review backlogs keep a line under the figure (Updated and
+          Updated files): every other line repeated the number. Empty lines
+          stay so the figures sit level. -#}
+      <div class="detail" aria-hidden="true"></div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="Pages answering HTTP 404 or 410 that are not archived yet. Select them and choose Archive to set them aside. The run delta is newly offline pages minus pages that came back live.">
       <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% set offline_delta = [offline_delta or 0, counts.notlive or 0]|min if (offline_delta or 0) > 0 else offline_delta %}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
       <div class="l">Recently offline</div>
-      <div class="detail">{{ (((counts.notlive or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
+      <div class="detail" aria-hidden="true"></div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
       <div class="n" style="color:{{ 'var(--warn)' if latest_updates else 'var(--muted)' }}">{{ '{:,}'.format(latest_updates or 0) }}</div>
@@ -105,7 +108,7 @@
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
       <div class="n" style="color:{{ 'var(--stat-content)' if content_updates else 'var(--muted)' }}">{{ '{:,}'.format(content_updates or 0) }}</div>
       <div class="l">Content</div>
-      <div class="detail">in the latest report</div>
+      <div class="detail" aria-hidden="true"></div>
     </a>
     {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
     <a class="report-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
@@ -116,14 +119,12 @@
     <a class="report-stat st-paused" href="{{ url_for('index', status='paused') }}" title="Pages excluded from automatic and full manual checks. They stay in the inventory and can be resumed. Archived pages are not counted here.">
       <div class="n" style="color:var(--muted)">{{ '{:,}'.format(counts.paused or 0) }}</div>
       <div class="l">Paused</div>
-      {%- set others = (counts.paused or 0) - (counts.paused_offline or 0) %}
-      {%- set off = 'all offline' if counts.paused_offline and counts.paused_offline == counts.notlive else '{:,}'.format(counts.paused_offline or 0) ~ ' offline' %}
-      <div class="detail">{% if counts.paused and not counts.paused_offline %}none offline{% elif counts.paused %}incl. {{ off }}{% if others %} + {{ '{:,}'.format(others) }} other{% endif %}{% else %}none paused{% endif %}</div>
+      <div class="detail" aria-hidden="true"></div>
     </a>
     <a class="report-stat st-archive{{ ' on' if in_archive }}" href="{{ url_for('index', archive=1) }}" title="Offline pages set aside. They are not checked and count in no other figure, list, chart or export. Open one and choose Restore to bring it back.">
       <div class="n" style="color:var(--muted)">{{ '{:,}'.format(counts.archived or 0) }}</div>
       <div class="l">Archive</div>
-      <div class="detail">not in totals</div>
+      <div class="detail" aria-hidden="true"></div>
     </a>
   </div>
 

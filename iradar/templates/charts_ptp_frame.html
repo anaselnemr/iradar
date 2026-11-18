@@ -209,7 +209,7 @@ DATA.pls.forEach(pl=>addCard('pl-'+pl.pl,pl.label+' · PTPs by component',compon
 DATA.components.forEach((c,i)=>addCard('component-'+i,c,DATA.pls.map(pl=>({label:pl.label,group:pl.bl,have:pl.have[c],total:pl.ptps,value:pl.have[c]/pl.ptps,unit:'PTPs'})),{type:'columns',percent:true,target:'#drill-grid'}));
 // Drill-down: tick one or more business lines, product lines or components.
 let drillKind='bl',drillItems=null;try{const v=JSON.parse(localStorage.getItem('ptp-drill-v2'));if(v&&['bl','pl','component'].includes(v.kind)){drillKind=v.kind;if(Array.isArray(v.items))drillItems=new Set(v.items.map(String));}}catch{}
-function drillOptions(){return drillKind==='bl'?activeBLs().map(b=>[b,b]):drillKind==='pl'?activePLs().map(p=>[p.pl,p.label]):activeComponents().map(c=>[c,c]);}
+function drillOptions(){return drillKind==='bl'?activeBLs().map(b=>[b,b]):drillKind==='pl'?activePLs().map(p=>[p.pl,p.label]):[...DATA.keyComponents,...DATA.components.filter(c=>!DATA.keyComponents.includes(c))].map(c=>[c,c]);}
 const drillId=v=>drillKind==='component'?'component-'+DATA.components.indexOf(v):drillKind+'-'+v;
 function syncDrill(){
  const opts=drillOptions();if(!drillItems)drillItems=new Set(opts.slice(0,1).map(o=>o[0]));
@@ -242,7 +242,7 @@ function refreshData(){
   }
  });
  $('#stat-ptps').textContent=fmt(n);
- $('#stat-pls').textContent=pls.length;
+ $('#stat-pls').textContent=pls.length<DATA.pls.length?pls.length+' of '+DATA.pls.length:pls.length;$('#stat-pls').title=pls.length<DATA.pls.length?'Product lines with PTPs under the current filters (status, online/offline, scope), of '+DATA.pls.length+' in all':'';
  $('#choose-pl').textContent='Product lines · '+pls.length;
  $('#stat-completion').textContent=pct(n?allCount(pls)/n:0);
  syncDrill();
