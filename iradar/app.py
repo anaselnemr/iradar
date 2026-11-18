@@ -9252,10 +9252,12 @@ PTP_COMPONENTS = KEY_COMPONENTS + [DR_PCB, "Ordering", "Diagram", "Documents",
                                    "Featured products",
                                    VID + "News & highlights", VID + "Training"] + [
                                    DR + _l for _s, _b, _l in DR_TABS[1:]]
+# no EB has News & highlights or a package page link (none of 492, 18 Nov
+# 2026): offering them only made every EB "missing" them under All
 EB_COMPONENTS = EB_KEY_COMPONENTS + [c for c in [
     "Images", "Ordering", "Applications", "Diagram", "Documents", "Design resources",
-    "Partner solutions", "Developer community", "News & highlights", "Product details",
-    "Register product", "Package page link", VID + "News & highlights", VID + "Training"
+    "Partner solutions", "Developer community", "Product details",
+    "Register product", VID + "Training"
     ] + [DR + _l for _s, _b, _l in DR_TABS]
     if c not in EB_KEY_COMPONENTS]
 _LIVE_PTP = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
