@@ -119,6 +119,43 @@ def reconcile_live_statuses(con):
     ).rowcount
 
 
+# OFFLINE, ONE DEFINITION. The server's answer is the fact: 404 or 410 means
+# the page is gone. last_status='notlive' is the run's label for the same
+# thing, and every writer goes through sync_offline() so the two can never
+# disagree (they used to be set in different places: the figures counted the
+# HTTP code, the runner and the charts read the label).
+OFFLINE_SQL = "IFNULL(last_http,0) IN (404,410)"
+
+
+def sync_offline(con, url_id=None):
+    """Make last_status agree with last_http for one page (or all of them):
+    a 404/410 is 'notlive'; a page labelled 'notlive' that answers again goes
+    back to 'changed' while an update is open, else 'unchanged'."""
+    where, args = ("WHERE id=?", (url_id,)) if url_id is not None else ("", ())
+    con.execute(
+        "UPDATE urls SET last_status=CASE"
+        "  WHEN " + OFFLINE_SQL + " THEN 'notlive'"
+        "  WHEN EXISTS(SELECT 1 FROM changes c WHERE c.url_id=urls.id AND c.reviewed=0)"
+        "    THEN 'changed'"
+        "  ELSE 'unchanged' END "
+        + where + (" AND " if where else "WHERE ") +
+        "((" + OFFLINE_SQL + " AND IFNULL(last_status,'')<>'notlive')"
+        " OR (NOT " + OFFLINE_SQL + " AND last_status='notlive'"
+        "     AND last_http IS NOT NULL))", args)
+
+
+def open_run(con, include_stopped=False):
+    """The run row that is not finished. A run a person STOPPED with suspects
+    parked is not finished either (so the next check can judge them) but it
+    is not running - include_stopped=False leaves it out. One definition for
+    'is there an unfinished run', used by resume and by deploy checks."""
+    r = con.execute("SELECT * FROM runs WHERE finished IS NULL"
+                    " ORDER BY id DESC LIMIT 1").fetchone()
+    if r and not include_stopped and (r["stopped"] or ""):
+        return None
+    return r
+
+
 # The inventory: every page that is not archived. Archived pages are offline
 # pages set aside on purpose - they count nowhere but the Archive.
 IN_INVENTORY = "IFNULL(archived,'')=''"
@@ -628,6 +665,13 @@ def init_db():
     # archived page - an offline page set aside - leaves every count, list,
     # chart and export; it lives on the Archive view only, and is not checked.
     _ensure_column(con, "urls", "archived", "TEXT DEFAULT ''")
+    # WHO decided an update and WHEN. Without them, 2,787 page updates and 23
+    # file updates were approved one morning and nobody could say by whom.
+    for _t in ("changes", "asset_changes"):
+        _ensure_column(con, _t, "reviewed_at", "TEXT DEFAULT ''")
+        _ensure_column(con, _t, "reviewed_by", "TEXT DEFAULT ''")
+    # one definition of offline: repair any row the two encodings disagree on
+    sync_offline(con)
     # ownership metadata from the CSS Pages report (per page type): BL business
     # line, PL product line, CM content manager, Owner. Imported by URL match,
     # then hand-editable on the page like the level. meta_flag holds an import

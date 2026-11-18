@@ -2080,6 +2080,15 @@ def _squash_sql(col, chars=_SQUASH_CHARS):
     return expr
 
 
+def _reviewer():
+    """The name a review is filed under: the signed-in person."""
+    try:
+        u = current_user()
+        return ((u["name"] or u["email"] or "") if u is not None else "")[:80]
+    except Exception:
+        return ""
+
+
 def _in_archive():
     """True on the Archive view (?archive=1): the dashboard, its counts, its
     bulk actions and its export then speak about archived pages only."""
@@ -2806,7 +2815,10 @@ def urls_bulk():
             shutil.rmtree(db.CHANGE_DIR / str(uid), ignore_errors=True)
         flash(f"Removed {len(ids)} URL(s) and their stored snapshots.")
     elif action in ("pause", "resume"):
-        con.execute(f"UPDATE urls SET active=? WHERE id IN ({marks})",
+        # archived pages stay paused: Restore is the way back, so a page can
+        # never be checked while the Archive hides it
+        con.execute(f"UPDATE urls SET active=? WHERE id IN ({marks})"
+                    " AND IFNULL(archived,'')=''",
                     [1 if action == "resume" else 0] + ids)
         con.commit()
         flash(f"{'Resumed' if action == 'resume' else 'Paused'} {len(ids)} URL(s).")
@@ -2819,8 +2831,10 @@ def urls_bulk():
         flash(f"Restored {n} page(s) from the Archive. The next check reads"
               " them again.")
     elif action == "accept":
-        con.execute(f"UPDATE changes SET reviewed=1, resolution='approve'"
-                    f" WHERE url_id IN ({marks}) AND reviewed=0", ids)
+        con.execute(f"UPDATE changes SET reviewed=1, resolution='approve',"
+                    f" reviewed_at=?, reviewed_by=?"
+                    f" WHERE url_id IN ({marks}) AND reviewed=0",
+                    [db.now_iso(), _reviewer()] + ids)
         con.execute(f"UPDATE urls SET last_status='unchanged'"
                     f" WHERE id IN ({marks}) AND last_status IN ('changed','rejected')",
                     ids)
@@ -2919,7 +2933,8 @@ def urls_archive(url_id):
 @app.route("/urls/<int:url_id>/toggle", methods=["POST"])
 def urls_toggle(url_id):
     con = db.connect()
-    con.execute("UPDATE urls SET active = 1 - active WHERE id=?", (url_id,))
+    con.execute("UPDATE urls SET active = 1 - active WHERE id=?"
+                " AND IFNULL(archived,'')=''", (url_id,))
     con.commit()
     con.close()
     return redirect(url_for("index"))
@@ -4111,8 +4126,9 @@ def change_resolve(change_id):
     if not c:
         con.close()
         abort(404)
-    con.execute("UPDATE changes SET reviewed=1, resolution=? WHERE id=?",
-                (resolution, change_id))
+    con.execute("UPDATE changes SET reviewed=1, resolution=?, reviewed_at=?,"
+                " reviewed_by=? WHERE id=?",
+                (resolution, db.now_iso(), _reviewer(), change_id))
     # HAS THE PAGE BEEN READ AGAIN SINCE? A change compares two captures, and
     # a reject rewinds the library to the older of them. That is right while
     # the newer one is still what the page currently holds - and wrong the
@@ -4173,56 +4189,146 @@ def change_resolve(change_id):
 # page compare (no URL changed, no text moved). asset_watch stores each file's
 # server validators after every full run; when one moves, it lands here.
 
+_ASSET_KINDS = (("document", "Documents"), ("image", "Images"), ("video", "Videos"))
+_ASSET_PER = 50
+
+
+def _asset_filter(tab, kind, q):
+    """The File updates list's WHERE: tab (to review / reviewed), kind, and a
+    search over the file address. One builder for the list, the counts, the
+    select-all and the bulk actions, so they always mean the same rows."""
+    where = ["reviewed=?"]
+    args = [1 if tab == "reviewed" else 0]
+    if kind in dict(_ASSET_KINDS):
+        where.append("kind=?")
+        args.append(kind)
+    if q:
+        where.append("url LIKE ?")
+        args.append("%" + q + "%")
+    return " WHERE " + " AND ".join(where), args
+
+
+def _asset_args():
+    tab = "reviewed" if request.values.get("tab") == "reviewed" else "open"
+    kind = request.values.get("kind", "")
+    q = (request.values.get("q") or "").strip()[:120]
+    return tab, kind, q
+
+
+@app.template_filter("hbytes")
+def hbytes_filter(n):
+    """1234567 -> '1.2 MB'."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return ("%d %s" % (n, unit)) if unit == "B" else ("%.1f %s" % (n, unit))
+        n /= 1024
+
+
 @app.route("/assets")
 def assets_page():
     import asset_watch
+    tab, kind, q = _asset_args()
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
     con = db.connect()
-    rows = con.execute(
-        "SELECT * FROM asset_changes WHERE reviewed=0"
-        " ORDER BY ts DESC, id DESC LIMIT 500").fetchall()
-    pages = {}
-    for r in rows:
-        # page titles live on the SNAPSHOT, not the url row (u.page_title does
-        # not exist - it 500'd the whole page); take the latest good capture's.
-        ps = con.execute(
-            "SELECT DISTINCT u.id,"
-            " COALESCE(NULLIF(u.title_override,''), NULLIF((SELECT page_title"
-            "   FROM snapshots WHERE url_id=u.id AND status='ok'"
-            "   AND page_title<>'' ORDER BY id DESC LIMIT 1),''),"
-            " NULLIF(u.label,''), u.url) t"
-            " FROM items i JOIN urls u ON u.id=i.url_id"
-            " WHERE i.item_url=? LIMIT 6", (r["url"],)).fetchall()
-        pages[r["id"]] = ps
-    seeded = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
-    reviewed_n = con.execute(
-        "SELECT COUNT(*) FROM asset_changes WHERE reviewed=1").fetchone()[0]
-    con.close()
-    return render_template("assets.html", rows=rows, pages=pages,
-                           seeded=seeded, reviewed_n=reviewed_n,
-                           astate=asset_watch.ASSET_STATE)
+    try:
+        where, args = _asset_filter(tab, kind, q)
+        total = con.execute("SELECT COUNT(*) FROM asset_changes" + where,
+                            args).fetchone()[0]
+        pages = max(1, -(-total // _ASSET_PER))
+        page = min(page, pages)
+        rows = con.execute(
+            "SELECT * FROM asset_changes" + where
+            + (" ORDER BY reviewed_at DESC, id DESC" if tab == "reviewed"
+               else " ORDER BY ts DESC, id DESC") + " LIMIT ? OFFSET ?",
+            args + [_ASSET_PER, (page - 1) * _ASSET_PER]).fetchall()
+        # the pages each file sits on - titles live on the snapshot
+        used = {}
+        for r in rows:
+            used[r["id"]] = con.execute(
+                "SELECT DISTINCT u.id,"
+                " COALESCE(NULLIF(u.title_override,''), NULLIF((SELECT page_title"
+                "   FROM snapshots WHERE url_id=u.id AND status='ok'"
+                "   AND page_title<>'' ORDER BY id DESC LIMIT 1),''),"
+                " NULLIF(u.label,''), u.url) t"
+                " FROM items i JOIN urls u ON u.id=i.url_id"
+                " WHERE i.item_url=? LIMIT 500", (r["url"],)).fetchall()
+        tabs = {t: con.execute("SELECT COUNT(*) FROM asset_changes WHERE reviewed=?",
+                               (1 if t == "reviewed" else 0,)).fetchone()[0]
+                for t in ("open", "reviewed")}
+        w_nokind, a_nokind = _asset_filter(tab, "", q)
+        kinds = {r["kind"]: r["n"] for r in con.execute(
+            "SELECT kind, COUNT(*) n FROM asset_changes" + w_nokind
+            + " GROUP BY kind", a_nokind)}
+        tracked = con.execute("SELECT COUNT(*), MAX(last_checked) FROM assets"
+                              ).fetchone()
+    finally:
+        con.close()
+
+    def aurl(**over):
+        base = {"tab": tab if tab != "open" else None, "kind": kind or None,
+                "q": q or None, "page": page if page > 1 else None}
+        base.update(over)
+        return url_for("assets_page", **{k: v for k, v in base.items() if v})
+
+    return render_template(
+        "assets.html", rows=rows, used=used, tab=tab, kind=kind, q=q,
+        page=page, pages=pages, total=total, per_page=_ASSET_PER, tabs=tabs,
+        kinds=[(k, label, kinds.get(k, 0)) for k, label in _ASSET_KINDS
+               if kinds.get(k) or k == kind],
+        kinds_all=sum(kinds.values()), tracked=tracked[0] or 0,
+        last_checked=tracked[1] or "", aurl=aurl,
+        astate=asset_watch.ASSET_STATE)
 
 
 @app.route("/assets/review", methods=["POST"])
 def assets_review():
-    ids = request.form.getlist("id")
+    """Mark file updates reviewed - or reopen them - by ticked ids or every
+    row the list's filter matches; each one filed with who and when."""
+    tab, kind, q = _asset_args()
+    reopen = request.form.get("action") == "reopen"
     con = db.connect()
-    if request.form.get("all"):
-        con.execute("UPDATE asset_changes SET reviewed=1 WHERE reviewed=0")
-        flash("All file updates marked as reviewed.")
-    elif ids:
-        marks = ",".join("?" * len(ids))
-        con.execute(
-            f"UPDATE asset_changes SET reviewed=1 WHERE id IN ({marks})", ids)
-        flash(f"{len(ids)} file update(s) marked as reviewed.")
-    con.commit()
-    con.close()
-    return redirect(url_for("assets_page"))
+    try:
+        if request.form.get("all_matching") == "1":
+            where, args = _asset_filter(tab, kind, q)
+            ids = [r[0] for r in con.execute("SELECT id FROM asset_changes" + where,
+                                             args)]
+        else:
+            ids = [int(i) for i in request.form.getlist("id") if str(i).isdigit()]
+        n = 0
+        for i in range(0, len(ids), 800):
+            chunk = ids[i:i + 800]
+            marks = ",".join("?" * len(chunk))
+            if reopen:
+                cur = con.execute(
+                    f"UPDATE asset_changes SET reviewed=0, reviewed_at='',"
+                    f" reviewed_by='' WHERE reviewed=1 AND id IN ({marks})", chunk)
+            else:
+                cur = con.execute(
+                    f"UPDATE asset_changes SET reviewed=1, reviewed_at=?,"
+                    f" reviewed_by=? WHERE reviewed=0 AND id IN ({marks})",
+                    [db.now_iso(), _reviewer()] + chunk)
+            n += cur.rowcount
+        con.commit()
+    finally:
+        con.close()
+    if n:
+        flash(("Reopened %d file update%s." if reopen else
+               "Marked %d file update%s reviewed.") % (n, "" if n == 1 else "s"))
+    nxt = request.form.get("next") or url_for("assets_page")
+    return redirect(nxt if nxt.startswith("/") else url_for("assets_page"))
 
 
 @app.route("/assets/run", methods=["POST"])
 def assets_run():
     import asset_watch
-    if runner.RUN_STATE.get("running"):
+    if runner.is_running():
         flash("A page check is running — the file check starts by itself when "
               "it finishes.")
     elif asset_watch.run_in_background():
@@ -4447,7 +4553,7 @@ def sentiment_page():
                            avg_all=scored["avg"], src_totals=src_totals,
                            filtered_total=filtered_total,
                            last_collected=last_collected,
-                           capture_running=bool(runner.RUN_STATE.get("running")),
+                           capture_running=bool(runner.is_running()),
                            sources=sn.SOURCES,
                            ready_keys={s["key"] for s in sn.sources_ready()},
                            sel_entity=ent, sel_source=src, q=q,
@@ -4565,14 +4671,14 @@ def sentiment_status():
     saying the truth as states change under an open page."""
     import sentiment as sn
     out = dict(sn.SENT_STATE)
-    out["capture_running"] = bool(runner.RUN_STATE.get("running"))
+    out["capture_running"] = bool(runner.is_running())
     return jsonify(out)
 
 
 @app.route("/sentiment/collect", methods=["POST"])
 def sentiment_collect():
     import sentiment as sn
-    if runner.RUN_STATE.get("running"):
+    if runner.is_running():
         flash("A page check is running — collect mentions after it finishes "
               "(they share the network).")
     elif sn.run_collect_background():
@@ -4909,7 +5015,7 @@ def run_now():
 @app.route("/pause", methods=["POST"])
 def pause_run():
     """Hold a running capture: in-flight pages finish, no new ones start."""
-    if not runner.RUN_STATE.get("running"):
+    if not runner.is_running():
         return jsonify({"ok": False, "paused": False})
     runner.RUN_STATE["paused"] = True
     return jsonify({"ok": True, "paused": True})
@@ -4927,7 +5033,7 @@ def stop_run():
     """End a running capture for good: in-flight pages finish and are saved,
     nothing new starts, and the run finalises. Everything captured so far is
     kept (each page was committed as it completed)."""
-    if not runner.RUN_STATE.get("running"):
+    if not runner.is_running():
         return jsonify({"ok": False})
     runner.RUN_STATE["stopping"] = True
     runner.RUN_STATE["paused"] = False       # release any hold so it can wind down
@@ -5014,7 +5120,7 @@ def _resume_on_boot():
     run finished, so a deliberate stop stays stopped.
     """
     time.sleep(25)                      # let the web server answer first
-    if runner.RUN_STATE.get("running"):
+    if runner.is_running():
         return
     con = db.connect()
     try:
@@ -5834,7 +5940,7 @@ def _collect_mentions_after_run():
         con.close()
         if not last or (last["total"] or 0) < 50:
             return
-        if runner.RUN_STATE.get("running"):
+        if runner.is_running():
             return
         if sn.run_collect_background():
             print("[post-run] collecting mentions across "
@@ -7124,7 +7230,7 @@ def _prewarm_docs():
         # never compete with a live capture: a 7k-file download storm shares
         # Infineon's bot-guard with the page captures. Wait until the run is
         # idle, then pre-render. On-demand clicks still render instantly.
-        while runner.RUN_STATE.get("running"):
+        while runner.is_running():
             time.sleep(60)
         so = _soffice()
         cache = db.DATA_DIR / "previews"

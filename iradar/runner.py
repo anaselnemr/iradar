@@ -25,6 +25,17 @@ import db
 
 RUN_LOCK = threading.Lock()
 
+
+# See the offline note in _run_check_inner: a plain-HTTP 404 is not proof.
+KNOCK_OFFLINE = False
+
+
+def is_running():
+    """THE answer to "is a check running": the lock run_check holds for its
+    whole life. RUN_STATE["running"] is what the progress bar shows and can
+    lag it for a moment at either end; decisions read this."""
+    return RUN_LOCK.locked()
+
 RUN_STATE = {
     "running": False,
     "paused": False,
@@ -615,6 +626,7 @@ def _fail_page(con, row, now):
     else:
         con.execute("UPDATE urls SET last_checked=?, error_streak=?"
                     " WHERE id=?", (now, streak, row["id"]))
+    db.sync_offline(con, row["id"])
 
 
 def _set_checked(con, url_id, now, status):
@@ -638,6 +650,7 @@ def _set_checked(con, url_id, now, status):
     else:
         con.execute("UPDATE urls SET last_status=? WHERE id=?",
                     (status, url_id))
+    db.sync_offline(con, url_id)
 
 
 def _prune_snapshot(con, snap_row):
@@ -677,16 +690,9 @@ def _resumable_run(con, include_stopped=True):
     include_stopped=False is the boot-resume's promise: a run a person
     deliberately stopped stays stopped through any number of restarts, and
     only a person starting the next check picks its parked suspects up."""
-    r = con.execute(
-        "SELECT * FROM runs WHERE finished IS NULL ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    r = db.open_run(con, include_stopped=include_stopped)
     if not r:
         return None
-    try:
-        if not include_stopped and (r["stopped"] or ""):
-            return None
-    except Exception:
-        pass
     left = con.execute(
         "SELECT COUNT(*) FROM run_items WHERE run_id=? AND state<>'done'",
         (r["id"],)).fetchone()[0]
@@ -1001,13 +1007,16 @@ def _run_check_inner(kind, url_ids, baseline=False):
         con.close()
         return {"total": 0, "ok": 0, "changed": 0, "errors": 0}
 
-    # Offline pages get a status knock before any browser starts (see
-    # capture.still_gone). One still answering 404/410 is settled here exactly
-    # as a dead->dead capture settles it below - checked, still not live,
-    # baseline untouched - without the three hours of captures. Anything else
-    # stays in the queue and is captured in full, so a page that came back is
-    # seen the same run. A baseline run captures everything, dead or not.
-    if not baseline:
+    # Offline pages USED TO get a plain-HTTP knock before any browser started
+    # (capture.still_gone), and one still answering 404/410 was settled
+    # without a capture. Switched off 18 Nov 2026: infineon.com's edge answers
+    # a script's request for some boards with a 404 while a real browser gets
+    # the live page (SLE-78CFX1M10PH: urllib/curl 404 from two networks,
+    # Chrome and this app's Playwright 200, minutes apart) - so a page that
+    # came back stayed "offline" run after run. With offline pages archived
+    # (not checked at all) the shortcut saved a handful of captures; every
+    # recently-offline page now gets the same full browser look as the rest.
+    if KNOCK_OFFLINE and not baseline:
         dead_rows = [r for r in urls if (r["last_status"] or "") == "notlive"]
         if dead_rows:
             RUN_STATE["message"] = f"checking {len(dead_rows)} offline page(s)…"
@@ -1437,6 +1446,7 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
                 " error_streak=0 WHERE id=?",
                 (now, "blank" if blank else "error",
                  res.get("http_status"), url_id))
+            db.sync_offline(con, url_id)
         # keep the previous good snapshot; drop the failed one's files
         shutil.rmtree(snap_dir, ignore_errors=True)
         con.execute("UPDATE snapshots SET dir='' WHERE id=?", (new_snap_id,))
@@ -1560,8 +1570,9 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
             return
 
     if baseline:
-        con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
-                    (now, "notlive" if dead else "unchanged", url_id))
+        # through _set_checked like every other result: a page with an update
+        # still open stays "changed" - a new baseline is not a review
+        _set_checked(con, url_id, now, "notlive" if dead else "unchanged")
         index_items(con, url_id, snap_dir, dead)
         if prev is not None:
             _prune_snapshot(con, prev)
@@ -1569,8 +1580,7 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
         return
 
     if prev is None:
-        con.execute("UPDATE urls SET last_checked=?, last_status=? WHERE id=?",
-                    (now, "notlive" if dead else "unchanged", url_id))
+        _set_checked(con, url_id, now, "notlive" if dead else "unchanged")
         index_items(con, url_id, snap_dir, dead)
         counters["saved"] += 1
         return
@@ -2216,6 +2226,7 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                  str(change_dir), json.dumps(parts, ensure_ascii=False)))
             con.execute("UPDATE urls SET last_checked=?, last_status=?,"
                         " error_streak=0 WHERE id=?", (now, "changed", url_id))
+            db.sync_offline(con, url_id)   # a page gone 404 shows as offline
             index_items(con, url_id, confirm_dir, dead_now)
         else:
             _set_checked(con, url_id, now,

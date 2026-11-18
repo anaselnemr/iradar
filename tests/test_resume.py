@@ -1086,11 +1086,7 @@ def test_library_and_community_suspects_demand_the_same_difference():
         "a signal that did not fire must not block agreement"
 
 
-def test_offline_pages_still_gone_are_knocked_not_captured():
-    # two offline pages and a live one: the one still answering 404 is
-    # settled by the knock, the one that came back and the live page are
-    # captured in full
-    import runner as R
+def _offline_fixture():
     _fresh_db()
     con = db.connect()
     con.execute("INSERT INTO urls(id, url, active, ptype, last_checked,"
@@ -1105,17 +1101,42 @@ def test_offline_pages_still_gone_are_knocked_not_captured():
     con.commit()
     con.close()
 
+
+def _run_recording(R, knock):
     captured = []
     async def _record(jobs, **k):
         captured.extend(u for u, _ in jobs)
         return []
-    real = R.capture.capture_all, R.capture.still_gone
+    real = R.capture.capture_all, R.capture.still_gone, R.KNOCK_OFFLINE
     R.capture.capture_all = _record
     R.capture.still_gone = lambda urls: {u for u in urls if u.endswith("/gone")}
+    R.KNOCK_OFFLINE = knock
     try:
         R.run_check("test")
     finally:
-        R.capture.capture_all, R.capture.still_gone = real
+        R.capture.capture_all, R.capture.still_gone, R.KNOCK_OFFLINE = real
+    return captured
+
+
+def test_offline_pages_get_a_full_browser_capture():
+    """A plain-HTTP 404 is not proof: infineon.com answered a script's request
+    for SLE-78CFX1M10PH with 404 while browsers got the live page. Every
+    offline page is captured in full, so one that came back is seen."""
+    import runner as R
+    _offline_fixture()
+    captured = _run_recording(R, knock=False)
+    assert sorted(captured) == ["https://example.invalid/back",
+                                "https://example.invalid/gone",
+                                "https://example.invalid/live"], captured
+
+
+def test_offline_pages_still_gone_are_knocked_not_captured():
+    # the old shortcut, kept behind KNOCK_OFFLINE: the one still answering
+    # 404 is settled by the knock, the one that came back and the live page
+    # are captured in full
+    import runner as R
+    _offline_fixture()
+    captured = _run_recording(R, knock=True)
 
     assert "https://example.invalid/gone" not in captured, captured
     assert "https://example.invalid/back" in captured

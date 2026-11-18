@@ -565,6 +565,7 @@
         {% if not c.reviewed %}<span class="badge b-changed">to review</span>
         {% elif c.resolution == 'reject' %}<span class="badge b-rejected">rejected</span>
         {% else %}<span class="badge b-unchanged">approved</span>{% endif %}
+        {% if c.reviewed and (c.reviewed_by or c.reviewed_at) %}<div class="muted" style="font-size:12px">{{ c.reviewed_by or 'unknown' }}{% if c.reviewed_at %} · {{ c.reviewed_at|localtime }}{% endif %}</div>{% endif %}
       </td>
       <td><a class="btn btn-ghost btn-sm" href="{{ url_for('change_view', change_id=c.id) }}">Open diff</a></td>
     </tr>

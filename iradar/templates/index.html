@@ -739,11 +739,11 @@
     <button type="button" class="selall-btn" id="matchall-link" style="display:none"
             onclick="selectAllMatching()">Select all {{ '{:,}'.format(total_match) }}</button>
     <span style="flex:1"></span>
-    <button class="btn-ghost btn-sm act" onclick="bulk('check', this)">Capture</button>
-    <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)">Approve updates</button>
     {% if in_archive %}
     <button class="btn-ghost btn-sm act" onclick="bulk('unarchive', this)" title="Back into the inventory; the next check reads them again">Restore</button>
     {% else %}
+    <button class="btn-ghost btn-sm act" onclick="bulk('check', this)">Capture</button>
+    <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)">Approve updates</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('pause', this)">Pause</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('resume', this)">Resume</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('archive', this)" title="Set aside: out of every count, list, chart and export, and no longer checked. The Archive keeps them.">Archive</button>

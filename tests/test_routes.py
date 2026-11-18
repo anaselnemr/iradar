@@ -3058,3 +3058,105 @@ def test_a_page_keeps_every_address_that_redirects_to_it():
                                                     "https://www.infineon.com/products/b"]
     body = _client.get(f"/url/{keep}").data.decode("utf-8", "replace")
     assert "products/old0" in body and "products/old1" in body
+
+
+def test_a_review_records_who_and_when():
+    """Approving or rejecting files the reviewer and the time, one by one and
+    in bulk - the morning 2,787 updates were approved, nobody could say who."""
+    con = db.connect()
+    uid = con.execute("INSERT INTO urls(url, active, ptype, last_status)"
+                      " VALUES('https://www.infineon.com/part/REVIEWED', 1, 'Part',"
+                      " 'unchanged')").lastrowid
+    con.commit()
+    con.close()
+    cid, _old, _new = _make_change(uid)
+    _client.post(f"/change/{cid}/resolve", data={"_csrf": _csrf(), "resolution": "approve"})
+    assert _row("changes", cid, "reviewed_by") == "Routes"
+    assert _row("changes", cid, "reviewed_at")
+    cid2, _o, _n = _make_change(uid)
+    _client.post("/urls/bulk", data={"_csrf": _csrf(), "action": "accept",
+                                     "ids": [str(uid)], "next": "/"})
+    assert _row("changes", cid2, "reviewed_by") == "Routes"
+    body = _client.get(f"/change/{cid}").data.decode("utf-8", "replace")
+    assert "Routes" in body
+
+
+def test_offline_has_one_definition():
+    """last_status='notlive' and a 404/410 always agree: sync_offline repairs
+    either side, and a page that answers again goes back to its review state."""
+    con = db.connect()
+    a = con.execute("INSERT INTO urls(url, active, ptype, last_status, last_http)"
+                    " VALUES('https://x.invalid/a', 1, 'Part', 'error', 404)").lastrowid
+    b = con.execute("INSERT INTO urls(url, active, ptype, last_status, last_http)"
+                    " VALUES('https://x.invalid/b', 1, 'Part', 'notlive', 200)").lastrowid
+    c = con.execute("INSERT INTO urls(url, active, ptype, last_status, last_http)"
+                    " VALUES('https://x.invalid/c', 1, 'Part', 'unchanged', 200)").lastrowid
+    con.commit()
+    db.sync_offline(con)
+    con.commit()
+    got = {r["id"]: r["last_status"] for r in con.execute(
+        "SELECT id, last_status FROM urls WHERE id IN (?,?,?)", (a, b, c))}
+    con.execute("DELETE FROM urls WHERE id IN (?,?,?)", (a, b, c))
+    con.commit()
+    con.close()
+    assert got == {a: "notlive", b: "unchanged", c: "unchanged"}
+
+
+def test_an_archived_page_cannot_be_resumed():
+    """Archived pages are paused too; Resume or the page toggle must not make
+    one checked again while the Archive hides it - Restore is the way back."""
+    con = db.connect()
+    uid = con.execute("INSERT INTO urls(url, active, ptype, archived)"
+                      " VALUES('https://x.invalid/arch', 0, 'Part', 'x')").lastrowid
+    con.commit()
+    con.close()
+    _client.post("/urls/bulk", data={"_csrf": _csrf(), "action": "resume",
+                                     "ids": [str(uid)], "next": "/"})
+    _client.post(f"/urls/{uid}/toggle", data={"_csrf": _csrf()})
+    assert _row("urls", uid, "active") == 0
+
+
+def test_a_stopped_run_with_parked_suspects_is_not_an_open_run():
+    con = db.connect()
+    rid = con.execute("INSERT INTO runs(started, kind, stopped) VALUES('t', 'manual', 'x')"
+                      ).lastrowid
+    con.commit()
+    try:
+        assert db.open_run(con) is None or db.open_run(con)["id"] != rid
+        assert db.open_run(con, include_stopped=True)["id"] == rid
+    finally:
+        con.execute("DELETE FROM runs WHERE id=?", (rid,))
+        con.commit()
+        con.close()
+
+
+def test_file_updates_review_select_all_and_reopen():
+    """Mark reviewed by ticks or by every row the filter matches, each filed
+    with who and when; the Reviewed tab can reopen them."""
+    con = db.connect()
+    ids = [con.execute("INSERT INTO asset_changes(url, kind, ts) VALUES(?, ?, 't')",
+                       ("https://www.infineon.com/assets/x/f%d.pdf" % i,
+                        "document" if i < 3 else "image")).lastrowid for i in range(4)]
+    con.commit()
+    con.close()
+    body = _ok("/assets").data.decode("utf-8", "replace")
+    assert "To review" in body and "f0.pdf" in body
+    assert "f3.pdf" not in _ok("/assets?kind=document").data.decode("utf-8", "replace")
+    _client.post("/assets/review", data={"_csrf": _csrf(), "id": [str(ids[0])],
+                                         "action": "review", "next": "/assets"})
+    assert _row("asset_changes", ids[0], "reviewed") == 1
+    assert _row("asset_changes", ids[0], "reviewed_by") == "Routes"
+    # every document still open, by the filter rather than by ticks
+    _client.post("/assets/review", data={"_csrf": _csrf(), "all_matching": "1",
+                                         "kind": "document", "action": "review",
+                                         "next": "/assets"})
+    assert [_row("asset_changes", i, "reviewed") for i in ids] == [1, 1, 1, 0]
+    assert "f1.pdf" in _ok("/assets?tab=reviewed").data.decode("utf-8", "replace")
+    _client.post("/assets/review", data={"_csrf": _csrf(), "id": [str(ids[1])],
+                                         "tab": "reviewed", "action": "reopen",
+                                         "next": "/assets"})
+    assert _row("asset_changes", ids[1], "reviewed") == 0
+    con = db.connect()
+    con.execute("DELETE FROM asset_changes WHERE id IN (%s)" % ",".join(map(str, ids)))
+    con.commit()
+    con.close()
