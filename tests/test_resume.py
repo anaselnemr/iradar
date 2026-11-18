@@ -1255,13 +1255,16 @@ def test_a_baseline_run_refuses_a_half_loaded_page():
 
 
 def test_a_baseline_run_still_accepts_a_normal_page():
+    """...and a page's open updates are closed as superseded by the baseline,
+    filed under "baseline run", never as approved."""
     import runner as R
 
     root = _fresh_db()
     con = db.connect()
     old = '["Product details", "Documents", "Design resources"]'
     con.execute("INSERT INTO urls(id, url, active, last_status, components)"
-                " VALUES(7, 'https://www.infineon.com/part/N', 1, 'unchanged', ?)", (old,))
+                " VALUES(7, 'https://www.infineon.com/part/N', 1, 'changed', ?)", (old,))
+    con.execute("INSERT INTO changes(url_id, ts, reviewed) VALUES(7, 't', 0)")
     good = root / "n0"
     good.mkdir()
     con.execute("INSERT INTO snapshots(url_id, ts, dir, status) VALUES(7, 't0', ?, 'ok')",
@@ -1285,6 +1288,9 @@ def test_a_baseline_run_still_accepts_a_normal_page():
         importlib.reload(R)
     assert counters["errors"] == 0 and retry_q == []
     assert con.execute("SELECT last_status FROM urls WHERE id=7").fetchone()[0] == "unchanged"
+    ch = con.execute("SELECT reviewed, resolution, reviewed_by FROM changes WHERE url_id=7"
+                     ).fetchone()
+    assert tuple(ch) == (1, "baseline", "baseline run")
     con.close()
 
 

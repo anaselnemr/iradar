@@ -8909,7 +8909,9 @@ def export_xlsx():
             "SELECT c.*, u.url AS u_url FROM changes c"
             " JOIN urls u ON u.id=c.url_id ORDER BY c.id"):
         verdict = ("to review" if not c["reviewed"] else
-                   ("rejected" if c["resolution"] == "reject" else "approved"))
+                   ("rejected" if c["resolution"] == "reject" else
+                    "superseded by baseline" if c["resolution"] == "baseline"
+                    else "approved"))
         ws_ch.append([c["id"], c["u_url"], c["ts"], c["summary"],
                       (c["components"] if "components" in c.keys() else "") or "",
                       verdict])

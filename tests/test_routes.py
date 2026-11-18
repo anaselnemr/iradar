@@ -3160,3 +3160,20 @@ def test_file_updates_review_select_all_and_reopen():
     con.execute("DELETE FROM asset_changes WHERE id IN (%s)" % ",".join(map(str, ids)))
     con.commit()
     con.close()
+
+
+def test_an_update_superseded_by_a_baseline_says_so():
+    con = db.connect()
+    uid = con.execute("INSERT INTO urls(url, active, ptype, last_status)"
+                      " VALUES('https://www.infineon.com/part/SUPERSEDED', 1, 'Part',"
+                      " 'unchanged')").lastrowid
+    con.commit()
+    con.close()
+    cid, _o, _n = _make_change(uid)
+    con = db.connect()
+    con.execute("UPDATE changes SET reviewed=1, resolution='baseline',"
+                " reviewed_by='baseline run', reviewed_at='2026-11-18 10:00:00' WHERE id=?", (cid,))
+    con.commit()
+    con.close()
+    assert "superseded by baseline" in _ok(f"/change/{cid}").data.decode("utf-8", "replace")
+    assert "superseded by baseline" in _ok(f"/url/{uid}").data.decode("utf-8", "replace")

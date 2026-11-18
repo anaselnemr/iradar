@@ -1570,8 +1570,14 @@ def _handle_result(con, res, row, ts_label, counters, suspects,
             return
 
     if baseline:
-        # through _set_checked like every other result: a page with an update
-        # still open stays "changed" - a new baseline is not a review
+        # A NEW BASELINE SUPERSEDES WHAT WAS OPEN. Its updates compared two
+        # captures that are no longer the reference, so they leave the review
+        # queue - filed as "superseded by baseline", by "baseline run", never
+        # as approved: anyone can still see that no person looked at them
+        # (Anas, 18 Nov 2026).
+        con.execute("UPDATE changes SET reviewed=1, resolution='baseline',"
+                    " reviewed_at=?, reviewed_by='baseline run'"
+                    " WHERE url_id=? AND reviewed=0", (now, url_id))
         _set_checked(con, url_id, now, "notlive" if dead else "unchanged")
         index_items(con, url_id, snap_dir, dead)
         if prev is not None:

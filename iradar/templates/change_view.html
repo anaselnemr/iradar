@@ -44,6 +44,9 @@
     </form>
     <span class="muted">Approve = the new text/images become the baseline. Reject = the old snapshot stays the baseline and this page will be flagged again until the website is fixed.</span>
   </div>
+  {% elif c.resolution == 'baseline' %}
+  <div class="verdict"><span class="badge b-baseline">superseded by baseline — not reviewed by anyone</span>
+    {% if c.reviewed_at %}<span class="muted">{{ c.reviewed_at|localtime }}</span>{% endif %}</div>
   {% elif c.resolution == 'reject' %}
   <div class="verdict"><span class="badge b-error">✖ rejected — old version kept as baseline</span>
     {% if c.reviewed_by or c.reviewed_at %}<span class="muted">{{ c.reviewed_by or 'unknown' }}{% if c.reviewed_at %} · {{ c.reviewed_at|localtime }}{% endif %}</span>{% endif %}</div>
