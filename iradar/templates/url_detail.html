@@ -564,7 +564,6 @@
       <td>
         {% if not c.reviewed %}<span class="badge b-changed">to review</span>
         {% elif c.resolution == 'reject' %}<span class="badge b-rejected">rejected</span>
-        {% elif c.resolution == 'baseline' %}<span class="badge b-baseline" title="Closed by a baseline run: the page got a new reference capture before anyone reviewed this">superseded by baseline</span>
         {% else %}<span class="badge b-unchanged">approved</span>{% endif %}
         {% if c.reviewed and (c.reviewed_by or c.reviewed_at) %}<div class="muted" style="font-size:12px">{{ c.reviewed_by or 'unknown' }}{% if c.reviewed_at %} · {{ c.reviewed_at|localtime }}{% endif %}</div>{% endif %}
       </td>
