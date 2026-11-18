@@ -221,6 +221,7 @@
   .rel ul li:last-child { margin-bottom: 0; }
   @media (max-width: 620px) { .rel > li { grid-template-columns: 1fr; gap: 4px; } }
   /* a small picture (the pill) at its own size, not stretched to the card */
+  .gd h3[id] { scroll-margin-top: 16px; }
   .gd figure.fit img { width: 404px; max-width: 100%; }
 </style>
 
@@ -229,13 +230,13 @@
   <nav class="toc" aria-label="On this page">
     <h4>On this page</h4>
     <ol>
-      <li><a href="#pill"><span class="n">01</span>The PTP / EB pill</a></li>
-      <li><a href="#dashboard"><span class="n">02</span>Finding pages</a></li>
-      <li><a href="#perfect"><span class="n">03</span>Perfect pages</a></li>
-      <li><a href="#charts"><span class="n">04</span>Charts</a></li>
-      <li><a href="#check"><span class="n">05</span>How a check works</a></li>
-      <li><a href="#signals"><span class="n">06</span>What counts as a change</a></li>
-      <li><a href="#review"><span class="n">07</span>Reviewing an update</a></li>
+      <li><a href="#check"><span class="n">01</span>How a check works</a></li>
+      <li><a href="#signals"><span class="n">02</span>What counts as a change</a></li>
+      <li><a href="#dashboard"><span class="n">03</span>Finding pages</a></li>
+      <li><a href="#select"><span class="n">04</span>Working on many pages</a></li>
+      <li><a href="#review"><span class="n">05</span>Reviewing an update</a></li>
+      <li><a href="#perfect"><span class="n">06</span>Perfect pages</a></li>
+      <li><a href="#charts"><span class="n">07</span>Charts</a></li>
       <li><a href="#owners"><span class="n">08</span>Who owns a page</a></li>
       <li><a href="#content"><span class="n">09</span>Content &amp; files</a></li>
       <li><a href="#pagepage"><span class="n">10</span>A page&rsquo;s own page</a></li>
@@ -265,105 +266,9 @@
     </div>
   </section>
 
-  <!-- the pill -->
-  <section id="pill" class="card">
-    <h2><span class="secn">01</span>The PTP / EB pill</h2>
-    <p class="lede">Most questions are about part pages (PTPs) or evaluation
-      boards (EBs). The pill is how you tell the Dashboard which one you mean.</p>
-
-    <ol class="flow">
-      <li><b>Open PTP / EB</b>
-        <p>The lock on the button means nothing is picked yet, so all you see
-          is the pill, with how many of each there are.</p></li>
-      <li><b>Click PTPs or EBs</b>
-        <p>The list narrows to those pages, and the menu opens up with what only
-          they have: <b>Perfect page</b>, <b>Product status</b> and <b>Buy
-          button</b>.</p></li>
-      <li><b>Flip or let go</b>
-        <p>Click the other side to switch. Your other filters stay put. Click
-          the lit side again to go back to every page.</p></li>
-    </ol>
-
-    <figure class="fit">
-      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/pill.png') }}" alt="PTP / EB opened with nothing picked: just the pill, PTPs and EBs">
-      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/pill-dark.png') }}" alt="PTP / EB opened with nothing picked: just the pill, PTPs and EBs">
-      <figcaption>Before a pick: just the pill.</figcaption>
-    </figure>
-    <figure>
-      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/filters.png') }}" alt="After picking PTPs: Perfect page, product status and buy button">
-      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/filters-dark.png') }}" alt="After picking PTPs: Perfect page, product status and buy button">
-      <figcaption>After picking PTPs. Every number is how many pages you would
-        get.</figcaption>
-    </figure>
-    <div class="note"><p>Picking PTP or EB under <b>Type</b> does the same thing.</p></div>
-  </section>
-
-  <!-- the other filters -->
-  <section id="dashboard" class="card">
-    <h2><span class="secn">02</span>Finding pages</h2>
-    <p class="lede">Tick and the list follows. There's no Apply button. Every
-      filter you've set shows as a chip above the list, and its &times; removes
-      it.</p>
-    <ul class="map">
-      <li>Search<span>Name, title or address. <code>SLE 78CFX1M10PH</code> finds
-        SLE-78CFX1M10PH.</span></li>
-      <li>Type<span>Page type and level.</span></li>
-      <li>Ownership<span>Business line, product line, segment.</span></li>
-      <li>Status<span>Updated, awaiting review, offline, paused&hellip; and the
-        Archive.</span></li>
-      <li>Content &amp; components<span>What is on the page: documents, videos,
-        images, key features, design resources tabs and the rest, each as Has
-        or No.</span></li>
-      <li>Views<span>Save a set of filters under a name. The whole team sees
-        it.</span></li>
-    </ul>
-    <p style="margin-top:14px"><b>Many pages at once:</b> tick them (or
-      <b>Select all</b> for everything that matches), then Capture, Approve
-      updates, Pause, Archive, Export or Remove.</p>
-  </section>
-
-  <!-- perfect -->
-  <section id="perfect" class="card">
-    <h2><span class="secn">03</span>Perfect pages</h2>
-    <p class="lede">A page is perfect when it has every key component of its
-      standard. The Dashboard, the Charts and the export all use the same test.</p>
-    <ul class="lim">
-      {% for ps in psets %}
-      <li><b>{{ ps.name }}s, {{ ps.presets[0][0] }}:</b> {{ ps.presets[0][1]|join(', ') }}.
-        {% if ps.presets|length > 2 %}<br><span style="color:var(--muted)">{{ ps.presets[1][0] }}
-        adds {{ ps.presets[1][1]|reject('in', ps.presets[0][1])|join(', ') }} for SURF.</span>{% endif %}</li>
-      {% endfor %}
-    </ul>
-    <p style="margin-top:12px">In the pill&rsquo;s <b>Perfect page</b> box, pick
-      a preset or tick your own components (the number beside each is how many
-      pages have it), then <b>Perfect</b> or <b>Not perfect</b>.
-      <b>Not perfect</b> is your to-do list.</p>
-  </section>
-
-  <!-- charts -->
-  <section id="charts" class="card">
-    <h2><span class="secn">04</span>Charts</h2>
-    <p class="lede"><a href="{{ url_for('charts_page') }}">Explore &rarr; Charts</a>
-      shows how complete PTPs and EBs are, by business line, product line and
-      component. Live numbers.</p>
-    <figure>
-      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/heatmap.png') }}" alt="The heatmap: key components by product line">
-      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/heatmap-dark.png') }}" alt="The heatmap: key components by product line">
-      <figcaption>The Heatmap tab. Pale cells are the gaps.</figcaption>
-    </figure>
-    <ul class="lim" style="margin-top:12px">
-      <li><b>Overview, Heatmap, Drill-down</b>: three views of the same numbers.</li>
-      <li><b>Filters</b>: the components you measure, which lines, online or
-        offline, product status and buy button. <b>SURF</b> narrows to its
-        lines and adds PCB design data.</li>
-      <li><b>PNG / SVG</b> on every chart. Click a title to retype it for a
-        slide first.</li>
-    </ul>
-  </section>
-
   <!-- the run -->
   <section id="check" class="card">
-    <h2><span class="secn">05</span>How a check works</h2>
+    <h2><span class="secn">01</span>How a check works</h2>
     {#- NOT |capitalize: it lowercases the rest ("every monday") -#}
     <p class="lede">Runs {{ every }} at {{ at_time }} on its own{% if run_hours %},
       and takes about {{ run_hours }}{% endif %}. Each page is opened in a real
@@ -405,7 +310,7 @@
 
   <!-- signals -->
   <section id="signals" class="card">
-    <h2><span class="secn">06</span>What counts as a change</h2>
+    <h2><span class="secn">02</span>What counts as a change</h2>
     <p class="lede">Six signals raise a page. The things on the right are
       ignored on purpose. Each one used to cause false alarms.</p>
     <div class="pair">
@@ -433,9 +338,88 @@
     </div>
   </section>
 
+  <section id="dashboard" class="card">
+    <h2><span class="secn">03</span>Finding pages</h2>
+    <p class="lede">Tick and the list follows. There's no Apply button. Every
+      filter you've set shows as a chip above the list, and its &times; removes
+      it.</p>
+    <ul class="map">
+      <li>Search<span>Name, title or address. <code>SLE 78CFX1M10PH</code> finds
+        SLE-78CFX1M10PH.</span></li>
+      <li>Type<span>Page type and level.</span></li>
+      <li>Ownership<span>Business line, product line, segment.</span></li>
+      <li>PTP / EB<span>Part pages and boards. See <a href="#pill">the pill</a>
+        below.</span></li>
+      <li>Status<span>Updated, awaiting review, offline, paused&hellip; and the
+        Archive.</span></li>
+      <li>Content &amp; components<span>What is on the page: documents, videos,
+        images, key features, design resources tabs and the rest, each as Has
+        or No.</span></li>
+      <li>Views<span>Save a set of filters under a name. The whole team sees
+        it.</span></li>
+    </ul>
+
+    <h3 id="pill">The PTP / EB pill</h3>
+    <p>Most questions are about part pages (PTPs) or evaluation boards (EBs),
+      so they get a switch of their own.</p>
+    <ol class="flow" style="margin-top:14px">
+      <li><b>Open PTP / EB</b>
+        <p>The lock on the button means nothing is picked yet, so all you see
+          is the pill, with how many of each there are.</p></li>
+      <li><b>Click PTPs or EBs</b>
+        <p>The list narrows to those pages, and the menu opens up with what only
+          they have: <b>Perfect page</b>, <b>Product status</b> and <b>Buy
+          button</b>.</p></li>
+      <li><b>Flip or let go</b>
+        <p>Click the other side to switch. Your other filters stay put. Click
+          the lit side again to go back to every page.</p></li>
+    </ol>
+    <figure class="fit">
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/pill.png') }}" alt="PTP / EB opened with nothing picked: just the pill, PTPs and EBs">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/pill-dark.png') }}" alt="PTP / EB opened with nothing picked: just the pill, PTPs and EBs">
+      <figcaption>Before a pick: just the pill.</figcaption>
+    </figure>
+    <figure>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/filters.png') }}" alt="After picking PTPs: Perfect page, product status and buy button">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/filters-dark.png') }}" alt="After picking PTPs: Perfect page, product status and buy button">
+      <figcaption>After picking PTPs. Every number is how many pages you would
+        get.</figcaption>
+    </figure>
+    <div class="note"><p>Picking PTP or EB under <b>Type</b> does the same thing.</p></div>
+  </section>
+
+  <section id="select" class="card">
+    <h2><span class="secn">04</span>Working on many pages</h2>
+    <p class="lede">Tick a page and this bar appears at the bottom of the
+      screen. Everything in it acts on the pages you ticked.</p>
+    <figure>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/selbar.png') }}" alt="The selection bar: 3 selected, Select all, Capture, Approve updates, Pause, Resume, Archive, Export, Remove, Done">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/selbar-dark.png') }}" alt="The selection bar: 3 selected, Select all, Capture, Approve updates, Pause, Resume, Archive, Export, Remove, Done">
+    </figure>
+    <p style="margin-top:14px">Tick rows one by one, or the box at the top of
+      the table for the whole screen. <b>Select all</b> then takes every page
+      your filters match, not just the ones on screen, and the bar says
+      <b>All &hellip; selected</b>.</p>
+    <ul class="map">
+      <li>Capture<span>Read them again now, instead of waiting for the next
+        check.</span></li>
+      <li>Approve updates<span>Approve every open update on them in one go.</span></li>
+      <li>Pause / Resume<span>Stop checking them, or start again.</span></li>
+      <li>Archive<span>Put offline pages away. In the Archive this button is
+        <b>Restore</b>.</span></li>
+      <li>Export<span>A spreadsheet of just these pages.</span></li>
+      <li>Remove<span>Delete them and their captures. It asks first, and it
+        can&rsquo;t be undone.</span></li>
+      <li>Done<span>Clear the selection. Esc does the same.</span></li>
+    </ul>
+    <div class="note"><p><b>Filter first, then Select all.</b> That&rsquo;s how
+      you approve a whole product line or archive every recently offline page
+      in one go. Big jobs ask you to confirm.</p></div>
+  </section>
+
   <!-- review -->
   <section id="review" class="card">
-    <h2><span class="secn">07</span>Reviewing an update</h2>
+    <h2><span class="secn">05</span>Reviewing an update</h2>
     <p class="lede">Open one from the Dashboard. It tells you what moved, then
       shows it: the text before and after, items in and out, and the changed
       area side by side, outlined in amber.</p>
@@ -458,6 +442,45 @@
     </div>
     <p style="margin-top:14px; color:var(--muted); font-size:13.5px">Each
       decision records who made it and when.</p>
+  </section>
+
+  <!-- perfect -->
+  <section id="perfect" class="card">
+    <h2><span class="secn">06</span>Perfect pages</h2>
+    <p class="lede">A page is perfect when it has every key component of its
+      standard. The Dashboard, the Charts and the export all use the same test.</p>
+    <ul class="lim">
+      {% for ps in psets %}
+      <li><b>{{ ps.name }}s, {{ ps.presets[0][0] }}:</b> {{ ps.presets[0][1]|join(', ') }}.
+        {% if ps.presets|length > 2 %}<br><span style="color:var(--muted)">{{ ps.presets[1][0] }}
+        adds {{ ps.presets[1][1]|reject('in', ps.presets[0][1])|join(', ') }} for SURF.</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <p style="margin-top:12px">In the pill&rsquo;s <b>Perfect page</b> box, pick
+      a preset or tick your own components (the number beside each is how many
+      pages have it), then <b>Perfect</b> or <b>Not perfect</b>.
+      <b>Not perfect</b> is your to-do list.</p>
+  </section>
+
+  <!-- charts -->
+  <section id="charts" class="card">
+    <h2><span class="secn">07</span>Charts</h2>
+    <p class="lede"><a href="{{ url_for('charts_page') }}">Explore &rarr; Charts</a>
+      shows how complete PTPs and EBs are, by business line, product line and
+      component. Live numbers.</p>
+    <figure>
+      <img class="m-light" loading="lazy" src="{{ url_for('static', filename='guide/heatmap.png') }}" alt="The heatmap: key components by product line">
+      <img class="m-dark" loading="lazy" src="{{ url_for('static', filename='guide/heatmap-dark.png') }}" alt="The heatmap: key components by product line">
+      <figcaption>The Heatmap tab. Pale cells are the gaps.</figcaption>
+    </figure>
+    <ul class="lim" style="margin-top:12px">
+      <li><b>Overview, Heatmap, Drill-down</b>: three views of the same numbers.</li>
+      <li><b>Filters</b>: the components you measure, which lines, online or
+        offline, product status and buy button. <b>SURF</b> narrows to its
+        lines and adds PCB design data.</li>
+      <li><b>PNG / SVG</b> on every chart. Click a title to retype it for a
+        slide first.</li>
+    </ul>
   </section>
 
   <!-- owners -->
