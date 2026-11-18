@@ -666,6 +666,7 @@ def init_db():
     # presence/emptiness of blocks whose CONTENT we deliberately do not store
     # (parametric OPN table, developer community) - booleans only
     _ensure_column(con, "urls", "flags", "TEXT DEFAULT ''")
+    _ensure_flags_parsed(con)
     # when a listed address 301'd here, the address it came from - so the row
     # can wear a "redirect" sign: we track the destination, not the stale link
     _ensure_column(con, "urls", "redirect_from", "TEXT DEFAULT ''")
@@ -862,6 +863,29 @@ def _ensure_column(con, table, col, decl):
         con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
         return True       # newly added - lets a caller backfill it once
     return False
+
+
+def _ensure_flags_parsed(con):
+    """urls.fj: the flags JSON kept parsed (SQLite's binary JSONB), for the
+    Dashboard's filters. Read from text, every flag filter re-parsed each
+    page's ~2 KB of flags - 35 ms per filter per pass over the PTPs, and the
+    counts make a dozen passes. Triggers keep it in step with every write to
+    flags, so nothing that writes flags has to know it exists; Python goes
+    on reading the text column."""
+    try:
+        con.execute("SELECT jsonb('{}')").fetchone()
+        conv = "jsonb"
+    except Exception:            # an SQLite before 3.45: parsed text, same answers
+        conv = "json"
+    _ensure_column(con, "urls", "fj", "BLOB")
+    val = f"CASE WHEN json_valid(NEW.flags) THEN {conv}(NEW.flags) END"
+    for name, when in (("urls_fj_ins", "AFTER INSERT ON urls"),
+                       ("urls_fj_upd", "AFTER UPDATE OF flags ON urls")):
+        con.execute(f"CREATE TRIGGER IF NOT EXISTS {name} {when} BEGIN"
+                    f" UPDATE urls SET fj={val} WHERE id=NEW.id; END")
+    # fill it once (and repair any row a write outside the triggers left behind)
+    con.execute(f"UPDATE urls SET fj=CASE WHEN json_valid(flags) THEN {conv}(flags) END"
+                " WHERE fj IS NULL AND IFNULL(flags,'')<>''")
 
 
 def get_settings():

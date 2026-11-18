@@ -1345,7 +1345,7 @@ def _empty(cat, label):
 def _flag(block, key):
     """Filter on a presence-only boolean stored in urls.flags (JSON)."""
     return (f"(u.flags IS NOT NULL AND u.flags<>''"
-            f" AND json_extract(u.flags, '$.{block}.{key}') = 1)")
+            f" AND json_extract(u.fj, '$.{block}.{key}') = 1)")
 
 
 def _noflag(block, key):
@@ -1522,7 +1522,7 @@ ATTR_FILTERS["nostatus"] = ("No product status",
 # captured before these existed is unread, not missing.
 def _flag_read(block):
     return (f"(u.flags IS NOT NULL AND u.flags<>''"
-            f" AND json_type(u.flags, '$.{block}') IS NOT NULL)")
+            f" AND json_type(u.fj, '$.{block}') IS NOT NULL)")
 
 
 # Design resources, tab by tab (18 Nov 2026): every tab a page's Design
@@ -1537,7 +1537,9 @@ DR_TABS = [("pcb", "pcb_design", "PCB design data"),
            ("drboards", "dr_boards", "Boards & designs"),
            ("drsimm", "dr_simmodels", "Simulation models"),
            ("drsimt", "dr_simtools", "Simulation tools"),
-           ("drwl", "dr_wireless", "Wireless modules")]
+           ("drwl", "dr_wireless", "Wireless modules"),
+           # the Training tab: kept as its own category (trainings), not a group
+           ("drtrain", "dr_training", "Training")]
 DR_PCB = DR + "PCB design data"
 
 STANDARD_FLAG_ATTRS = [
@@ -1605,11 +1607,11 @@ for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
 # read it. Looked for in the nav it matched no page at all.
 ATTR_FILTERS["hasbuyopts"] = ("Has view buying options",
                               "(" + _flag("buy_button", "exists") + " AND instr(lower(IFNULL("
-                              "json_extract(u.flags, '$.buy_button.text'), '')),"
+                              "json_extract(u.fj, '$.buy_button.text'), '')),"
                               " 'view buying options') > 0)")
 ATTR_FILTERS["nobuyopts"] = ("No view buying options",
                              _KNOWN_GOOD + " AND u.flags IS NOT NULL AND u.flags<>''"
-                             " AND json_type(u.flags, '$.buy_button') IS NOT NULL AND NOT ("
+                             " AND json_type(u.fj, '$.buy_button') IS NOT NULL AND NOT ("
                              + ATTR_FILTERS["hasbuyopts"][1] + ")")
 CONTENT_KEYS = []
 for _stem, _c, _l in _CONTENT_ATTRS:
@@ -2301,8 +2303,8 @@ BUY_TYPES = [("cart", "Add to cart", "add to cart"),
 # a board's page carries the same buy box as a part's (Nov 2026: EBs too)
 _BUY_PAGES = "(u.url LIKE '%/part/%' OR u.url LIKE '%/evaluation-board/%')"
 _BUY_SCOPE = (_BUY_PAGES + " AND u.active=1 AND u.flags IS NOT NULL"
-              " AND u.flags<>'' AND json_type(u.flags, '$.buy_button') IS NOT NULL")
-_BUY_TEXT = "lower(IFNULL(json_extract(u.flags, '$.buy_button.text'), ''))"
+              " AND u.flags<>'' AND json_type(u.fj, '$.buy_button') IS NOT NULL")
+_BUY_TEXT = "lower(IFNULL(json_extract(u.fj, '$.buy_button.text'), ''))"
 # Has / None ahead of the labels: the same yes the perfect standard counts
 # (a real call to action - Add to cart, Contact sales ...), and its exact
 # opposite among the PTPs and EBs whose box was read, so the two split them.
@@ -6585,6 +6587,46 @@ def _dash_counts(con):
     return dict(d["cat"]), d["vid"], dict(d["status"]), dict(d["attr"])
 
 
+_PASS_CACHE = {}
+
+
+class _PassCachedCon:
+    """A connection whose SELECTs are remembered until the next database
+    write, each by its own SQL and parameters. The facet counts are a dozen
+    passes, and a tick changes only the passes it narrows: ticking a Has /
+    No filter used to recount all ~170 of them over every PTP (0.5 s)
+    although that pass never looks at the ticks themselves."""
+
+    class _Row(dict):
+        # by name or by position, like sqlite3.Row
+        def __getitem__(self, k):
+            return list(self.values())[k] if isinstance(k, int) else dict.__getitem__(self, k)
+
+    class _Rows(list):
+        def fetchone(self):
+            return self[0] if self else None
+
+        def fetchall(self):
+            return list(self)
+
+    def __init__(self, con):
+        self._con = con
+
+    def execute(self, sql, params=()):
+        stamp = _db_write_stamp()
+        key = (sql, tuple(params))
+        with _AGG_LOCK:
+            hit = _PASS_CACHE.get(key)
+            if hit and hit[0] == stamp:
+                return self._Rows(hit[1])
+        rows = [self._Row(dict(r)) for r in self._con.execute(sql, params)]
+        with _AGG_LOCK:
+            if len(_PASS_CACHE) >= 600:
+                _PASS_CACHE.pop(next(iter(_PASS_CACHE)))
+            _PASS_CACHE[key] = (stamp, rows)
+        return self._Rows(rows)
+
+
 def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
                  pss=(), bts=()):
     """What each filter option would still be worth, given the others.
@@ -6595,6 +6637,8 @@ def _dash_facets(con, q, statuses, ptypes, attrs, bls=(), pls=(), segs=(),
     second one - the count has to answer "how many more would this let in",
     not "how many did I already choose".
     """
+    con = _PassCachedCon(con)
+
     def where(skip):
         # bl and pl narrow every other dimension, and like the others they do
         # not narrow themselves - "how many more would this let in".
@@ -8398,7 +8442,7 @@ def _export_avail_build(con, mode, levels, kinds, cols=()):
                          " AND i.category=?)")
             cargs.append(arg)
         elif kind == "flag":
-            conds.append("json_valid(u.flags) AND json_extract(u.flags,"
+            conds.append("json_valid(u.flags) AND json_extract(u.fj,"
                          " '$.' || ? || '.exists') = 1")
             cargs.append(arg)
         else:

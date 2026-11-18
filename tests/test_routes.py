@@ -2714,7 +2714,7 @@ def test_the_no_metadata_filter_skips_pages_not_read_yet():
     """'No metadata' means the capture read the head and found none - a page
     captured before the field existed is unknown, not missing."""
     sql = app.ATTR_FILTERS["nometadata"][1]
-    assert "json_type(u.flags, '$.meta_description') IS NOT NULL" in sql
+    assert "json_type(u.fj, '$.meta_description') IS NOT NULL" in sql
     assert {"hasbuy", "emptybuy", "nobuy", "haspcb", "nopcb"} <= set(app.COMPONENT_KEYS)
 
 
@@ -3292,3 +3292,16 @@ def test_design_resources_tabs_are_components_named_dr():
     assert app.CHART_CLUSTERS[0]["extra"] == [app.DR + "PCB design data"]
     i = app.COMPONENT_KEYS.index("nodesign")
     assert app.COMPONENT_KEYS[i + 1:i + 3] == ["haspcb", "nopcb"]
+
+
+def test_the_parsed_flags_follow_every_write():
+    """urls.fj is the flags JSON kept parsed for the filters: every insert
+    and every write to flags reaches it, so a filter never reads stale."""
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, flags) VALUES(960, 'https://www.infineon.com/part/FJ', '{\"a\": {\"b\": 1}}')")
+    assert con.execute("SELECT json_extract(fj, '$.a.b') FROM urls WHERE id=960").fetchone()[0] == 1
+    con.execute("UPDATE urls SET flags='{\"a\": {\"b\": 2}}' WHERE id=960")
+    assert con.execute("SELECT json_extract(fj, '$.a.b') FROM urls WHERE id=960").fetchone()[0] == 2
+    con.execute("UPDATE urls SET flags='' WHERE id=960")
+    assert con.execute("SELECT fj FROM urls WHERE id=960").fetchone()[0] is None
+    con.close()
