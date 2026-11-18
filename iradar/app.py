@@ -9321,10 +9321,20 @@ def _perfect_comp_counts():
         finally:
             con.close()
         return out
+    # during a run the database is written every few seconds: the counts
+    # (0.3 s) are held two minutes even so, or every tick would pay for them
+    hit = _PC_COUNTS.get("v")
+    if hit and (hit[0] == _db_write_stamp() or time.time() - hit[1] < 120):
+        return hit[2]
     try:
-        return _cached_by_db("perfect_comp_counts", build)
+        val = build()
     except Exception:
-        return {}
+        return hit[2] if hit else {}
+    _PC_COUNTS["v"] = (_db_write_stamp(), time.time(), val)
+    return val
+
+
+_PC_COUNTS = {}
 
 
 def _perfect_rows(con=None):
