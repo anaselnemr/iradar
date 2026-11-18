@@ -9352,6 +9352,8 @@ def _perfect_rows(con=None):
                      "components": ([c for c in ps["components"] if not c.startswith(DR)]
                                     + [c for c in ps["components"] if c.startswith(DR)]),
                      "counts": counts.get(ps["st"], {}),
+                     # the Design resources block opens a row of its own, on the left
+                     "dr_start": next((c for c in ps["components"] if c.startswith(DR)), None),
                      "default": ps["default"],
                      "presets": ps["presets"], "sel": sel,
                      "custom": set(sel) != set(ps["default"]),
