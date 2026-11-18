@@ -1320,3 +1320,39 @@ def test_a_normal_run_also_refuses_a_half_loaded_page():
     assert counters["errors"] == 1 and [x["id"] for x in retry_q] == [8]
     assert not snap.exists()
     con.close()
+
+
+def test_a_baseline_run_leaves_open_updates_open():
+    """A new baseline resets the reference capture, not the review queue: an
+    update nobody has looked at stays open and the page stays Updated until a
+    person approves or rejects it (Anas, 18 Nov 2026)."""
+    import runner as R
+
+    root = _fresh_db()
+    con = db.connect()
+    old = '["Product details", "Documents", "Design resources"]'
+    con.execute("INSERT INTO urls(id, url, active, last_status, components)"
+                " VALUES(9, 'https://www.infineon.com/part/OPEN', 1, 'changed', ?)", (old,))
+    con.execute("INSERT INTO changes(url_id, ts, reviewed) VALUES(9, 't', 0)")
+    good = root / "o0"
+    good.mkdir()
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status) VALUES(9, 't0', ?, 'ok')",
+                (str(good),))
+    snap = root / "o1"
+    snap.mkdir()
+    con.commit()
+    row = con.execute("SELECT * FROM urls WHERE id=9").fetchone()
+    res = {"status": "ok", "error": "", "title": "O", "text_lines": 40, "image_count": 1,
+           "http_status": 200,
+           "components": ["Product details", "Documents", "Design resources"]}
+    counters = {"ok": 0, "changed": 0, "errors": 0, "saved": 0}
+    R._snapshot_dir = lambda uid, ts: snap
+    try:
+        R._handle_result(con, res, row, "t1", counters, [], baseline=True, retry_queue=[])
+    finally:
+        del R._snapshot_dir
+        import importlib
+        importlib.reload(R)
+    assert con.execute("SELECT last_status FROM urls WHERE id=9").fetchone()[0] == "changed"
+    assert con.execute("SELECT reviewed FROM changes WHERE url_id=9").fetchone()[0] == 0
+    con.close()
