@@ -1574,7 +1574,7 @@ function applySoon(ms) {
 }
 document.addEventListener('change', function (e) {
   var f = e.target.closest && e.target.closest('form.toolbar');
-  if (f && ['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps', 'bt'].indexOf(e.target.name) >= 0) applySoon(350);
+  if (f && ['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps', 'bt'].indexOf(e.target.name) >= 0) applySoon(200);
 });
 document.addEventListener('input', function (e) {
   if (e.target.name === 'q' && e.target.closest('form.toolbar')) applySoon(600);
@@ -1604,7 +1604,7 @@ function writePicker(box) {
     b.setAttribute('aria-pressed', String(l.length === picked.length
       && l.every(function (v) { return picked.indexOf(v) >= 0; })));
   });
-  applySoon(400);
+  applySoon(250);
 }
 document.addEventListener('change', function (e) {
   if (e.target.classList && e.target.classList.contains('pcbox')) writePicker(e.target.closest('.pexp'));

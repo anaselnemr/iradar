@@ -10293,6 +10293,30 @@ def _reap_children():
             return
 
 
+def _facet_warmer():
+    """Work out the Dashboard's counts for the views people open most - all
+    pages, PTPs, EBs - in the background after each change to the data, so
+    the first tick there is not the one that pays for them (0.7 s cold).
+    Never during a run: the data moves under it and the run needs the CPU."""
+    last = None
+    while True:
+        time.sleep(20)
+        try:
+            stamp = _db_write_stamp()
+            if stamp == last or runner.is_running():
+                continue
+            con = db.connect()
+            try:
+                with app.test_request_context("/"):
+                    for types in ([], ["PTP"], ["EB"]):
+                        _dash_facets(con, "", [], types, [])
+            finally:
+                con.close()
+            last = stamp
+        except Exception as e:
+            print(f"[facets] warm-up failed: {e}", flush=True)
+
+
 if __name__ == "__main__":
     # before anything is allowed to start a browser
     try:
@@ -10315,6 +10339,8 @@ if __name__ == "__main__":
     threading.Thread(target=_resume_on_boot, daemon=True).start()
     # hold the container up while that check runs, and only then
     threading.Thread(target=_hold_awake_loop, daemon=True).start()
+    # the Dashboard's counts for its common views, ready before the first tick
+    threading.Thread(target=_facet_warmer, daemon=True).start()
     print()
     print("  iRadar is running:  http://127.0.0.1:5000")
     print("  From another device on the same network, use this PC's IP,")
