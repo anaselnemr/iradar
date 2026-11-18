@@ -2656,7 +2656,7 @@ def index():
          "n": status_counts["blank"], "tone": "bad"},
         {"kind": "status", "vals": ["error"], "label": "Capture error",
          "n": status_counts["error"], "tone": "bad"},
-        {"kind": "status", "vals": ["notlive"], "label": "Not live",
+        {"kind": "status", "vals": ["notlive"], "label": "Offline",
          "n": notlive_total, "tone": "bad"},
         {"kind": "status", "vals": ["new"], "label": "Not captured",
          "n": status_counts["new"]},
