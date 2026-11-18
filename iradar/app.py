@@ -9935,7 +9935,11 @@ def guide_page():
     return render_template(
         "guide.html", f=facts, s=s, every=every,
         at_time="%02d:00" % schedule_hour(s),
-        next_run=next_run_text(), run_hours=hours, last=last)
+        next_run=next_run_text(), run_hours=hours, last=last,
+        # the Perfect page standards, read from the same definition the
+        # filter, the Charts and the export use - a list typed into the
+        # guide would drift the first time a component is added
+        psets=PERFECT_SETS)
 
 
 # What changed, newest first. Here rather than in the template because it is
