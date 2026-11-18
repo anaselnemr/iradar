@@ -2277,6 +2277,8 @@ BUY_TYPES = [("cart", "Add to cart", "add to cart"),
              ("family", "View product family", "view product family")]
 # a board's page carries the same buy box as a part's (Nov 2026: EBs too)
 _BUY_PAGES = "(u.url LIKE '%/part/%' OR u.url LIKE '%/evaluation-board/%')"
+BUY_SHORT = {"options": "Buying options", "dist": "Distributors",
+             "repl": "Replacement", "family": "Product family"}
 _BUY_SCOPE = (_BUY_PAGES + " AND u.active=1 AND u.flags IS NOT NULL"
               " AND u.flags<>'' AND json_type(u.flags, '$.buy_button') IS NOT NULL")
 _BUY_TEXT = "lower(IFNULL(json_extract(u.flags, '$.buy_button.text'), ''))"
@@ -2432,8 +2434,12 @@ def _buy_type_options(con, where="", params=()):
         if combo:
             key = "is:" + ",".join(combo)
             tally[key] = tally.get(key, 0) + r["n"]
+    # short names, so a combination reads on one line; the box's own
+    # wording stays in the tooltip (and on the page itself)
     label = {k: l for k, l, _n in BUY_TYPES}
-    out = [{"v": k, "n": n, "label": " + ".join(label[x] for x in k[3:].split(","))}
+    out = [{"v": k, "n": n,
+            "label": " + ".join(BUY_SHORT.get(x, label[x]) for x in k[3:].split(",")),
+            "title": " + ".join(label[x] for x in k[3:].split(","))}
            for k, n in tally.items()]
     out.sort(key=lambda o: (-o["n"], o["label"]))
     return out
