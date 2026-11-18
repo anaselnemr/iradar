@@ -451,6 +451,22 @@
       </div>
       {% endif %}
 
+      {% set plines = price|fmt_price %}
+      {% set is_price = (price|has_amount)
+          or ('multiple opn' in (price or '')|lower and plines) %}
+      {% if price or u.level in ('PTP', 'EB') %}
+      <div class="pricebox">
+        <div class="pricelabel">Price</div>
+        {% if is_price %}
+          {% for line in plines %}
+          <div style="{{ 'font-weight:600; font-size:15px' if loop.first else 'margin-top:2px' }}">{{ line }}</div>
+          {% endfor %}
+        {% else %}
+          <div class="muted">empty</div>
+        {% endif %}
+      </div>
+      {% endif %}
+
       {#- Buy button: every label the page's buy box shows, in its order -
           a box can show two (View product family + Contact sales). Only a
           real call to action counts as a buy button; View replacement or
@@ -468,22 +484,6 @@
           {% if not _bb.has_content %}<div class="muted" style="margin-top:4px">Not a buy button</div>{% endif %}
         {% else %}
           <div class="muted">none</div>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      {% set plines = price|fmt_price %}
-      {% set is_price = (price|has_amount)
-          or ('multiple opn' in (price or '')|lower and plines) %}
-      {% if price or u.level in ('PTP', 'EB') %}
-      <div class="pricebox">
-        <div class="pricelabel">Price</div>
-        {% if is_price %}
-          {% for line in plines %}
-          <div style="{{ 'font-weight:600; font-size:15px' if loop.first else 'margin-top:2px' }}">{{ line }}</div>
-          {% endfor %}
-        {% else %}
-          <div class="muted">empty</div>
         {% endif %}
       </div>
       {% endif %}

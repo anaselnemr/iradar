@@ -3249,4 +3249,4 @@ def test_the_page_shows_every_label_of_its_buy_box():
     body = _ok("/url/940").data.decode("utf-8", "replace")
     assert '<span class="buybtn">View product family</span>' in body
     assert '<span class="buybtn">Contact Sales</span>' in body
-    assert body.index(">Buy button<") < body.index(">Price<")
+    assert body.index(">Price<") < body.index(">Buy button<"), "the buttons sit below the price"
