@@ -89,7 +89,7 @@
     </a>
     <a class="report-stat" href="{{ url_for('index', status='notlive') }}" title="Pages answering HTTP 404 or 410 that are not archived yet. Select them and choose Archive to set them aside. The run delta is newly offline pages minus pages that came back live.">
       <div class="n" style="color:{{ 'var(--ink)' if counts.notlive else 'var(--muted)' }}">{{ '{:,}'.format(counts.notlive or 0) }}{% set offline_delta = [offline_delta or 0, counts.notlive or 0]|min if (offline_delta or 0) > 0 else offline_delta %}{% if offline_delta %}<span class="delta" style="color:{{ 'var(--err)' if offline_delta > 0 else 'var(--ok)' }}" title="Change in offline pages this run">{{ '+%d'|format(offline_delta) if offline_delta > 0 else '−%d'|format(-offline_delta) }}</span>{% endif %}</div>
-      <div class="l">Offline</div>
+      <div class="l">Recently offline</div>
       <div class="detail">{{ (((counts.notlive or 0) * 100 / (counts.total or 1))|round|int) }}% of all pages</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
@@ -425,9 +425,21 @@
     .dd:not(.locked) > summary .lock { display: none; }
     .dd.locked > summary svg { width: 12px; height: 12px; margin-right: 5px;
                                vertical-align: -1px; }
-    .dd .panel.ptgrp { display: grid; grid-template-columns: repeat(3, max-content);
-                       align-items: start; }
-    .ptswitch { grid-column: 1 / -1; display: flex; margin: 2px 2px 4px; }
+    /* while the list reloads it dims; the toolbar - and the dropdown open in
+       it - stays as it is */
+    #trackpanel.loading > :not(form.toolbar) { opacity: .55; transition: opacity .12s; }
+    /* PTP / EB: one size and one place whatever is picked. Fixed columns, so
+       flipping PTPs <-> EBs (EBs have no buy button, fewer components) never
+       resizes it, and pinned to the toolbar's right edge rather than slid
+       into place after opening, so it never jumps. */
+    .dd .panel.ptgrp { display: grid; grid-template-columns: 420px 240px 270px;
+                       align-items: start; min-height: 520px; }
+    @media (min-width: 641px) {
+      form.toolbar { position: relative; }
+      form.toolbar .dd[data-part] { position: static; }
+      form.toolbar .dd[data-part] > .panel.ptgrp { left: auto; right: 0; transform: none !important; }
+    }
+    .ptswitch { grid-column: 1 / -1; display: flex; justify-content: center; margin: 2px 2px 6px; }
     .ptswitch button { padding: 6px 18px; font-size: 13px; font-weight: 600;
                        background: var(--panel); color: var(--ink);
                        border: 1px solid var(--line); border-radius: 0; }
@@ -463,7 +475,7 @@
       form.toolbar .dd.wide { grid-column: 1 / -1; }
       form.toolbar .dd .panel.grp, form.toolbar .dd .panel.grp.right { left: 0; right: 0; }
       .dd .panel.grp { flex-direction: column; max-height: 70vh; overflow: auto; }
-      .dd .panel.ptgrp { grid-template-columns: minmax(0, 1fr); }
+      .dd .panel.ptgrp { grid-template-columns: minmax(0, 1fr); min-height: 0; }
       .tgrid { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
       .tname { margin-top: 6px; }
       .seg { display: flex; }
@@ -499,7 +511,7 @@
       {% for r in rows if r.opts[0].kind != 'over' %}
         <div class="trow" {% if r.needs %}data-needs="{{ r.needs }}"{% endif %}>
         {%- if r.components -%}
-        <span class="tname"><button type="button" class="pexp-btn" aria-expanded="true" data-exp="{{ r.name }}"><b>{{ r.name }}</b><span class="pnow">{{ r.preset }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></span>
+        <span class="tname"><b>{{ r.name }}</b></span>
         {%- else -%}
         <span class="tname" title="{{ r.label }}">{{ r.label }}</span>
         {%- endif %}
@@ -1113,7 +1125,7 @@ function pjax(url) {
       }
     }
   } catch (e) {}
-  panel.style.opacity = '0.55';
+  panel.classList.add('loading');
   const mine = ++PJAX_SEQ;
   fetch(url, {headers: {'X-Requested-With': 'fetch'}})
     .then(r => r.text())
@@ -1141,7 +1153,7 @@ function pjax(url) {
       SEL.clear();
       const am0 = document.getElementById('all-matching'); if (am0) am0.value = '0';
       history.pushState(null, '', url);
-      panel.style.opacity = '';
+      panel.classList.remove('loading');
       initTable();
     })
     .catch(() => { window.location.href = url; });
@@ -1636,14 +1648,12 @@ document.addEventListener('toggle', function (e) {
         .catch(function (e) { console.warn('facet counts failed', e); });
     }, 90);
   }
-  document.addEventListener('change', function (ev) {
-    if (!ev.target.closest || !ev.target.closest('form.toolbar')) return;
-    if (['ptype', 'status', 'attr', 'bl', 'pl', 'seg', 'ps', 'bt'].indexOf(ev.target.name) >= 0) refreshFacets();
-  });
-  document.addEventListener('input', function (ev) {
-    if (ev.target.name === 'q' && ev.target.closest('form.toolbar')) refreshFacets();
-  });
-  refreshFacets();
+  // Not wired to ticks any more: every tick applies at once and the page
+  // comes back with faceted counts already worked out, so a second request
+  // for the same numbers only raced it - landing first, showing and hiding
+  // sections, then the reload moved them again. Kept for a page that wants
+  // counts without applying (window.refreshFacets).
+  window.refreshFacets = refreshFacets;
 })();
 </script>
 {% endblock %}

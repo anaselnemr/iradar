@@ -842,35 +842,26 @@ def render_report(d, base_url, when_label):
 
     delta = d.get("pages_delta", 0)
     pages = d.get("pages", 0)
-    paused = d.get("paused", 0)
-    paused_blank = d.get("paused_blank", 0)
-    paused_offline = d.get("paused_offline", 0)
-    other = paused - paused_blank - paused_offline
-    # same words as the dashboard's Paused card
-    others = paused - paused_offline
-    off = ("all offline" if paused_offline and paused_offline == d.get("notlive", 0)
-           else "{:,} offline".format(paused_offline))
-    paused_detail = (("incl. " + off + (" + {:,} other".format(others) if others else ""))
-                     if paused else "none paused")
-    live_pct = round(d.get("live", 0) * 100 / (pages or 1))
+    # The Dashboard's figures, minus the two that are housekeeping rather than
+    # news (Paused, Archive). No Live: with offline pages archived, Total
+    # pages is the live inventory.
     readings = [
         ("Total pages", pages, _ACCENT, "{:,} captured".format(d.get("captured", 0)),
          suffix(delta, _GOOD if delta > 0 else _BAD if delta < 0 else _MUT)),
-        ("Live", d.get("live", 0), _GOOD, "%d%% of all pages" % live_pct, ""),
-        ("Offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
+        ("Recently offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
          "%d%% of all pages" % round(d.get("notlive", 0) * 100 / (pages or 1)),
          suffix(d.get("offline_delta", 0), _BAD)),
         ("Updated", n, "#ea580c" if n else _MUT,
          "{:,} awaiting review".format(d.get("open_updates", n)), ""),
         ("Content", d.get("content_updates", 0), "#168b7d" if d.get("content_updates") else _MUT,
-         "items in the latest report", ""),
+         "in the latest report", ""),
         ("Updated files", fu, "#7c3aed" if fu else _MUT,
          "{:,} awaiting review".format(d.get("open_files", fu)), ""),
-        ("Paused", paused, _MUT, paused_detail, ""),
     ]
     stats = ""
-    for group in (readings[:4], readings[4:]):
-        width = "25%" if len(group) == 4 else "33.33%"
+    # five figures: three, then two - each row fills the width
+    for group in (readings[:3], readings[3:]):
+        width = "33.33%" if len(group) == 3 else "50%"
         stats += ('<div class="report-stat-row" style="text-align:center;font-size:0;">'
                   '<!--[if mso]><table role="presentation" width="100%" cellpadding="0"'
                   ' cellspacing="0" style="table-layout:fixed;"><tr><![endif]-->')

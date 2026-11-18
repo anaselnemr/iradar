@@ -1377,7 +1377,7 @@ STATUS_FILTERS = {
     # baseline", after which the page is dealt with and reads as unchanged
     "unchanged": ("Unchanged", "u.last_status='unchanged' AND u.active=1"),
     # pages a run found offline (404/410) that are not archived yet
-    "notlive":   ("Offline", "u.last_http IN (404,410)"),
+    "notlive":   ("Recently offline", "u.last_http IN (404,410)"),
     "paused":    ("Paused", "u.active=0"),
     "blank":     ("Blank page", "u.last_status='blank'"),
     "error":     ("Capture error", "u.last_status='error'"),
@@ -2488,6 +2488,61 @@ def _bar_extras(con):
     return hit
 
 
+def _dash_static(con):
+    """Everything on the Dashboard that does not depend on the filters - the
+    figures, the Type / owner / buy-button option lists, the alphabetical
+    ranks. Each one is a full pass over the pages (~30 ms apiece, a dozen of
+    them); none can change without a write, so they are held until the next
+    one, per view (inventory or Archive)."""
+    def build():
+        scope = _scope_sql("")
+        out = {
+            # days on which a big batch was imported (the initial ~4k load)
+            # are NOT "new pages you added" - only badge NEW for small adds
+            "bulk_days": {r["d"] for r in con.execute(
+                "SELECT substr(created_at,1,10) d, COUNT(*) n FROM urls"
+                " WHERE created_at IS NOT NULL GROUP BY d HAVING n > 50")},
+            # The "#" shown is a 1..N ALPHABETICAL rank, not the database id:
+            # #1 is the alphabetically-first page and the column renumbers
+            # itself when a page is added (the id still keys the checkboxes).
+            "ranks": {r["id"]: r["seq"] for r in con.execute(
+                "SELECT id, ROW_NUMBER() OVER (ORDER BY url COLLATE NOCASE, id)"
+                " AS seq FROM urls")},
+            "counts": dict(db.dashboard_counts(con)),
+            "comp_pending": con.execute(
+                "SELECT COUNT(*) FROM urls WHERE active=1"
+                " AND (components IS NULL OR components='')").fetchone()[0],
+            # pages that still NEED a capture (never checked / failed) - the
+            # set "check pending first" runs, the front of a full check's queue
+            "pending_total": con.execute(
+                "SELECT COUNT(*) FROM urls WHERE active=1 AND (last_checked IS NULL"
+                " OR IFNULL(last_status,'') IN ('blank','error'))").fetchone()[0],
+            "ptypes_raw": [dict(r) for r in con.execute(
+                "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' AND " + scope +
+                " GROUP BY ptype ORDER BY n DESC")],
+            # per-level counts, so the Type dropdown can nest each general
+            # type's detail levels (Product > PC/PFP/PSFP/PEFP, ...) under it
+            "lvl_counts": {(r["ptype"], r["level"]): r["n"] for r in con.execute(
+                "SELECT ptype, level, COUNT(*) n FROM urls"
+                " WHERE ptype<>'' AND IFNULL(level,'')<>'' AND " + scope +
+                " GROUP BY ptype, level")},
+            "n_ptp": con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
+                                 " AND url LIKE '%/part/%' AND " + scope).fetchone()[0],
+            "n_eb": con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
+                                " AND url LIKE '%/evaluation-board/%' AND " + scope
+                                ).fetchone()[0],
+            "bl_opts": _owner_values(con, "bl"),
+            "pl_opts": _owner_values(con, "pl"),
+            "seg_opts": _owner_values(con, "segment"),
+            "ps_opts": _owner_values(con, "pstatus"),
+            "bt_opts": _buy_type_options(con),
+        }
+        return out
+
+    return _cached_by_db("dash_static_archive" if _in_archive() else "dash_static",
+                         build)
+
+
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
@@ -2527,18 +2582,8 @@ def index():
     per_page = _per_page()
     pages = max(1, -(-total_match // per_page))
     page = min(page, pages)
-    # days on which a big batch was imported (the initial ~4k load) are NOT
-    # "new pages you added" - only badge NEW for small, individual additions
-    bulk_days = {r["d"] for r in con.execute(
-        "SELECT substr(created_at,1,10) d, COUNT(*) n FROM urls"
-        " WHERE created_at IS NOT NULL GROUP BY d HAVING n > 50")}
-    # The "#" shown is a 1..N ALPHABETICAL rank, not the raw database id: #1 is
-    # the alphabetically-first page and the whole column renumbers itself the
-    # moment a page is added (the real id/PK never changes - it still keys the
-    # checkboxes and links, so nothing downstream breaks).
-    ranks = {r["id"]: r["seq"] for r in con.execute(
-        "SELECT id, ROW_NUMBER() OVER (ORDER BY url COLLATE NOCASE, id) AS seq"
-        " FROM urls")}
+    st = _dash_static(con)
+    bulk_days, ranks = st["bulk_days"], st["ranks"]
     urls = con.execute(f"""
         SELECT u.*,
           (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
@@ -2556,30 +2601,12 @@ def index():
         LIMIT ? OFFSET ?
     """, params + [per_page, (page - 1) * per_page]).fetchall()
 
-    counts = db.dashboard_counts(con)
+    counts = st["counts"]
     last_run = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
     total_open = con.execute(
         "SELECT COUNT(*) FROM changes WHERE reviewed=0").fetchone()[0]
-    comp_pending = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1"
-        " AND (components IS NULL OR components='')").fetchone()[0]
-    # pages that still NEED a capture (never checked / failed)
-    # - the set the "check pending first" button runs, and the front of the
-    # queue when checking everything
-    pending_total = con.execute(
-        "SELECT COUNT(*) FROM urls WHERE active=1 AND (last_checked IS NULL"
-        " OR IFNULL(last_status,'') IN ('blank','error'))"
-    ).fetchone()[0]
-    scope = _scope_sql("")
-    ptypes_raw = con.execute(
-        "SELECT ptype, COUNT(*) n FROM urls WHERE ptype<>'' AND " + scope +
-        " GROUP BY ptype ORDER BY n DESC").fetchall()
-    # per-level counts, so the Type dropdown can nest each general type's
-    # detail levels (Product > PC/PFP/PSFP/PEFP, ...) under it
-    lvl_counts = {(r["ptype"], r["level"]): r["n"] for r in con.execute(
-        "SELECT ptype, level, COUNT(*) n FROM urls"
-        " WHERE ptype<>'' AND IFNULL(level,'')<>'' AND " + scope +
-        " GROUP BY ptype, level")}
+    comp_pending, pending_total = st["comp_pending"], st["pending_total"]
+    ptypes_raw, lvl_counts = st["ptypes_raw"], st["lvl_counts"]
     _SCHEMES = {"Product": PRODUCT_LEVELS, "Application": APP_LEVELS,
                 "Design resources": DR_LEVELS}
     # products and parts are ONE taxonomy - a part type page is its bottom -
@@ -2587,13 +2614,7 @@ def index():
     # shape nested inside it: PC/PFP/PSFP/PEFP and then PTP/EB, each with
     # its badge, instead of PTP and EB standing outside alone
     part_total = next((r["n"] for r in ptypes_raw if r["ptype"] == "Part"), 0)
-    n_ptp = n_eb = 0
-    if part_total:
-        n_ptp = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
-                            " AND url LIKE '%/part/%' AND " + scope).fetchone()[0]
-        n_eb = con.execute("SELECT COUNT(*) FROM urls WHERE ptype='Part'"
-                           " AND url LIKE '%/evaluation-board/%' AND " + scope
-                           ).fetchone()[0]
+    n_ptp, n_eb = (st["n_ptp"], st["n_eb"]) if part_total else (0, 0)
     ptypes, merged_done = [], False
     for r in ptypes_raw:
         if r["ptype"] in ("Part", "Product"):
@@ -2617,11 +2638,8 @@ def index():
                       if lvl_counts.get((r["ptype"], l))]
             ptypes.append({"ptype": r["ptype"], "n": r["n"], "levels": levels})
     cat_pages, vid_pages, status_counts, attr_counts = _dash_counts(con)
-    # read while this connection is still open - it closes on the next line
-    bl_opts, pl_opts = _owner_values(con, "bl"), _owner_values(con, "pl")
-    seg_opts = _owner_values(con, "segment")
-    ps_opts = _owner_values(con, "pstatus")
-    bt_opts = _buy_type_options(con)
+    bl_opts, pl_opts = st["bl_opts"], st["pl_opts"]
+    seg_opts, ps_opts, bt_opts = st["seg_opts"], st["ps_opts"], st["bt_opts"]
     con.close()
     con2 = db.connect()
     # content/component has/no counts come from cat_pages: has = pages with the
@@ -2656,7 +2674,7 @@ def index():
          "n": status_counts["blank"], "tone": "bad"},
         {"kind": "status", "vals": ["error"], "label": "Capture error",
          "n": status_counts["error"], "tone": "bad"},
-        {"kind": "status", "vals": ["notlive"], "label": "Offline",
+        {"kind": "status", "vals": ["notlive"], "label": "Recently offline",
          "n": notlive_total, "tone": "bad"},
         {"kind": "status", "vals": ["new"], "label": "Not captured",
          "n": status_counts["new"]},
@@ -2687,8 +2705,14 @@ def index():
     # were quick. The chips keep the corpus-wide counts: a chip says how many
     # pages are in that state, not how many are left after the other filters.
     try:
-        facets = _dash_facets(con2, q, statuses, sel_types, attrs,
-                              sel_bl, sel_pl, sel_seg, sel_ps, sel_bt)
+        # the same filter set asked again (flipping PTPs <-> EBs, paging,
+        # going back) answers from memory until the next write
+        fkey = (_in_archive(), q, tuple(statuses), tuple(sel_types), tuple(attrs),
+                tuple(sel_bl), tuple(sel_pl), tuple(sel_seg), tuple(sel_ps),
+                tuple(sel_bt), request.args.get("pc"), request.args.get("pce"))
+        facets = _facets_cached(fkey, lambda: _dash_facets(
+            con2, q, statuses, sel_types, attrs, sel_bl, sel_pl, sel_seg,
+            sel_ps, sel_bt))
     finally:
         con2.close()
     con3 = db.connect()
@@ -6186,10 +6210,34 @@ def _db_write_stamp():
     st = 0
     for p in (db.DB_PATH, str(db.DB_PATH) + "-wal"):
         try:
-            st = max(st, os.stat(p).st_mtime_ns)
+            s = os.stat(p)
         except OSError:
-            pass
+            continue
+        # every connection opens the WAL afresh: an EMPTY one carries a new
+        # mtime on each request without anything having been written, which
+        # made every cached aggregate rebuild on every page view
+        if s.st_size or p == db.DB_PATH:
+            st = max(st, s.st_mtime_ns)
     return st
+
+
+_FACET_CACHE = {}
+
+
+def _facets_cached(key, build, cap=48):
+    """The Dashboard's faceted counts for one filter set, held until the next
+    write - a handful of sets in use at once, so a small store, oldest out."""
+    stamp = _db_write_stamp()
+    with _AGG_LOCK:
+        hit = _FACET_CACHE.get(key)
+        if hit and hit[0] == stamp:
+            return dict(hit[1])
+    val = build()
+    with _AGG_LOCK:
+        if len(_FACET_CACHE) >= cap:
+            _FACET_CACHE.pop(next(iter(_FACET_CACHE)))
+        _FACET_CACHE[key] = (stamp, val)
+    return dict(val)
 
 
 def _cached_by_db(name, build):
