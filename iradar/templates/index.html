@@ -439,6 +439,10 @@
       form.toolbar { position: relative; }
       form.toolbar .dd[data-part] { position: static; }
       form.toolbar .dd[data-part] > .panel.ptgrp { left: auto; right: 0; transform: none !important; }
+      /* the pill alone sits centred under its own button */
+      form.toolbar .dd[data-part]:has(> .panel.nopt) { position: relative; }
+      form.toolbar .dd[data-part] > .panel.ptgrp.nopt { left: 50%; right: auto;
+                                                         transform: translateX(-50%) !important; }
     }
     /* a segmented control: one track, the picked side lifted out of it */
     .ptswitch { grid-column: 1 / -1; justify-self: center; display: inline-flex; gap: 2px;
