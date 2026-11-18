@@ -800,6 +800,12 @@ BUY_WAIT_JS = ("() => [...document.querySelectorAll('[class*=\"price-container\"
                "[class*=\"price-container\" i] .contact-sales-cta, [class*=\"price-container\" i] .request-samples-btn')]"
                ".some(b => b.offsetParent !== null)")
 BUY_WAIT_MS = 8000
+# the Design resources tabs read as components (block, tab name lowercased);
+# app.DR_TABS names them on screen
+DR_TAB_FLAGS = [("pcb_design", "pcb design data"), ("dr_devtools", "development tools"),
+                ("dr_embedded", "embedded software"), ("dr_services", "services"),
+                ("dr_boards", "boards & designs"), ("dr_simmodels", "simulation models"),
+                ("dr_simtools", "simulation tools"), ("dr_wireless", "wireless modules")]
 BUY_BOX_PRESENT_JS = "() => !!document.querySelector('[class*=\"price-container\" i]')"
 BUY_SETTLE_STEP_MS = 500       # read the box this often...
 BUY_SETTLE_SAME = 3            # ...until this many reads in a row agree
@@ -3208,14 +3214,16 @@ async def capture_one(browser, url, out_dir):
         # built with one query instead of opening 4,145 snapshot files
         result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
                                 if isinstance(b, dict) and b.get("title")]
-        # PCB design data (the SURF extra of the perfect-page standard): a
-        # Design resources group of that name with at least one file in it
+        # Design resources, tab by tab: each tab (PCB design data - the SURF
+        # extra of the perfect-page standard - Development tools, Embedded
+        # software ...) is a component, there when the tab holds an item
         try:
-            _pcb = [it for it in sections.get("design_resources") or []
-                    if isinstance(it, dict) and re.match(
-                        r"^pcb design data$", (it.get("grp") or "").strip(), re.I)]
-            sections.setdefault("flags", {})["pcb_design"] = {
-                "exists": bool(_pcb), "has_content": bool(_pcb), "count": len(_pcb)}
+            _fl = sections.setdefault("flags", {})
+            for _block, _tab in DR_TAB_FLAGS:
+                _n = sum(1 for it in sections.get("design_resources") or []
+                         if isinstance(it, dict)
+                         and (it.get("grp") or "").strip().lower() == _tab)
+                _fl[_block] = {"exists": _n > 0, "has_content": _n > 0, "count": _n}
         except Exception:
             pass
         result["flags"] = sections.get("flags") or {}

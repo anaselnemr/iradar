@@ -2699,12 +2699,12 @@ def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
     data = json.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
     assert data["keyComponents"] == app.KEY_COMPONENTS and len(app.KEY_COMPONENTS) == 11
     assert data["components"][:11] == app.KEY_COMPONENTS
-    assert data["components"][11] == "PCB design"
+    assert data["components"][11] == app.DR_PCB
     assert data["clusters"] == [{"name": "SURF", "bls": ["MMS", "RF"],
-                                 "extra": ["PCB design"]}]
+                                 "extra": [app.DR_PCB]}]
     assert ">Key 11<" in body
     have = {c: sum(p["have"][c] for p in data["pls"]) for c in data["components"]}
-    assert have["Metadata"] == 1 and have["PCB design"] == 1
+    assert have["Metadata"] == 1 and have[app.DR_PCB] == 1
     assert have["Buy button"] == 0          # View replacement alone is not a buy
 
 
@@ -3262,3 +3262,31 @@ def test_the_page_shows_every_label_of_its_buy_box():
     assert '<span class="buybtn">View product family</span>' in body
     assert '<span class="buybtn">Contact Sales</span>' in body
     assert body.index(">Price<") < body.index(">Buy button<"), "the buttons sit below the price"
+
+
+def test_design_resources_tabs_are_components_named_dr():
+    """Each Design resources tab is its own component, DR · <tab>: in the
+    Dashboard's has / no filters and in the Charts' component lists."""
+    import json as _json
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    sw = {"dr_embedded": {"exists": True, "has_content": True, "count": 3}}
+    no = {"dr_embedded": {"exists": False, "has_content": False, "count": 0}}
+    for name, fl in (("SW", sw), ("NOSW", no), ("UNREAD", {})):
+        con.execute("INSERT INTO urls(url, active, ptype, level, last_checked, last_status,"
+                    " flags) VALUES(?, 1, 'Part', 'PTP', 'x', 'unchanged', ?)",
+                    ("https://www.infineon.com/part/" + name, _json.dumps(fl)))
+    con.commit()
+    con.close()
+    for attr, want in (("hasdrsw", ["SW"]), ("nodrsw", ["NOSW"])):
+        w, p = app._url_filter("", [], [], [attr])
+        c = db.connect()
+        got = sorted(r[0].rsplit("/", 1)[-1] for r in c.execute("SELECT u.url FROM urls u " + w, p))
+        c.close()
+        assert got == want, (attr, got)
+    label = app.DR + "Embedded software"
+    assert label in app.PTP_COMPONENTS and label in app.EB_COMPONENTS
+    assert app._KEY_HAS[label] == "hasdrsw"
+    assert app.CHART_CLUSTERS[0]["extra"] == [app.DR + "PCB design data"]
+    i = app.COMPONENT_KEYS.index("nodesign")
+    assert app.COMPONENT_KEYS[i + 1:i + 3] == ["haspcb", "nopcb"]

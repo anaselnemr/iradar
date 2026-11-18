@@ -1525,6 +1525,21 @@ def _flag_read(block):
             f" AND json_type(u.flags, '$.{block}') IS NOT NULL)")
 
 
+# Design resources, tab by tab (18 Nov 2026): every tab a page's Design
+# resources section offers is a component of its own, read from the group
+# its items were captured under, and named "DR · <tab>" so they sort and
+# read together. PCB design data was the first of them (SURF's extra).
+DR = "DR " + chr(183) + " "
+DR_TABS = [("pcb", "pcb_design", "PCB design data"),
+           ("drdev", "dr_devtools", "Development tools"),
+           ("drsw", "dr_embedded", "Embedded software"),
+           ("drsvc", "dr_services", "Services"),
+           ("drboards", "dr_boards", "Boards & designs"),
+           ("drsimm", "dr_simmodels", "Simulation models"),
+           ("drsimt", "dr_simtools", "Simulation tools"),
+           ("drwl", "dr_wireless", "Wireless modules")]
+DR_PCB = DR + "PCB design data"
+
 STANDARD_FLAG_ATTRS = [
     # stem, block, label, empty label (None = no middle state)
     ("metadata", "meta_description", "metadata", "Meta description tag but empty"),
@@ -1532,8 +1547,8 @@ STANDARD_FLAG_ATTRS = [
     ("package", "package_link", "package page link", None),
     ("buy", "buy_button", "buy button",
      "Only View replacement / View product family"),
-    ("pcb", "pcb_design", "PCB design data", None),
 ]
+STANDARD_FLAG_ATTRS += [(_s, _b, DR + _l, None) for _s, _b, _l in DR_TABS]
 for _stem, _block, _label, _empty in STANDARD_FLAG_ATTRS:
     ATTR_FILTERS["has" + _stem] = ("Has " + _label, _flag(_block, "has_content"))
     if _empty:
@@ -1615,6 +1630,11 @@ for _stem, _b, _l, _empty in STANDARD_FLAG_ATTRS:
     COMPONENT_KEYS += (["has" + _stem] + (["empty" + _stem] if _empty else [])
                        + ["no" + _stem])
 COMPONENT_KEYS += ["hasprice", "noprice"]
+# the Design resources tabs sit right under Design resources itself
+_DRK = [k for _s, _b, _l in DR_TABS for k in ("has" + _s, "no" + _s)]
+COMPONENT_KEYS = [k for k in COMPONENT_KEYS if k not in _DRK]
+_at = COMPONENT_KEYS.index("nodesign") + 1
+COMPONENT_KEYS[_at:_at] = _DRK
 # A nav entry is a LINK, not a container: there is nothing inside it to be
 # empty, so these two states are the whole truth for them.
 for _stem, _col, _lbl, _disp in _NAV_FILTER_ATTRS:
@@ -1685,8 +1705,7 @@ COMPONENTS = [
     ("primary_document",   "Primary document",      "flag", "primary_document"),
     ("package_link",       "Package page link",     "flag", "package_link"),
     ("buy_button",         "Buy button",            "flag", "buy_button"),
-    ("pcb_design",         "PCB design",            "flag", "pcb_design"),
-]
+] + [(_b, DR + _l, "flag", _b) for _s, _b, _l in DR_TABS]
 COMPONENT_BY_KEY = {c[0]: c for c in COMPONENTS}
 # Every value infineon.com shows in a part's status badge (190 product tables,
 # 11 Nov 2026), in the order the charts list them.
@@ -1956,7 +1975,8 @@ def _component_counts(con):
             fl = {}
         for block in ("product_table", "developer_community", "hero_image",
                       "product_status", "meta_description", "primary_document",
-                      "package_link", "buy_button", "pcb_design"):
+                      "package_link", "buy_button",
+                      *[_b for _s, _b, _l in DR_TABS]):
             if (fl.get(block) or {}).get("exists"):
                 bump(et, block)
         def _loadset(j):
@@ -2210,6 +2230,9 @@ def _req_pc(ps):
     if has_request_context() and ps["param"] in request.values:
         raw = request.values.get(ps["param"], "") or ""
         want = {v.strip() for v in raw.split(",")}
+        # a link saved before the Design resources tabs were named DR · ...
+        if "PCB design" in want:
+            want.add(DR_PCB)
         return [c for c in ps["components"] if c in want]
     return list(ps["default"])
 
@@ -9135,7 +9158,7 @@ KEY_COMPONENTS = ["Hero image", "Description", "Subheadline", "Key features",
 # lines and ticks its extras. SURF = the MMS and RF lines (PL 32/38/41/42/44/53/55, the PLs of the
 # SURF asset export). More clusters are one line each.
 CHART_CLUSTERS = [
-    {"name": "SURF", "bls": ["MMS", "RF"], "extra": ["PCB design"]},
+    {"name": "SURF", "bls": ["MMS", "RF"], "extra": [DR_PCB]},
 ]
 # The three key components for boards. "Images" is not a page component: a
 # board has it when at least one picture of its own was captured (the hero
@@ -9155,25 +9178,28 @@ _KEY_HAS = {"Hero image": "hashero", "Description": "hasdescr",
             "Benefits": "hasbenefits", "Applications": "hasapps",
             "Parametrics": "hasparametrics", "Metadata": "hasmetadata",
             "Primary document": "hasprimarydoc", "Package page link": "haspackage",
-            "Buy button": "hasbuy", "PCB design": "haspcb",
+            "Buy button": "hasbuy",
             "Bill of material": "hasbom", "Images": "hasimages", "Videos": "hasvideos",
             "Ordering": "hasordering", "Diagram": "hasdiagrams", "Documents": "hasdocs",
             "Design resources": "hasdesign", "Partner solutions": "haspartners",
             "Developer community": "hascommunity", "News & highlights": "hasnews",
             "View buying options": "hasbuyopts", "Product details": "haspdetails",
-            "Featured products": "hasfeatured", "Register product": "hasregister"}
+            "Featured products": "hasfeatured", "Register product": "hasregister",
+            **{DR + _l: "has" + _s for _s, _b, _l in DR_TABS}}
 # the Charts' component lists, in the Charts' order
-PTP_COMPONENTS = KEY_COMPONENTS + ["PCB design", "Ordering", "Diagram", "Documents",
+PTP_COMPONENTS = KEY_COMPONENTS + [DR_PCB, "Ordering", "Diagram", "Documents",
                                    "Design resources", "Partner solutions",
                                    "Developer community", "News & highlights",
                                    "View buying options", "Product details",
-                                   "Featured products"]
+                                   "Featured products"] + [
+                                   DR + _l for _s, _b, _l in DR_TABS[1:]]
 EB_COMPONENTS = EB_KEY_COMPONENTS + ["Subheadline", "Hero image", "Parametrics", "Ordering",
                                      "Description", "Key features", "Benefits",
                                      "Applications", "Diagram", "Documents",
                                      "Design resources", "Partner solutions",
                                      "Developer community", "News & highlights",
-                                     "Product details", "Register product"]
+                                     "Product details", "Register product"] + [
+                                     DR + _l for _s, _b, _l in DR_TABS]
 _LIVE_PTP = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
              " AND u.url LIKE '%/part/%'")
 _LIVE_EB = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
@@ -9352,7 +9378,7 @@ def _charts_data(con, kind):
             "keyNote": ({} if kind == "eb" else
                         {"Hero image": ["Real image", "Placeholder image"],
                          "Description": ["Description tab", "No description tab"],
-                         "PCB design": ["Has PCB design data", "No PCB design data"]}),
+                         DR_PCB: ["Has PCB design data", "No PCB design data"]}),
             "pls": sorted(pls.values(), key=lambda p: (p["bl"], int(p["pl"]) if p["pl"].isdigit() else 999))}
     _CHARTS_CACHE[kind] = (sig, data)
     return data
