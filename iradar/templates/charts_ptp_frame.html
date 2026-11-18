@@ -92,7 +92,7 @@ const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll
 const BLS=['DSI','ICW','MMS','RF'], sum=(a,f)=>a.reduce((s,x)=>s+f(x),0), fmt=n=>n.toLocaleString('en-US'), pct=n=>(n*100).toFixed(1)+'%';
 const totalPTPs=sum(DATA.pls,p=>p.ptps);
 const selectedPL=new Set(DATA.pls.map(p=>p.pl)),selectedComponents=new Set(DATA.keyComponents), charts=new Map();
-try{const saved=JSON.parse(localStorage.getItem('ptp-components-v2'));if(Array.isArray(saved)&&saved.every(c=>DATA.components.includes(c))){selectedComponents.clear();saved.forEach(c=>selectedComponents.add(c));}}catch{}
+try{const saved=JSON.parse(localStorage.getItem('ptp-components-v3'));if(Array.isArray(saved)&&saved.every(c=>DATA.components.includes(c))){selectedComponents.clear();saved.forEach(c=>selectedComponents.add(c));}}catch{}
 try{const saved=JSON.parse(localStorage.getItem('ptp-selected-pls'));if(Array.isArray(saved)&&saved.every(id=>DATA.pls.some(p=>p.pl===id))){selectedPL.clear();saved.forEach(id=>selectedPL.add(id));}}catch{}
 // Online / Offline / Both and the product status narrow the PTPs themselves:
 // every chart reads p.ptps, p.have and p.bits, so those are recomputed from
@@ -284,7 +284,7 @@ function syncPicker(){
  $$('#component-picker input').forEach(el=>el.checked=selectedComponents.has(el.value));
  $$('[data-preset]').forEach(el=>{let list=el.dataset.preset==='key'?keyOf():shownComponents();el.setAttribute('aria-pressed',String(list.length===selectedComponents.size&&list.every(c=>selectedComponents.has(c))));});
 }
-function saveSelection(){try{localStorage.setItem('ptp-components-v2',JSON.stringify([...selectedComponents]));}catch{}syncPicker();renderAll();}
+function saveSelection(){try{localStorage.setItem('ptp-components-v3',JSON.stringify([...selectedComponents]));}catch{}syncPicker();renderAll();}
 renderComponentChips();
 $('#component-picker').onchange=e=>{if(!e.target.matches('input[type=checkbox]'))return;if(e.target.checked)selectedComponents.add(e.target.value);else selectedComponents.delete(e.target.value);saveSelection();};
 $$('[data-preset]').forEach(el=>el.onclick=e=>{e.preventDefault();selectedComponents.clear();(el.dataset.preset==='key'?keyOf():shownComponents()).forEach(c=>selectedComponents.add(c));saveSelection();});
@@ -292,7 +292,7 @@ if(CLUSTERS.length){$('#cluster-row').hidden=false;$('#cluster').insertAdjacentH
 $('#cluster').onchange=()=>{
  cluster=$('#cluster').value;try{localStorage.setItem('ptp-cluster',cluster);}catch{}
  const cl=clusterOf();selectedComponents.clear();keyOf().forEach(c=>selectedComponents.add(c));selectedPL.clear();DATA.pls.forEach(p=>{if(!cl||cl.bls.includes(p.bl))selectedPL.add(p.pl);});
- try{localStorage.setItem('ptp-selected-pls',JSON.stringify([...selectedPL]));localStorage.setItem('ptp-components-v2',JSON.stringify([...selectedComponents]));}catch{}
+ try{localStorage.setItem('ptp-selected-pls',JSON.stringify([...selectedPL]));localStorage.setItem('ptp-components-v3',JSON.stringify([...selectedComponents]));}catch{}
  renderComponentChips();syncScopePicker();syncPicker();renderAll();
 };
 const filterPanel=$('#filters-panel');

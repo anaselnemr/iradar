@@ -9160,10 +9160,13 @@ KEY_COMPONENTS = ["Hero image", "Description", "Subheadline", "Key features",
 CHART_CLUSTERS = [
     {"name": "SURF", "bls": ["MMS", "RF"], "extra": [DR_PCB]},
 ]
-# The three key components for boards. "Images" is not a page component: a
-# board has it when at least one picture of its own was captured (the hero
-# alone is not one).
-EB_KEY_COMPONENTS = ["Bill of material", "Images", "Videos"]
+# The key components for boards (Anas, 18 Nov 2026): thirteen, two of them
+# Design resources tabs. "Images" (a picture of the board's own beyond the
+# hero) stays a component to tick, no longer a key one.
+EB_KEY_COMPONENTS = ["Metadata", "Buy button", "Parametrics", "Primary document",
+                     "Hero image", "Description", "Key features", "Subheadline",
+                     "Benefits", "Bill of material", "Videos",
+                     DR + "Development tools", DR + "Embedded software"]
 _CHARTS_CACHE = {}
 
 # Perfect page on the Dashboard (Nov 2026): the same standard the Charts count,
@@ -9193,13 +9196,11 @@ PTP_COMPONENTS = KEY_COMPONENTS + [DR_PCB, "Ordering", "Diagram", "Documents",
                                    "View buying options", "Product details",
                                    "Featured products"] + [
                                    DR + _l for _s, _b, _l in DR_TABS[1:]]
-EB_COMPONENTS = EB_KEY_COMPONENTS + ["Subheadline", "Hero image", "Parametrics", "Ordering",
-                                     "Description", "Key features", "Benefits",
-                                     "Applications", "Diagram", "Documents",
-                                     "Design resources", "Partner solutions",
-                                     "Developer community", "News & highlights",
-                                     "Product details", "Register product"] + [
-                                     DR + _l for _s, _b, _l in DR_TABS]
+EB_COMPONENTS = EB_KEY_COMPONENTS + [c for c in [
+    "Images", "Ordering", "Applications", "Diagram", "Documents", "Design resources",
+    "Partner solutions", "Developer community", "News & highlights", "Product details",
+    "Register product", "Package page link"] + [DR + _l for _s, _b, _l in DR_TABS]
+    if c not in EB_KEY_COMPONENTS]
 _LIVE_PTP = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
              " AND u.url LIKE '%/part/%'")
 _LIVE_EB = (_KNOWN_GOOD + " AND u.active=1 AND u.ptype='Part'"
@@ -9236,7 +9237,7 @@ for _ps in PERFECT_SETS:
         "(" + _ps["scope"] + " AND NOT (" + _all_have(_ps["default"]) + "))")
 PERFECT_KEYS = [k + "_" + _ps["st"] for _ps in PERFECT_SETS for k in ("perfect", "notperfect")]
 # The same standard in the spreadsheet: a PTP is judged by Key 11, a board by
-# EB Key 3 (other page types have no standard and say so), SURF key 12 on top
+# EB Key 13 (other page types have no standard and say so), SURF key 12 on top
 # for PTPs, and which key components a page is missing - the to-do itself.
 PAGE_FIELDS.extend([
     ("perfect", "Perfect page (PTP key %d / EB key %d)" % (len(KEY_COMPONENTS),

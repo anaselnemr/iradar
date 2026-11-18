@@ -2669,12 +2669,14 @@ def test_charts_have_an_evaluation_board_tab_with_its_own_key_components():
     body = _client.get("/charts/eb/frame").data.decode("utf-8")
     import json as _j, re as _r
     data = _j.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
-    assert data["keyComponents"] == ["Bill of material", "Images", "Videos"]
+    assert data["keyComponents"] == [c for c in app.EB_KEY_COMPONENTS
+                                     if c in data["components"]]
+    assert len(app.EB_KEY_COMPONENTS) == 13
     assert "Images" in data["components"]
     assert sum(p["ptps"] for p in data["pls"]) == 3
     assert "EB completion" in body and "PTP" not in body
-    assert "'eb-components-v2'" in body and "'ptp-" not in body
-    assert ">Key 3<" in body and (">All %d<" % len(data["components"])) in body
+    assert "'eb-components-v3'" in body and "'ptp-" not in body
+    assert ">Key 13<" in body and (">All %d<" % len(data["components"])) in body
 
 
 def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
