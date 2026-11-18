@@ -434,7 +434,7 @@
        resizes it, and pinned to the toolbar's right edge rather than slid
        into place after opening, so it never jumps. */
     .dd .panel.ptgrp { display: grid; grid-template-columns: 420px 240px 270px;
-                       align-items: start; min-height: 520px; }
+                       align-items: start; align-content: start; min-height: 520px; }
     @media (min-width: 641px) {
       form.toolbar { position: relative; }
       form.toolbar .dd[data-part] { position: static; }
@@ -481,6 +481,10 @@
                        color: var(--ink); }
     .fchips .fclear { font-size: 12.5px; margin-left: 4px; }
     .dd .panel.stpanel { max-height: none; }
+    /* Buy button: Has / None, then the labels once one is picked */
+    .buyhas { padding: 2px 9px 8px; }
+    .buyhas .seg label.tp { flex-basis: 96px; }
+    .ddsec.unpicked .ownlist { display: none; }
     .dd .panel a.starch { display: flex; justify-content: space-between; align-items: center;
                           margin-top: 6px; padding: 8px 8px 4px; border-top: 1px solid var(--line);
                           font-size: 13.5px; color: var(--ink); text-decoration: none; }
@@ -505,11 +509,13 @@
   </style>
   {#- one titled list of value checkboxes (BL, PL, segment, product status,
       buy button): ticking two values means either -#}
-  {% macro owner_sec(dim, opts, sel, name, needs='') %}
-    {% if opts|length > 1 or sel %}
-    <section class="ddsec" data-owner="{{ name }}" {% if needs %}data-needs="{{ needs }}"{% endif %}
-             {% if not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
+  {% macro owner_sec(dim, opts, sel, name, needs='', lead='', picked=true) %}
+    {% if opts|length > 1 or sel or lead %}
+    <section class="ddsec{{ '' if picked else ' unpicked' }}" data-owner="{{ name }}" {% if needs %}data-needs="{{ needs }}"{% endif %}
+             {% if not lead and not facets.get('o_' + name, 1) and not sel %}style="display:none"{% endif %}>
       <h4>{{ dim }}</h4>
+      {{ lead }}
+      <div class="ownlist">
       {% if opts|length > 12 %}<input class="secfind" type="search" placeholder="Find" aria-label="Find a {{ dim|lower }}" autocomplete="off">{% endif %}
       {% for o in opts %}
       {% set _n = facets.get('o_' + name + '_' + o.v, 0 if ('o_' + name) in facets else o.n) %}
@@ -517,6 +523,7 @@
                {% if o.v in sel %}checked{% endif %}> {{ o.label }}
         <span class="cnt" data-av="o_{{ name }}_{{ o.v }}">{{ '{:,}'.format(_n) }}</span></label>
       {% endfor %}
+      </div>
     </section>
     {% endif %}
   {% endmacro %}
@@ -541,7 +548,9 @@
         {% endfor %}
         </span>
         {%- if r.components %}
-        <div class="pexp" data-default="{{ r.default|join(',') }}">
+        {#- the picker waits for Perfect / Not perfect: ticking components
+            before there is anything for them to change only reloaded the list -#}
+        <div class="pexp" data-default="{{ r.default|join(',') }}" {% if not (r.opts|map(attribute='key')|select('in', sel_attrs)|list) %}hidden{% endif %}>
           <div class="ppresets">
             {% for pn, pl in r.presets %}
             <button type="button" class="ppreset" data-pick="{{ pl|join(',') }}" aria-pressed="{{ 'true' if pl|sort == r.sel|sort else 'false' }}">{{ pn }}</button>
@@ -571,7 +580,17 @@
   {% set _ptp_on = ('PTP' in sel_types) or ('Products & Eval Boards' in sel_types) %}
   {% set _part_on = _ptp_on or ('EB' in sel_types) %}
   {% set _own_n = sel_bl|length + sel_pl|length + sel_seg|length %}
-  {% set _part_n = sel_ps|length + sel_bt|length + (sel_attrs|select("in", perfect_keys)|list|length) %}
+  {% set _part_n = sel_ps|length + sel_bt|length + (sel_attrs|select("in", perfect_keys)|list|length)
+                   + (sel_attrs|select("in", buy_has_keys)|list|length) %}
+  {#- Buy button: Has / None first; the labels a box shows come after a pick -#}
+  {% set _buy_sel = sel_attrs|select("in", buy_has_keys)|list %}
+  {% set buy_lead %}
+      <div class="buyhas"><span class="seg" role="group" aria-label="Buy button">
+      {%- for k in buy_has_keys %}{% set _n = facets.get('a_' + k, 0) %}
+        <label data-opt class="tp tp-{{ 'has' if k == 'btyes' else 'no' }} {{ 'optdim' if not _n and k not in sel_attrs }}" title="{{ attr_filters[k][0] }}"><input type="checkbox" name="attr" value="{{ k }}"
+                 {% if k in sel_attrs %}checked{% elif not _n %}disabled{% endif %}>{{ 'Has' if k == 'btyes' else 'None' }}<span class="cnt" data-av="a_{{ k }}">{{ '{:,}'.format(_n) }}</span></label>
+      {%- endfor %}</span></div>
+  {% endset %}
   <form method="get" action="{{ url_for('index') }}" class="toolbar" style="margin-top:12px">
     {% if in_archive %}<input type="hidden" name="archive" value="1">{% endif %}
     <span class="sbar grow"><svg class="slead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
@@ -616,7 +635,7 @@
     </details>
 
     {#- What only a part page has: its status badge and its buy box. Locked
-        until Type includes PTPs or EBs - the buy box is a PTP's alone. -#}
+        until Type includes PTPs or EBs. -#}
     <details class="dd {{ '' if _part_on else 'locked' }}" name="filters" data-group data-part>
       <summary><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>PTP / EB{% if _part_n %}<span class="fbadge">{{ _part_n }}</span>{% endif %}</summary>
       <div class="panel grp ptgrp">
@@ -628,7 +647,7 @@
         </div>
         {{ attr_sec("Perfect page", perfect_rows) }}
         {{ owner_sec("Product status", pss, sel_ps, "ps", "PTP EB") }}
-        {{ owner_sec("Buy button", bts, sel_bt, "bt", "PTP") }}
+        {{ owner_sec("Buy button", bts, sel_bt, "bt", "PTP EB", buy_lead, (_buy_sel or sel_bt)|length > 0) }}
       </div>
     </details>
 
@@ -952,7 +971,9 @@ function stageSel() {
     f.appendChild(i);
   });
 }
-function allMatching() { return document.getElementById('all-matching').value === '1'; }
+// no table (nothing matches) means no selection - never a crash that
+// falls back to reloading the whole page and closing the open dropdown
+function allMatching() { const am = document.getElementById('all-matching'); return !!am && am.value === '1'; }
 function toggleAdd() {
   const box = document.getElementById('addbox');
   if (box) box.style.display = (box.style.display === 'none') ? 'block' : 'none';
@@ -972,6 +993,7 @@ document.addEventListener('keydown', e => {
 function refreshCount() {
   const bar = document.getElementById('bulkbar');
   const link = document.getElementById('matchall-link');
+  if (!document.getElementById('selcount')) return;
   const n = selected();
   const active = allMatching() ? TOTAL_MATCH : n;
   // the bar IS the cue: it appears when there is something to act on
@@ -1136,6 +1158,51 @@ function restoreToolbar(s) {
   else if (s.focus && s.focus.indexOf('find:') === 0) el = f.querySelectorAll('.secfind')[+s.focus.slice(5)];
   if (el) { el.focus(); if (s.caret) try { el.setSelectionRange(s.caret[0], s.caret[1]); } catch (e) {} }
 }
+// The counts beside every option, and what they decide: an option worth
+// nothing dims (a value from a list goes), one already ticked stays live.
+function applyCounts(form, d) {
+  form.querySelectorAll('.cnt[data-av]').forEach(function (el) {
+    var n = d[el.dataset.av];
+    // an owner value with no pages left is simply absent from the reply
+    if (n === undefined && el.closest('label.ownopt')) n = 0;
+    if (n === undefined) return;
+    el.textContent = n.toLocaleString();
+    var lab = el.closest('label');
+    var box = lab && lab.querySelector('input');
+    if (!box) return;
+    if (lab.classList.contains('ownopt')) {
+      lab.style.display = (n === 0 && !box.checked) ? 'none' : '';
+      return;
+    }
+    lab.classList.toggle('optdim', n === 0 && !box.checked);
+    // a tick in a section the type has closed stays unsent
+    box.disabled = (n === 0 && !box.checked) || !!lab.closest('[hidden]');
+  });
+  form.querySelectorAll('[data-owner]').forEach(function (sec) {
+    var shown = !!sec.querySelector('.buyhas') || Array.prototype.some.call(
+      sec.querySelectorAll('label.ownopt'), function (l) { return l.style.display !== 'none'; });
+    sec.style.display = shown ? '' : 'none';
+  });
+  form.querySelectorAll('details[data-group]:not([data-part])').forEach(function (dd) {
+    var any = Array.prototype.some.call(dd.querySelectorAll('.ddsec'),
+      function (s) { return s.style.display !== 'none'; });
+    dd.style.display = any ? '' : 'none';
+  });
+}
+// a reply's toolbar handed to the one on screen: counts, the dropdowns'
+// badges and the PTP / EB totals - never a tick
+function syncToolbar(live, nf) {
+  var d = {};
+  nf.querySelectorAll('.cnt[data-av]').forEach(function (el) {
+    d[el.dataset.av] = parseInt(el.textContent.replace(/[^0-9]/g, ''), 10) || 0;
+  });
+  applyCounts(live, d);
+  var a = live.querySelectorAll('details.dd > summary'), b = nf.querySelectorAll('details.dd > summary');
+  if (a.length === b.length) a.forEach(function (s, i) { s.innerHTML = b[i].innerHTML; });
+  var pa = live.querySelectorAll('[data-pt] span'), pb = nf.querySelectorAll('[data-pt] span');
+  if (pa.length === pb.length) pa.forEach(function (s, i) { s.textContent = pb[i].textContent; });
+  dashGates();
+}
 function pjax(url) {
   // carry the active sort through filter/pager/chip clicks that don't set one
   try {
@@ -1158,8 +1225,15 @@ function pjax(url) {
         .getElementById('trackpanel');
       if (!fresh) { window.location.href = url; return; }
       const keep = toolbarState();
+      // Inside an open dropdown the form stays the very same element: re-
+      // rendering it moved the panel and, when a reply crossed a newer tick,
+      // put back the server's older ticks. Only its counts follow the reply.
+      const live = panel.querySelector('form.toolbar');
+      const inside = live && live.querySelector('details.dd[open]');
       panel.innerHTML = fresh.innerHTML;
-      restoreToolbar(keep);
+      const nf = panel.querySelector('form.toolbar');
+      if (inside && nf) { syncToolbar(live, nf); nf.replaceWith(live); }
+      else { restoreToolbar(keep); revealPicks(); }
       // keep the bulk "select all N matching" count in step with the new filter.
       // Read it from the panel's own data-total, which the server stamps with
       // the filtered count - the old regex hunted for "Showing X of Y" text
@@ -1485,6 +1559,8 @@ document.addEventListener('change', function (e) {
 var APPLY_T = null;
 function applySoon(ms) {
   clearTimeout(APPLY_T);
+  // the answer to an earlier tick must not land on top of this one
+  PJAX_SEQ++;
   APPLY_T = setTimeout(function () {
     var f = document.querySelector('form.toolbar');
     if (f) f.requestSubmit();
@@ -1585,14 +1661,44 @@ document.addEventListener('click', function (e) {
   var want = b.dataset.pt, other = want === 'PTP' ? 'EB' : 'PTP';
   var flip = function (v, on) {
     var box = f.querySelector('input[name=ptype][value="' + v + '"]');
-    if (box && box.checked !== on) { box.checked = on; box.dispatchEvent(new Event('change', {bubbles: true})); }
+    if (box && box.checked !== on) {
+      // a type the counts had dimmed is still the one asked for
+      box.checked = on; if (on) box.disabled = false;
+      box.dispatchEvent(new Event('change', {bubbles: true}));
+    }
   };
+  // clicking the side already picked (and only it) lets it go again
+  var alone = b.getAttribute('aria-pressed') === 'true'
+    && f.querySelector('[data-pt="' + other + '"]').getAttribute('aria-pressed') !== 'true';
   flip('Products & Eval Boards', false);
   flip(other, false);
-  flip(want, true);
+  flip(want, !alone);
   dashGates();
+  revealPicks();
 });
 dashGates();
+// A row of toggles (Has / No, Perfect / Not perfect) holds one pick at a
+// time, and a second click on it lets it go. What depends on a pick - the
+// component picker, the buy-box labels - shows once there is one.
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!t.closest || !t.closest('form.toolbar')) return;
+  var seg = t.closest('.seg');
+  if (seg && t.checked) seg.querySelectorAll('input').forEach(function (x) {
+    if (x !== t) x.checked = false;
+  });
+  revealPicks();
+});
+function revealPicks() {
+  var f = document.querySelector('form.toolbar');
+  if (!f) return;
+  f.querySelectorAll('.trow .pexp').forEach(function (box) {
+    box.hidden = !box.closest('.trow').querySelector('.seg input:checked');
+  });
+  f.querySelectorAll('.ddsec[data-owner="bt"]').forEach(function (sec) {
+    sec.classList.toggle('unpicked', !sec.querySelector('.buyhas input:checked, .ownlist input:checked'));
+  });
+}
 // A grouped panel is wide: opened under its own button it can run past the
 // toolbar's right edge. Slide it back left just enough to stay inside.
 document.addEventListener('toggle', function (e) {
@@ -1642,34 +1748,8 @@ document.addEventListener('toggle', function (e) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (mine !== seq) return;
-          form.querySelectorAll('.cnt[data-av]').forEach(function (el) {
-            var n = d[el.dataset.av];
-            // an owner value with no pages left is simply absent from the reply
-            if (n === undefined && el.closest('label.ownopt')) n = 0;
-            if (n === undefined) return;
-            el.textContent = n.toLocaleString();
-            var lab = el.closest('label');
-            var box = lab && lab.querySelector('input');
-            if (!box) return;
-            if (lab.classList.contains('ownopt')) {
-              // owner values outside the current pages are not dimmed but gone
-              lab.style.display = (n === 0 && !box.checked) ? 'none' : '';
-              return;
-            }
-            lab.classList.toggle('optdim', n === 0 && !box.checked);
-            box.disabled = (n === 0 && !box.checked);
-          });
-          form.querySelectorAll('[data-owner]').forEach(function (sec) {
-            var shown = Array.prototype.some.call(sec.querySelectorAll('label.ownopt'),
-              function (l) { return l.style.display !== 'none'; });
-            sec.style.display = shown ? '' : 'none';
-          });
-          // a group with no section left (Ownership on a type with no owners)
-          form.querySelectorAll('details[data-group]:not([data-part])').forEach(function (dd) {
-            var any = Array.prototype.some.call(dd.querySelectorAll('.ddsec'),
-              function (s) { return s.style.display !== 'none'; });
-            dd.style.display = any ? '' : 'none';
-          });
+          applyCounts(form, d);
+          dashGates();
         })
         .catch(function (e) { console.warn('facet counts failed', e); });
     }, 90);

@@ -2275,9 +2275,19 @@ BUY_TYPES = [("cart", "Add to cart", "add to cart"),
              ("dist", "View distributor's inventory", "distributor"),
              ("repl", "View replacement", "view replacement"),
              ("family", "View product family", "view product family")]
-_BUY_SCOPE = ("u.url LIKE '%/part/%' AND u.active=1 AND u.flags IS NOT NULL"
+# a board's page carries the same buy box as a part's (Nov 2026: EBs too)
+_BUY_PAGES = "(u.url LIKE '%/part/%' OR u.url LIKE '%/evaluation-board/%')"
+_BUY_SCOPE = (_BUY_PAGES + " AND u.active=1 AND u.flags IS NOT NULL"
               " AND u.flags<>'' AND json_type(u.flags, '$.buy_button') IS NOT NULL")
 _BUY_TEXT = "lower(IFNULL(json_extract(u.flags, '$.buy_button.text'), ''))"
+# Has / None ahead of the labels: the same yes the perfect standard counts
+# (a real call to action - Add to cart, Contact sales ...), and its exact
+# opposite among the PTPs and EBs whose box was read, so the two split them.
+ATTR_FILTERS["btyes"] = ("Has a buy button", "(" + _BUY_SCOPE + " AND "
+                         + _flag("buy_button", "has_content") + ")")
+ATTR_FILTERS["btno"] = ("No buy button", "(" + _BUY_SCOPE + " AND " + _KNOWN_GOOD
+                        + " AND NOT " + _flag("buy_button", "has_content") + ")")
+BUY_HAS_KEYS = ["btyes", "btno"]
 
 
 def _buy_type_sql(v):
@@ -2396,8 +2406,8 @@ def dash_url_minus(key, value):
 def _buy_type_options(con, where="", params=()):
     """Each buy-button type with how many parts show it (a part showing two
     counts under both), then the parts with no buy box at all."""
+    # "No buy box" is the None toggle's job now (the labels follow it)
     conds = [(k, label, _buy_type_sql(k)) for k, label, _n in BUY_TYPES]
-    conds.append((_UNASSIGNED, "No buy box", _buy_type_sql(_UNASSIGNED)))
     cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
                      for i, (_k, _l, c) in enumerate(conds))
     if not where:
@@ -2746,7 +2756,7 @@ def index():
                            facets=facets,
                            bls=bl_opts, pls=pl_opts, segs=seg_opts,
                            pss=ps_opts, sel_ps=sel_ps,
-                           bts=bt_opts, sel_bt=sel_bt,
+                           bts=bt_opts, sel_bt=sel_bt, buy_has_keys=BUY_HAS_KEYS,
                            sel_bl=sel_bl, sel_pl=sel_pl, sel_seg=sel_seg,
                            unassigned=_UNASSIGNED,
                            last_run=last_run, total_open=total_open,

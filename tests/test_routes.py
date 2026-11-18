@@ -3185,3 +3185,68 @@ def test_awaiting_review_leaves_out_archived_pages():
     con.execute("DELETE FROM urls WHERE id=?", (uid,))
     con.commit()
     con.close()
+
+
+def test_buy_button_has_or_none_splits_ptps_and_ebs():
+    """Buy button opens with Has / None: a real call to action or not, on
+    PTPs and EBs alike, and a page whose box was never read is in neither."""
+    import json as _json
+    con = db.connect()
+    con.execute("DELETE FROM urls")
+    rows = [("part/BUY", {"exists": True, "has_content": True, "text": "Add to cart"}),
+            ("part/TWO", {"exists": True, "has_content": True,
+                          "text": "View product family · Contact Sales"}),
+            ("part/REPL", {"exists": True, "has_content": False, "text": "View replacement"}),
+            ("evaluation-board/EBBUY", {"exists": True, "has_content": True,
+                                        "text": "Add to cart"}),
+            ("evaluation-board/EBNONE", {"exists": False, "has_content": False, "text": ""}),
+            ("part/UNREAD", None)]
+    for path, bb in rows:
+        con.execute("INSERT INTO urls(url, active, ptype, level, last_checked, last_status,"
+                    " flags) VALUES(?, 1, 'Part', ?, 'x', 'unchanged', ?)",
+                    ("https://www.infineon.com/" + path,
+                     "EB" if "evaluation" in path else "PTP",
+                     _json.dumps({"buy_button": bb} if bb else {})))
+    con.commit()
+    con.close()
+
+    def names(attr=(), bts=()):
+        w, p = app._url_filter("", [], [], list(attr), bts=list(bts))
+        c = db.connect()
+        try:
+            return sorted(r[0].rsplit("/", 1)[-1] for r in c.execute(
+                "SELECT u.url FROM urls u " + w, p))
+        finally:
+            c.close()
+
+    assert names(["btyes"]) == ["BUY", "EBBUY", "TWO"]
+    assert names(["btno"]) == ["EBNONE", "REPL"], "UNREAD was never read"
+    assert names(bts=["cart"]) == ["BUY", "EBBUY"], "boards carry the buy box too"
+    assert names(bts=["family"]) == ["TWO"]
+    html = _client.get("/?ptype=EB").data.decode("utf-8", "replace")
+    assert 'value="btyes"' in html and 'data-needs="PTP EB"' in html
+    assert "No buy box" not in html, "None replaces it"
+
+
+def test_the_page_shows_every_label_of_its_buy_box():
+    import json as _json
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype, level, flags)"
+                " VALUES(940, 'https://www.infineon.com/part/TWOBUTTONS', 1,"
+                " 'Part', 'PTP', ?)",
+                (_json.dumps({"buy_button": {"exists": True, "has_content": True,
+                                             "text": "View product family · Contact Sales"}}),))
+    d = _D / "snapshots" / "buy940"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "sections.json").write_text(_json.dumps({"features": [{"title": "A"}]}),
+                                     encoding="utf-8")
+    con.execute("INSERT INTO snapshots(url_id, ts, dir, status, rejected)"
+                " VALUES(940, 't', ?, 'ok', 0)", (str(d),))
+    con.execute("INSERT INTO items(url_id, category, title, item_key)"
+                " VALUES(940, 'features', 'A', 'kbuy940')")
+    con.commit()
+    con.close()
+    body = _ok("/url/940").data.decode("utf-8", "replace")
+    assert '<span class="buybtn">View product family</span>' in body
+    assert '<span class="buybtn">Contact Sales</span>' in body
+    assert body.index(">Buy button<") < body.index(">Price<")
