@@ -703,6 +703,9 @@
              box-shadow: 0 10px 34px rgba(0,0,0,.28);
              max-width: min(1100px, calc(100vw - 32px)); }
   .bulkbar[hidden] { display: none; }
+  /* left:50% leaves a fixed box only half the window to shrink into, so
+     the last button wrapped onto a line of its own; size it to its row */
+  @media (min-width: 641px) { .bulkbar { width: max-content; } }
   @media (max-width: 640px) {
     .bulkbar { left: 8px; right: 8px; transform: none; max-width: none;
                justify-content: center; bottom: 8px; } }
@@ -1078,6 +1081,11 @@
                border-right: 1px solid var(--line); margin-right: 5px;
                font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pgr-count b { color: var(--ink); font-weight: 600; }
+  /* fixed by the pager itself (--pcw / --pnw): the widest reading and the
+     widest page number, so turning a page never resizes the control */
+  .pgr[style] .pgr-count { min-width: var(--pcw); text-align: right; box-sizing: content-box; }
+  .pgr[style] .pnum { min-width: calc(var(--pnw) + 18px); box-sizing: border-box; }
+  .pgr[style] .pgr-nav input.pgap:not(.typing) { width: calc(var(--pnw) + 18px); }
   .pgr-nav { display: flex; align-items: center; gap: 3px;
              background: var(--panel); border: 1px solid var(--line);
              border-radius: 11px; padding: 4px 6px; }

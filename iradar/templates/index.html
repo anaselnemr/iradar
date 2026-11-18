@@ -439,14 +439,26 @@
       form.toolbar .dd[data-part] { position: static; }
       form.toolbar .dd[data-part] > .panel.ptgrp { left: auto; right: 0; transform: none !important; }
     }
-    .ptswitch { grid-column: 1 / -1; display: flex; justify-content: center; margin: 2px 2px 6px; }
-    .ptswitch button { padding: 6px 18px; font-size: 13px; font-weight: 600;
-                       background: var(--panel); color: var(--ink);
-                       border: 1px solid var(--line); border-radius: 0; }
-    .ptswitch button:first-child { border-radius: 8px 0 0 8px; }
-    .ptswitch button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
-    .ptswitch button[aria-pressed="true"] { background: var(--accent); color: #fff;
-                                           border-color: var(--accent); }
+    /* a segmented control: one track, the picked side lifted out of it */
+    .ptswitch { grid-column: 1 / -1; justify-self: center; display: inline-flex; gap: 2px;
+                margin: 4px 0 10px; padding: 3px; border-radius: 999px;
+                background: var(--hover); border: 1px solid var(--line); }
+    .ptswitch button { display: inline-flex; align-items: baseline; gap: 7px;
+                       min-width: 128px; justify-content: center;
+                       padding: 7px 18px; font-size: 13.5px; font-weight: 600;
+                       background: transparent; color: var(--muted); border: 0;
+                       border-radius: 999px; cursor: pointer;
+                       transition: background .15s, color .15s, box-shadow .15s; }
+    .ptswitch button span { font-size: 11.5px; font-weight: 500; color: var(--muted);
+                            font-variant-numeric: tabular-nums; }
+    .ptswitch button:hover { color: var(--ink); }
+    .ptswitch button[aria-pressed="true"] { background: var(--panel); color: var(--accent);
+                                           box-shadow: 0 1px 2px rgba(15,23,42,.12), 0 0 0 1px var(--line); }
+    .ptswitch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .selall-btn { padding: 5px 12px; font-size: 13px; font-weight: 600; border-radius: 999px;
+                  color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent);
+                  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); cursor: pointer; }
+    .selall-btn:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
     /* the filters in force, each one click from gone */
     .fchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
               margin-top: 10px; }
@@ -605,8 +617,8 @@
         {#- which part pages these facts are about: a switch, not a one-off
             button - it stays here after a pick so you can flip between them -#}
         <div class="ptswitch" role="group" aria-label="PTP or EB">
-          <button type="button" data-pt="PTP" aria-pressed="{{ 'true' if _ptp_on else 'false' }}">PTPs</button>
-          <button type="button" data-pt="EB" aria-pressed="{{ 'true' if ('EB' in sel_types or 'Products & Eval Boards' in sel_types) else 'false' }}">EBs</button>
+          <button type="button" data-pt="PTP" aria-pressed="{{ 'true' if _ptp_on else 'false' }}">PTPs<span>{{ '{:,}'.format(n_ptp) }}</span></button>
+          <button type="button" data-pt="EB" aria-pressed="{{ 'true' if ('EB' in sel_types or 'Products & Eval Boards' in sel_types) else 'false' }}">EBs<span>{{ '{:,}'.format(n_eb) }}</span></button>
         </div>
         {{ attr_sec("Perfect page", perfect_rows) }}
         {{ owner_sec("Product status", pss, sel_ps, "ps", "PTP EB") }}
@@ -724,8 +736,8 @@
       it never pushes the table around. -#}
   <div class="bulkbar" id="bulkbar" hidden>
     <b><span id="selcount">0</span> selected</b>
-    <a href="#" id="matchall-link" style="display:none; font-size:13px"
-       onclick="selectAllMatching(); return false">Select all {{ '{:,}'.format(total_match) }} matching</a>
+    <button type="button" class="selall-btn" id="matchall-link" style="display:none"
+            onclick="selectAllMatching()">Select all {{ '{:,}'.format(total_match) }}</button>
     <span style="flex:1"></span>
     <button class="btn-ghost btn-sm act" onclick="bulk('check', this)">Capture</button>
     <button class="btn-ghost btn-sm act" onclick="bulk('accept', this)">Approve updates</button>
@@ -819,7 +831,7 @@
   <div class="tablewrap">
   <table id="pagetable">
     <tr>
-      <th class="c-sel"><input type="checkbox" id="selall" title="Select all on this page"></th>
+      <th class="c-sel"><input type="checkbox" id="selall" title="Select all {{ '{:,}'.format(total_match) }} matching pages"></th>
       <th class="c-num"><a href="#" class="sorth" onclick="return sortBy('page')" title="# is each page's alphabetical position (1, 2, 3…) — click to order by it">#</a></th>
       <th class="c-page"><a href="#" class="sorth" onclick="return sortBy('page')" title="Sort by page address (groups the hierarchy)">Page{% if sort=='page' %} ↑{% elif sort=='page_desc' %} ↓{% endif %}</a></th>
       <th class="c-type">Type</th><th class="c-live">Live</th><th class="c-stat">Status</th>
@@ -913,8 +925,9 @@ let TOTAL_MATCH = {{ total_match }};  // updated after an in-place filter swap
 const SEL = new Set();
 function selected() { return SEL.size; }
 function applySel() {
+  const all = allMatching();
   document.querySelectorAll('.rowsel').forEach(c => {
-    c.checked = SEL.has(c.value);
+    c.checked = all || SEL.has(c.value);
   });
 }
 // the form posts what is on screen, so anything selected elsewhere rides along
@@ -955,25 +968,20 @@ function refreshCount() {
   // the bar IS the cue: it appears when there is something to act on
   if (bar) bar.hidden = !active;
   if (allMatching()) {
-    document.getElementById('selcount').textContent = TOTAL_MATCH.toLocaleString() + ' (all matching)';
-    if (link) { link.textContent = 'Clear selection'; link.style.display = ''; }
+    document.getElementById('selcount').textContent = 'All ' + TOTAL_MATCH.toLocaleString();
+    if (link) link.style.display = 'none';
     return;
   }
   document.getElementById('selcount').textContent = n.toLocaleString();
   if (link) {
-    const pageAll = n > 0 && n === document.querySelectorAll('.rowsel').length;
-    link.style.display = (pageAll && TOTAL_MATCH > n) ? '' : 'none';
-    link.textContent = 'Select all ' + TOTAL_MATCH.toLocaleString() + ' matching';
+    link.style.display = (n > 0 && TOTAL_MATCH > n) ? '' : 'none';
+    link.textContent = 'Select all ' + TOTAL_MATCH.toLocaleString();
   }
 }
 function selectAllMatching() {
   const am = document.getElementById('all-matching');
-  if (am.value === '1') {
-    am.value = '0';
-    document.querySelectorAll('.rowsel').forEach(cb => cb.checked = false);
-    document.getElementById('selall').checked = false;
-  } else { am.value = '1'; }
-  refreshCount();
+  am.value = '1';
+  applySel(); syncSelall(); refreshCount();
 }
 // Row selection via DELEGATION on document, so "select all" and row ticks keep
 // working after the tracked-pages panel is swapped in place by a filter - no
@@ -982,10 +990,13 @@ let lastClickedBox = null;
 function syncSelall() {
   const selall = document.getElementById('selall');
   if (!selall) return;
+  if (allMatching()) { selall.checked = true; selall.indeterminate = false; return; }
   const boxes = Array.from(document.querySelectorAll('.rowsel'));
   const on = boxes.filter(c => c.checked).length;
-  selall.checked = on > 0 && on === boxes.length;
-  selall.indeterminate = on > 0 && on < boxes.length;
+  // some ticked (on this page or another): a dash, never a full tick - the
+  // full tick is reserved for "every matching page"
+  selall.checked = false;
+  selall.indeterminate = on > 0 || SEL.size > 0;
 }
 // Turn the implicit "all N matching" into an explicit set of every matching
 // id, so it can then be trimmed one row at a time. /urls/range with the
@@ -1006,7 +1017,10 @@ document.addEventListener('change', async (e) => {
   const t = e.target;
   if (!t) return;
   if (t.id === 'selall') {
-    const am = document.getElementById('all-matching'); if (am) am.value = '0';
+    // the header box means every page the filter matches, on every page of
+    // the table - not just the rows in view. Unticking it clears it all.
+    if (!t.checked) { clearSel(); syncSelall(); return; }
+    const am = document.getElementById('all-matching'); if (am) am.value = '1';
     // Tick the boxes AND record them in SEL. Without the SEL update the ticks
     // were cosmetic: selcount stayed 0, the action bar never appeared, and the
     // selection was empty the moment you turned the page - which is exactly
@@ -1188,6 +1202,9 @@ function bulk(action, btn) {
   if (!n) { alert('Tick at least one page first.'); return; }
   if (action === 'delete' &&
       !confirm(`Remove ${n} page(s) and all their stored snapshots? This cannot be undone.`)) return;
+  if (allMatching() && n > 50 && ['archive', 'unarchive', 'pause', 'resume', 'accept'].indexOf(action) >= 0 &&
+      !confirm(`${action === 'unarchive' ? 'Restore' : action === 'accept' ? 'Approve updates on'
+               : action.charAt(0).toUpperCase() + action.slice(1)} all ${n.toLocaleString()} matching pages?`)) return;
   if (action === 'check' && n > 200 &&
       !confirm(`Check ${n.toLocaleString()} pages now? That takes ${roughly(n * SECS_PER_PAGE)}.`)) return;
   stageSel();

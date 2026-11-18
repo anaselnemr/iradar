@@ -2764,7 +2764,8 @@ def index():
                            sel_content_n=sum(1 for a in attrs if a in CONTENT_KEYS),
                            sel_comp_n=sum(1 for a in attrs if a in COMPONENT_KEYS),
                            status_counts=status_counts, attr_counts=attr_counts,
-                           quick_chips=quick_chips, in_archive=_in_archive())
+                           quick_chips=quick_chips, in_archive=_in_archive(),
+                           n_ptp=st["n_ptp"], n_eb=st["n_eb"])
 
 
 @app.route("/urls/bulk", methods=["POST"])

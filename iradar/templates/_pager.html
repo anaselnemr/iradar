@@ -6,38 +6,41 @@
     page link, and everything else is shared.
 -#}
 
+{#- ALWAYS THE SAME SLOTS, so the pager never changes width under the mouse:
+    seven pages or fewer are all shown; more than that is always seven
+    places - 1 ... 4 5 6 ... 15, or 1 2 3 4 5 ... 15 at the start, or
+    1 ... 11 12 13 14 15 at the end. The window used to grow and shrink with
+    the page you were on, and the arrows moved out from under the pointer. -#}
 {% macro pagenums(pageno, last_page, purl) %}
-  {% set lo = [1, pageno - 2]|max %}
-  {% set hi = [last_page, pageno + 2]|min %}
-  {% if lo > 1 %}
-    <a class="pnum" href="{{ purl(1) }}">1</a>
-    {% if lo > 2 %}<input class="pgap" type="text" inputmode="numeric" value="…" size="1"
+  {% if last_page <= 7 %}
+    {% set slots = range(1, last_page + 1)|list %}
+  {% elif pageno <= 4 %}
+    {% set slots = [1, 2, 3, 4, 5, 0, last_page] %}
+  {% elif pageno >= last_page - 3 %}
+    {% set slots = [1, 0] + range(last_page - 4, last_page + 1)|list %}
+  {% else %}
+    {% set slots = [1, 0, pageno - 1, pageno, pageno + 1, 0, last_page] %}
+  {% endif %}
+  {% for n in slots %}
+    {% if n == 0 %}<input class="pgap" type="text" inputmode="numeric" value="…" size="1"
            aria-label="Jump to a page" title="Type a page number"
            data-base="{{ purl(0) }}" data-last="{{ last_page }}"
            onfocus="this.value=''; this.classList.add('typing')"
-           onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">{% endif %}
-  {% endif %}
-  {% for n in range(lo, hi + 1) %}
-    {% if n == pageno %}
+           onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">
+    {% elif n == pageno %}
     <span class="pnum on" aria-current="page">{{ n }}</span>
     {% else %}
     <a class="pnum" href="{{ purl(n) }}">{{ n }}</a>
     {% endif %}
   {% endfor %}
-  {% if hi < last_page %}
-    {% if hi < last_page - 1 %}<input class="pgap" type="text" inputmode="numeric" value="…" size="1"
-           aria-label="Jump to a page" title="Type a page number"
-           data-base="{{ purl(0) }}" data-last="{{ last_page }}"
-           onfocus="this.value=''; this.classList.add('typing')"
-           onblur="if(!this.value){this.value='…'; this.classList.remove('typing')}">{% endif %}
-    <a class="pnum" href="{{ purl(last_page) }}">{{ last_page }}</a>
-  {% endif %}
 {% endmacro %}
 
 {% macro pager(pageno, last_page, total, per_page, purl, where='bottom',
                viewctl=None) %}
 {% if last_page > 1 %}
-<nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination">
+{%- set _tw = '{:,}'.format(total)|length %}
+<nav class="pgr {{ 'pgr-top' if where == 'top' }}" aria-label="Pagination"
+     style="--pnw: {{ (last_page|string)|length }}ch; --pcw: {{ _tw * 3 + 5 }}ch">
   {#- the count sits WITH the control, not exiled to the far side of a wide
       screen where the two ends had nothing to do with each other -#}
   {#- how many per page, if the caller offers the choice -#}
