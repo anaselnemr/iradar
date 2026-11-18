@@ -365,6 +365,9 @@
     .ppreset[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
     .pboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; }
     .dd .panel .pboxes label { padding: 4px 6px; font-size: 13px; }
+    .pboxes .pcl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pboxes .pcn { margin-left: auto; padding-left: 8px; font-size: 11.5px; color: var(--muted);
+                   font-variant-numeric: tabular-nums; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
                overflow: hidden; clip: rect(0 0 0 0); border: 0; }
     /* beats the site-wide input[type=search] padding, which pushed it past the list */
@@ -433,7 +436,7 @@
        flipping PTPs <-> EBs (EBs have no buy button, fewer components) never
        resizes it, and pinned to the toolbar's right edge rather than slid
        into place after opening, so it never jumps. */
-    .dd .panel.ptgrp { display: grid; grid-template-columns: 420px 230px 330px;
+    .dd .panel.ptgrp { display: grid; grid-template-columns: 500px 230px 330px;
                        align-items: start; align-content: start; min-height: 330px; }
     @media (min-width: 641px) {
       form.toolbar { position: relative; }
@@ -570,7 +573,7 @@
           </div>
           <div class="pboxes">
           {% for c in r.components %}
-          <label><input type="checkbox" class="pcbox" value="{{ c }}" {% if c in r.sel %}checked{% endif %}> {{ c }}</label>
+          <label><input type="checkbox" class="pcbox" value="{{ c }}" {% if c in r.sel %}checked{% endif %}> <span class="pcl">{{ c }}</span>{% if c in r.counts %}<span class="pcn">{{ '{:,}'.format(r.counts[c]) }}</span>{% endif %}</label>
           {% endfor %}
           </div>
           <input type="hidden" class="pcval" name="{{ r.param }}" value="{{ r.sel|join(',') }}" {% if not r.custom %}disabled{% endif %}>

@@ -9304,17 +9304,45 @@ PAGE_FIELDS.extend([
 ])
 
 
+def _perfect_comp_counts():
+    """{set st: {component: live pages of that type that have it}} - the
+    numbers beside the picker's boxes, held until the next write."""
+    def build():
+        out = {}
+        con = db.connect()
+        try:
+            for ps in PERFECT_SETS:
+                comps = ps["components"]
+                row = con.execute(
+                    "SELECT " + ", ".join("SUM(CASE WHEN (" + ATTR_FILTERS[_KEY_HAS[c]][1]
+                                          + ") THEN 1 ELSE 0 END)" for c in comps)
+                    + " FROM urls u WHERE " + ps["scope"]).fetchone()
+                out[ps["st"]] = {c: int(n or 0) for c, n in zip(comps, row)}
+        finally:
+            con.close()
+        return out
+    try:
+        return _cached_by_db("perfect_comp_counts", build)
+    except Exception:
+        return {}
+
+
 def _perfect_rows(con=None):
     """The Perfect page rows as this request has them: each type's ticked
     components, and the preset it matches (or "Custom N")."""
     rows = []
+    counts = _perfect_comp_counts()
     for ps in PERFECT_SETS:
         sel = _req_pc(ps)
         name = next((n for n, l in ps["presets"] if set(l) == set(sel)),
                     "Custom %d" % len(sel))
         rows.append({"label": ps["name"] + " · " + name, "name": ps["name"],
                      "preset": name, "needs": ps["needs"], "param": ps["param"],
-                     "components": ps["components"], "default": ps["default"],
+                     # the Design resources tabs at the bottom of the picker
+                     "components": ([c for c in ps["components"] if not c.startswith(DR)]
+                                    + [c for c in ps["components"] if c.startswith(DR)]),
+                     "counts": counts.get(ps["st"], {}),
+                     "default": ps["default"],
                      "presets": ps["presets"], "sel": sel,
                      "custom": set(sel) != set(ps["default"]),
                      "opts": [{"key": "perfect_" + ps["st"], "short": "Perfect", "kind": "has",
