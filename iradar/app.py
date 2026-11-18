@@ -2294,10 +2294,25 @@ def _buy_type_sql(v):
     if v == _UNASSIGNED:
         return ("(" + _BUY_SCOPE + " AND " + _KNOWN_GOOD + " AND NOT "
                 + _flag("buy_button", "exists") + ")")
+    if v.startswith("is:"):
+        # a combination, exactly: these labels and no other
+        want = set(v[3:].split(","))
+        if not want or not want <= {k for k, _l, _n in BUY_TYPES}:
+            return None
+        return ("(" + _BUY_SCOPE + " AND " + " AND ".join(
+            f"instr({_BUY_TEXT}, '{needle}') {'>' if k in want else '='} 0"
+            for k, _l, needle in BUY_TYPES) + ")")
     for k, _label, needle in BUY_TYPES:
         if k == v:
             return f"({_BUY_SCOPE} AND instr({_BUY_TEXT}, '{needle}') > 0)"
     return None
+
+
+def _buy_combo(text):
+    """The BUY_TYPES keys a box's text shows, in the list's order - one
+    label twice (two distributor buttons) is still one label."""
+    t = (text or "").lower()
+    return [k for k, _l, needle in BUY_TYPES if needle in t]
 
 
 def _tri_rows(keys):
@@ -2404,17 +2419,24 @@ def dash_url_minus(key, value):
 
 
 def _buy_type_options(con, where="", params=()):
-    """Each buy-button type with how many parts show it (a part showing two
-    counts under both), then the parts with no buy box at all."""
-    # "No buy box" is the None toggle's job now (the labels follow it)
-    conds = [(k, label, _buy_type_sql(k)) for k, label, _n in BUY_TYPES]
-    cols = ", ".join(f"SUM(CASE WHEN {c} THEN 1 ELSE 0 END) AS k{i}"
-                     for i, (_k, _l, c) in enumerate(conds))
+    """Every combination of labels a buy box shows, exactly, with how many
+    PTPs / EBs show it - "View product family + Contact sales" is its own
+    option, so the options split the pages and their counts add up.
+    Commonest first."""
     if not where:
         where = "WHERE " + _scope_sql()
-    row = con.execute(f"SELECT {cols} FROM urls u {where}", list(params)).fetchone()
-    return [{"v": k, "label": label, "n": row[f"k{i}"] or 0}
-            for i, (k, label, _c) in enumerate(conds)]
+    tally = {}
+    for r in con.execute(f"SELECT {_BUY_TEXT} t, COUNT(*) n FROM urls u {where}"
+                         f" AND {_BUY_SCOPE} GROUP BY t", list(params)):
+        combo = _buy_combo(r["t"])
+        if combo:
+            key = "is:" + ",".join(combo)
+            tally[key] = tally.get(key, 0) + r["n"]
+    label = {k: l for k, l, _n in BUY_TYPES}
+    out = [{"v": k, "n": n, "label": " + ".join(label[x] for x in k[3:].split(","))}
+           for k, n in tally.items()]
+    out.sort(key=lambda o: (-o["n"], o["label"]))
+    return out
 
 
 def _owner_scope(col):

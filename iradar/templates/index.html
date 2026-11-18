@@ -433,7 +433,7 @@
        flipping PTPs <-> EBs (EBs have no buy button, fewer components) never
        resizes it, and pinned to the toolbar's right edge rather than slid
        into place after opening, so it never jumps. */
-    .dd .panel.ptgrp { display: grid; grid-template-columns: 420px 240px 270px;
+    .dd .panel.ptgrp { display: grid; grid-template-columns: 420px 230px 330px;
                        align-items: start; align-content: start; min-height: 330px; }
     @media (min-width: 641px) {
       form.toolbar { position: relative; }
@@ -485,6 +485,12 @@
     .buyhas { padding: 2px 9px 8px; }
     .buyhas .seg label.tp { flex-basis: 96px; }
     .ddsec.unpicked .ownlist { display: none; }
+    /* a combination is two labels: it wraps rather than hiding its count,
+       and the list is short enough to show whole */
+    .dd[data-part] .ddsec[data-owner="bt"] { max-height: none; overflow: visible; }
+    .ddsec[data-owner="bt"] label.ownopt { align-items: flex-start; white-space: normal;
+                                           line-height: 1.3; }
+    .ddsec[data-owner="bt"] label.ownopt input { margin-top: 2px; flex: none; }
     .dd .panel a.starch { display: flex; justify-content: space-between; align-items: center;
                           margin-top: 6px; padding: 8px 8px 4px; border-top: 1px solid var(--line);
                           font-size: 13.5px; color: var(--ink); text-decoration: none; }

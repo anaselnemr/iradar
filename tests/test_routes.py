@@ -3223,6 +3223,18 @@ def test_buy_button_has_or_none_splits_ptps_and_ebs():
     assert names(["btno"]) == ["EBNONE", "REPL"], "UNREAD was never read"
     assert names(bts=["cart"]) == ["BUY", "EBBUY"], "boards carry the buy box too"
     assert names(bts=["family"]) == ["TWO"]
+    # the combinations themselves are the options, matched exactly
+    c = db.connect()
+    try:
+        opts = {o["label"]: (o["v"], o["n"]) for o in app._buy_type_options(c)}
+    finally:
+        c.close()
+    assert opts == {"Add to cart": ("is:cart", 2),
+                    "Contact sales + View product family": ("is:sales,family", 1),
+                    "View replacement": ("is:repl", 1)}, opts
+    assert names(bts=["is:sales,family"]) == ["TWO"]
+    assert names(bts=["is:sales"]) == [], "Contact sales alone - TWO also shows family"
+    assert names(bts=["is:cart", "is:repl"]) == ["BUY", "EBBUY", "REPL"]
     html = _client.get("/?ptype=EB").data.decode("utf-8", "replace")
     assert 'value="btyes"' in html and 'data-needs="PTP EB"' in html
     assert "No buy box" not in html, "None replaces it"
