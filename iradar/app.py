@@ -9348,12 +9348,13 @@ def _perfect_rows(con=None):
                     "Custom %d" % len(sel))
         rows.append({"label": ps["name"] + " · " + name, "name": ps["name"],
                      "preset": name, "needs": ps["needs"], "param": ps["param"],
-                     # the Design resources tabs at the bottom of the picker
-                     "components": ([c for c in ps["components"] if not c.startswith(DR)]
+                     # the Design resources tabs at the bottom of the picker,
+                     # led by Design resources itself, their parent
+                     "components": ([c for c in ps["components"]
+                                     if not c.startswith(DR) and c != "Design resources"]
+                                    + [c for c in ps["components"] if c == "Design resources"]
                                     + [c for c in ps["components"] if c.startswith(DR)]),
                      "counts": counts.get(ps["st"], {}),
-                     # the Design resources block opens a row of its own, on the left
-                     "dr_start": next((c for c in ps["components"] if c.startswith(DR)), None),
                      "default": ps["default"],
                      "presets": ps["presets"], "sel": sel,
                      "custom": set(sel) != set(ps["default"]),

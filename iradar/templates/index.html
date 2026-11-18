@@ -365,7 +365,6 @@
     .ppreset[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
     .pboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; }
     .dd .panel .pboxes label { padding: 4px 6px; font-size: 13px; }
-    .pboxes label.gs { grid-column-start: 1; }
     .pboxes .pcl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pboxes .pcn { margin-left: auto; padding-left: 8px; font-size: 11.5px; color: var(--muted);
                    font-variant-numeric: tabular-nums; }
@@ -574,7 +573,7 @@
           </div>
           <div class="pboxes">
           {% for c in r.components %}
-          <label{% if c == r.dr_start %} class="gs"{% endif %}><input type="checkbox" class="pcbox" value="{{ c }}" {% if c in r.sel %}checked{% endif %}> <span class="pcl">{{ c }}</span>{% if c in r.counts %}<span class="pcn">{{ '{:,}'.format(r.counts[c]) }}</span>{% endif %}</label>
+          <label><input type="checkbox" class="pcbox" value="{{ c }}" {% if c in r.sel %}checked{% endif %}> <span class="pcl">{{ c }}</span>{% if c in r.counts %}<span class="pcn">{{ '{:,}'.format(r.counts[c]) }}</span>{% endif %}</label>
           {% endfor %}
           </div>
           <input type="hidden" class="pcval" name="{{ r.param }}" value="{{ r.sel|join(',') }}" {% if not r.custom %}disabled{% endif %}>
