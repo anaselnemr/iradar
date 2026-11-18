@@ -800,6 +800,23 @@ BUY_WAIT_JS = ("() => [...document.querySelectorAll('[class*=\"price-container\"
                "[class*=\"price-container\" i] .contact-sales-cta, [class*=\"price-container\" i] .request-samples-btn')]"
                ".some(b => b.offsetParent !== null)")
 BUY_WAIT_MS = 8000
+BUY_BOX_PRESENT_JS = "() => !!document.querySelector('[class*=\"price-container\" i]')"
+BUY_SETTLE_STEP_MS = 500       # read the box this often...
+BUY_SETTLE_SAME = 3            # ...until this many reads in a row agree
+BUY_SETTLE_MAX_MS = 6000       # ...or this long has passed
+
+
+async def _settled_buy_box(page, first):
+    """The buy box once it stops changing: read every half second until
+    three reads agree (1.5 s) or six seconds pass; the last read wins."""
+    last, same, waited = first, 1, 0
+    while same < BUY_SETTLE_SAME and waited < BUY_SETTLE_MAX_MS:
+        await page.wait_for_timeout(BUY_SETTLE_STEP_MS)
+        waited += BUY_SETTLE_STEP_MS
+        cur = await page.evaluate(BUY_BUTTON_JS)
+        same = same + 1 if cur == last else 1
+        last = cur
+    return last
 
 # Structured extraction: documents / design resources / news & highlights /
 # trainings & webinars / videos / images - each with title + URL (+ row meta
@@ -2966,6 +2983,17 @@ async def capture_one(browser, url, out_dir):
             try:
                 await page.wait_for_function(BUY_WAIT_JS, timeout=BUY_WAIT_MS)
                 sections["flags"]["buy_button"] = await page.evaluate(BUY_BUTTON_JS)
+            except Exception:
+                pass
+        # The box's buttons arrive one by one: Add to cart first, the
+        # distributor button (or its Contact sales fallback) a beat later.
+        # Read too early, 227 parts were stored as "Add to cart" alone while
+        # the live page showed Add to cart + View distributor's inventory
+        # (re-read of 18 Nov 2026). So the box is read until it holds still.
+        if bb is not None and await page.evaluate(BUY_BOX_PRESENT_JS):
+            try:
+                sections["flags"]["buy_button"] = await _settled_buy_box(
+                    page, sections["flags"]["buy_button"])
             except Exception:
                 pass
         # merge documents collected across the table's pages + clean titles.
