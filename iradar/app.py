@@ -4281,7 +4281,7 @@ def assets_page():
         "assets.html", rows=rows, used=used, tab=tab, kind=kind, q=q,
         page=page, pages=pages, total=total, per_page=_ASSET_PER, tabs=tabs,
         kinds=[(k, label, kinds.get(k, 0)) for k, label in _ASSET_KINDS
-               if kinds.get(k) or k == kind],
+               if k != "video" or kinds.get(k) or k == kind],
         kinds_all=sum(kinds.values()), tracked=tracked[0] or 0,
         last_checked=tracked[1] or "", aurl=aurl,
         astate=asset_watch.ASSET_STATE)

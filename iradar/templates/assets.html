@@ -46,7 +46,8 @@
   .fu-kinds a b { margin-left: 4px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
   .fu-kinds a.on { border-color: var(--accent); color: var(--accent);
                    background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
-  .fu-pg { margin-left: auto; }
+  .fu-top { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+  .fu-kinds a.zero { opacity: .45; }
 
   .fu-tbl { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
   .fu-tbl th { position: sticky; top: 0; z-index: 2; background: var(--card); text-align: left;
@@ -138,24 +139,20 @@
       <a href="{{ aurl(tab=None, page=None, kind=None) }}" class="{{ 'on' if tab == 'open' }}">To review <b>{{ '{:,}'.format(tabs.open) }}</b></a>
       <a href="{{ aurl(tab='reviewed', page=None, kind=None) }}" class="{{ 'on' if tab == 'reviewed' }}">Reviewed <b>{{ '{:,}'.format(tabs.reviewed) }}</b></a>
     </nav>
-    {% if tabs[tab] %}
     <form class="fu-search" method="get" action="{{ url_for('assets_page') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       {% if tab == 'reviewed' %}<input type="hidden" name="tab" value="reviewed">{% endif %}
       {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
       <input type="search" name="q" value="{{ q }}" placeholder="Find a file" aria-label="Find a file">
     </form>
-    {% if kinds|length > 1 or kind %}
     <div class="fu-kinds">
       <a href="{{ aurl(kind=None, page=None) }}" class="{{ 'on' if not kind }}">All<b>{{ '{:,}'.format(kinds_all) }}</b></a>
       {% for k, label, n in kinds %}
-      <a href="{{ aurl(kind=k, page=None) }}" class="{{ 'on' if kind == k }}">{{ label }}<b>{{ '{:,}'.format(n) }}</b></a>
+      <a href="{{ aurl(kind=k, page=None) }}" class="{{ 'on' if kind == k }} {{ 'zero' if not n }}">{{ label }}<b>{{ '{:,}'.format(n) }}</b></a>
       {% endfor %}
     </div>
-    {% endif %}
-    {% endif %}
-    {% if pages > 1 %}<div class="fu-pg">{{ pg.pager(page, pages, total, per_page, purl, 'top') }}</div>{% endif %}
   </div>
+  <div class="fu-top">{{ pg.pager(page, pages, total, per_page, purl, 'top') }}</div>
 
   {% if rows %}
   <form id="fuform" method="post" action="{{ url_for('assets_review') }}">
@@ -225,7 +222,7 @@
     </table>
     </div>
   </form>
-  {% if pages > 1 %}<div class="fu-foot">{{ pg.pager(page, pages, total, per_page, purl) }}</div>{% endif %}
+  <div class="fu-foot">{{ pg.pager(page, pages, total, per_page, purl) }}</div>
 
   <div class="bulkbar" id="fubar" hidden>
     <b><span id="fucount">0</span> selected</b>
