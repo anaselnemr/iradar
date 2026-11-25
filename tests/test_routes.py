@@ -3339,3 +3339,36 @@ def test_videos_split_by_where_they_sit():
     assert capture._videolike_item({"url": "https://x/videos/abc", "meta": ""})
     assert capture._videolike_item({"url": "", "meta": "Video | 3:21"})
     assert not capture._videolike_item({"url": "", "meta": "Video Doorbell"})
+
+
+def test_documents_filter_by_type_and_search_inside_it():
+    """Content > Documents can be held to one document type; browse lists only
+    that type, the search box searches only inside it, and the two spellings
+    of a type ('Datasheet' / 'Data Sheet') are one entry."""
+    con = db.connect()
+    con.execute("INSERT INTO urls(id, url, active, ptype) VALUES(960,"
+                " 'https://www.infineon.com/part/DTYPEPART', 1, 'Part')")
+    for i, (title, dt) in enumerate([
+            ("ZQX1000 datasheet", "Datasheet"),
+            ("ZQX2000 datasheet", "Data Sheet"),
+            ("ZQX1000 application note", "Application note"),
+            ("ZQX3000 user manual", "User manual")]):
+        con.execute("INSERT INTO items(url_id, category, title, item_url,"
+                    " item_key, doc_type) VALUES(960, 'documents', ?, ?, ?, ?)",
+                    (title, "https://www.infineon.com/dgdl/zqx%d.pdf" % i,
+                     "kdt%d" % i, dt))
+    con.commit()
+    types = {d["key"]: d for d in app._doc_types(con)}
+    con.close()
+    assert types["datasheet"]["n"] >= 2, types.get("datasheet")
+    assert "data sheet" not in types, "a second spelling is not its own type"
+    app._search_cache["data"] = []          # pick up the new items
+    body = _ok("/search?cat=docs&dtype=Datasheet").data.decode()
+    assert "ZQX1000 datasheet" in body and "ZQX2000 datasheet" in body
+    assert "ZQX1000 application note" not in body
+    assert "ZQX3000 user manual" not in body
+    body = _ok("/search?cat=docs&dtype=Datasheet&q=ZQX1000").data.decode()
+    assert "ZQX1000 datasheet" in body
+    assert "ZQX1000 application note" not in body, "searched outside the type"
+    body = _ok("/search?cat=docs&q=ZQX1000").data.decode()
+    assert "ZQX1000 application note" in body, "no type = every document"

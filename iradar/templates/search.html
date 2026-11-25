@@ -104,6 +104,26 @@
      but only once two columns actually exist, or it overflows a phone */
   @media (min-width: 620px) { .lp-tile.lp-wide { grid-column: span 2; } }
   .cchip-count { font-weight: 600; opacity: .55; margin-left: 5px; font-size: 11.5px; }
+  /* the document-type picker under the chips, Documents only */
+  .dtrow { display: flex; justify-content: center; align-items: center;
+           gap: 6px; margin-top: 10px; }
+  .dtdd > summary { padding: 6px 12px; font-size: 13.5px; border-radius: 999px; }
+  .dtdd .dtlbl { font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+                 text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+  .dtdd .panel.dtpanel { left: 50%; transform: translateX(-50%); width: 300px;
+                         max-height: 380px; text-align: left; }
+  .dtpanel .dtfind { display: block; box-sizing: border-box; width: 100%;
+                     margin: 0 0 5px; padding: 7px 10px; font-size: 13px; }
+  .dtpanel .dtopt { display: flex; align-items: center; gap: 9px;
+                    padding: 6px 9px; border-radius: 6px; font-size: 13.5px;
+                    color: var(--ink); text-decoration: none; }
+  .dtpanel .dtopt:hover { background: var(--bg); }
+  .dtpanel .dtopt.on { font-weight: 600; color: var(--accent); }
+  .dtpanel .dtopt[hidden] { display: none; }
+  .dtclear { display: inline-flex; align-items: center; justify-content: center;
+             width: 26px; height: 26px; border-radius: 50%; font-size: 17px;
+             color: var(--muted); text-decoration: none; }
+  .dtclear:hover { background: var(--hover); color: var(--ink); }
   /* One thumbnail treatment everywhere, so a row reads the same whether it
      came from browsing or searching. `contain` on white: these are logos,
      icons and document pages, and cropping them to fill would cut the very
@@ -261,11 +281,12 @@
            stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
       <input type="text" name="q" value="{{ q }}" autofocus id="sq"
-             placeholder="AN85951 · CY8CKIT-042 · datasheet · TRACE32 · IBIS model…">
+             placeholder="{{ ('Search inside ' ~ dsel.label ~ '…') if dsel else 'AN85951 · CY8CKIT-042 · datasheet · TRACE32 · IBIS model…' }}">
       <span class="sspin" id="sspin" aria-hidden="true"></span>
       <button type="button" class="sclear" title="Clear (Esc)" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
     </span>
     <input type="hidden" name="cat" value="{{ cat }}">
+    {% if dsel %}<input type="hidden" name="dtype" value="{{ dsel.label }}">{% endif %}
     <button id="sbtn">Search</button>
   </form>
   <div class="pills pills-center">
@@ -274,6 +295,24 @@
        href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}{% if ccounts.get(k) %}<span class="cchip-count">{{ '{:,}'.format(ccounts[k]) }}</span>{% endif %}</a>
     {% endfor %}
   </div>
+  {#- Documents only: hold the list to one type, and the search box then
+      searches inside it -#}
+  {% if cat == 'docs' and doc_types %}
+  <div class="dtrow">
+    <details class="dd dtdd">
+      <summary><span class="dtlbl">Type</span> {{ dsel.label if dsel else 'All' }}{% if dsel %}<span class="cchip-count">{{ '{:,}'.format(dsel.n) }}</span>{% endif %}</summary>
+      <div class="panel dtpanel">
+        <input type="text" class="dtfind" placeholder="Find a type…" aria-label="Find a document type">
+        <a class="dtopt {{ 'on' if not dsel }}" href="{{ url_for('search_items', cat='docs', q=q or None, sort=sort, per=per_page, size=size) }}">All types</a>
+        {% for d in doc_types %}
+        <a class="dtopt {{ 'on' if dsel and dsel.key == d.key }}" data-k="{{ d.label|lower }}"
+           href="{{ url_for('search_items', cat='docs', dtype=d.label, q=q or None, sort=sort, per=per_page, size=size) }}">{{ d.label }}<span class="cnt">{{ '{:,}'.format(d.n) }}</span></a>
+        {% endfor %}
+      </div>
+    </details>
+    {% if dsel %}<a class="dtclear" href="{{ url_for('search_items', cat='docs', q=q or None, sort=sort, per=per_page, size=size) }}" title="All document types" aria-label="Clear the document type">&times;</a>{% endif %}
+  </div>
+  {% endif %}
 </div>
 
 {#- Every browse link carries the whole view: which chip, which order, how many
@@ -281,7 +320,7 @@
     is what the old pager did with the sort. -#}
 {% macro burl(page=None, o=None, n=None, z=None) %}{{ url_for('search_items',
     cat=cat, sort=(o or sort), per=(n or per_page), size=(z or size),
-    page=page, q=q or None) }}{% endmacro %}
+    page=page, q=q or None, dtype=(dsel.label if dsel else None)) }}{% endmacro %}
 
 {% set last_page = ((total + per_page - 1) // per_page) if per_page else 1 %}
 
@@ -461,7 +500,7 @@
   {{ pager() }}
 {% elif browse %}
   <div class="muted" style="margin:0 2px 12px">
-    Browsing <b>{{ pill_labels.get(cat, cat) }}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}. Type above to search instead.
+    Browsing <b>{{ pill_labels.get(cat, cat) }}{% if dsel %} · {{ dsel.label }}{% endif %}</b> — {{ '{:,}'.format(total) }} distinct item{{ 's' if total != 1 }}. Type above to search {{ 'inside them' if dsel else 'instead' }}.
   </div>
   {{ controls() }}
   {{ pager('top') }}
@@ -601,7 +640,7 @@
 {% elif q %}
   {% if not groups %}
   <div class="card">
-    <p class="muted" style="margin:0">Nothing matches “<b>{{ q }}</b>”{% if cat != 'all' %} in {{ pill_labels.get(cat, cat) }}{% endif %}.
+    <p class="muted" style="margin:0">Nothing matches “<b>{{ q }}</b>”{% if cat != 'all' %} in {{ pill_labels.get(cat, cat) }}{% if dsel %} · {{ dsel.label }}{% endif %}{% endif %}.
       {% if indexed == 0 %}<br>The index fills as pages are captured — the first run is still going.{% endif %}
     </p>
   </div>
@@ -707,7 +746,8 @@
   const view = () => {
     const p = new URLSearchParams(location.search);
     return {cat: p.get('cat') || 'all', sort: p.get('sort') || '',
-            per: p.get('per') || '', size: p.get('size') || ''};
+            per: p.get('per') || '', size: p.get('size') || '',
+            dtype: p.get('dtype') || ''};
   };
   let timer = null, seq = 0, lastSent = null;
 
@@ -716,7 +756,7 @@
     const p = new URLSearchParams();
     if (q) p.set('q', q);
     p.set('cat', v.cat);
-    for (const k of ['sort', 'per', 'size']) if (v[k]) p.set(k, v[k]);
+    for (const k of ['sort', 'per', 'size', 'dtype']) if (v[k]) p.set(k, v[k]);
     const url = location.pathname + '?' + p.toString();
     if (url === lastSent) return;
     lastSent = url;
@@ -755,6 +795,32 @@
   });
   if (btn) btn.style.display = 'none';   // nothing left for it to do
 })();
+
+// The document-type picker: type to narrow the list, Enter takes the first
+document.querySelectorAll('.dtdd').forEach(function (dd) {
+  var find = dd.querySelector('.dtfind');
+  if (!find) return;
+  dd.addEventListener('toggle', function () {
+    if (dd.open) { find.value = ''; filter(); find.focus(); }
+  });
+  function filter() {
+    var t = find.value.trim().toLowerCase();
+    dd.querySelectorAll('.dtopt[data-k]').forEach(function (a) {
+      a.hidden = t && a.dataset.k.indexOf(t) < 0;
+    });
+  }
+  find.addEventListener('input', filter);
+  find.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var first = dd.querySelector('.dtopt[data-k]:not([hidden])');
+      if (first) location.href = first.href;
+    } else if (e.key === 'Escape') { dd.open = false; }
+  });
+  document.addEventListener('click', function (e) {
+    if (dd.open && !dd.contains(e.target)) dd.open = false;
+  });
+});
 
 // One control per section, flipping to "collapse all" once everything in that
 // section is open. The groups work without this - <details> needs no script -

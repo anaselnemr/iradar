@@ -6195,6 +6195,7 @@ def _rebuild_search_cache():
         rows = con.execute(
             "SELECT item_key AS k, MIN(title) AS t, MIN(category) AS c,"
             " MIN(meta) AS m, MIN(item_url) AS u, MIN(grp) AS g,"
+            " MIN(doc_type) AS dt,"
             " COUNT(DISTINCT url_id) AS n FROM items"
             " WHERE category<>'about' AND item_key<>'' GROUP BY item_key"
         ).fetchall()
@@ -6219,6 +6220,7 @@ def _rebuild_search_cache():
                 slug = ""
         data.append({"key": r["k"], "title": title, "cat": cat,
                      "meta": r["m"] or "", "url": url, "grp": r["g"] or "",
+                     "dt": (r["dt"] or "").strip().lower(),
                      "tl": title.lower(),
                      "sl": _searchable(title + " " + slug)})
     _search_cache.update(ts=time.monotonic(), data=data,
@@ -6237,7 +6239,7 @@ def _choices():
     return _search_cache["data"], _search_cache["titles"]
 
 
-def _fuzzy_items(q, cat, limit, exclude=None):
+def _fuzzy_items(q, cat, limit, exclude=None, dtypes=None):
     """Distinct items ranked by typo-tolerant relevance to q, best first.
     Exact substring hits always rank above fuzzy ones. `exclude` drops whole
     categories (e.g. 'overview' from the type-ahead - it is page text, not an
@@ -6253,6 +6255,12 @@ def _fuzzy_items(q, cat, limit, exclude=None):
     fn = PILL_FN.get(_norm_pill(cat))
     if fn:
         pairs = [(d, t) for d, t in zip(data, titles) if fn(d)]
+        data = [p[0] for p in pairs]
+        titles = [p[1] for p in pairs]
+    if dtypes:
+        # one document type picked under Documents: search only inside it
+        pairs = [(d, t) for d, t in zip(data, titles)
+                 if d["cat"] == "documents" and d.get("dt") in dtypes]
         data = [p[0] for p in pairs]
         titles = [p[1] for p in pairs]
     scored = {}                      # key -> (tier, score, data)
@@ -6279,21 +6287,22 @@ def _pages_for_keys(con, keys):
         f" WHERE item_key IN ({marks}) GROUP BY item_key", keys)}
 
 
-def _search_keys(con, q, cat, limit):
+def _search_keys(con, q, cat, limit, dtypes=None):
     """Ranked item_keys for a query: typo-tolerant title matches first, then
-    any exact substring hit on a title, URL fragment (doc numbers) or meta."""
-    ordered = [d["key"] for d in _fuzzy_items(q, cat, limit)]
+    any exact substring hit on a title, URL fragment (doc numbers) or meta.
+    `dtypes` holds the search to those document types."""
+    ordered = [d["key"] for d in _fuzzy_items(q, cat, limit, dtypes=dtypes)]
     seen = set(ordered)
     toks = [t for t in q.lower().split() if len(t) >= 2][:6]
     if toks:
-        for k in _substring_keys(con, toks, cat):
+        for k in _substring_keys(con, toks, cat, dtypes):
             if k not in seen:
                 seen.add(k)
                 ordered.append(k)
     return ordered[:limit]
 
 
-def _substring_keys(con, toks, cat):
+def _substring_keys(con, toks, cat, dtypes=None):
     """item_keys whose title, meta or URL contains EVERY token.
 
     Served by the trigram index, which answers the same substring question as
@@ -6303,6 +6312,14 @@ def _substring_keys(con, toks, cat):
     token or a stale index falls back to the scan this replaced.
     """
     short = [t for t in toks if len(t) < 3]
+    # a picked document type narrows to documents of that type, inside the
+    # query for the same reason as the pill: a cap applied first would spend
+    # the budget on other types and drop real matches
+    dtf, dtp = "", []
+    if dtypes:
+        dtf = (" AND i.category='documents' AND lower(trim(i.doc_type)) IN ("
+               + ",".join("?" * len(dtypes)) + ")")
+        dtp = sorted(dtypes)
     if not short and db.items_fts_fresh(con):
         # each token is a quoted phrase; ANDed, matching the old query
         match = " AND ".join('"%s"' % t.replace('"', '""') for t in toks)
@@ -6315,8 +6332,8 @@ def _substring_keys(con, toks, cat):
             sql = ("SELECT DISTINCT f.item_key AS item_key FROM items_fts f"
                    " JOIN items i ON i.item_key = f.item_key"
                    " WHERE f MATCH ? AND i.category IN ("
-                   + ",".join("?" * len(cats)) + ") LIMIT 500")
-            args = [match] + cats
+                   + ",".join("?" * len(cats)) + ")" + dtf + " LIMIT 500")
+            args = [match] + cats + dtp
         else:
             sql = ("SELECT item_key FROM items_fts WHERE items_fts MATCH ?"
                    " LIMIT 500")
@@ -6338,7 +6355,8 @@ def _substring_keys(con, toks, cat):
     return [r["k"] for r in con.execute(
         f"SELECT DISTINCT i.item_key AS k FROM items i"
         f" WHERE i.category<>'about' AND i.item_key<>''"
-        f" AND {' AND '.join(conds)}{catf} LIMIT 500", params + catp)]
+        f" AND {' AND '.join(conds)}{catf}{dtf} LIMIT 500",
+        params + catp + dtp)]
 
 
 BROWSE_PER_PAGE = PER_PAGE
@@ -6472,6 +6490,43 @@ def _library_counts(con, cat=""):
     if cat in _BROWSE_SQL and cat not in hit:
         hit[cat] = _count_browse(con, cat)
     return hit
+
+
+# The site spells a few document types two ways; one entry each in the picker
+_DOC_TYPE_ALIASES = {"data sheet": "datasheet",
+                     "application notes": "application note",
+                     "material content sheet": "material content data sheet"}
+
+
+def _dt_key(s):
+    k = re.sub(r"\s+", " ", (s or "").strip().lower())
+    return _DOC_TYPE_ALIASES.get(k, k)
+
+
+def _doc_types(con):
+    """Every document type in the library with how many distinct documents
+    carry it - counted the way the Documents browse counts (title + link) -
+    cached until the database changes. Spelling variants are one entry."""
+    def build():
+        rows = con.execute(
+            "SELECT trim(doc_type) AS raw, lower(title) AS t, item_url"
+            " FROM items WHERE category='documents'"
+            " AND trim(IFNULL(doc_type,''))<>''"
+            " GROUP BY trim(doc_type), lower(title), item_url").fetchall()
+        docs, spell = {}, {}
+        for r in rows:
+            k = _dt_key(r["raw"])
+            docs.setdefault(k, set()).add((r["t"], r["item_url"]))
+            sp = spell.setdefault(k, {})
+            sp[r["raw"]] = sp.get(r["raw"], 0) + 1
+        out = []
+        for k, ds in docs.items():
+            label = max(spell[k].items(), key=lambda kv: (kv[1], kv[0]))[0]
+            out.append({"key": k, "label": label, "n": len(ds),
+                        "variants": sorted({v.lower() for v in spell[k]})})
+        out.sort(key=lambda d: (-d["n"], d["label"].lower()))
+        return out
+    return _cached_by_db("doc_types", build)
 
 
 def _count_browse(con, key):
@@ -6826,6 +6881,15 @@ def search_items():
     con = db.connect()
     ccounts = _library_counts(con, cat)
     indexed = ccounts["all"]
+    # Documents can be held to one type (Datasheet, Application note...), and
+    # the search box then searches inside that type only
+    doc_types, dsel = [], None
+    if cat == "docs":
+        doc_types = _doc_types(con)
+        _want = _dt_key(request.args.get("dtype", ""))
+        if _want:
+            dsel = next((d for d in doc_types if d["key"] == _want), None)
+    dvars = set(dsel["variants"]) if dsel else None
 
     # ---- BROWSE mode: no query -> the library itself, paginated ----------
     if not q and cat == "pages":
@@ -6852,7 +6916,12 @@ def search_items():
         total = browse_total
     elif not q and cat in _BROWSE_SQL:
         browse = True
-        browse_total = ccounts[cat]
+        browse_total = dsel["n"] if dsel else ccounts[cat]
+        _where, _wargs = _BROWSE_SQL[cat], []
+        if dvars:
+            _where += (" AND lower(trim(doc_type)) IN ("
+                       + ",".join("?" * len(dvars)) + ")")
+            _wargs = sorted(dvars)
         _sset = db.get_settings()
         rows = con.execute(
             # a bare category under GROUP BY is whichever row SQLite reached
@@ -6863,14 +6932,14 @@ def search_items():
             " MIN(item_key) AS item_key, MIN(doc_type) AS doc_type,"
             " MAX(IFNULL(img,'')) AS img,"
             " COUNT(DISTINCT url_id) AS npages"
-            " FROM items WHERE " + _BROWSE_SQL[cat] +
+            " FROM items WHERE " + _where +
             " GROUP BY lower(title), item_url"
             # ordering on the FULL grouping key, not just its first column, is
             # what lets this walk idx_items_cat_ltitle and stop at the page
             # size: sorting every group first cost 922 ms, this costs 4 ms.
             # It also makes paging deterministic when titles repeat.
             " ORDER BY " + _ITEM_SORT_SQL[sort] + " LIMIT ? OFFSET ?",
-            (per_page, (pageno - 1) * per_page)).fetchall()
+            _wargs + [per_page, (pageno - 1) * per_page]).fetchall()
         for r in rows:
             _bk = backend_system(r["category"], r["meta"], r["doc_type"],
                                  r["grp"], r["item_url"])
@@ -7099,7 +7168,7 @@ def search_items():
         if cat == "text":
             total = len(text_hits)
     if q and cat not in ("pages", "text"):
-        keys = _search_keys(con, q, cat, 250)
+        keys = _search_keys(con, q, cat, 250, dvars)
         if keys:
             marks = ",".join("?" * len(keys))
             rows = con.execute(f"""
@@ -7120,6 +7189,10 @@ def search_items():
         for r in rows:
             if _pfn and not _pfn({"cat": r["category"], "url": r["item_url"],
                                   "meta": r["meta"], "grp": r["grp"]}):
+                continue
+            if dvars and (r["category"] != "documents"
+                          or (r["doc_type"] or "").strip().lower()
+                          not in dvars):
                 continue
             # prose sections are In-page-text territory, not content assets
             if cat == "all" and r["category"] in PROSE_CATS:
@@ -7175,7 +7248,7 @@ def search_items():
                            ccounts=ccounts, browse=browse, pageno=pageno,
                            has_more=has_more, per_page=per_page, size=size,
                            per_choices=PER_PAGE_CHOICES,
-                           sort=sort,
+                           sort=sort, doc_types=doc_types, dsel=dsel,
                            sort_opts=(SORT_LABELS if cat == "pages"
                                       else ITEM_SORT_LABELS))
 
