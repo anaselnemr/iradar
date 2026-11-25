@@ -9200,12 +9200,11 @@ def export_copy_limits():
 # One tab per page type; each has its own key components.
 CHART_TYPES = [("ptp", "PTP"), ("eb", "EB")]
 _CHART_LEVEL = {"ptp": "PTP", "eb": "EB"}
-# the component matrix names boards by their page type, not their level
-_CHART_MATRIX = {"ptp": "PTP", "eb": "Evaluation board"}
-# The global ES standard for a PTP (Dominik, 16 Nov 2026): the first seven,
-# then the four he added - every PTP should carry all eleven.
+# The global ES standard for a PTP (Dominik, 16 Nov 2026), less Applications
+# (Anas, 25 Nov 2026: a component to tick, no longer a key one) - every PTP
+# should carry all ten.
 KEY_COMPONENTS = ["Hero image", "Description", "Subheadline", "Key features",
-                  "Benefits", "Applications", "Parametrics", "Metadata",
+                  "Benefits", "Parametrics", "Metadata",
                   "Primary document", "Package page link", "Buy button"]
 # Cluster-specific extras on top of the global standard. The Charts always
 # offer them to tick; choosing a cluster narrows the scope to its business
@@ -9245,7 +9244,7 @@ _KEY_HAS = {"Hero image": "hashero", "Description": "hasdescr",
             "Featured products": "hasfeatured", "Register product": "hasregister",
             **{DR + _l: "has" + _s for _s, _b, _l in DR_TABS}}
 # the Charts' component lists, in the Charts' order
-PTP_COMPONENTS = KEY_COMPONENTS + [DR_PCB, "Ordering", "Diagram", "Documents",
+PTP_COMPONENTS = KEY_COMPONENTS + [DR_PCB, "Applications", "Ordering", "Diagram", "Documents",
                                    "Design resources", "Partner solutions",
                                    "Developer community", "News & highlights",
                                    "View buying options", "Product details",
@@ -9295,8 +9294,8 @@ for _ps in PERFECT_SETS:
         "Not perfect %s" % _ps["name"],
         "(" + _ps["scope"] + " AND NOT (" + _all_have(_ps["default"]) + "))")
 PERFECT_KEYS = [k + "_" + _ps["st"] for _ps in PERFECT_SETS for k in ("perfect", "notperfect")]
-# The same standard in the spreadsheet: a PTP is judged by Key 11, a board by
-# EB Key 13 (other page types have no standard and say so), SURF key 12 on top
+# The same standard in the spreadsheet: a PTP is judged by Key 10, a board by
+# EB Key 13 (other page types have no standard and say so), SURF key 11 on top
 # for PTPs, and which key components a page is missing - the to-do itself.
 PAGE_FIELDS.extend([
     ("perfect", "Perfect page (PTP key %d / EB key %d)" % (len(KEY_COMPONENTS),
@@ -9391,12 +9390,17 @@ def _charts_data(con, kind):
     hit = _CHARTS_CACHE.get(kind)
     if hit and hit[0] == sig:
         return hit[1]
-    matrix = _effective_matrix(con).get(_CHART_MATRIX[kind], set())
     extras = ([] if kind == "eb" else
               [l for c in CHART_CLUSTERS for l in c["extra"]])
+    # The Charts offer exactly what the Dashboard's Perfect page picker offers
+    # for this type - one list, not the settings matrix. Read off the matrix,
+    # Applications vanished from the Charts once it left the PTP key set
+    # (25 Nov 2026), and EBs kept News & highlights after it was dropped
+    # from their components (18 Nov) because the matrix still ticked it.
+    offered = set(PTP_COMPONENTS if kind == "ptp" else EB_COMPONENTS)
     # product status is the charts' own filter, not a component to complete
     registry = [(k, l) for k, l, _kd, _a in _all_components()
-                if (k in matrix or l in key_list or l in extras)
+                if (l in offered or l in key_list or l in extras)
                 and k != "product_status"]
     if kind == "eb":
         registry.append(("images", "Images"))

@@ -2699,12 +2699,13 @@ def test_ptp_charts_carry_the_global_eleven_and_the_surf_extra():
     body = _client.get("/charts/ptp/frame").data.decode("utf-8")
     import re as _r
     data = json.loads(_r.search(r"const DATA = (\{.*?\});\n", body).group(1))
-    assert data["keyComponents"] == app.KEY_COMPONENTS and len(app.KEY_COMPONENTS) == 11
-    assert data["components"][:11] == app.KEY_COMPONENTS
-    assert data["components"][11] == app.DR_PCB
+    assert data["keyComponents"] == app.KEY_COMPONENTS and len(app.KEY_COMPONENTS) == 10
+    assert "Applications" not in app.KEY_COMPONENTS and "Applications" in data["components"]
+    assert data["components"][:10] == app.KEY_COMPONENTS
+    assert data["components"][10] == app.DR_PCB
     assert data["clusters"] == [{"name": "SURF", "bls": ["MMS", "RF"],
                                  "extra": [app.DR_PCB]}]
-    assert ">Key 11<" in body
+    assert ">Key 10<" in body
     have = {c: sum(p["have"][c] for p in data["pls"]) for c in data["components"]}
     assert have["Metadata"] == 1 and have[app.DR_PCB] == 1
     assert have["Buy button"] == 0          # View replacement alone is not a buy
