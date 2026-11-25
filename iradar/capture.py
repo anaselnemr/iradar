@@ -3224,6 +3224,8 @@ async def capture_one(browser, url, out_dir):
         # built with one query instead of opening 4,145 snapshot files
         result["breadcrumb"] = [b for b in sections.get("breadcrumb", [])
                                 if isinstance(b, dict) and b.get("title")]
+        # (the item's tab is its "group" - read as "grp", the database column's
+        # name, every capture from 18 to 25 Nov 2026 counted 0 in every tab)
         # Design resources, tab by tab: each tab (PCB design data - the SURF
         # extra of the perfect-page standard - Development tools, Embedded
         # software ...) is a component, there when the tab holds an item
@@ -3233,7 +3235,7 @@ async def capture_one(browser, url, out_dir):
                 _n = (len(sections.get("trainings") or []) if _tab is None else
                       sum(1 for it in sections.get("design_resources") or []
                           if isinstance(it, dict)
-                          and (it.get("grp") or "").strip().lower() == _tab))
+                          and (it.get("group") or "").strip().lower() == _tab))
                 _fl[_block] = {"exists": _n > 0, "has_content": _n > 0, "count": _n}
         except Exception:
             pass
