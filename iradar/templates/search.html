@@ -104,26 +104,42 @@
      but only once two columns actually exist, or it overflows a phone */
   @media (min-width: 620px) { .lp-tile.lp-wide { grid-column: span 2; } }
   .cchip-count { font-weight: 600; opacity: .55; margin-left: 5px; font-size: 11.5px; }
-  /* the document-type picker under the chips, Documents only */
-  .dtrow { display: flex; justify-content: center; align-items: center;
-           gap: 6px; margin-top: 10px; }
-  .dtdd > summary { padding: 6px 12px; font-size: 13.5px; border-radius: 999px; }
-  .dtdd .dtlbl { font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
-                 text-transform: uppercase; color: var(--muted); margin-right: 4px; }
-  .dtdd .panel.dtpanel { left: 50%; transform: translateX(-50%); width: 300px;
-                         max-height: 380px; text-align: left; }
-  .dtpanel .dtfind { display: block; box-sizing: border-box; width: 100%;
-                     margin: 0 0 5px; padding: 7px 10px; font-size: 13px; }
+  /* ---- a chip with types under it: name | caret, one pill ---------------- */
+  .splitpill { display: inline-flex; align-items: stretch; padding: 0;
+               position: relative; }
+  .splitpill a, .splitpill summary { color: inherit; text-decoration: none; }
+  .splitpill .sp-main { display: inline-flex; align-items: center;
+                        padding: 5px 8px 5px 13px; border-radius: 999px 0 0 999px; }
+  .splitpill .sp-sub { font-weight: 700; margin-left: 6px; padding-left: 7px;
+                       border-left: 1px solid rgba(255,255,255,.45); }
+  .splitpill .sp-x { display: inline-flex; align-items: center; padding: 0 3px;
+                     font-size: 15px; line-height: 1; opacity: .8; }
+  .splitpill .sp-x:hover { opacity: 1; }
+  .splitpill .sp-dd { display: flex; position: static; }
+  .splitpill .sp-caret { display: inline-flex; align-items: center;
+                         padding: 0 10px 0 7px; border: 0; background: none;
+                         border-left: 1px solid var(--line);
+                         border-radius: 0 999px 999px 0; cursor: pointer;
+                         font-size: inherit; }
+  .splitpill .sp-caret::after { content: none; }
+  .splitpill.pill-on .sp-caret { border-left-color: rgba(255,255,255,.4); }
+  .splitpill .sp-caret svg { width: 12px; height: 12px; transition: transform .15s; }
+  .splitpill .sp-dd[open] .sp-caret svg { transform: rotate(180deg); }
+  .splitpill .sp-caret:hover { background: rgba(255,255,255,.14); }
+  .splitpill:not(.pill-on) .sp-caret:hover { background: var(--hover); }
+  /* fixed, placed by script under the chip: the chip row scrolls sideways on
+     a phone and would clip a panel hanging inside it */
+  .splitpill .panel.dtpanel { position: fixed; width: 320px; max-height: 400px;
+                              text-align: left; color: var(--ink); }
+  .dtpanel input.dtfind { display: block; box-sizing: border-box; width: 100%;
+                          margin: 0 0 5px; padding: 7px 10px; font-size: 13px;
+                          border-radius: 8px; }
   .dtpanel .dtopt { display: flex; align-items: center; gap: 9px;
                     padding: 6px 9px; border-radius: 6px; font-size: 13.5px;
                     color: var(--ink); text-decoration: none; }
   .dtpanel .dtopt:hover { background: var(--bg); }
   .dtpanel .dtopt.on { font-weight: 600; color: var(--accent); }
   .dtpanel .dtopt[hidden] { display: none; }
-  .dtclear { display: inline-flex; align-items: center; justify-content: center;
-             width: 26px; height: 26px; border-radius: 50%; font-size: 17px;
-             color: var(--muted); text-decoration: none; }
-  .dtclear:hover { background: var(--hover); color: var(--ink); }
   /* One thumbnail treatment everywhere, so a row reads the same whether it
      came from browsing or searching. `contain` on white: these are logos,
      icons and document pages, and cropping them to fill would cut the very
@@ -291,28 +307,35 @@
   </form>
   <div class="pills pills-center">
     {% for k, lbl in pills %}
+    {% if k in ('docs', 'design') %}
+    {#- a chip with types under it: the name opens it all, the caret drops
+        down its types; on another chip the caret comes here with them open -#}
+    {% set here = cat == k %}
+    <span class="pill splitpill {{ 'pill-on' if here }} {{ 'has-sub' if here and dsel }}">
+      <a class="sp-main" href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}{% if here and dsel %}<span class="sp-sub">{{ dsel.label }}</span><span class="cchip-count">{{ '{:,}'.format(dsel.n) }}</span>{% elif ccounts.get(k) %}<span class="cchip-count">{{ '{:,}'.format(ccounts[k]) }}</span>{% endif %}</a>
+      {% if here and dsel %}<a class="sp-x" href="{{ url_for('search_items', cat=k, q=q or None, sort=sort, per=per_page, size=size) }}" title="All types" aria-label="Clear the type">&times;</a>{% endif %}
+      {% if here and doc_types %}
+      <details class="dd dtdd sp-dd" id="types">
+        <summary class="sp-caret" title="Types" aria-label="Types"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="panel dtpanel">
+          <input type="text" class="dtfind" placeholder="Find a type…" aria-label="Find a type">
+          <a class="dtopt {{ 'on' if not dsel }}" href="{{ url_for('search_items', cat=k, q=q or None, sort=sort, per=per_page, size=size) }}">All {{ lbl|lower if k == 'docs' else 'types' }}<span class="cnt">{{ '{:,}'.format(ccounts.get(k, 0)) }}</span></a>
+          {% for d in doc_types %}
+          <a class="dtopt {{ 'on' if dsel and dsel.key == d.key }}" data-k="{{ d.label|lower }}"
+             href="{{ url_for('search_items', cat=k, dtype=d.label, q=q or None, sort=sort, per=per_page, size=size) }}">{{ d.label }}<span class="cnt">{{ '{:,}'.format(d.n) }}</span></a>
+          {% endfor %}
+        </div>
+      </details>
+      {% else %}
+      <a class="sp-caret" href="{{ url_for('search_items', cat=k, q=q or None) }}#types" title="Types" aria-label="Types"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></a>
+      {% endif %}
+    </span>
+    {% else %}
     <a class="pill {{ 'pill-on' if cat == k }}"
        href="{{ url_for('search_items', q=q or None, cat=k) }}">{{ lbl }}{% if ccounts.get(k) %}<span class="cchip-count">{{ '{:,}'.format(ccounts[k]) }}</span>{% endif %}</a>
+    {% endif %}
     {% endfor %}
   </div>
-  {#- Documents only: hold the list to one type, and the search box then
-      searches inside it -#}
-  {% if cat == 'docs' and doc_types %}
-  <div class="dtrow">
-    <details class="dd dtdd">
-      <summary><span class="dtlbl">Type</span> {{ dsel.label if dsel else 'All' }}{% if dsel %}<span class="cchip-count">{{ '{:,}'.format(dsel.n) }}</span>{% endif %}</summary>
-      <div class="panel dtpanel">
-        <input type="text" class="dtfind" placeholder="Find a type…" aria-label="Find a document type">
-        <a class="dtopt {{ 'on' if not dsel }}" href="{{ url_for('search_items', cat='docs', q=q or None, sort=sort, per=per_page, size=size) }}">All types</a>
-        {% for d in doc_types %}
-        <a class="dtopt {{ 'on' if dsel and dsel.key == d.key }}" data-k="{{ d.label|lower }}"
-           href="{{ url_for('search_items', cat='docs', dtype=d.label, q=q or None, sort=sort, per=per_page, size=size) }}">{{ d.label }}<span class="cnt">{{ '{:,}'.format(d.n) }}</span></a>
-        {% endfor %}
-      </div>
-    </details>
-    {% if dsel %}<a class="dtclear" href="{{ url_for('search_items', cat='docs', q=q or None, sort=sort, per=per_page, size=size) }}" title="All document types" aria-label="Clear the document type">&times;</a>{% endif %}
-  </div>
-  {% endif %}
 </div>
 
 {#- Every browse link carries the whole view: which chip, which order, how many
@@ -796,13 +819,39 @@
   if (btn) btn.style.display = 'none';   // nothing left for it to do
 })();
 
+// On a phone the chips are one row you swipe: bring the lit one into view
+(function () {
+  var row = document.querySelector('.hero .pills');
+  var on = row && row.querySelector('.pill-on');
+  if (!on || row.scrollWidth <= row.clientWidth) return;
+  row.scrollLeft = on.offsetLeft - row.offsetLeft
+                   - (row.clientWidth - on.offsetWidth) / 2;
+})();
+
 // The document-type picker: type to narrow the list, Enter takes the first
 document.querySelectorAll('.dtdd').forEach(function (dd) {
   var find = dd.querySelector('.dtfind');
   if (!find) return;
+  var panel = dd.querySelector('.dtpanel');
+  function place() {
+    // a chip's panel is position:fixed - put it under the chip, on screen
+    if (!dd.classList.contains('sp-dd')) return;
+    var chip = dd.closest('.splitpill').getBoundingClientRect();
+    var w = Math.min(320, window.innerWidth - 24);
+    panel.style.width = w + 'px';
+    panel.style.top = (chip.bottom + 8) + 'px';
+    panel.style.left = Math.max(12, Math.min(chip.left, window.innerWidth - w - 12)) + 'px';
+  }
   dd.addEventListener('toggle', function () {
-    if (dd.open) { find.value = ''; filter(); find.focus(); }
+    if (dd.open) { place(); find.value = ''; filter(); find.focus({preventScroll: true}); }
   });
+  window.addEventListener('scroll', function () { if (dd.open) place(); }, {passive: true});
+  window.addEventListener('resize', function () { if (dd.open) place(); });
+  // the caret on another chip lands here with the types already open
+  if (location.hash === '#types' && dd.id === 'types') {
+    dd.open = true;
+    history.replaceState(null, '', location.pathname + location.search);
+  }
   function filter() {
     var t = find.value.trim().toLowerCase();
     dd.querySelectorAll('.dtopt[data-k]').forEach(function (a) {

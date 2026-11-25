@@ -3372,3 +3372,19 @@ def test_documents_filter_by_type_and_search_inside_it():
     assert "ZQX1000 application note" not in body, "searched outside the type"
     body = _ok("/search?cat=docs&q=ZQX1000").data.decode()
     assert "ZQX1000 application note" in body, "no type = every document"
+    # Design resources: its types are its tabs
+    con = db.connect()
+    for i, (title, grp) in enumerate([("ZQX tool A", "Development tools"),
+                                      ("ZQX gerber B", "PCB design data")]):
+        con.execute("INSERT INTO items(url_id, category, title, item_url,"
+                    " item_key, grp) VALUES(960, 'design_resources', ?, ?, ?, ?)",
+                    (title, "https://www.infineon.com/dgdl/zqxd%d.zip" % i,
+                     "kdg%d" % i, grp))
+    con.commit()
+    con.close()
+    app._search_cache["data"] = []
+    body = _ok("/search?cat=design&dtype=PCB%20design%20data").data.decode()
+    assert "ZQX gerber B" in body and "ZQX tool A" not in body
+    assert 'class="sp-caret"' in body, "the chip carries its types"
+    body = _ok("/search?cat=design&dtype=Development%20tools&q=ZQX").data.decode()
+    assert "ZQX tool A" in body and "ZQX gerber B" not in body

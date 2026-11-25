@@ -6221,6 +6221,7 @@ def _rebuild_search_cache():
         data.append({"key": r["k"], "title": title, "cat": cat,
                      "meta": r["m"] or "", "url": url, "grp": r["g"] or "",
                      "dt": (r["dt"] or "").strip().lower(),
+                     "gl": (r["g"] or "").strip().lower(),
                      "tl": title.lower(),
                      "sl": _searchable(title + " " + slug)})
     _search_cache.update(ts=time.monotonic(), data=data,
@@ -6258,9 +6259,12 @@ def _fuzzy_items(q, cat, limit, exclude=None, dtypes=None):
         data = [p[0] for p in pairs]
         titles = [p[1] for p in pairs]
     if dtypes:
-        # one document type picked under Documents: search only inside it
+        # one type picked under Documents or Design resources: search only
+        # inside it (a document's type, a design resource's tab)
+        _sc, _sf = _SUBTYPE_SRC[_norm_pill(cat)]
+        _sk = "dt" if _sf == "doc_type" else "gl"
         pairs = [(d, t) for d, t in zip(data, titles)
-                 if d["cat"] == "documents" and d.get("dt") in dtypes]
+                 if d["cat"] == _sc and d.get(_sk) in dtypes]
         data = [p[0] for p in pairs]
         titles = [p[1] for p in pairs]
     scored = {}                      # key -> (tier, score, data)
@@ -6317,9 +6321,10 @@ def _substring_keys(con, toks, cat, dtypes=None):
     # the budget on other types and drop real matches
     dtf, dtp = "", []
     if dtypes:
-        dtf = (" AND i.category='documents' AND lower(trim(i.doc_type)) IN ("
+        _sc, _sf = _SUBTYPE_SRC[_norm_pill(cat)]
+        dtf = (" AND i.category=? AND lower(trim(i." + _sf + ")) IN ("
                + ",".join("?" * len(dtypes)) + ")")
-        dtp = sorted(dtypes)
+        dtp = [_sc] + sorted(dtypes)
     if not short and db.items_fts_fresh(con):
         # each token is a quoted phrase; ANDed, matching the old query
         match = " AND ".join('"%s"' % t.replace('"', '""') for t in toks)
@@ -6492,6 +6497,11 @@ def _library_counts(con, cat=""):
     return hit
 
 
+# The chips that open a list of types, and where each reads its type: a
+# document's own type, a design resource's tab
+_SUBTYPE_SRC = {"docs": ("documents", "doc_type"),
+                "design": ("design_resources", "grp")}
+
 # The site spells a few document types two ways; one entry each in the picker
 _DOC_TYPE_ALIASES = {"data sheet": "datasheet",
                      "application notes": "application note",
@@ -6503,16 +6513,20 @@ def _dt_key(s):
     return _DOC_TYPE_ALIASES.get(k, k)
 
 
-def _doc_types(con):
-    """Every document type in the library with how many distinct documents
-    carry it - counted the way the Documents browse counts (title + link) -
-    cached until the database changes. Spelling variants are one entry."""
+def _doc_types(con, cat="docs"):
+    """Every type under a chip - document types for Documents, tabs for
+    Design resources - with how many distinct items carry it, counted the way
+    the browse counts (title + link), cached until the database changes.
+    Spelling variants are one entry."""
+    src, col = _SUBTYPE_SRC[cat]
+
     def build():
         rows = con.execute(
-            "SELECT trim(doc_type) AS raw, lower(title) AS t, item_url"
-            " FROM items WHERE category='documents'"
-            " AND trim(IFNULL(doc_type,''))<>''"
-            " GROUP BY trim(doc_type), lower(title), item_url").fetchall()
+            "SELECT trim(" + col + ") AS raw, lower(title) AS t, item_url"
+            " FROM items WHERE category=?"
+            " AND trim(IFNULL(" + col + ",''))<>''"
+            " GROUP BY trim(" + col + "), lower(title), item_url",
+            (src,)).fetchall()
         docs, spell = {}, {}
         for r in rows:
             k = _dt_key(r["raw"])
@@ -6526,7 +6540,7 @@ def _doc_types(con):
                         "variants": sorted({v.lower() for v in spell[k]})})
         out.sort(key=lambda d: (-d["n"], d["label"].lower()))
         return out
-    return _cached_by_db("doc_types", build)
+    return _cached_by_db("subtypes:" + cat, build)
 
 
 def _count_browse(con, key):
@@ -6884,8 +6898,8 @@ def search_items():
     # Documents can be held to one type (Datasheet, Application note...), and
     # the search box then searches inside that type only
     doc_types, dsel = [], None
-    if cat == "docs":
-        doc_types = _doc_types(con)
+    if cat in _SUBTYPE_SRC:
+        doc_types = _doc_types(con, cat)
         _want = _dt_key(request.args.get("dtype", ""))
         if _want:
             dsel = next((d for d in doc_types if d["key"] == _want), None)
@@ -6919,7 +6933,7 @@ def search_items():
         browse_total = dsel["n"] if dsel else ccounts[cat]
         _where, _wargs = _BROWSE_SQL[cat], []
         if dvars:
-            _where += (" AND lower(trim(doc_type)) IN ("
+            _where += (" AND lower(trim(" + _SUBTYPE_SRC[cat][1] + ")) IN ("
                        + ",".join("?" * len(dvars)) + ")")
             _wargs = sorted(dvars)
         _sset = db.get_settings()
@@ -7190,8 +7204,8 @@ def search_items():
             if _pfn and not _pfn({"cat": r["category"], "url": r["item_url"],
                                   "meta": r["meta"], "grp": r["grp"]}):
                 continue
-            if dvars and (r["category"] != "documents"
-                          or (r["doc_type"] or "").strip().lower()
+            if dvars and (r["category"] != _SUBTYPE_SRC[cat][0]
+                          or (r[_SUBTYPE_SRC[cat][1]] or "").strip().lower()
                           not in dvars):
                 continue
             # prose sections are In-page-text territory, not content assets
