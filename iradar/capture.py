@@ -114,11 +114,39 @@ def partners_from_feed(feed):
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
-        out.append({"title": name[:120],
-                    "url": str(r.get("pageURL") or "")[:400],
-                    "meta": " ".join(str(r.get("description") or "").split())[:200],
-                    "img": str(r.get("partnerLogoUrl") or "")[:400]})
+        item = {"title": name[:120],
+                "url": str(r.get("pageURL") or "")[:400],
+                "meta": " ".join(str(r.get("description") or "").split())[:200],
+                "img": str(r.get("partnerLogoUrl") or "")[:400]}
+        tags = partner_tags(r)
+        if tags:
+            item["tags"] = tags
+        out.append(item)
     return out
+
+
+def partner_tags(r):
+    """A partner's applications and regions, as one stable string.
+
+    Sorted, so the order the feed happens to return them in never reads as a
+    change - the detail panel printed the regions in a different order from
+    one load to the next. These used to reach the review only as anonymous
+    page-text lines from whichever partner the panel showed first (Lauterbach
+    losing "Electric vehicles" flagged ~1,000 part pages as "page text -4");
+    now they belong to the partner they describe, under Partner solutions."""
+    apps = sorted({" ".join(str(a.get("headingEN") or a.get("heading") or "")
+                            .split())
+                   for a in (r.get("applicationList") or [])
+                   if isinstance(a, dict)} - {""}, key=str.lower)
+    regs = sorted({" ".join(x.split()) for x in
+                   str(r.get("regionsOfOperations") or "").split(";")} - {""},
+                  key=str.lower)
+    parts = []
+    if apps:
+        parts.append("Applications: " + "; ".join(apps))
+    if regs:
+        parts.append("Regions: " + "; ".join(regs))
+    return " | ".join(parts)[:1500]
 
 
 def featured_from_attr(attr):
@@ -399,7 +427,10 @@ CAROUSEL_TRACK_SEL = ('.swiper-wrapper, .slick-track, .glide__slides,'
 #       "updates" ("Software" / "Datasheet" captions leaving) published on
 #       2026-08-03 and began reversing themselves the next day. A menu is
 #       chrome, never content - same reasoning as the mega-menu at rev 3.
-TEXT_REV = 7
+#   8 - the partner widget (#partner-solutions) leaves the walk: its detail
+#       panel repeated the first partner's tags on every page listing it, and
+#       those now live on the partner item itself (Partner solutions, `tags`).
+TEXT_REV = 8
 
 # The volatile-but-structured sections, excluded from every RAW signal (text,
 # image inventory, screenshot judgement) and left to the structured library,
@@ -626,8 +657,14 @@ TEXT_JS = r"""
   // None of these holds a word specific to the page it sits on, so nothing
   // real is lost - only the churn that read as 58 false "updates" in one run.
   // Removing one bumps TEXT_REV so existing baselines re-normalise silently.
+  // The partner widget's DETAIL PANEL (rev 8): the first partner's
+  // applications, regions and blurb, repeated on every part page that lists
+  // that partner. It is tracked per partner from the widget's own feed
+  // (partners_from_feed, Partner solutions); as page text it turned one edit
+  // to one partner into ~1,000 anonymous "page text" updates (run 54).
   const FEED = 'react-component#community, #community, .news-container, ' +
                '.secondary-navigation-submenu, ' +
+               '[data-component="partnersolution"], #partner-solutions, ' +
                '""" + VOLATILE_SEL + r"""';
   const walk = (node, sink) => {
     if (node.nodeType === Node.TEXT_NODE) {

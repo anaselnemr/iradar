@@ -2623,6 +2623,12 @@ def _dash_static(con):
                          build)
 
 
+@app.route("/dashboard")
+def dashboard_alias():
+    # people type the screen's name; the Dashboard itself lives at /
+    return redirect(url_for("index"))
+
+
 @app.route("/")
 def index():
     q = request.args.get("q", "").strip()
@@ -2909,7 +2915,8 @@ def urls_bulk():
         con.commit()
         flash(f"Approved updates on {len(ids)} URL(s) — marked unchanged.")
     elif action == "check":
-        if runner.run_check_background(kind="manual", url_ids=ids):
+        if runner.run_check_background(kind="manual", url_ids=ids,
+                                       started_by=_reviewer()):
             flash(f"Checking {len(ids)} selected URL(s) now…")
         else:
             flash("A check is already running — try again when it finishes.")
@@ -5056,7 +5063,8 @@ def run_now():
               "in a few minutes, then a new check can start.")
         return redirect(url_for("index"))
     started_at = db.now_iso()
-    if runner.run_check_background(kind="manual", url_ids=ids):
+    if runner.run_check_background(kind="manual", url_ids=ids,
+                                   started_by=_reviewer()):
         if ids is None:
             # Bound to THIS run, and only once it really started. Stored as the
             # moment of starting rather than "1": a bare boolean was global,

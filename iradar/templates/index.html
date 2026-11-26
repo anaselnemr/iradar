@@ -289,6 +289,8 @@
   <div class="muted" style="margin-top:10px">
     Last run finished {{ last_run.finished|localtime }} — {{ last_run.ok }} ok,
     <b>{{ last_run.changed }} updated</b>, {{ last_run.errors }} errors
+    {%- if last_run.kind == 'scheduled' %} · weekly check
+    {%- elif last_run.started_by %} · started by {{ last_run.started_by }}{% endif %}
   </div>
   {% endif %}
 </div>

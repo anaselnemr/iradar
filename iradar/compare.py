@@ -170,6 +170,37 @@ def text_diff(old_dir, new_dir, ignore_patterns=None):
         hunks.append({"old_start": group[0][1] + 1,
                       "new_start": group[0][3] + 1,
                       "lines": lines})
+    # A LINE THAT ONLY MOVED is not a change. The diff is positional, so a
+    # line that sits somewhere else reads as one removal plus one addition -
+    # and the distributor regions ("asia-pacific", "greater china") came back
+    # in a different order on 100+ part pages in run 54, padding every count
+    # and making two captures of the same page "disagree on WHAT changed".
+    # Net the two sides: a moved line stays in the hunk as context (where it
+    # now sits) and counts as neither. Only lines genuinely new or genuinely
+    # gone are counted, and a hunk left with neither is dropped.
+    plus = Counter(l for h in hunks for t, l in h["lines"] if t == "+")
+    minus = Counter(l for h in hunks for t, l in h["lines"] if t == "-")
+    moved = plus & minus
+    if moved:
+        keep_p, keep_m = Counter(moved), Counter(moved)
+        out = []
+        for h in hunks:
+            nl = []
+            for t, l in h["lines"]:
+                if t == "-" and keep_m[l] > 0:
+                    keep_m[l] -= 1
+                    continue
+                if t == "+" and keep_p[l] > 0:
+                    keep_p[l] -= 1
+                    nl.append((" ", l))
+                    continue
+                nl.append((t, l))
+            if any(t != " " for t, _l in nl):
+                out.append({**h, "lines": nl})
+        hunks = out
+        n_moved = sum(moved.values())
+        added -= n_moved
+        removed -= n_moved
     changed = added > 0 or removed > 0
     return changed, added, removed, hunks
 
@@ -1174,6 +1205,23 @@ def _item_body(d):
             if k not in ("title", "url", "img", "exact")}
 
 
+# Fields an item gained after baselines already existed. A baseline item that
+# never carried one was simply not read for it - not "changed from nothing" -
+# so the field is compared only when BOTH sides have it. `tags` = a partner's
+# applications and regions (26 Nov 2026), which used to reach the review only
+# as anonymous "page text" lines from the first partner's detail panel.
+_LATE_FIELDS = ("tags",)
+
+
+def _bodies(a, b):
+    ba, bb = _item_body(a), _item_body(b)
+    for f in _LATE_FIELDS:
+        if (f in ba) != (f in bb):
+            ba.pop(f, None)
+            bb.pop(f, None)
+    return ba, bb
+
+
 # --- editorial limits -------------------------------------------------------
 # What the copy is supposed to fit in, as given by the people who own it.
 #
@@ -1451,7 +1499,7 @@ def library_diff_detail(old_dir, new_dir):
         changed = []
         for k in set(a) & set(b):
             fields = []
-            ba, bb = _item_body(a[k]), _item_body(b[k])
+            ba, bb = _bodies(a[k], b[k])
             for f in sorted(set(ba) | set(bb)):
                 if ba.get(f, "") != bb.get(f, ""):
                     fields.append((f, ba.get(f, ""), bb.get(f, "")))
@@ -1498,7 +1546,8 @@ def library_diff(old_dir, new_dir):
         n_rem = len(set(a) - set(b))
         n_chg = 0
         for k in set(a) & set(b):
-            if _item_body(a[k]) != _item_body(b[k]):
+            _ba, _bb = _bodies(a[k], b[k])
+            if _ba != _bb:
                 n_chg += 1
                 continue
             ia, ib = str(a[k].get("img", "")), str(b[k].get("img", ""))
@@ -1534,6 +1583,14 @@ def compare_snapshots(old_dir, new_dir, change_dir=None, settings=None):
         t_changed, t_added, t_removed = False, 0, 0
     else:
         t_changed, t_added, t_removed, _ = text_diff(old_dir, new_dir, ignore_patterns)
+        # text_diff already nets out lines that only moved; a page whose lines
+        # are all the same and merely rearranged comes back unchanged, and is
+        # still marked reordered so the record says why nothing flagged.
+        if not t_changed:
+            _ol = _load_text_lines(old_dir, ignore_patterns)
+            _nl = _load_text_lines(new_dir, ignore_patterns)
+            if _ol != _nl and Counter(_ol) == Counter(_nl):
+                t_reordered = True
         # SAME LINES, NEW ORDER is not a content change. The line diff is
         # positional, so a block that merely moved reads as removals plus
         # additions - the homepage reported the same four AURIX part numbers

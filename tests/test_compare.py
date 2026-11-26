@@ -992,3 +992,55 @@ def test_a_list_that_gains_an_item_or_a_reworded_sentence_still_flags():
     assert _cmp(["With the new kit, engineers can start fast, and test early."],
                 ["With the new kit, engineers can test early, and start fast."]
                 )["text_changed"] is True
+
+# --- 26 Nov 2026: moved lines, partner tags, late item fields ---------------
+
+def test_a_moved_line_is_not_counted_but_a_real_removal_still_is():
+    # run 54: the distributor regions came back in another order on 100+
+    # part pages, next to one genuine removal
+    old = ["Inventory", "asia-pacific", "greater china", "americas",
+           "Partner", "Electric vehicles", "Renewables"]
+    new = ["Inventory", "americas", "asia-pacific", "greater china",
+           "Partner", "Renewables"]
+    ch, added, removed, hunks = cmp.text_diff(_snap(old), _snap(new))
+    assert ch is True and (added, removed) == (0, 1), (added, removed)
+    tagged = [(t, l) for h in hunks for t, l in h["lines"] if t != " "]
+    assert tagged == [("-", "Electric vehicles")], tagged
+
+
+def test_a_page_that_only_rearranged_is_unchanged_and_marked_reordered():
+    r = _cmp(["a", "b", "c"], ["c", "a", "b"])
+    assert not r["text_changed"] and r["text_reordered"]
+
+
+def test_partner_tags_are_sorted_so_feed_order_never_reads_as_a_change():
+    import capture
+    a = {"partnerName": "Lauterbach GmbH", "description": "x",
+         "regionsOfOperations": "Americas; Asia-Pacific; Greater China",
+         "applicationList": [{"headingEN": "Renewables"},
+                             {"headingEN": "Electric vehicles"}]}
+    b = dict(a, regionsOfOperations="Greater China; Americas; Asia-Pacific",
+             applicationList=list(reversed(a["applicationList"])))
+    fa = capture.partners_from_feed({"data": {"getPartnerSearchDetails": {"content": [a]}}})
+    fb = capture.partners_from_feed({"data": {"getPartnerSearchDetails": {"content": [b]}}})
+    assert fa == fb
+    assert fa[0]["tags"] == ("Applications: Electric vehicles; Renewables"
+                             " | Regions: Americas; Asia-Pacific; Greater China")
+
+
+def _snap_parts(parts, rev=4):
+    d = Path(_snap(["x"]))
+    (d / "sections.json").write_text(json.dumps({"partners": parts}), encoding="utf-8")
+    (d / "meta.json").write_text(json.dumps({"sections_rev": rev}), encoding="utf-8")
+    return str(d)
+
+
+def test_partner_tags_new_on_one_side_are_unread_but_a_tag_change_flags():
+    base = {"title": "Lauterbach GmbH", "url": "u", "meta": "m"}
+    t1 = dict(base, tags="Applications: Electric vehicles; Renewables")
+    t2 = dict(base, tags="Applications: Renewables")
+    # a baseline captured before tags existed: nothing to compare yet
+    assert cmp.library_diff(_snap_parts([base]), _snap_parts([t1]))["changed"] == 0
+    # both sides carry tags and they differ: Partner solutions (~1)
+    det = cmp.library_diff_detail(_snap_parts([t1]), _snap_parts([t2]))
+    assert det["partners"]["changed"][0]["fields"][0][0] == "tags"

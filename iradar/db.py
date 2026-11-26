@@ -629,6 +629,8 @@ def init_db():
     _ensure_column(con, "runs", "tracked_total", "INTEGER")
     _ensure_column(con, "runs", "offline_before", "INTEGER")
     _ensure_column(con, "runs", "offline_after", "INTEGER")
+    # who pressed Run (the signed-in person); '' for the weekly schedule
+    _ensure_column(con, "runs", "started_by", "TEXT DEFAULT ''")
     _ensure_column(con, "snapshots", "http_status", "INTEGER")
     # rejected=1: reviewer said the OLD version was correct - this snapshot is
     # kept for the record but never used as a comparison baseline.

@@ -1011,7 +1011,9 @@ def test_manual_report_form_choice_is_per_run_and_accepts_older_pages():
             if wanted:
                 assert stamp[:2] == "20" and len(stamp) >= 19, \
                     "the request must be stamped with when it was made: %r" % stamp
-            assert calls[-1] == {"kind":"manual", "url_ids":None}
+            assert calls[-1] == {"kind":"manual", "url_ids":None,
+                                 "started_by": calls[-1].get("started_by")}
+            assert "started_by" in calls[-1], "a manual run must record who pressed Run"
     finally:
         runner.run_check_background = launch
         db.set_setting("email_after_manual_run", previous)

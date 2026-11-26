@@ -764,7 +764,7 @@ def _resume_counters(prev_row, done_count, requeue, owed):
     return counters
 
 
-def run_check(kind="manual", url_ids=None, baseline=False):
+def run_check(kind="manual", url_ids=None, baseline=False, started_by=""):
     """Run a full check. Returns run summary dict, or None if already running.
 
     baseline=True is the fresh-start mode for after a detection-method change:
@@ -777,7 +777,8 @@ def run_check(kind="manual", url_ids=None, baseline=False):
     if not RUN_LOCK.acquire(blocking=False):
         return None
     try:
-        return _run_check_inner(kind, url_ids, baseline=baseline)
+        return _run_check_inner(kind, url_ids, baseline=baseline,
+                                started_by=started_by)
     finally:
         RUN_STATE["running"] = False
         RUN_STATE["paused"] = False
@@ -803,7 +804,7 @@ def _init_db_patiently(delays=(20, 20, 20)):
                   f" {delays[min(i, len(delays) - 1)]}s", flush=True)
 
 
-def _run_check_inner(kind, url_ids, baseline=False):
+def _run_check_inner(kind, url_ids, baseline=False, started_by=""):
     _init_db_patiently()
     settings = db.get_settings()
     # 8, and do not raise it without re-running the three-pass check.
@@ -928,9 +929,10 @@ def _run_check_inner(kind, url_ids, baseline=False):
                 f" ORDER BY {priority}, id").fetchall()
         tracked_total, offline_before = db.inventory_counts(con)
         run_cur = con.execute(
-            "INSERT INTO runs(started, kind, total, tracked_total, offline_before)"
-            " VALUES(?, ?, ?, ?, ?)",
-            (db.now_iso(), kind, len(urls), tracked_total, offline_before))
+            "INSERT INTO runs(started, kind, total, tracked_total, offline_before,"
+            " started_by) VALUES(?, ?, ?, ?, ?, ?)",
+            (db.now_iso(), kind, len(urls), tracked_total, offline_before,
+             (started_by or "")[:80]))
         run_id = run_cur.lastrowid
         try:
             con.executemany(
@@ -1933,6 +1935,9 @@ def _park_suspects(suspects):
           " they keep their captures and verify properly then", flush=True)
 
 
+VERIFY_BATCH = 40   # second looks captured, then saved, per batch
+
+
 def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                      recapture=True, phase="verify"):
     """Re-capture every suspected change once and flag only those that persist.
@@ -1960,200 +1965,84 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
     def paused():
         return bool(RUN_STATE.get("paused"))
 
-    if recapture:
-        vresults = asyncio.run(capture.capture_all(
-            vjobs, concurrency=concurrency, progress=vprogress,
-            pause_check=paused))
-        vby = {r["url"]: r for r in vresults}
-    else:
-        vby = {}      # stopping: every suspect falls to the keep-detection path
     settings_now = db.get_settings()
 
-    for s in suspects:
-        row, prev = s["row"], s["prev"]
-        url_id = row["id"]
-        # A suspect rebuilt from an interrupted run has no stored capture result
-        # (res is None); if its re-capture is also missing, treat it as a failed
-        # verification and keep the already-detected snapshot rather than crash.
-        vres = vby.get(row["url"]) or s.get("res") \
-            or {"status": "error", "http_status": None}
-        vdir = str(_snapshot_dir(url_id, ts2))
-        now = db.now_iso()
-
-        if not recapture or vres["status"] != "ok" \
-                or vres.get("walk_errors") \
-                or ((prev["http_status"] or 0) not in (404, 410)
-                    and _load_failure_added(prev["dir"], vdir, settings_now)):
-            # Verification capture failed - or rendered a section as the
-            # "could not be loaded" apology, which is the same failure wearing
-            # a 200. Keep the original detection rather than risk missing a
-            # real change (the first capture cannot carry the apology: the
-            # first-pass guard never lets one become a suspect). The kept
-            # snapshot leaves limbo: it is now this page's baseline-to-be.
-            shutil.rmtree(vdir, ignore_errors=True)
-            con.execute("UPDATE snapshots SET status='ok' WHERE id=?",
-                        (s["new1_id"],))
-            confirm_id, confirm_dir = s["new1_id"], s["new1_dir"]
-            confirmed = True
+    # IN BATCHES, each one captured and then SAVED before the next. The
+    # whole queue used to be captured first and judged after, so a restart
+    # anywhere in that capture threw every finished second look away - run
+    # 54 lost 116 of them to one deploy and started the batch from zero. A
+    # resume now repeats at most one batch.
+    step = VERIFY_BATCH if recapture else max(1, len(suspects))
+    for b0 in range(0, len(suspects), step):
+        batch = suspects[b0:b0 + step]
+        if recapture:
+            vresults = asyncio.run(capture.capture_all(
+                vjobs[b0:b0 + step], concurrency=concurrency,
+                progress=vprogress, pause_check=paused))
+            vby = {r["url"]: r for r in vresults}
         else:
-            cur = con.execute(
-                "INSERT INTO snapshots(url_id, ts, dir, status, error,"
-                " page_title, text_lines, image_count, http_status)"
-                " VALUES(?,?,?,?,?,?,?,?,?)",
-                (url_id, now, vdir, "ok", "", vres.get("title", ""),
-                 vres.get("text_lines", 0), vres.get("image_count", 0),
-                 vres.get("http_status")))
-            vsnap_id = cur.lastrowid
-            recheck = cmp.compare_snapshots(prev["dir"], vdir, change_dir=None,
-                                            settings=settings_now)
-            confirmed = recheck["any_changed"]
-            # Set when three captures have already agreed on a loss. That is a
-            # higher bar than either check below applies, so they stand down
-            # rather than re-litigate it (or spend a fourth capture on it).
-            unanimous_loss = False
-            # The second capture lost its widgets too. Two broken renders in a
-            # row is a bad hour at their end, not an edit - #7481 got this far
-            # and was published as 'sections removed' while the live page was
-            # whole. But a page CAN really drop a section, so the same bargain
-            # as a pure loss: ask a third capture instead of costing a run.
-            # Three captures emptying the SAME sections is a page that was
-            # stripped; widgets that fail to mount fail a different set each
-            # time.
-            if confirmed and _smells_like_lost_widgets(prev["dir"], vdir, row):
-                c1 = _collapse_fingerprint(prev["dir"], s["new1_dir"])
-                c2 = _collapse_fingerprint(prev["dir"], vdir)
-                res3, dir3 = _third_look(
-                    row, url_id, ts_label,
-                    "the same sections came back empty twice"
-                    if _fingerprints_agree(c1, c2)
-                    else "the two captures empty different sections")
-                c3 = (_collapse_fingerprint(prev["dir"], dir3)
-                      if _took(res3) else None)
-                if _loss_survived_three_looks(c1, c2, c3):
-                    con.execute("DELETE FROM snapshots WHERE id=?",
-                                (vsnap_id,))
-                    shutil.rmtree(vdir, ignore_errors=True)
-                    cur = con.execute(
-                        "INSERT INTO snapshots(url_id, ts, dir, status,"
-                        " error, page_title, text_lines, image_count,"
-                        " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (url_id, now, dir3, "ok", "", res3.get("title", ""),
-                         res3.get("text_lines", 0),
-                         res3.get("image_count", 0),
-                         res3.get("http_status")))
-                    vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
-                    unanimous_loss = True
-                    print(f"[verify] {row['url']}: three captures empty the"
-                          " same sections - the page really dropped them,"
-                          " flagging now", flush=True)
-                else:
-                    shutil.rmtree(dir3, ignore_errors=True)
-                    _fail_page(con, row, now)
-                    _restore_page_meta(con, url_id, prev)
-                    shutil.rmtree(vdir, ignore_errors=True)
-                    con.execute("DELETE FROM snapshots WHERE id=?",
-                                (vsnap_id,))
-                    counters["errors"] += 1
-                    counters["saved"] += 1
-                    RUN_STATE["saved"] = counters["saved"]
-                    # this suspect is resolved (as an error); it must leave the
-                    # 'double-checking' band or it counts twice - once violet,
-                    # once red - and the five bands overrun the total
-                    RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
-                    _mark_item(con, run_id, url_id, "done")
-                    con.commit()
-                    print(f"[verify] {row['url']}: empty sections did not"
-                          " survive a third capture - kept the baseline,"
-                          " retrying next run", flush=True)
-                    continue
-            if confirmed and not unanimous_loss \
-                    and _smells_like_half_render(recheck, row):
-                # A loss this shape is either a render that skipped whole
-                # sections or a page that really was stripped, and the two
-                # cases deserve different answers. So ASK A THIRD CAPTURE:
-                # three of them printing the same loss line for line is as
-                # certain as this gets - a stalled widget does not reproduce
-                # itself exactly three times - and that publishes now instead
-                # of a run later (Anas: "if all three show the identical loss,
-                # publish it right then"). Unanimous or nothing: two captures
-                # that already disagree cannot become unanimous, so they skip
-                # the extra capture and keep the baseline as before.
-                f1 = _diff_fingerprint(prev["dir"], s["new1_dir"], settings_now)
-                f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
-                res3, dir3 = _third_look(
-                    row, url_id, ts_label,
-                    "both captures lost the same lines and nothing arrived"
-                    if _fingerprints_agree(f1, f2)
-                    else "the two captures lost different lines")
-                f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now)
-                      if _took(res3) else None)
-                if _loss_survived_three_looks(f1, f2, f3):
-                    # unanimous: the page really did lose it. The third
-                    # capture is the newest and carries the agreed state, so
-                    # it becomes the capture of record and the rest of this
-                    # loop publishes it like any confirmed update.
-                    con.execute("DELETE FROM snapshots WHERE id=?",
-                                (vsnap_id,))
-                    shutil.rmtree(vdir, ignore_errors=True)
-                    cur = con.execute(
-                        "INSERT INTO snapshots(url_id, ts, dir, status,"
-                        " error, page_title, text_lines, image_count,"
-                        " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (url_id, now, dir3, "ok", "", res3.get("title", ""),
-                         res3.get("text_lines", 0),
-                         res3.get("image_count", 0),
-                         res3.get("http_status")))
-                    vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
-                    print(f"[verify] {row['url']}: three captures agree on the"
-                          " loss - the page really was stripped, flagging now",
-                          flush=True)
-                else:
-                    shutil.rmtree(dir3, ignore_errors=True)
-                    _fail_page(con, row, now)
-                    _restore_page_meta(con, url_id, prev)
-                    shutil.rmtree(vdir, ignore_errors=True)
-                    con.execute("DELETE FROM snapshots WHERE id=?",
-                                (vsnap_id,))
-                    counters["errors"] += 1
-                    counters["saved"] += 1
-                    RUN_STATE["saved"] = counters["saved"]
-                    # this suspect is resolved (as an error); it must leave the
-                    # 'double-checking' band or it counts twice - once violet,
-                    # once red - and the five bands overrun the total
-                    RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
-                    _mark_item(con, run_id, url_id, "done")
-                    con.commit()
-                    print(f"[verify] {row['url']}: pure loss did not survive a"
-                          " third capture - kept the baseline, retrying next"
-                          " run", flush=True)
-                    continue
-            # THE SAME DIFFERENCE, NOT JUST A DIFFERENCE. The old test was
-            # "does the verify capture differ from the baseline at all?" -
-            # which a flap passes as easily as an edit, as long as it flaps
-            # twice. Now the two captures must agree on WHAT changed; when
-            # they disagree, a third capture breaks the tie, best two of
-            # three. A real edit prints the same diff every time it is
-            # photographed; noise does not.
-            fp_signals = any(recheck.get(k) for k in
-                             ("text_changed", "images_changed",
-                              "library_changed", "community_changed"))
-            if confirmed and not unanimous_loss and fp_signals:
-                f1 = _diff_fingerprint(prev["dir"], s["new1_dir"],
-                                       settings_now, signals=recheck)
-                f2 = _diff_fingerprint(prev["dir"], vdir, settings_now,
-                                       signals=recheck)
-                if not _fingerprints_agree(f1, f2):
+            vby = {}  # stopping: every suspect falls to the keep-detection path
+        for s in batch:
+            row, prev = s["row"], s["prev"]
+            url_id = row["id"]
+            # A suspect rebuilt from an interrupted run has no stored capture result
+            # (res is None); if its re-capture is also missing, treat it as a failed
+            # verification and keep the already-detected snapshot rather than crash.
+            vres = vby.get(row["url"]) or s.get("res") \
+                or {"status": "error", "http_status": None}
+            vdir = str(_snapshot_dir(url_id, ts2))
+            now = db.now_iso()
+
+            if not recapture or vres["status"] != "ok" \
+                    or vres.get("walk_errors") \
+                    or ((prev["http_status"] or 0) not in (404, 410)
+                        and _load_failure_added(prev["dir"], vdir, settings_now)):
+                # Verification capture failed - or rendered a section as the
+                # "could not be loaded" apology, which is the same failure wearing
+                # a 200. Keep the original detection rather than risk missing a
+                # real change (the first capture cannot carry the apology: the
+                # first-pass guard never lets one become a suspect). The kept
+                # snapshot leaves limbo: it is now this page's baseline-to-be.
+                shutil.rmtree(vdir, ignore_errors=True)
+                con.execute("UPDATE snapshots SET status='ok' WHERE id=?",
+                            (s["new1_id"],))
+                confirm_id, confirm_dir = s["new1_id"], s["new1_dir"]
+                confirmed = True
+            else:
+                cur = con.execute(
+                    "INSERT INTO snapshots(url_id, ts, dir, status, error,"
+                    " page_title, text_lines, image_count, http_status)"
+                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    (url_id, now, vdir, "ok", "", vres.get("title", ""),
+                     vres.get("text_lines", 0), vres.get("image_count", 0),
+                     vres.get("http_status")))
+                vsnap_id = cur.lastrowid
+                recheck = cmp.compare_snapshots(prev["dir"], vdir, change_dir=None,
+                                                settings=settings_now)
+                confirmed = recheck["any_changed"]
+                # Set when three captures have already agreed on a loss. That is a
+                # higher bar than either check below applies, so they stand down
+                # rather than re-litigate it (or spend a fourth capture on it).
+                unanimous_loss = False
+                # The second capture lost its widgets too. Two broken renders in a
+                # row is a bad hour at their end, not an edit - #7481 got this far
+                # and was published as 'sections removed' while the live page was
+                # whole. But a page CAN really drop a section, so the same bargain
+                # as a pure loss: ask a third capture instead of costing a run.
+                # Three captures emptying the SAME sections is a page that was
+                # stripped; widgets that fail to mount fail a different set each
+                # time.
+                if confirmed and _smells_like_lost_widgets(prev["dir"], vdir, row):
+                    c1 = _collapse_fingerprint(prev["dir"], s["new1_dir"])
+                    c2 = _collapse_fingerprint(prev["dir"], vdir)
                     res3, dir3 = _third_look(
                         row, url_id, ts_label,
-                        "the two captures disagree on WHAT changed")
-                    f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now,
-                                            signals=recheck)
+                        "the same sections came back empty twice"
+                        if _fingerprints_agree(c1, c2)
+                        else "the two captures empty different sections")
+                    c3 = (_collapse_fingerprint(prev["dir"], dir3)
                           if _took(res3) else None)
-                    if f3 is not None and (_fingerprints_agree(f3, f2)
-                                           or _fingerprints_agree(f3, f1)):
-                        # two of three agree: the third capture carries the
-                        # agreed state and is the newest - it becomes the
-                        # capture of record
+                    if _loss_survived_three_looks(c1, c2, c3):
                         con.execute("DELETE FROM snapshots WHERE id=?",
                                     (vsnap_id,))
                         shutil.rmtree(vdir, ignore_errors=True)
@@ -2161,15 +2050,16 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                             "INSERT INTO snapshots(url_id, ts, dir, status,"
                             " error, page_title, text_lines, image_count,"
                             " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
-                            (url_id, now, dir3, "ok", "",
-                             res3.get("title", ""),
+                            (url_id, now, dir3, "ok", "", res3.get("title", ""),
                              res3.get("text_lines", 0),
                              res3.get("image_count", 0),
                              res3.get("http_status")))
                         vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
+                        unanimous_loss = True
+                        print(f"[verify] {row['url']}: three captures empty the"
+                              " same sections - the page really dropped them,"
+                              " flagging now", flush=True)
                     else:
-                        # three captures, no two alike - nothing here is
-                        # steady enough to put in front of a person
                         shutil.rmtree(dir3, ignore_errors=True)
                         _fail_page(con, row, now)
                         _restore_page_meta(con, url_id, prev)
@@ -2179,71 +2069,195 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                         counters["errors"] += 1
                         counters["saved"] += 1
                         RUN_STATE["saved"] = counters["saved"]
+                        # this suspect is resolved (as an error); it must leave the
+                        # 'double-checking' band or it counts twice - once violet,
+                        # once red - and the five bands overrun the total
                         RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
                         _mark_item(con, run_id, url_id, "done")
                         con.commit()
-                        print(f"[verify] {row['url']}: three captures, no two"
-                              " alike - kept the baseline, retrying next run",
-                              flush=True)
+                        print(f"[verify] {row['url']}: empty sections did not"
+                              " survive a third capture - kept the baseline,"
+                              " retrying next run", flush=True)
                         continue
-            # the first suspect capture is superseded either way
-            shutil.rmtree(s["new1_dir"], ignore_errors=True)
-            con.execute("DELETE FROM snapshots WHERE id=?", (s["new1_id"],))
-            confirm_id, confirm_dir = vsnap_id, vdir
-            # the verify capture is the one the library will describe - point
-            # every derived column at IT, not at the superseded first capture
-            _write_page_meta(con, url_id, row["url"], vres,
-                             (vres.get("http_status") or 0) in (404, 410))
+                if confirmed and not unanimous_loss \
+                        and _smells_like_half_render(recheck, row):
+                    # A loss this shape is either a render that skipped whole
+                    # sections or a page that really was stripped, and the two
+                    # cases deserve different answers. So ASK A THIRD CAPTURE:
+                    # three of them printing the same loss line for line is as
+                    # certain as this gets - a stalled widget does not reproduce
+                    # itself exactly three times - and that publishes now instead
+                    # of a run later (Anas: "if all three show the identical loss,
+                    # publish it right then"). Unanimous or nothing: two captures
+                    # that already disagree cannot become unanimous, so they skip
+                    # the extra capture and keep the baseline as before.
+                    f1 = _diff_fingerprint(prev["dir"], s["new1_dir"], settings_now)
+                    f2 = _diff_fingerprint(prev["dir"], vdir, settings_now)
+                    res3, dir3 = _third_look(
+                        row, url_id, ts_label,
+                        "both captures lost the same lines and nothing arrived"
+                        if _fingerprints_agree(f1, f2)
+                        else "the two captures lost different lines")
+                    f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now)
+                          if _took(res3) else None)
+                    if _loss_survived_three_looks(f1, f2, f3):
+                        # unanimous: the page really did lose it. The third
+                        # capture is the newest and carries the agreed state, so
+                        # it becomes the capture of record and the rest of this
+                        # loop publishes it like any confirmed update.
+                        con.execute("DELETE FROM snapshots WHERE id=?",
+                                    (vsnap_id,))
+                        shutil.rmtree(vdir, ignore_errors=True)
+                        cur = con.execute(
+                            "INSERT INTO snapshots(url_id, ts, dir, status,"
+                            " error, page_title, text_lines, image_count,"
+                            " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (url_id, now, dir3, "ok", "", res3.get("title", ""),
+                             res3.get("text_lines", 0),
+                             res3.get("image_count", 0),
+                             res3.get("http_status")))
+                        vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
+                        print(f"[verify] {row['url']}: three captures agree on the"
+                              " loss - the page really was stripped, flagging now",
+                              flush=True)
+                    else:
+                        shutil.rmtree(dir3, ignore_errors=True)
+                        _fail_page(con, row, now)
+                        _restore_page_meta(con, url_id, prev)
+                        shutil.rmtree(vdir, ignore_errors=True)
+                        con.execute("DELETE FROM snapshots WHERE id=?",
+                                    (vsnap_id,))
+                        counters["errors"] += 1
+                        counters["saved"] += 1
+                        RUN_STATE["saved"] = counters["saved"]
+                        # this suspect is resolved (as an error); it must leave the
+                        # 'double-checking' band or it counts twice - once violet,
+                        # once red - and the five bands overrun the total
+                        RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
+                        _mark_item(con, run_id, url_id, "done")
+                        con.commit()
+                        print(f"[verify] {row['url']}: pure loss did not survive a"
+                              " third capture - kept the baseline, retrying next"
+                              " run", flush=True)
+                        continue
+                # THE SAME DIFFERENCE, NOT JUST A DIFFERENCE. The old test was
+                # "does the verify capture differ from the baseline at all?" -
+                # which a flap passes as easily as an edit, as long as it flaps
+                # twice. Now the two captures must agree on WHAT changed; when
+                # they disagree, a third capture breaks the tie, best two of
+                # three. A real edit prints the same diff every time it is
+                # photographed; noise does not.
+                fp_signals = any(recheck.get(k) for k in
+                                 ("text_changed", "images_changed",
+                                  "library_changed", "community_changed"))
+                if confirmed and not unanimous_loss and fp_signals:
+                    f1 = _diff_fingerprint(prev["dir"], s["new1_dir"],
+                                           settings_now, signals=recheck)
+                    f2 = _diff_fingerprint(prev["dir"], vdir, settings_now,
+                                           signals=recheck)
+                    if not _fingerprints_agree(f1, f2):
+                        res3, dir3 = _third_look(
+                            row, url_id, ts_label,
+                            "the two captures disagree on WHAT changed")
+                        f3 = (_diff_fingerprint(prev["dir"], dir3, settings_now,
+                                                signals=recheck)
+                              if _took(res3) else None)
+                        if f3 is not None and (_fingerprints_agree(f3, f2)
+                                               or _fingerprints_agree(f3, f1)):
+                            # two of three agree: the third capture carries the
+                            # agreed state and is the newest - it becomes the
+                            # capture of record
+                            con.execute("DELETE FROM snapshots WHERE id=?",
+                                        (vsnap_id,))
+                            shutil.rmtree(vdir, ignore_errors=True)
+                            cur = con.execute(
+                                "INSERT INTO snapshots(url_id, ts, dir, status,"
+                                " error, page_title, text_lines, image_count,"
+                                " http_status) VALUES(?,?,?,?,?,?,?,?,?)",
+                                (url_id, now, dir3, "ok", "",
+                                 res3.get("title", ""),
+                                 res3.get("text_lines", 0),
+                                 res3.get("image_count", 0),
+                                 res3.get("http_status")))
+                            vsnap_id, vdir, vres = cur.lastrowid, dir3, res3
+                        else:
+                            # three captures, no two alike - nothing here is
+                            # steady enough to put in front of a person
+                            shutil.rmtree(dir3, ignore_errors=True)
+                            _fail_page(con, row, now)
+                            _restore_page_meta(con, url_id, prev)
+                            shutil.rmtree(vdir, ignore_errors=True)
+                            con.execute("DELETE FROM snapshots WHERE id=?",
+                                        (vsnap_id,))
+                            counters["errors"] += 1
+                            counters["saved"] += 1
+                            RUN_STATE["saved"] = counters["saved"]
+                            RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)
+                            _mark_item(con, run_id, url_id, "done")
+                            con.commit()
+                            print(f"[verify] {row['url']}: three captures, no two"
+                                  " alike - kept the baseline, retrying next run",
+                                  flush=True)
+                            continue
+                # the first suspect capture is superseded either way
+                shutil.rmtree(s["new1_dir"], ignore_errors=True)
+                con.execute("DELETE FROM snapshots WHERE id=?", (s["new1_id"],))
+                confirm_id, confirm_dir = vsnap_id, vdir
+                # the verify capture is the one the library will describe - point
+                # every derived column at IT, not at the superseded first capture
+                _write_page_meta(con, url_id, row["url"], vres,
+                                 (vres.get("http_status") or 0) in (404, 410))
 
-        # A page that JUST died is the most important change there is, so it
-        # stays 'changed' (the Live column reports the 404); only a steady dead
-        # page reads as 'notlive'. Gone means 404/410 - never a block code.
-        dead_now = (vres.get("http_status") or 0) in (404, 410)
-        if confirmed:
-            counters["changed"] += 1
-            change_dir = db.CHANGE_DIR / str(url_id) / ts_label
-            result = cmp.compare_snapshots(prev["dir"], confirm_dir,
-                                           change_dir=str(change_dir),
-                                           settings=settings_now)
-            # name WHAT changed, component by component, so the review reads
-            # "page text · News & highlights (+2/-1) · Hero image added"
-            parts = component_changes(prev["dir"], confirm_dir, row, vres,
-                                      result)
-            summary = " · ".join(parts) if parts else result["summary"]
-            con.execute(
-                "INSERT INTO changes(url_id, ts, old_snapshot_id,"
-                " new_snapshot_id, text_changed, images_changed,"
-                " visual_changed, pixel_ratio, height_delta, lines_added,"
-                " lines_removed, images_added, images_removed, summary, dir,"
-                " components)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (url_id, now, prev["id"], confirm_id,
-                 int(result["text_changed"]), int(result["images_changed"]),
-                 int(result["visual_changed"]), result["pixel_ratio"],
-                 result["height_delta"], result["lines_added"],
-                 result["lines_removed"], result["images_added"],
-                 result["images_removed"], summary,
-                 str(change_dir), json.dumps(parts, ensure_ascii=False)))
-            con.execute("UPDATE urls SET last_checked=?, last_status=?,"
-                        " error_streak=0 WHERE id=?", (now, "changed", url_id))
-            db.sync_offline(con, url_id)   # a page gone 404 shows as offline
-            index_items(con, url_id, confirm_dir, dead_now)
-        else:
-            _set_checked(con, url_id, now,
-                         "notlive" if dead_now else "unchanged")
-            index_items(con, url_id, confirm_dir, dead_now)
-            _prune_snapshot(con, prev)
-        counters["saved"] += 1
-        RUN_STATE["saved"] = counters["saved"]
-        RUN_STATE["changed"] = counters["changed"]
-        RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)  # out of limbo
-        con.execute("UPDATE runs SET changed=? WHERE id=?",
-                    (counters["changed"], run_id))
-        _mark_item(con, run_id, url_id, "done")   # this suspect is now resolved
-        con.commit()
+            # A page that JUST died is the most important change there is, so it
+            # stays 'changed' (the Live column reports the 404); only a steady dead
+            # page reads as 'notlive'. Gone means 404/410 - never a block code.
+            dead_now = (vres.get("http_status") or 0) in (404, 410)
+            if confirmed:
+                counters["changed"] += 1
+                change_dir = db.CHANGE_DIR / str(url_id) / ts_label
+                result = cmp.compare_snapshots(prev["dir"], confirm_dir,
+                                               change_dir=str(change_dir),
+                                               settings=settings_now)
+                # name WHAT changed, component by component, so the review reads
+                # "page text · News & highlights (+2/-1) · Hero image added"
+                parts = component_changes(prev["dir"], confirm_dir, row, vres,
+                                          result)
+                summary = " · ".join(parts) if parts else result["summary"]
+                con.execute(
+                    "INSERT INTO changes(url_id, ts, old_snapshot_id,"
+                    " new_snapshot_id, text_changed, images_changed,"
+                    " visual_changed, pixel_ratio, height_delta, lines_added,"
+                    " lines_removed, images_added, images_removed, summary, dir,"
+                    " components)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (url_id, now, prev["id"], confirm_id,
+                     int(result["text_changed"]), int(result["images_changed"]),
+                     int(result["visual_changed"]), result["pixel_ratio"],
+                     result["height_delta"], result["lines_added"],
+                     result["lines_removed"], result["images_added"],
+                     result["images_removed"], summary,
+                     str(change_dir), json.dumps(parts, ensure_ascii=False)))
+                con.execute("UPDATE urls SET last_checked=?, last_status=?,"
+                            " error_streak=0 WHERE id=?", (now, "changed", url_id))
+                db.sync_offline(con, url_id)   # a page gone 404 shows as offline
+                index_items(con, url_id, confirm_dir, dead_now)
+            else:
+                _set_checked(con, url_id, now,
+                             "notlive" if dead_now else "unchanged")
+                index_items(con, url_id, confirm_dir, dead_now)
+                _prune_snapshot(con, prev)
+            counters["saved"] += 1
+            RUN_STATE["saved"] = counters["saved"]
+            RUN_STATE["changed"] = counters["changed"]
+            RUN_STATE["held"] = max(0, RUN_STATE.get("held", 0) - 1)  # out of limbo
+            con.execute("UPDATE runs SET changed=? WHERE id=?",
+                        (counters["changed"], run_id))
+            _mark_item(con, run_id, url_id, "done")   # this suspect is now resolved
+            con.commit()
 
 
-def run_check_background(kind="manual", url_ids=None, baseline=False):
+def run_check_background(kind="manual", url_ids=None, baseline=False,
+                         started_by=""):
     """Fire-and-forget check in a daemon thread. Returns False if already running."""
     if RUN_STATE["running"]:
         return False
@@ -2252,7 +2266,8 @@ def run_check_background(kind="manual", url_ids=None, baseline=False):
     RUN_STATE["stopping"] = False
     t = threading.Thread(target=run_check,
                          kwargs={"kind": kind, "url_ids": url_ids,
-                                 "baseline": baseline},
+                                 "baseline": baseline,
+                                 "started_by": started_by},
                          daemon=True)
     t.start()
     # tiny wait so the UI immediately shows "running"
