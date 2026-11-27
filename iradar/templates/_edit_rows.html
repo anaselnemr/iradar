@@ -1,0 +1,13 @@
+{% import "_page_row.html" as pr with context %}
+{#- An ES-wide edit's pages, opened from the Updated view: the same rows as
+    the page table below it. -#}
+<table class="pagetbl">
+  <tr>
+    <th class="c-sel"></th><th class="c-num">#</th><th class="c-page">Page</th>
+    <th class="c-type">Type</th><th class="c-live">Live</th><th class="c-stat">Status</th>
+    <th class="c-when">Last captured</th><th class="c-upd">Updates</th>
+  </tr>
+  {% for u in urls %}
+  {{ pr.row(u, loop.index, sel=false) }}
+  {% endfor %}
+</table>

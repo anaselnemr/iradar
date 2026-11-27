@@ -643,6 +643,8 @@ def init_db():
     # the change's exact FACTS (edits.facts): [[key, label], ...]. Pages that
     # carry the identical fact are one ES-wide edit, counted once.
     _ensure_column(con, "changes", "facts", "TEXT DEFAULT ''")
+    # fact keys approved with an ES-wide edit (edits.accept), [key, ...]
+    _ensure_column(con, "changes", "accepted", "TEXT DEFAULT ''")
     # a finished run counted in edits, not pages (edits.record_run)
     _ensure_column(con, "runs", "site_edits", "INTEGER")
     _ensure_column(con, "runs", "page_changes", "INTEGER")

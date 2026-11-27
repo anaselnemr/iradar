@@ -2572,29 +2572,71 @@ def _bar_extras(con):
 _ES_CACHE = {}
 
 
-def _es_counts(con):
-    """The latest finished check's open updates in EDITS: (ES-wide edits,
-    pages they cover, page changes) - the same grouping the email uses
-    (edits.py). Cached per (run, open-change count), like _bar_extras, so a
-    review or a new change refreshes it."""
-    run = con.execute("SELECT id, started FROM runs WHERE finished IS NOT NULL"
-                      " ORDER BY id DESC LIMIT 1").fetchone()
-    if not run:
-        return 0, 0, 0
-    open_n = con.execute(
-        "SELECT COUNT(*) " + db.OPEN_UPDATES_FROM + " AND c.ts>=?",
-        (run["started"],)).fetchone()[0]
-    key = (run["id"], open_n)
+def _es_group(con):
+    """Every open update grouped into edits (edits.py, the grouping the email
+    uses), leaving out facts already approved with an ES-wide edit. Cached
+    per (open-change count, approvals made): a review, a new change or an
+    ES-wide approval refreshes it."""
+    key = tuple(con.execute(
+        "SELECT COUNT(*), TOTAL(LENGTH(IFNULL(c.accepted,''))), MAX(c.id) "
+        + db.OPEN_UPDATES_FROM).fetchone())
     hit = _ES_CACHE.get(key)
     if hit is None:
-        rows = con.execute("SELECT c.* " + db.OPEN_UPDATES_FROM + " AND c.ts>=?",
-                           (run["started"],)).fetchall()
+        rows = con.execute(
+            "SELECT c.*, u.url, u.ptype,"
+            " COALESCE(NULLIF(u.title_override,''),"
+            "  (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id"
+            "    AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC"
+            "    LIMIT 1), u.url) AS title "
+            + db.OPEN_UPDATES_FROM).fetchall()
         st, lb = db.get_settings(), edits._labels()
-        g = edits.group(rows, [edits.facts_for(con, r, st, lb) for r in rows])
-        hit = (len(g["edits"]), g["shared_pages"], len(g["page_changes"]))
+        g = edits.group(rows, [edits.pending(r, edits.facts_for(con, r, st, lb))
+                               for r in rows])
+        # pages with nothing open but ES-wide edits: they are reviewed in
+        # the edits list, so the Updated table leaves them out
+        cov = set(g["covered_ids"])
+        url_of = {r["id"]: r["url_id"] for r in rows}
+        keep = {url_of[r["id"]] for r in rows if r["id"] not in cov}
+        g["covered_urls"] = sorted({url_of[i] for i in cov} - keep)
+        hit = (None, g)
         _ES_CACHE.clear()
         _ES_CACHE[key] = hit
     return hit
+
+
+# what one Dashboard row shows (templates/_page_row.html)
+_DASH_ROW_COLS = """u.*,
+          (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
+            AS open_changes,
+          (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id) AS change_total,
+          (SELECT c2.id FROM changes c2 WHERE c2.url_id=u.id AND c2.reviewed=0
+            ORDER BY c2.id DESC LIMIT 1) AS latest_change_id,
+          (SELECT c3.components FROM changes c3 WHERE c3.url_id=u.id
+            AND c3.reviewed=0 ORDER BY c3.id DESC LIMIT 1) AS latest_components,
+          (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
+            AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)
+            AS page_title"""
+
+
+def _es_view(q, statuses, *filters):
+    """True when the Dashboard shows just the Updated or Awaiting review
+    pages, with nothing else narrowing them - the view that lists edits."""
+    return (not q and not _in_archive() and len(statuses) == 1
+            and statuses[0] in ("changed", "review") and not any(filters))
+
+
+def _es_exclude(wsql, params, url_ids):
+    """Drop the pages that carry only ES-wide edits from a page query."""
+    if not url_ids:
+        return wsql, params
+    cond = "u.id NOT IN (%s)" % ",".join(str(int(i)) for i in url_ids)
+    return ((wsql + " AND " + cond) if wsql else ("WHERE " + cond)), params
+
+
+def _es_counts(con):
+    """(ES-wide edits, pages they cover, page changes) for the Dashboard."""
+    _, g = _es_group(con)
+    return len(g["edits"]), g["shared_pages"], len(g["page_changes"])
 
 
 def _dash_static(con):
@@ -2692,6 +2734,17 @@ def index():
                                sel_seg, sel_ps, sel_bt)
 
     con = db.connect()
+    # The Updated (or Awaiting review) filter on its own reads as edits: the
+    # ES-wide edits first, each approved at once, then the pages that still
+    # have something of their own. Pages carrying nothing but ES-wide edits
+    # are reviewed through those and drop out of the table.
+    es_view = _es_view(q, statuses, sel_types, attrs, sel_bl, sel_pl, sel_seg,
+                       sel_ps, sel_bt)
+    es_list = []
+    if es_view:
+        _, _g = _es_group(con)
+        es_list = _g["edits"]
+        wsql, params = _es_exclude(wsql, params, _g["covered_urls"])
     total_match = con.execute(
         f"SELECT COUNT(*) FROM urls u {wsql}", params).fetchone()[0]
     per_page = _per_page()
@@ -2700,17 +2753,7 @@ def index():
     st = _dash_static(con)
     bulk_days, ranks = st["bulk_days"], st["ranks"]
     urls = con.execute(f"""
-        SELECT u.*,
-          (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id AND c.reviewed=0)
-            AS open_changes,
-          (SELECT COUNT(*) FROM changes c WHERE c.url_id=u.id) AS change_total,
-          (SELECT c2.id FROM changes c2 WHERE c2.url_id=u.id AND c2.reviewed=0
-            ORDER BY c2.id DESC LIMIT 1) AS latest_change_id,
-          (SELECT c3.components FROM changes c3 WHERE c3.url_id=u.id
-            AND c3.reviewed=0 ORDER BY c3.id DESC LIMIT 1) AS latest_components,
-          (SELECT s.page_title FROM snapshots s WHERE s.url_id=u.id
-            AND s.status='ok' AND s.page_title<>'' ORDER BY s.id DESC LIMIT 1)
-            AS page_title
+        SELECT {_DASH_ROW_COLS}
         FROM urls u {wsql}
         ORDER BY {order_by}, u.id
         LIMIT ? OFFSET ?
@@ -2845,6 +2888,7 @@ def index():
                            latest_updates=latest_updates,
                            content_updates=content_updates,
                            es_edits=es_edits, es_pages=es_pages,
+                           es_view=es_view, es_list=es_list,
                            page_changes=page_changes, es_min=edits.SHARED_MIN,
                            file_updates=file_updates,
                            pages_delta=pages_delta,
@@ -2903,6 +2947,9 @@ def urls_bulk():
                                    request.form.getlist("ps"),
                                    request.form.getlist("bt"))
         con0 = db.connect()
+        if request.form.get("es_view") == "1":
+            wsql, params = _es_exclude(wsql, params,
+                                       _es_group(con0)[1]["covered_urls"])
         ids = [r["id"] for r in
                con0.execute(f"SELECT u.id FROM urls u {wsql}", params)]
         con0.close()
@@ -9657,6 +9704,63 @@ def history():
     runs = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 100").fetchall()
     con.close()
     return render_template("history.html", runs=runs)
+
+
+@app.route("/edits/rows")
+def edits_rows():
+    """The pages of one ES-wide edit as Dashboard rows, loaded when the edit
+    is opened in the Updated view."""
+    try:
+        ids = [int(i) for i in request.args.getlist("c")][:5000]
+    except ValueError:
+        ids = []
+    con = db.connect()
+    try:
+        urls = []
+        if ids:
+            marks = ",".join("?" * len(ids))
+            urls = con.execute(
+                f"SELECT {_DASH_ROW_COLS} FROM urls u WHERE u.id IN"
+                f" (SELECT url_id FROM changes WHERE id IN ({marks}))"
+                f" ORDER BY {_dash_order('page')}, u.id", ids).fetchall()
+        st = _dash_static(con)
+    finally:
+        con.close()
+    new_cutoff = max(
+        (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S"),
+        db.get_settings().get("new_badge_since") or "")
+    return render_template("_edit_rows.html", urls=urls, ranks=st["ranks"],
+                           bulk_days=st["bulk_days"], new_cutoff=new_cutoff,
+                           settings=db.get_settings(), level_names=LEVEL_NAMES)
+
+
+@app.route("/edits/approve", methods=["POST"])
+def edits_approve():
+    """Approve one ES-wide edit on every page that carries it, at once."""
+    nxt = request.form.get("next") or url_for("index", status="changed")
+    keys = request.form.getlist("k")
+    try:
+        ids = [int(i) for i in request.form.getlist("c")]
+    except ValueError:
+        ids = []
+    if not keys or not ids:
+        flash("Nothing to approve.")
+        return redirect(nxt)
+    con = db.connect()
+    try:
+        touched, approved = edits.accept(con, keys, ids, _reviewer(), db.now_iso(),
+                                         db.get_settings())
+        con.commit()
+    finally:
+        con.close()
+    _ES_CACHE.clear()
+    rest = touched - approved
+    flash("Approved on %d page%s.%s" % (
+        touched, "" if touched == 1 else "s",
+        (" %d still ha%s changes of %s own." % (rest, "s" if rest == 1 else "ve",
+                                                 "its" if rest == 1 else "their"))
+        if rest else ""))
+    return redirect(nxt)
 
 
 @app.route("/guests")

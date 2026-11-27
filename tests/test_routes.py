@@ -93,7 +93,8 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     # no Live figure: with offline pages archived, Total pages is the live
     # inventory; the Archive closes the row
     labels = [">Live pages<", ">Recently offline<", ">ES-wide edits<",
-              ">Page changes<", ">Updated files<", ">Paused<", ">Archive<"]
+              ">Page changes<", ">Awaiting review<", ">Updated files<",
+              ">Paused<", ">Archive<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard report metrics changed order"
     assert "Next auto check" not in summary and "Check all pages" not in summary
@@ -104,6 +105,83 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     assert 'Next auto check (' in body[end:controls]
     assert 'name="email_report"' in body[controls:progress]
     assert 'Check all pages' in body[controls:progress]
+
+
+def test_updated_filter_lists_es_wide_edits_first_and_approves_each_at_once():
+    """The Updated filter reads as edits: each ES-wide edit once with its
+    pages and one Approve for all of them, then the table of pages that
+    still have something of their own. Approving an edit closes the pages
+    that carried nothing else and leaves the rest open with their own."""
+    import json
+    import edits
+    con = db.connect()
+    n = edits.SHARED_MIN
+    ids = list(range(9101, 9101 + n + 1))
+    banner = ["t-|Old banner", "“Old banner” removed"]
+    try:
+        for k, uid in enumerate(ids):
+            con.execute("INSERT INTO urls(id, url, active, ptype, last_status)"
+                        " VALUES(?, ?, 1, 'Part', 'changed')",
+                        (uid, "https://www.infineon.com/part/E%d" % k))
+            facts = [banner]
+            if uid == ids[-1]:
+                facts = [banner, ["t+|Only here", "“Only here” added"]]
+            if uid == ids[0]:        # outside the edit: only its own line
+                facts = [["t+|Lonely line", "“Lonely line” added"]]
+            con.execute("INSERT INTO changes(url_id, ts, text_changed, summary,"
+                        " reviewed, facts) VALUES(?, '2099-01-01 00:30:00', 1,"
+                        " 'page text', 0, ?)", (uid, json.dumps(facts)))
+        con.commit()
+        app._ES_CACHE.clear()
+        body = _ok("/").data.decode("utf-8", "replace")
+        start = body.index('class="report-stats"')
+        tiles = body[start:body.index('class="next-check"', start)]
+        assert "status=changed#es-wide" in tiles and "status=changed#page-changes" in tiles
+        assert 'id="es-wide"' not in body, "the edits list belongs to the Updated filter"
+
+        page = _ok("/?status=changed").data.decode("utf-8", "replace")
+        es = page[page.index('id="es-wide"'):page.index('id="page-changes"')]
+        table = page[page.index('id="pagetable"'):]
+        assert es.count('class="esw-row"') == 1, "one ES-wide edit, listed once"
+        # opening the edit loads its pages as normal Dashboard rows
+        src = re.search(r'data-src="([^"]+)"', es).group(1).replace("&amp;", "&")
+        rows_html = _ok(src).data.decode("utf-8", "replace")
+        assert rows_html.count("<tr>") == n + 1, "header + every page that carries it"
+        assert 'class="urlcell"' in rows_html and 'class="rowsel"' not in rows_html
+        assert "/part/E1" in rows_html and "/part/E0" not in rows_html
+        assert "Approve all %d" % n in es
+        # the table keeps the two pages with edits of their own, drops the rest
+        rows = table.split("</table>")[0]
+        assert rows.count('class="rowsel"') == 2, rows.count('class="rowsel"')
+
+        cids = [r[0] for r in con.execute(
+            "SELECT id FROM changes WHERE url_id BETWEEN ? AND ?", (ids[0], ids[-1]))]
+        r = _client.post("/edits/approve", data={
+            "k": [banner[0]], "c": cids, "next": "/?status=changed",
+            "_csrf": _csrf()})
+        assert r.status_code in (302, 303)
+        left = {row[0]: row[1] for row in con.execute(
+            "SELECT url_id, reviewed FROM changes WHERE url_id BETWEEN ? AND ?",
+            (ids[0], ids[-1]))}
+        assert sum(1 for v in left.values() if v) == n - 1, left
+        assert not left[ids[0]] and not left[ids[-1]], "own edits stay open"
+        st = {row[0]: row[1] for row in con.execute(
+            "SELECT id, last_status FROM urls WHERE id BETWEEN ? AND ?", (ids[0], ids[-1]))}
+        assert st[ids[1]] == "unchanged" and st[ids[-1]] == "changed"
+        page = _ok("/?status=changed").data.decode("utf-8", "replace")
+        assert 'id="es-wide"' not in page, "an approved edit leaves the list"
+    finally:
+        con.execute("DELETE FROM changes WHERE url_id BETWEEN ? AND ?", (ids[0], ids[-1]))
+        con.execute("DELETE FROM urls WHERE id BETWEEN ? AND ?", (ids[0], ids[-1]))
+        con.commit()
+        con.close()
+        app._ES_CACHE.clear()
+
+
+def _csrf():
+    m = re.search(r'name="_csrf" value="([^"]+)"',
+                  _client.get("/").data.decode("utf-8", "replace"))
+    return m.group(1) if m else ""
 
 
 def test_run_split_button_preserves_partial_forms_and_full_run_report_choice():

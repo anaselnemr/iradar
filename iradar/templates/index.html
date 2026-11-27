@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_pager.html" as pg with context %}
+{% import "_page_row.html" as pr with context %}
 {#- how this table builds a page link; everything else about the pager is
     shared with the Content library and the export table -#}
 {% macro purl(n) %}{{ url_for('index', page=n, per=per_page, q=q or None,
@@ -34,11 +35,11 @@
 <div class="card dashboard-summary">
   <style>
     /* The shared summary header lives in base.html; this page keeps only
-       what is its own: its two extra stat colours, seven figures instead of
+       what is its own: its two extra stat colours, eight figures instead of
        four, and the run button's split menu. No Live figure: with offline
        pages in the Archive, the first figure - Live pages - is the inventory. */
     .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed;
-                         --stat-cols:7; }
+                         --stat-cols:8; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
     .run-split { display:inline-flex; align-items:stretch; }
     .run-launch { display:flex; margin:0; }
@@ -62,14 +63,10 @@
     .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
                      font-size:11px; cursor:pointer; white-space:nowrap; }
     .report-choice input { margin:0; }
-    /* seven figures do not divide by four, three or two: the last one takes
-       the slack so the grid never ends in a hole */
-    /* the Paused note is the longest line in the row: a touch smaller on the
-       seven-across layout so it never breaks onto a second line */
+    /* eight figures fill four and two columns evenly; at three the last one
+       takes the slack so the grid never ends in a hole */
     @media (min-width:1101px) { .report-stat.st-paused .detail { font-size:10.5px; } }
-    @media (max-width:1100px) { .report-stat:last-child { grid-column:span 2; } }
-    @media (max-width:760px)  { .report-stat:last-child { grid-column:span 3; } }
-    @media (max-width:520px)  { .report-stat:last-child { grid-column:span 2; } }
+    @media (max-width:760px) and (min-width:521px) { .report-stat:last-child { grid-column:span 2; } }
     /* the Archive sits apart from the live inventory: a quiet rule before it */
     @media (min-width:1101px) { .report-stat.st-archive { border-left:1px solid var(--line); border-radius:0; } }
     .report-stat.st-archive.on { background:var(--hover); }
@@ -85,8 +82,8 @@
     <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages but not the Archive. The delta counts pages added or removed since the previous full check; pausing or archiving a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Live pages</div>
-      {#- only ES-wide edits (its page count) and the review backlogs (Page
-          changes, Updated files) keep a line under the figure: every other
+      {#- only ES-wide edits (its page count) and Updated files (its review
+          backlog) keep a line under the figure: every other
           line repeated the number. Empty lines
           stay so the figures sit level. -#}
       <div class="detail" aria-hidden="true"></div>
@@ -96,20 +93,20 @@
       <div class="l">Recently offline</div>
       <div class="detail" aria-hidden="true"></div>
     </a>
-    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Edits infineon.com made on {{ es_min }} or more pages in the latest finished check, each counted once however many pages carry it">
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}#es-wide" title="Edits infineon.com made on {{ es_min }} or more pages, each counted once however many pages carry it and approved for all of them at once">
       <div class="n" style="color:{{ 'var(--warn)' if es_edits else 'var(--muted)' }}">{{ '{:,}'.format(es_edits or 0) }}</div>
       <div class="l">ES-wide edits</div>
       <div class="detail">{% if es_edits %}on {{ '{:,}'.format(es_pages) }} pages{% endif %}</div>
     </a>
-    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages with a change of their own in the latest finished check, beyond the ES-wide edits">
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}#page-changes" title="Pages with a change of their own, beyond the ES-wide edits">
       <div class="n" style="color:{{ 'var(--warn)' if page_changes else 'var(--muted)' }}">{{ '{:,}'.format(page_changes or 0) }}</div>
       <div class="l">Page changes</div>
-      {#- its own link inside the card: the card opens the latest updates, this
-          opens every unreviewed one, whatever the page's status is now -#}
-      <div class="detail">{% if total_open %}<span class="detail-link" role="link" tabindex="0"
-        onclick="event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'}"
-        style="text-decoration:underline;cursor:pointer">{{ '{:,}'.format(total_open) }} awaiting review</span>{% else %}0 awaiting review{% endif %}</div>
+      <div class="detail" aria-hidden="true"></div>
+    </a>
+    <a class="report-stat" href="{{ url_for('index', status='review') }}" title="Pages with an update nobody has reviewed yet, from any check">
+      <div class="n" style="color:{{ 'var(--warn)' if total_open else 'var(--muted)' }}">{{ '{:,}'.format(total_open or 0) }}</div>
+      <div class="l">Awaiting review</div>
+      <div class="detail" aria-hidden="true"></div>
     </a>
     {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
     <a class="report-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
@@ -760,6 +757,91 @@
     {% endfor %}
   </div>
 
+  {#- The Updated / Awaiting review filter reads as edits: each ES-wide edit
+      once, approved for all its pages in one go, then the pages that still
+      have something of their own in the table below. -#}
+  {% if es_view and es_list %}
+  <style>
+    .esw h3, .esw-pc { display:flex; align-items:baseline; gap:8px; margin:14px 0 8px;
+                       font-size:15px; }
+    .esw h3 b, .esw-pc b { color:var(--warn); font-variant-numeric:tabular-nums; }
+    .esw-list { border-top:1px solid var(--line); }
+    .esw-row { position:relative; border-bottom:1px solid var(--line); }
+    .esw-row details > summary { list-style:none; cursor:pointer; display:grid;
+               grid-template-columns:62px minmax(0,1fr) 16px; gap:12px;
+               align-items:start; padding:9px 142px 9px 6px; border-radius:4px; }
+    .esw-row details > summary::-webkit-details-marker { display:none; }
+    .esw-row details > summary:hover { background:var(--hover); }
+    .esw-n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .esw-n b { font-size:15px; }
+    .esw-n span { color:var(--muted); font-size:11.5px; }
+    .esw-l { min-width:0; }
+    .esw-l div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .esw-l .more { color:var(--muted); font-size:12px; }
+    .esw-chev { width:14px; height:14px; margin-top:2px; color:var(--muted); transition:transform .15s; }
+    .esw-row details[open] .esw-chev { transform:rotate(180deg); }
+    .esw-rows { margin:2px 0 14px; }
+    .esw-rows .muted { padding:8px 6px; }
+    .esw-ok { position:absolute; top:0; right:0; margin:0; padding:7px 6px 0 0; }
+    .esw-ok button { min-width:118px; white-space:nowrap; }
+    @media (max-width:640px) {
+      .esw-row details > summary { grid-template-columns:48px minmax(0,1fr) 14px; gap:8px;
+                                   padding-right:6px; }
+      .esw-ok { position:static; padding:0 6px 10px 62px; }
+    }
+  </style>
+  <section class="esw" id="es-wide">
+    <h3>ES-wide edits <b>{{ '{:,}'.format(es_list|length) }}</b></h3>
+    <div class="esw-list">
+      {% for e in es_list %}
+      <div class="esw-row">
+        <details>
+          <summary>
+            <span class="esw-n"><b>{{ '{:,}'.format(e.pages) }}</b> <span>pages</span></span>
+            <span class="esw-l">
+              {% for l in e.labels[:2] %}<div title="{{ l }}">{{ l }}</div>{% endfor %}
+              {% if e.labels|length > 2 %}<div class="more">and {{ e.labels|length - 2 }} more</div>{% endif %}
+            </span>
+            <svg class="esw-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+          </summary>
+          {% if e.labels|length > 2 %}
+          <div class="esw-l" style="padding:0 6px 6px 80px">{% for l in e.labels[2:] %}<div title="{{ l }}">{{ l }}</div>{% endfor %}</div>
+          {% endif %}
+          <div class="esw-rows tablewrap" data-src="{{ url_for('edits_rows', c=e.changes|map(attribute='id')|list) }}"><div class="muted">Loading the {{ '{:,}'.format(e.pages) }} pages…</div></div>
+        </details>
+        <form class="esw-ok" method="post" action="{{ url_for('edits_approve') }}"
+              onsubmit="return confirm('Approve this edit on all {{ e.pages }} pages?')">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          {% for k in e.fact_keys %}<input type="hidden" name="k" value="{{ k }}">{% endfor %}
+          {% for c in e.changes %}<input type="hidden" name="c" value="{{ c.id }}">{% endfor %}
+          <button type="submit" class="btn-sm">Approve all {{ '{:,}'.format(e.pages) }}</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  <script>
+  // an edit's pages load when it is first opened: all of them drawn up front
+  // would be thousands of rows nobody looks at
+  document.querySelectorAll('.esw-row details').forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      var box = d.querySelector('.esw-rows');
+      if (!d.open || !box || box.dataset.done) return;
+      box.dataset.done = '1';
+      fetch(box.dataset.src, {credentials: 'same-origin'})
+        .then(function (r) { if (!r.ok) throw r.status; return r.text(); })
+        .then(function (h) { box.innerHTML = h; })
+        .catch(function () {
+          box.dataset.done = '';
+          box.innerHTML = '<div class="muted">Could not load the pages. Close and open it again.</div>';
+        });
+    });
+  });
+  </script>
+  <h3 class="esw-pc" id="page-changes">Page changes <b>{{ '{:,}'.format(total_match) }}</b></h3>
+  {% endif %}
+
   {# one line above the table, always there: the filters in force on the
      left, the pager on the right - nothing below it moves as they change #}
   <div class="tabletop">
@@ -786,6 +868,7 @@
     {% for a in sel_attrs %}<input type="hidden" name="attr" value="{{ a }}">{% endfor %}
     {% if in_archive %}<input type="hidden" name="archive" value="1">{% endif %}
     <input type="hidden" name="all_matching" id="all-matching" value="0">
+    {% if es_view %}<input type="hidden" name="es_view" value="1">{% endif %}
   </form>
 
   {#- Nothing here until a row is ticked. It docks at the bottom of the window
@@ -822,31 +905,31 @@
      "LIVE BUT EMPTY" badge widened Live and Status, Updates lost the room,
      and every summary in it wrapped onto four lines. Fixed widths mean the
      layout is the layout - the page column absorbs the slack instead. */
-  #pagetable { table-layout: fixed; }
-  #pagetable th, #pagetable td { overflow: hidden; }
-  #pagetable .c-sel  { width: 34px; }
-  #pagetable .c-num  { width: 54px; }
-  #pagetable .c-page { width: auto; }
-  #pagetable .c-type { width: 140px; }
-  #pagetable .c-live { width: 132px; }   /* fits LIVE BUT EMPTY */
-  #pagetable .c-stat { width: 128px; }
-  #pagetable .c-when { width: 132px; }   /* one line, not two */
-  #pagetable .c-upd  { width: 264px; }   /* the summary on two lines, not four */
+  .pagetbl { table-layout: fixed; }
+  .pagetbl th, .pagetbl td { overflow: hidden; }
+  .pagetbl .c-sel  { width: 34px; }
+  .pagetbl .c-num  { width: 54px; }
+  .pagetbl .c-page { width: auto; }
+  .pagetbl .c-type { width: 140px; }
+  .pagetbl .c-live { width: 132px; }   /* fits LIVE BUT EMPTY */
+  .pagetbl .c-stat { width: 128px; }
+  .pagetbl .c-when { width: 132px; }   /* one line, not two */
+  .pagetbl .c-upd  { width: 264px; }   /* the summary on two lines, not four */
   /* the badges keep their shape rather than being squeezed into two lines */
-  #pagetable .c-live .badge, #pagetable .c-stat .badge { white-space: nowrap; }
+  .pagetbl .c-live .badge, .pagetbl .c-stat .badge { white-space: nowrap; }
   /* the page column absorbs the slack, so its contents must track it rather
      than assume a width of their own */
-  #pagetable .c-page, #pagetable .urlcell { max-width: 0; }
+  .pagetbl .c-page, .pagetbl .urlcell { max-width: 0; }
   /* one line each, always: the text is the only thing allowed to give way */
-  #pagetable .uline { display: flex; align-items: center; gap: 6px;
+  .pagetbl .uline { display: flex; align-items: center; gap: 6px;
                       min-width: 0; }
-  #pagetable .uline + .uline { margin-top: 2px; }
-  #pagetable .uline > a { min-width: 0; overflow: hidden;
+  .pagetbl .uline + .uline { margin-top: 2px; }
+  .pagetbl .uline > a { min-width: 0; overflow: hidden;
                           text-overflow: ellipsis; white-space: nowrap; }
-  #pagetable .uline > .badge, #pagetable .uline > .lvl { flex: 0 0 auto; }
+  .pagetbl .uline > .badge, .pagetbl .uline > .lvl { flex: 0 0 auto; }
   @media (max-width: 1180px) {
-    #pagetable .c-type { width: 108px; }
-    #pagetable .c-upd  { width: 168px; }
+    .pagetbl .c-type { width: 108px; }
+    .pagetbl .c-upd  { width: 168px; }
   }
   /* THE PHONE COLUMN BUDGET. Fixed widths summing to 884px gave the auto
      Page column - the name, the address, the only way into a page - exactly
@@ -856,17 +939,17 @@
      the card. Cells lose their class-less columns by position: 1 select,
      2 rank, 3 page, 4 type, 5 live, 6 status, 7 captured, 8 updates. */
   @media (max-width: 700px) {
-    #pagetable .c-num, #pagetable .c-type,
-    #pagetable td:nth-child(2), #pagetable td:nth-child(4) { display: none; }
+    .pagetbl .c-num, .pagetbl .c-type,
+    .pagetbl td:nth-child(2), .pagetbl td:nth-child(4) { display: none; }
     /* max-width:0 is the desktop truncation trick for an AUTO column; against
        an explicit width the fixed-layout algorithm takes the minimum of the
        two and the column collapsed to its padding. Lift it here. */
-    #pagetable .c-page { width: 230px; max-width: none; }
-    #pagetable .urlcell { max-width: none; }
-    #pagetable .c-live { width: 116px; }
-    #pagetable .c-stat { width: 110px; }
-    #pagetable .c-when { width: 118px; }
-    #pagetable .c-upd  { width: 190px; }
+    .pagetbl .c-page { width: 230px; max-width: none; }
+    .pagetbl .urlcell { max-width: none; }
+    .pagetbl .c-live { width: 116px; }
+    .pagetbl .c-stat { width: 110px; }
+    .pagetbl .c-when { width: 118px; }
+    .pagetbl .c-upd  { width: 190px; }
   }
   /* the filters: search on its own line, the four pickers two-up, Apply full
      width - a flex-wrap row landed the filled button mid-row and read broken */
@@ -881,7 +964,7 @@
   }
 </style>
   <div class="tablewrap">
-  <table id="pagetable">
+  <table id="pagetable" class="pagetbl">
     <tr>
       <th class="c-sel"><input type="checkbox" id="selall" title="Select all {{ '{:,}'.format(total_match) }} matching pages"></th>
       <th class="c-num"><a href="#" class="sorth" onclick="return sortBy('page')" title="# is each page's alphabetical position (1, 2, 3…) — click to order by it">#</a></th>
@@ -891,76 +974,7 @@
       <th class="c-upd"><a href="#" class="sorth" onclick="return sortBy('changes')" title="Sort by how many times this page has been updated (click again for fewest first)">Updates{% if sort=='changes' %} ↓{% elif sort=='changes_asc' %} ↑{% endif %}</a></th>
     </tr>
     {% for u in urls %}
-    <tr>
-      <td><input type="checkbox" class="rowsel" form="bulkform" name="ids"
-                 value="{{ u.id }}" data-pos="{{ (page-1)*per_page + loop.index }}"></td>
-      <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
-      <td class="urlcell">
-        {#- each line is a flex row: the text shrinks and ellipsises, the
-            badges never do. Left inline, a long address took the whole cell
-            and pushed its own badges onto a third line, so rows with a short
-            address looked different from rows with a long one. -#}
-        <div class="uline">
-        {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span>{% endif %}
-        {% if u.title_override %}
-          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Custom name — its own page title is “{{ u.page_title | clean_title }}”">{{ u.title_override }}</a>
-        {% elif u.page_title %}
-          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
-        {% else %}
-          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink provisional" title="Provisional name — the real page title appears once the page is captured">{{ (u.label or u.url.rstrip('/').rsplit('/', 1)[-1]) | pretty_slug }}</a>
-        {% endif %}
-        {% if u.created_at and u.created_at >= new_cutoff and u.created_at[:10] not in bulk_days %}
-        <span class="badge b-newpg" title="Added {{ u.created_at|localtime }} — new within the last 7 days">NEW</span>
-        {% endif %}
-        </div>
-        <div class="uline">
-        <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
-        {% if settings.aem_author_url and u.ptype != 'Part' %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" rel="noopener" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}{% if settings.pim_url %}<a class="badge b-pim" href="{{ settings.pim_url }}" target="_blank" rel="noopener" title="{% if u.ptype == 'Part' %}Generated from PIM product data, not authored in AEM — open PIM{% else %}Open PIM, where this page's product data comes from{% endif %}">PIM</a>{% elif u.ptype == 'Part' %}<span class="badge b-pim aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open. Add the PIM address in Settings to make this open it.">PIM</span>{% endif %}
-        </div>
-      </td>
-      <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
-      <td>
-        {% if u.last_http is none and u.last_status == 'error' %}
-          <span class="badge b-error" title="Could not reach the page">DOWN</span>
-        {% elif u.last_status == 'blank' %}
-          {# HTTP said OK but the page rendered nothing: not live in any sense
-             that matters to a visitor, so never show it as LIVE #}
-          {#- neither live nor dead: the server answered, the page is there,
-              and there is nothing on it. Its own colour, because calling it
-              either yes or no loses the one thing worth knowing. -#}
-          <span class="badge b-empty" title="HTTP {{ u.last_http or '?' }} with an empty body — the page answers, but a visitor sees nothing">LIVE BUT EMPTY</span>
-        {% elif u.last_http is none %}
-          <span class="muted">—</span>
-        {% elif u.last_http < 400 %}
-          <span class="badge b-live" title="HTTP {{ u.last_http }}">LIVE</span>
-        {% else %}
-          <span class="badge b-error">HTTP {{ u.last_http }}</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if u.archived %}<span class="badge b-off" title="Archived {{ u.archived|localtime }}">archived</span>
-        {% elif not u.active %}<span class="badge b-off">paused</span>
-        {% elif u.last_status == 'changed' %}<span class="badge b-changed">updated</span>
-        {% elif u.last_status == 'rejected' %}<span class="badge b-unchanged" title="An update was rejected: that capture is not the baseline, the old version stays current">unchanged</span>
-        {% elif u.last_status in ('unchanged', 'baseline') %}<span class="badge b-unchanged">unchanged</span>
-        {% elif u.last_status == 'notlive' and u.last_http in (404, 410) %}<span class="badge b-off" title="Infineon answers HTTP {{ u.last_http }}. The page is still watched so a recovery can be detected.">offline</span>
-        {% elif u.last_status == 'notlive' and u.last_http and 200 <= u.last_http < 400 %}<span class="badge {{ 'b-changed' if u.open_changes else 'b-unchanged' }}">{{ 'updated' if u.open_changes else 'unchanged' }}</span>
-        {% elif u.last_status == 'blank' %}<span class="badge b-error" title="The page answers with an HTTP success code but an empty body - nothing renders, for us or for a visitor. This is a fault on the page itself.">serves blank page</span>
-        {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>
-        {% else %}<span class="badge b-new">not captured yet</span>{% endif %}
-      </td>
-      <td class="muted">{{ u.last_checked|localtime }}</td>
-      <td>
-        {% if u.open_changes %}
-          {% set wc = u.latest_components|fromjson if u.latest_components else [] %}
-          <a href="{{ url_for('change_view', change_id=u.latest_change_id) }}"
-             title="{{ wc|join(' · ') if wc else 'Open the diff' }}"><b>{{ u.open_changes }} to review</b></a>
-          {% if wc %}<div class="muted" style="font-size:11.5px; line-height:1.35; margin-top:2px">{{ wc[:3]|join(' · ') }}{% if wc|length > 3 %} · +{{ wc|length - 3 }} more{% endif %}</div>{% endif %}
-        {% elif u.change_total %}
-          <span class="muted" title="{{ u.change_total }} recorded update{{ 's' if u.change_total != 1 }} over time (all reviewed)">{{ u.change_total }}×</span>
-        {% else %}<span class="muted">—</span>{% endif %}
-      </td>
-    </tr>
+    {{ pr.row(u, (page-1)*per_page + loop.index) }}
     {% endfor %}
   </table>
   </div>

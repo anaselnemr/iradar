@@ -21,6 +21,11 @@ on SHARED_MIN pages or more is an ES-wide edit; facts that land on (nearly)
 the same set of pages are one edit and read as one line. A page whose every
 fact belongs to ES-wide edits is covered by those lines; a page with any
 fact of its own is a page change, listed with only its own facts.
+
+An ES-wide edit is approved once for all its pages (accept()): its facts are
+recorded on each change as accepted, and a change with nothing left that is
+not accepted is approved outright. A page that also carries edits of its own
+stays open with just those.
 """
 import json
 from collections import Counter
@@ -159,7 +164,8 @@ def group(changes, fact_lists, shared_min=SHARED_MIN):
 
     `fact_lists[i]` is facts() for `changes[i]`. Returns
       edits: [{"labels": [...], "pages": n, "id": example change id,
-               "title": example title}], most pages first
+               "title": example title, "changes": the n changes, A-Z}],
+             most pages first
       page_changes: [{"change": row, "facts": [labels of its OWN facts]}]
       covered: pages whose every fact is an ES-wide edit
     """
@@ -190,9 +196,13 @@ def group(changes, fact_lists, shared_min=SHARED_MIN):
         ex = min(ps, key=lambda i: (len(fact_lists[i]), i))
         c = changes[ex]
         edits.append({"labels": [label_of[k] for k in keys], "pages": len(ps),
-                      "id": c["id"], "title": _title(c)})
+                      "fact_keys": list(keys),
+                      "id": c["id"], "title": _title(c),
+                      "changes": sorted((changes[i] for i in ps),
+                                        key=lambda r: _title(r).lower())})
     page_changes = []
-    covered = shared_pages = 0
+    covered_ids = []
+    shared_pages = 0
     for i, fl in enumerate(fact_lists):
         own = [l for k, l in fl if k not in shared_set]
         if len(own) < len(fl):
@@ -200,8 +210,9 @@ def group(changes, fact_lists, shared_min=SHARED_MIN):
         if own:
             page_changes.append({"change": changes[i], "facts": own})
         else:
-            covered += 1
-    return {"edits": edits, "page_changes": page_changes, "covered": covered,
+            covered_ids.append(changes[i]["id"])
+    return {"edits": edits, "page_changes": page_changes,
+            "covered": len(covered_ids), "covered_ids": covered_ids,
             "shared_pages": shared_pages}
 
 
@@ -210,6 +221,59 @@ def _title(c):
         return c["title"] or c["url"]
     except (IndexError, KeyError):
         return ""
+
+
+def _accepted(change):
+    try:
+        raw = change["accepted"]
+    except (IndexError, KeyError):
+        raw = ""
+    try:
+        return set(json.loads(raw)) if raw else set()
+    except Exception:
+        return set()
+
+
+def pending(change, fact_list):
+    """The facts of a change still awaiting review: all of them, less those
+    approved with an ES-wide edit."""
+    done = _accepted(change)
+    return [f for f in fact_list if f[0] not in done] if done else list(fact_list)
+
+
+def accept(con, keys, change_ids, reviewer, now, settings=None):
+    """Approve one ES-wide edit (its fact keys) on the given open changes.
+    Each change records the keys as accepted; one with nothing else left is
+    approved outright and its page goes back to unchanged when no other
+    update waits on it. Returns (pages touched, changes approved)."""
+    keys = set(keys)
+    touched = approved = 0
+    labels = _labels()
+    for cid in change_ids:
+        c = con.execute("SELECT * FROM changes WHERE id=? AND IFNULL(reviewed,0)=0",
+                        (cid,)).fetchone()
+        if not c:
+            continue
+        mine = {k for k, _ in facts_for(con, c, settings, labels)}
+        hit = keys & mine
+        if not hit:
+            continue
+        touched += 1
+        done = _accepted(c) | hit
+        if mine <= done:
+            con.execute("UPDATE changes SET reviewed=1, resolution='approve',"
+                        " reviewed_at=?, reviewed_by=?, accepted=? WHERE id=?",
+                        (now, reviewer, json.dumps(sorted(done), ensure_ascii=False), cid))
+            approved += 1
+            left = con.execute("SELECT COUNT(*) FROM changes WHERE url_id=?"
+                               " AND IFNULL(reviewed,0)=0", (c["url_id"],)).fetchone()[0]
+            if not left:
+                con.execute("UPDATE urls SET last_status='unchanged' WHERE id=?"
+                            " AND last_status IN ('changed','rejected')", (c["url_id"],))
+        else:
+            con.execute("UPDATE changes SET accepted=? WHERE id=?",
+                        (json.dumps(sorted(done), ensure_ascii=False), cid))
+    return touched, approved
 
 
 def record_run(con, run_id, settings=None):

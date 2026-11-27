@@ -1,0 +1,77 @@
+{#- One Dashboard page row: the page table and an ES-wide edit's own list
+    of pages draw the same row. sel=false leaves out the checkbox (the
+    edit is approved as a whole). -#}
+{% macro row(u, pos, sel=true) %}
+    <tr>
+      {% if sel %}
+      <td><input type="checkbox" class="rowsel" form="bulkform" name="ids"
+                 value="{{ u.id }}" data-pos="{{ pos }}"></td>
+      {% else %}<td></td>{% endif %}
+      <td class="muted" title="Alphabetical position (renumbers as pages are added)">{{ ranks.get(u.id, u.id) }}</td>
+      <td class="urlcell">
+        {#- each line is a flex row: the text shrinks and ellipsises, the
+            badges never do. Left inline, a long address took the whole cell
+            and pushed its own badges onto a third line, so rows with a short
+            address looked different from rows with a long one. -#}
+        <div class="uline">
+        {% if u.level %}<span class="lvl lvl-{{ u.level|lower }}" title="{{ level_names.get(u.level, '') }}">{{ u.level }}</span>{% endif %}
+        {% if u.title_override %}
+          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Custom name — its own page title is “{{ u.page_title | clean_title }}”">{{ u.title_override }}</a>
+        {% elif u.page_title %}
+          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink" title="Open the saved library for this page">{{ u.page_title | clean_title }}</a>
+        {% else %}
+          <a href="{{ url_for('url_detail', url_id=u.id) }}" class="titlelink provisional" title="Provisional name — the real page title appears once the page is captured">{{ (u.label or u.url.rstrip('/').rsplit('/', 1)[-1]) | pretty_slug }}</a>
+        {% endif %}
+        {% if u.created_at and u.created_at >= new_cutoff and u.created_at[:10] not in bulk_days %}
+        <span class="badge b-newpg" title="Added {{ u.created_at|localtime }} — new within the last 7 days">NEW</span>
+        {% endif %}
+        </div>
+        <div class="uline">
+        <a href="{{ u.url }}" target="_blank" class="liveurl" title="Open the live page on infineon.com">{{ u.url }}</a>
+        {% if settings.aem_author_url and u.ptype != 'Part' %}{% set aurl = (u.canonical_url or u.url)|aemlink(settings.aem_author_url) %}{% if aurl %}<a class="badge b-sys" href="{{ aurl }}" target="_blank" rel="noopener" title="Open this page in the AEM author editor">AEM</a>{% endif %}{% endif %}{% if settings.pim_url %}<a class="badge b-pim" href="{{ settings.pim_url }}" target="_blank" rel="noopener" title="{% if u.ptype == 'Part' %}Generated from PIM product data, not authored in AEM — open PIM{% else %}Open PIM, where this page's product data comes from{% endif %}">PIM</a>{% elif u.ptype == 'Part' %}<span class="badge b-pim aem-off" title="Part / evaluation-board pages are generated from PIM product data — there is no AEM-authored page to open. Add the PIM address in Settings to make this open it.">PIM</span>{% endif %}
+        </div>
+      </td>
+      <td>{% if u.ptype %}<span class="badge b-type">{{ u.ptype }}</span>{% endif %}</td>
+      <td>
+        {% if u.last_http is none and u.last_status == 'error' %}
+          <span class="badge b-error" title="Could not reach the page">DOWN</span>
+        {% elif u.last_status == 'blank' %}
+          {# HTTP said OK but the page rendered nothing: not live in any sense
+             that matters to a visitor, so never show it as LIVE #}
+          {#- neither live nor dead: the server answered, the page is there,
+              and there is nothing on it. Its own colour, because calling it
+              either yes or no loses the one thing worth knowing. -#}
+          <span class="badge b-empty" title="HTTP {{ u.last_http or '?' }} with an empty body — the page answers, but a visitor sees nothing">LIVE BUT EMPTY</span>
+        {% elif u.last_http is none %}
+          <span class="muted">—</span>
+        {% elif u.last_http < 400 %}
+          <span class="badge b-live" title="HTTP {{ u.last_http }}">LIVE</span>
+        {% else %}
+          <span class="badge b-error">HTTP {{ u.last_http }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if u.archived %}<span class="badge b-off" title="Archived {{ u.archived|localtime }}">archived</span>
+        {% elif not u.active %}<span class="badge b-off">paused</span>
+        {% elif u.last_status == 'changed' %}<span class="badge b-changed">updated</span>
+        {% elif u.last_status == 'rejected' %}<span class="badge b-unchanged" title="An update was rejected: that capture is not the baseline, the old version stays current">unchanged</span>
+        {% elif u.last_status in ('unchanged', 'baseline') %}<span class="badge b-unchanged">unchanged</span>
+        {% elif u.last_status == 'notlive' and u.last_http in (404, 410) %}<span class="badge b-off" title="Infineon answers HTTP {{ u.last_http }}. The page is still watched so a recovery can be detected.">offline</span>
+        {% elif u.last_status == 'notlive' and u.last_http and 200 <= u.last_http < 400 %}<span class="badge {{ 'b-changed' if u.open_changes else 'b-unchanged' }}">{{ 'updated' if u.open_changes else 'unchanged' }}</span>
+        {% elif u.last_status == 'blank' %}<span class="badge b-error" title="The page answers with an HTTP success code but an empty body - nothing renders, for us or for a visitor. This is a fault on the page itself.">serves blank page</span>
+        {% elif u.last_status == 'error' %}<span class="badge b-error">error</span>
+        {% else %}<span class="badge b-new">not captured yet</span>{% endif %}
+      </td>
+      <td class="muted">{{ u.last_checked|localtime }}</td>
+      <td>
+        {% if u.open_changes %}
+          {% set wc = u.latest_components|fromjson if u.latest_components else [] %}
+          <a href="{{ url_for('change_view', change_id=u.latest_change_id) }}"
+             title="{{ wc|join(' · ') if wc else 'Open the diff' }}"><b>{{ u.open_changes }} to review</b></a>
+          {% if wc %}<div class="muted" style="font-size:11.5px; line-height:1.35; margin-top:2px">{{ wc[:3]|join(' · ') }}{% if wc|length > 3 %} · +{{ wc|length - 3 }} more{% endif %}</div>{% endif %}
+        {% elif u.change_total %}
+          <span class="muted" title="{{ u.change_total }} recorded update{{ 's' if u.change_total != 1 }} over time (all reviewed)">{{ u.change_total }}×</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+{% endmacro %}
