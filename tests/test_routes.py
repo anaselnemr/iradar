@@ -93,7 +93,7 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     # no Live figure: with offline pages archived, Total pages is the live
     # inventory; the Archive closes the row
     labels = [">Live pages<", ">Recently offline<", ">ES-wide edits<",
-              ">Page changes<", ">Awaiting review<", ">Updated files<",
+              ">Page changes<", ">Updated files<",
               ">Paused<", ">Archive<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard report metrics changed order"

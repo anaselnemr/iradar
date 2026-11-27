@@ -35,11 +35,11 @@
 <div class="card dashboard-summary">
   <style>
     /* The shared summary header lives in base.html; this page keeps only
-       what is its own: its two extra stat colours, eight figures instead of
+       what is its own: its two extra stat colours, seven figures instead of
        four, and the run button's split menu. No Live figure: with offline
        pages in the Archive, the first figure - Live pages - is the inventory. */
     .dashboard-summary { --stat-content:#168b7d; --stat-files:#7c3aed;
-                         --stat-cols:8; }
+                         --stat-cols:7; }
     [data-theme="dark"] .dashboard-summary { --stat-content:#2dd4bf; --stat-files:#c084fc; }
     .run-split { display:inline-flex; align-items:stretch; }
     .run-launch { display:flex; margin:0; }
@@ -63,10 +63,14 @@
     .report-choice { display:flex; align-items:center; gap:6px; color:var(--muted);
                      font-size:11px; cursor:pointer; white-space:nowrap; }
     .report-choice input { margin:0; }
-    /* eight figures fill four and two columns evenly; at three the last one
-       takes the slack so the grid never ends in a hole */
+    /* seven figures do not divide by four, three or two: the last one takes
+       the slack so the grid never ends in a hole */
+    /* the Paused note is the longest line in the row: a touch smaller on the
+       seven-across layout so it never breaks onto a second line */
     @media (min-width:1101px) { .report-stat.st-paused .detail { font-size:10.5px; } }
-    @media (max-width:760px) and (min-width:521px) { .report-stat:last-child { grid-column:span 2; } }
+    @media (max-width:1100px) { .report-stat:last-child { grid-column:span 2; } }
+    @media (max-width:760px)  { .report-stat:last-child { grid-column:span 3; } }
+    @media (max-width:520px)  { .report-stat:last-child { grid-column:span 2; } }
     /* the Archive sits apart from the live inventory: a quiet rule before it */
     @media (min-width:1101px) { .report-stat.st-archive { border-left:1px solid var(--line); border-radius:0; } }
     .report-stat.st-archive.on { background:var(--hover); }
@@ -82,8 +86,8 @@
     <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages but not the Archive. The delta counts pages added or removed since the previous full check; pausing or archiving a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Live pages</div>
-      {#- only ES-wide edits (its page count) and Updated files (its review
-          backlog) keep a line under the figure: every other
+      {#- only ES-wide edits (its page count) and the review backlogs (Page
+          changes, Updated files) keep a line under the figure: every other
           line repeated the number. Empty lines
           stay so the figures sit level. -#}
       <div class="detail" aria-hidden="true"></div>
@@ -101,12 +105,13 @@
     <a class="report-stat" href="{{ url_for('index', status='changed') }}#page-changes" title="Pages with a change of their own, beyond the ES-wide edits">
       <div class="n" style="color:{{ 'var(--warn)' if page_changes else 'var(--muted)' }}">{{ '{:,}'.format(page_changes or 0) }}</div>
       <div class="l">Page changes</div>
-      <div class="detail" aria-hidden="true"></div>
-    </a>
-    <a class="report-stat" href="{{ url_for('index', status='review') }}" title="Pages with an update nobody has reviewed yet, from any check">
-      <div class="n" style="color:{{ 'var(--warn)' if total_open else 'var(--muted)' }}">{{ '{:,}'.format(total_open or 0) }}</div>
-      <div class="l">Awaiting review</div>
-      <div class="detail" aria-hidden="true"></div>
+      {#- its own link inside the card: the card opens the latest updates, this
+          opens every unreviewed one, whatever the page's status is now -#}
+      <div class="detail">{% if total_open %}<span class="detail-link" role="link" tabindex="0"
+        title="Pages with an update nobody has reviewed yet, from any check"
+        onclick="event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'}"
+        style="text-decoration:underline;cursor:pointer">{{ '{:,}'.format(total_open) }} awaiting review</span>{% else %}0 awaiting review{% endif %}</div>
     </a>
     {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
     <a class="report-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
