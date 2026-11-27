@@ -97,6 +97,8 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
               ">Paused<", ">Archive<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard report metrics changed order"
+    # the edits pair carries one detail line, the review backlog
+    assert 'class="duo-review"' in summary and "on " + "1 pages" not in summary
     assert "Next auto check" not in summary and "Check all pages" not in summary
     assert 'name="email_report"' in body, "manual report choice is missing"
     # Schedule and controls share one column beside the stats, above progress.
