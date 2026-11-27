@@ -845,7 +845,7 @@ def report_subject(d):
         return "{:,} {}{}".format(k, word, "" if k == 1 else "s")
     bits = []
     if d.get("site_edits"):
-        bits.append(n(len(d["site_edits"]), "ES-wide edit"))
+        bits.append(n(len(d["site_edits"]), "ES-wide change"))
     if d.get("page_changes"):
         bits.append(n(len(d["page_changes"]), "page change"))
     if d.get("file_updates") and not bits:
@@ -884,7 +884,7 @@ def render_report(d, base_url, when_label):
         ("Recently offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
          "",
          suffix(d.get("offline_delta", 0), _BAD)),
-        ("ES-wide edits", len(se), "#ea580c" if se else _MUT,
+        ("ES-wide changes", len(se), "#ea580c" if se else _MUT,
          ("on {:,} pages".format(d.get("shared_pages", 0)) if se else ""), ""),
         ("Page changes", len(pcs), "#ea580c" if pcs else _MUT, "", ""),
         ("Updated files", fu, "#7c3aed" if fu else _MUT,
@@ -1001,8 +1001,8 @@ def render_report(d, base_url, when_label):
             + _esc(e["title"]) + '</a></div></td></tr>')
     more_se = len(se) - SE_TOP
     se_block = _block(
-        "ES-wide edits", rows_se,
-        ("{:,} more ES-wide edit{}".format(more_se, "" if more_se == 1 else "s")
+        "ES-wide changes", rows_se,
+        ("{:,} more ES-wide change{}".format(more_se, "" if more_se == 1 else "s")
          if more_se > 0 else ""), dash)
     # ES-wide first: one line each, the week's shape at a glance; then the
     # pages that changed on their own

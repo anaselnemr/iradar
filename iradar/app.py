@@ -479,6 +479,34 @@ def _no_cache(resp):
 URL_RE = re.compile(r"https?://[^\s\"',;<>]+")
 
 
+_EDIT_VERB = re.compile(r"^(.*?)\s(link changed|added|removed|changed|emptied|filled)(\s\([^)]*\))?$")
+_EDIT_VCLS = {"added": "add", "filled": "add", "removed": "del", "emptied": "del"}
+
+
+@app.template_filter("edit_label")
+def edit_label_filter(s):
+    """One ES-wide change line in three tones, so a long list scans: the
+    section it sits in (muted), what changed (text), and what happened to
+    it (a coloured word: added green, removed red, changed orange)."""
+    from markupsafe import Markup, escape
+    s = str(s or "")
+    m = _EDIT_VERB.match(s)
+    body, verb, tail = (m.group(1), m.group(2), m.group(3) or "") if m else (s, "", "")
+    sec = ""
+    head, sep, rest = body.partition(": ")
+    if sep and len(head) <= 60 and not any(q in head for q in "\"'“‘"):
+        sec, body = head + ":", rest
+    out = []
+    if sec:
+        out.append('<span class="el-sec">%s</span> ' % escape(sec))
+    out.append('<span class="el-what">%s</span>' % escape(body))
+    if verb:
+        out.append(' <span class="el-v el-%s">%s</span>' % (_EDIT_VCLS.get(verb, "chg"), escape(verb)))
+    if tail:
+        out.append('<span class="el-sec">%s</span>' % escape(tail))
+    return Markup("".join(out))
+
+
 @app.template_filter("clean_title")
 def clean_title_filter(s):
     """Display titles: drop the site-name tail and Excel page-type codes."""

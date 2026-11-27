@@ -115,9 +115,9 @@
       <div class="detail" aria-hidden="true"></div>
     </a>
     <div class="stat-duo">
-    <a class="report-stat" href="{{ url_for('index', status='changed') }}#es-wide" title="Edits infineon.com made on {{ es_min }} or more pages, each counted once however many pages carry it and approved for all of them at once{% if es_edits %} ({{ '{:,}'.format(es_pages) }} pages carry one){% endif %}">
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}#es-wide" title="Changes infineon.com made on {{ es_min }} or more pages, each counted once however many pages carry it and approved for all of them at once{% if es_edits %} ({{ '{:,}'.format(es_pages) }} pages carry one){% endif %}">
       <div class="n" style="color:{{ 'var(--warn)' if es_edits else 'var(--muted)' }}">{{ '{:,}'.format(es_edits or 0) }}</div>
-      <div class="l">ES-wide edits</div>
+      <div class="l">ES-wide changes</div>
     </a>
     <a class="report-stat" href="{{ url_for('index', status='changed') }}#page-changes" title="Pages with a change of their own, beyond the ES-wide edits">
       <div class="n" style="color:{{ 'var(--warn)' if page_changes else 'var(--muted)' }}">{{ '{:,}'.format(page_changes or 0) }}</div>
@@ -307,7 +307,7 @@
   <div class="muted" style="margin-top:10px">
     Last run finished {{ last_run.finished|localtime }} — {{ last_run.ok }} ok,
     {%- if last_run.site_edits is not none %}
-    <b>{{ "{:,}".format(last_run.site_edits) }} ES-wide edit{{ '' if last_run.site_edits == 1 else 's' }},
+    <b>{{ "{:,}".format(last_run.site_edits) }} ES-wide change{{ '' if last_run.site_edits == 1 else 's' }},
     {{ "{:,}".format(last_run.page_changes) }} page change{{ '' if last_run.page_changes == 1 else 's' }}</b>
     ({{ "{:,}".format(last_run.changed) }} pages), {{ last_run.errors }} errors
     {%- else %}
@@ -793,10 +793,15 @@
     .esw-row details > summary::-webkit-details-marker { display:none; }
     .esw-row details > summary:hover { background:var(--hover); }
     .esw-n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .esw-n b { font-size:15px; }
+    .esw-n b { font-size:14px; font-weight:600; color:var(--accent); }
     .esw-n span { color:var(--muted); font-size:11.5px; }
-    .esw-l { min-width:0; }
+    .esw-l { min-width:0; font-size:13.5px; line-height:1.55; }
     .esw-l div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* three tones per line (edit_label): where, what, and what happened */
+    .el-sec { color:var(--muted); }
+    .el-what { color:color-mix(in srgb, var(--ink) 85%, transparent); }
+    .el-v { font-size:12px; font-weight:600; }
+    .el-add { color:var(--ok); } .el-del { color:var(--err); } .el-chg { color:var(--warn); }
     .esw-l .more { color:var(--muted); font-size:12px; }
     .esw-chev { width:14px; height:14px; margin-top:2px; color:var(--muted); transition:transform .15s; }
     .esw-row details[open] .esw-chev { transform:rotate(180deg); }
@@ -811,7 +816,7 @@
     }
   </style>
   <section class="esw" id="es-wide">
-    <h3>ES-wide edits <b>{{ '{:,}'.format(es_list|length) }}</b></h3>
+    <h3>ES-wide changes <b>{{ '{:,}'.format(es_list|length) }}</b></h3>
     <div class="esw-list">
       {% for e in es_list %}
       <div class="esw-row">
@@ -819,19 +824,19 @@
           <summary>
             <span class="esw-n"><b>{{ '{:,}'.format(e.pages) }}</b> <span>pages</span></span>
             <span class="esw-l">
-              {% for l in e.labels[:2] %}<div title="{{ l }}">{{ l }}</div>{% endfor %}
+              {% for l in e.labels[:2] %}<div title="{{ l }}">{{ l|edit_label }}</div>{% endfor %}
               {% if e.labels|length > 2 %}<div class="more">and {{ e.labels|length - 2 }} more</div>{% endif %}
             </span>
             <svg class="esw-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
           </summary>
           {% if e.labels|length > 2 %}
-          <div class="esw-l" style="padding:0 6px 6px 80px">{% for l in e.labels[2:] %}<div title="{{ l }}">{{ l }}</div>{% endfor %}</div>
+          <div class="esw-l" style="padding:0 6px 6px 80px">{% for l in e.labels[2:] %}<div title="{{ l }}">{{ l|edit_label }}</div>{% endfor %}</div>
           {% endif %}
           <div class="esw-rows tablewrap" data-src="{{ url_for('edits_rows', c=e.changes|map(attribute='id')|list) }}"><div class="muted">Loading the {{ '{:,}'.format(e.pages) }} pages…</div></div>
         </details>
         <form class="esw-ok" method="post" action="{{ url_for('edits_approve') }}"
-              onsubmit="return confirm('Approve this edit on all {{ e.pages }} pages?')">
+              onsubmit="return confirm('Approve this change on all {{ e.pages }} pages?')">
           <input type="hidden" name="next" value="{{ request.full_path }}">
           {% for k in e.fact_keys %}<input type="hidden" name="k" value="{{ k }}">{% endfor %}
           {% for c in e.changes %}<input type="hidden" name="c" value="{{ c.id }}">{% endfor %}

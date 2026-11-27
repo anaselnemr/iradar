@@ -92,7 +92,7 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     summary = body[start:end]
     # no Live figure: with offline pages archived, Total pages is the live
     # inventory; the Archive closes the row
-    labels = [">Live pages<", ">Recently offline<", ">ES-wide edits<",
+    labels = [">Live pages<", ">Recently offline<", ">ES-wide changes<",
               ">Page changes<", ">Updated files<",
               ">Paused<", ">Archive<"]
     positions = [summary.index(label) for label in labels]
@@ -1061,7 +1061,7 @@ def test_the_report_builds_and_renders_from_a_real_run():
     # The stat row mirrors all seven dashboard readings, in the same order.
     assert "live" in d, "run_report must count live pages"
     # the Dashboard's figures without Live, Paused and Archive
-    labels = (">Live pages<", ">Recently offline<", ">ES-wide edits<",
+    labels = (">Live pages<", ">Recently offline<", ">ES-wide changes<",
               ">Page changes<", ">Updated files<")
     assert [html.index(label) for label in labels] == sorted(html.index(label) for label in labels)
     assert html.count('class="report-stat"') == 5
