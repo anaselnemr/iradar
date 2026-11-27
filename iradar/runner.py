@@ -22,6 +22,7 @@ from pathlib import Path
 import capture
 import compare as cmp
 import db
+import edits
 
 RUN_LOCK = threading.Lock()
 
@@ -1303,6 +1304,11 @@ def _run_check_inner(kind, url_ids, baseline=False, started_by=""):
                     " WHERE id=?",
                     (db.now_iso(), ok, changed, errors, run_id))
         db.finish_run_counts(con, run_id)
+        # the run in edits, not pages: '15 ES-wide edits, 255 page changes'
+        try:
+            edits.record_run(con, run_id, db.get_settings())
+        except Exception as e:
+            print(f"[edits] run {run_id}: {e}", flush=True)
         # a page the site has taken down stays listed as Offline, flag and
         # all (pausing it is a person's call); document pages are files,
         # not pages, and are paused
@@ -2223,20 +2229,36 @@ def _verify_suspects(con, suspects, ts_label, concurrency, counters, run_id,
                 parts = component_changes(prev["dir"], confirm_dir, row, vres,
                                           result)
                 summary = " · ".join(parts) if parts else result["summary"]
+                # the exact facts behind it, so a shared edit that lands on
+                # 1,000 pages is counted - and reported - once
+                try:
+                    _facts = json.dumps(edits.facts(
+                        prev["dir"], confirm_dir,
+                        {"url_id": url_id, "summary": summary,
+                         "text_changed": result["text_changed"],
+                         "images_changed": result["images_changed"],
+                         "images_added": result["images_added"],
+                         "images_removed": result["images_removed"],
+                         "visual_changed": result["visual_changed"]},
+                        settings_now, dict(_DIFF_SECTIONS)), ensure_ascii=False)
+                except Exception as e:
+                    print(f"[facts] {row['url']}: {e}", flush=True)
+                    _facts = ""
                 con.execute(
                     "INSERT INTO changes(url_id, ts, old_snapshot_id,"
                     " new_snapshot_id, text_changed, images_changed,"
                     " visual_changed, pixel_ratio, height_delta, lines_added,"
                     " lines_removed, images_added, images_removed, summary, dir,"
-                    " components)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " components, facts)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (url_id, now, prev["id"], confirm_id,
                      int(result["text_changed"]), int(result["images_changed"]),
                      int(result["visual_changed"]), result["pixel_ratio"],
                      result["height_delta"], result["lines_added"],
                      result["lines_removed"], result["images_added"],
                      result["images_removed"], summary,
-                     str(change_dir), json.dumps(parts, ensure_ascii=False)))
+                     str(change_dir), json.dumps(parts, ensure_ascii=False),
+                     _facts))
                 con.execute("UPDATE urls SET last_checked=?, last_status=?,"
                             " error_streak=0 WHERE id=?", (now, "changed", url_id))
                 db.sync_offline(con, url_id)   # a page gone 404 shows as offline

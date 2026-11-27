@@ -640,6 +640,12 @@ def init_db():
     # ("Hero image added", "News & highlights (+2/-1)", "page text") - so a
     # review reads as a list of real things, not one opaque "something changed"
     _ensure_column(con, "changes", "components", "TEXT DEFAULT ''")
+    # the change's exact FACTS (edits.facts): [[key, label], ...]. Pages that
+    # carry the identical fact are one ES-wide edit, counted once.
+    _ensure_column(con, "changes", "facts", "TEXT DEFAULT ''")
+    # a finished run counted in edits, not pages (edits.record_run)
+    _ensure_column(con, "runs", "site_edits", "INTEGER")
+    _ensure_column(con, "runs", "page_changes", "INTEGER")
     # page type: Product / Application / Design resources / Promo / Part
     _ensure_column(con, "urls", "ptype", "TEXT DEFAULT ''")
     # Infineon's own page level from the source report's "Page Type" column:

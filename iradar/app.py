@@ -29,6 +29,7 @@ from rapidfuzz import fuzz, process
 import auth
 import comments
 import compare as cmp
+import edits
 import mailer
 import db
 import runner
@@ -2568,6 +2569,34 @@ def _bar_extras(con):
     return hit
 
 
+_ES_CACHE = {}
+
+
+def _es_counts(con):
+    """The latest finished check's open updates in EDITS: (ES-wide edits,
+    pages they cover, page changes) - the same grouping the email uses
+    (edits.py). Cached per (run, open-change count), like _bar_extras, so a
+    review or a new change refreshes it."""
+    run = con.execute("SELECT id, started FROM runs WHERE finished IS NOT NULL"
+                      " ORDER BY id DESC LIMIT 1").fetchone()
+    if not run:
+        return 0, 0, 0
+    open_n = con.execute(
+        "SELECT COUNT(*) " + db.OPEN_UPDATES_FROM + " AND c.ts>=?",
+        (run["started"],)).fetchone()[0]
+    key = (run["id"], open_n)
+    hit = _ES_CACHE.get(key)
+    if hit is None:
+        rows = con.execute("SELECT c.* " + db.OPEN_UPDATES_FROM + " AND c.ts>=?",
+                           (run["started"],)).fetchall()
+        st, lb = db.get_settings(), edits._labels()
+        g = edits.group(rows, [edits.facts_for(con, r, st, lb) for r in rows])
+        hit = (len(g["edits"]), g["shared_pages"], len(g["page_changes"]))
+        _ES_CACHE.clear()
+        _ES_CACHE[key] = hit
+    return hit
+
+
 def _dash_static(con):
     """Everything on the Dashboard that does not depend on the filters - the
     figures, the Type / owner / buy-button option lists, the alphabetical
@@ -2808,12 +2837,15 @@ def index():
             "SELECT COUNT(*) FROM mentions").fetchone()[0]
         latest_updates, content_updates, file_updates, pages_delta, offline_delta = \
             _bar_extras(con3)
+        es_edits, es_pages, page_changes = _es_counts(con3)
     finally:
         con3.close()
     return render_template("index.html", urls=urls, state=runner.RUN_STATE,
                            asset_open=asset_open, mention_total=mention_total,
                            latest_updates=latest_updates,
                            content_updates=content_updates,
+                           es_edits=es_edits, es_pages=es_pages,
+                           page_changes=page_changes, es_min=edits.SHARED_MIN,
                            file_updates=file_updates,
                            pages_delta=pages_delta,
                            offline_delta=offline_delta,
@@ -5984,11 +6016,7 @@ def _email_after_run():
         d = mailer.run_report(con, run, since=since)
         when = _report_when(run)
         html = mailer.render_report(d, _base_url(), when)
-        subj = "iRadar report — %s" % (
-            "no changes" if d["updates"] == 0 and d["file_updates"] == 0
-            else "%d update%s to review"
-            % (d["updates"] or d["file_updates"],
-               "" if (d["updates"] or d["file_updates"]) == 1 else "s"))
+        subj = "iRadar report — %s" % mailer.report_subject(d)
     finally:
         con.close()
     sent = fail = 0

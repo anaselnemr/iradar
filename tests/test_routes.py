@@ -92,8 +92,8 @@ def test_dashboard_summary_keeps_inventory_health_and_updates_in_order():
     summary = body[start:end]
     # no Live figure: with offline pages archived, Total pages is the live
     # inventory; the Archive closes the row
-    labels = [">Live pages<", ">Recently offline<", ">Updated<",
-              ">Content<", ">Updated files<", ">Paused<", ">Archive<"]
+    labels = [">Live pages<", ">Recently offline<", ">ES-wide edits<",
+              ">Page changes<", ">Updated files<", ">Paused<", ">Archive<"]
     positions = [summary.index(label) for label in labels]
     assert positions == sorted(positions), "dashboard report metrics changed order"
     assert "Next auto check" not in summary and "Check all pages" not in summary
@@ -971,21 +971,18 @@ def test_the_report_builds_and_renders_from_a_real_run():
     assert html.startswith("<!doctype html")
     assert 'Radar</span>' in html and "cid:iradarlogo" in html,         "the brand wordmark or logo is missing"
     assert "Review the queue" in html
-    # changes are grouped by SHAPE, not listed page by page: the numbers are
-    # stripped out of the label and the page count leads
-    assert d["patterns"] and d["patterns"][0]["label"] == "text edited", \
-        d["patterns"]
-    assert "what repeated" in html.lower(), "the pattern list is missing"
-    assert "40 lines added" not in html, \
-        "a per-page diff line came back into the pattern list"
-    assert "pages affected, by type" in html.lower(), "the page-type chart is missing"
+    # one page, nothing shared: it is a page change, not a site-wide edit
+    assert len(d["page_changes"]) == 1 and d["site_edits"] == [], d
+    assert "page changes" in html.lower(), "the page-change list is missing"
+    assert mailer.report_subject(d) == "1 page change"
+    assert "page changes, by page type" in html.lower(), "the page-type chart is missing"
     assert "/report-chart.png?" in html, "the donut chart image is missing"
     assert "digest" not in html.lower() and "test summary" not in html.lower()
     # The stat row mirrors all seven dashboard readings, in the same order.
     assert "live" in d, "run_report must count live pages"
     # the Dashboard's figures without Live, Paused and Archive
-    labels = (">Live pages<", ">Recently offline<", ">Updated<", ">Content<",
-              ">Updated files<")
+    labels = (">Live pages<", ">Recently offline<", ">ES-wide edits<",
+              ">Page changes<", ">Updated files<")
     assert [html.index(label) for label in labels] == sorted(html.index(label) for label in labels)
     assert html.count('class="report-stat"') == 5
     assert ">Live<" not in html and ">Paused<" not in html and ">Archive<" not in html

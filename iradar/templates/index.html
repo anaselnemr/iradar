@@ -85,8 +85,9 @@
     <a class="report-stat" href="{{ url_for('index') }}" title="All tracked pages, including paused pages but not the Archive. The delta counts pages added or removed since the previous full check; pausing or archiving a page does not change it.">
       <div class="n" style="color:var(--accent)">{{ '{:,}'.format(counts.total or 0) }}{% if pages_delta %}<span class="delta" style="color:{{ 'var(--ok)' if pages_delta > 0 else 'var(--err)' }}" title="Change in watched pages since the previous check">{{ '+%d'|format(pages_delta) if pages_delta > 0 else '−%d'|format(-pages_delta) }}</span>{% endif %}</div>
       <div class="l">Live pages</div>
-      {#- only the review backlogs keep a line under the figure (Updated and
-          Updated files): every other line repeated the number. Empty lines
+      {#- only ES-wide edits (its page count) and the review backlogs (Page
+          changes, Updated files) keep a line under the figure: every other
+          line repeated the number. Empty lines
           stay so the figures sit level. -#}
       <div class="detail" aria-hidden="true"></div>
     </a>
@@ -95,20 +96,20 @@
       <div class="l">Recently offline</div>
       <div class="detail" aria-hidden="true"></div>
     </a>
-    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages updated in the latest finished check">
-      <div class="n" style="color:{{ 'var(--warn)' if latest_updates else 'var(--muted)' }}">{{ '{:,}'.format(latest_updates or 0) }}</div>
-      <div class="l">Updated</div>
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Edits infineon.com made on {{ es_min }} or more pages in the latest finished check, each counted once however many pages carry it">
+      <div class="n" style="color:{{ 'var(--warn)' if es_edits else 'var(--muted)' }}">{{ '{:,}'.format(es_edits or 0) }}</div>
+      <div class="l">ES-wide edits</div>
+      <div class="detail">{% if es_edits %}on {{ '{:,}'.format(es_pages) }} pages{% endif %}</div>
+    </a>
+    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Pages with a change of their own in the latest finished check, beyond the ES-wide edits">
+      <div class="n" style="color:{{ 'var(--warn)' if page_changes else 'var(--muted)' }}">{{ '{:,}'.format(page_changes or 0) }}</div>
+      <div class="l">Page changes</div>
       {#- its own link inside the card: the card opens the latest updates, this
           opens every unreviewed one, whatever the page's status is now -#}
       <div class="detail">{% if total_open %}<span class="detail-link" role="link" tabindex="0"
         onclick="event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'"
         onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();location.href='{{ url_for('index', status='review') }}'}"
         style="text-decoration:underline;cursor:pointer">{{ '{:,}'.format(total_open) }} awaiting review</span>{% else %}0 awaiting review{% endif %}</div>
-    </a>
-    <a class="report-stat" href="{{ url_for('index', status='changed') }}" title="Individual pieces of content changed inside those pages — documents, images, boards and links">
-      <div class="n" style="color:{{ 'var(--stat-content)' if content_updates else 'var(--muted)' }}">{{ '{:,}'.format(content_updates or 0) }}</div>
-      <div class="l">Content</div>
-      <div class="detail" aria-hidden="true"></div>
     </a>
     {#- ALWAYS shown, even at zero: this remains the route into File updates. -#}
     <a class="report-stat" href="{{ url_for('assets_page') }}" title="Files whose bytes changed behind an unchanged address">
@@ -288,7 +289,13 @@
   {% if last_run and last_run.finished and not state.running %}
   <div class="muted" style="margin-top:10px">
     Last run finished {{ last_run.finished|localtime }} — {{ last_run.ok }} ok,
+    {%- if last_run.site_edits is not none %}
+    <b>{{ "{:,}".format(last_run.site_edits) }} ES-wide edit{{ '' if last_run.site_edits == 1 else 's' }},
+    {{ "{:,}".format(last_run.page_changes) }} page change{{ '' if last_run.page_changes == 1 else 's' }}</b>
+    ({{ "{:,}".format(last_run.changed) }} pages), {{ last_run.errors }} errors
+    {%- else %}
     <b>{{ last_run.changed }} updated</b>, {{ last_run.errors }} errors
+    {%- endif %}
     {%- if last_run.kind == 'scheduled' %} · weekly check
     {%- elif last_run.started_by %} · started by {{ last_run.started_by }}{% endif %}
   </div>

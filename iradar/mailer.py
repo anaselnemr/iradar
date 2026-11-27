@@ -499,6 +499,21 @@ def run_report(con, run, since=None):
         (started,)).fetchall()
     d["updates"] = len(ch)
 
+    # IN EDITS, NOT PAGES. One shared edit on infineon.com - a partner's
+    # filter list, a datasheet listed on 40 part pages - is one thing to
+    # read, however many pages carry it (edits.py). The report leads with
+    # those two numbers; the page count is only the size of the queue.
+    import edits as _edits
+    _settings = db.get_settings()
+    _labels = _edits._labels()
+    g = _edits.group(ch, [_edits.facts_for(con, c, _settings, _labels) for c in ch])
+    d["site_edits"] = g["edits"]
+    d["page_changes"] = g["page_changes"]
+    d["shared_pages"] = g["shared_pages"]
+    # the charts describe the page changes: an ES-wide edit is already its
+    # own line, and counting its 1,000 pages again would bury everything else
+    pc_rows = [p["change"] for p in g["page_changes"]]
+
     # losses: a page that lost text lines or had a library item removed. These
     # are the ones a person most wants to see - a datasheet gone, a section
     # emptied - because a missing thing is invisible until something names it.
@@ -518,7 +533,7 @@ def run_report(con, run, since=None):
     # refresh, three product pages is worth a look. ptype is the page's own
     # classification (Part / Product / Application / Design resources / Home).
     by_ptype = {}
-    for c in ch:
+    for c in pc_rows:
         label = _PTYPE_LABELS.get(c["ptype"], c["ptype"] or "Other")
         by_ptype[label] = by_ptype.get(label, 0) + 1
     d["by_ptype"] = dict(sorted(by_ptype.items(), key=lambda kv: -kv[1]))
@@ -535,7 +550,7 @@ def run_report(con, run, since=None):
     # counts above, so the two charts tell two stories instead of one twice.
     # Wording and the community indicator have no item count; they ride along
     # as page tallies for a footnote under the chart.
-    d["by_items"], d["wording_pages"], d["community_pages"] = _content_items(ch)
+    d["by_items"], d["wording_pages"], d["community_pages"] = _content_items(pc_rows)
 
     def _dir(c):
         add = (c["lines_added"] or 0) + (c["images_added"] or 0)
@@ -589,7 +604,7 @@ def run_report(con, run, since=None):
     d["open_files"] = con.execute(
         "SELECT COUNT(*) FROM asset_changes WHERE IFNULL(reviewed,0)=0").fetchone()[0]
     d["errors_total"] = (d["notlive"] + d["blank"] + (d["errors"] or 0))
-    d["by_component"] = _component_diffs(ch)
+    d["by_component"] = _component_diffs(pc_rows)
     d["pages_delta"] = db.run_pages_delta(con, run, d["pages"])
     d["offline_delta"] = db.run_offline_delta(con, run)
 
@@ -823,6 +838,21 @@ def _plain(summary):
     return " \u00b7 ".join(x for x in out if x)
 
 
+def report_subject(d):
+    """'15 ES-wide edits, 255 page changes' - the week in edits, never
+    the 1,466 pages one partner-list edit can touch."""
+    def n(k, word):
+        return "{:,} {}{}".format(k, word, "" if k == 1 else "s")
+    bits = []
+    if d.get("site_edits"):
+        bits.append(n(len(d["site_edits"]), "ES-wide edit"))
+    if d.get("page_changes"):
+        bits.append(n(len(d["page_changes"]), "page change"))
+    if d.get("file_updates") and not bits:
+        bits.append(n(d["file_updates"], "file update"))
+    return ", ".join(bits) if bits else "no changes"
+
+
 def render_report(d, base_url, when_label):
     """The HTML body. `d` is run_report(); base_url like https://iradar.net."""
     b = base_url.rstrip("/")
@@ -830,6 +860,8 @@ def render_report(d, base_url, when_label):
 
     n = d["updates"]
     fu = d["file_updates"]
+    se = d.get("site_edits") or []
+    pcs = d.get("page_changes") or []
 
     # Match the website's inventory, order, colours and detail lines. An
     # email is narrower than the dashboard: four readings then three, with
@@ -852,10 +884,9 @@ def render_report(d, base_url, when_label):
         ("Recently offline", d.get("notlive", 0), _BAD if d.get("notlive") else _MUT,
          "",
          suffix(d.get("offline_delta", 0), _BAD)),
-        ("Updated", n, "#ea580c" if n else _MUT,
-         "{:,} awaiting review".format(d.get("open_updates", n)), ""),
-        ("Content", d.get("content_updates", 0), "#168b7d" if d.get("content_updates") else _MUT,
-         "", ""),
+        ("ES-wide edits", len(se), "#ea580c" if se else _MUT,
+         ("on {:,} pages".format(d.get("shared_pages", 0)) if se else ""), ""),
+        ("Page changes", len(pcs), "#ea580c" if pcs else _MUT, "", ""),
         ("Updated files", fu, "#7c3aed" if fu else _MUT,
          "{:,} awaiting review".format(d.get("open_files", fu)), ""),
     ]
@@ -893,36 +924,89 @@ def render_report(d, base_url, when_label):
             + '</td></tr>')
 
     chart = ""
-    if n:
-        chart += _chart_img("Pages affected, by type", d.get("by_ptype"))
-        chart += _chart_img("Content updates, by type", d.get("by_items"))
+    if pcs:
+        chart += _chart_img("Page changes, by page type", d.get("by_ptype"))
+        chart += _chart_img("Page changes, content by type", d.get("by_items"))
         chart += _chart_img(
-            "Component changes, in pages", d.get("by_component"))
+            "Page changes, by component", d.get("by_component"))
     newcall = ""
 
-    rows_top = ""
-    for t in d.get("patterns", []):
-        rows_top += (
+    def _facts_line(labels, keep=2):
+        s = " \u00b7 ".join(labels[:keep])
+        if len(labels) > keep:
+            s += " \u00b7 and %d more" % (len(labels) - keep)
+        return s
+
+    def _block(title, rows, more, more_href):
+        if not rows:
+            return ""
+        tail = ""
+        if more:
+            tail = ('<div style="padding:10px 0 2px;border-top:1px solid ' + _LINE
+                    + ';font:600 12px/1.4 ' + FONT + ';"><a href="' + more_href
+                    + '" style="color:' + _ACCENT + ';text-decoration:none;">'
+                    + more + ' \u2192</a></div>')
+        return ('<tr><td style="padding:8px 28px 0;">'
+                '<div style="font:800 12px/1.4 ' + FONT + ';letter-spacing:.06em;'
+                'text-transform:uppercase;color:' + _MUT + ';padding:16px 0 4px;">'
+                + title + '</div>'
+                '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+                + rows + '</table>' + tail + '</td></tr>')
+
+    # PAGE CHANGES: what happened on one page and nowhere else - the part
+    # of the week only a person reading that page would catch. Each row says
+    # only the page's OWN facts; an ES-wide edit it also carries is above.
+    PC_TOP, SE_TOP = 8, 10
+    # documents, boards, links and sections first - the named things a person
+    # acts on - then wording, smallest first. Size alone put the finder pages'
+    # 2,406-line table churn at the top and pushed every datasheet below it.
+    def _named(p):
+        return sum(1 for l in p["facts"]
+                   if ": “" in l or l.startswith(("Section", "Price")))
+    pc_sorted = sorted(pcs, key=lambda p: (-min(_named(p), 3), len(p["facts"])))
+    rows_pc = ""
+    for p in pc_sorted[:PC_TOP]:
+        c = p["change"]
+        rows_pc += (
+            '<tr><td style="padding:11px 0;border-top:1px solid ' + _LINE + ';">'
+            '<a href="' + b + '/change/' + str(c["id"]) + '" style="font:600 13px/1.45 '
+            + FONT + ';color:' + _INK + ';text-decoration:none;">'
+            + _esc(c["title"]) + '</a>'
+            '<div style="font:400 12px/1.5 ' + FONT + ';color:' + _MUT + ';'
+            'margin-top:2px;">' + _esc(
+                # a page that lost a whole table names its parts, not its cells
+                _facts_line(p["facts"]) if len(p["facts"]) <= 3
+                else _plain(c["summary"])) + '</div></td></tr>')
+    more_pc = len(pcs) - PC_TOP
+    pc_block = _block(
+        "Page changes", rows_pc,
+        ("{:,} more page change{}".format(more_pc, "" if more_pc == 1 else "s")
+         if more_pc > 0 else ""), dash)
+
+    # ES-WIDE EDITS: one line per edit, however many pages carry it
+    rows_se = ""
+    for e in se[:SE_TOP]:
+        rows_se += (
             '<tr><td width="58" valign="top" style="padding:13px 12px 13px 0;'
             'border-top:1px solid ' + _LINE + ';font:800 17px/1.2 ' + FONT + ';'
             'color:' + _ACCENT + ';white-space:nowrap;">'
-            + "{:,}".format(t["pages"]) + '</td>'
+            + "{:,}".format(e["pages"]) + '<div style="font:400 11px/1.3 ' + FONT
+            + ';color:' + _MUT + ';margin-top:2px;">pages</div></td>'
             '<td style="padding:13px 0;border-top:1px solid ' + _LINE + ';">'
             '<div style="font:600 13px/1.45 ' + FONT + ';color:' + _INK + ';">'
-            + _esc(t["label"]) + '</div>'
+            + _esc(_facts_line(e["labels"])) + '</div>'
             '<div style="font:400 12px/1.5 ' + FONT + ';color:' + _MUT + ';'
-            'margin-top:3px;">e.g. <a href="' + b + '/change/' + str(t["id"])
-            + '" style="color:' + _ACCENT + ';text-decoration:none;">'
-            + _esc(t["example"]) + '</a></div></td></tr>')
-    big = ""
-    if d.get("patterns"):
-        big = (
-            '<tr><td style="padding:8px 28px 0;">'
-            '<div style="font:800 12px/1.4 ' + FONT + ';letter-spacing:.06em;'
-            'text-transform:uppercase;color:' + _MUT + ';">'
-            'What repeated, in pages</div>'
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-            + rows_top + '</table></td></tr>')
+            'margin-top:3px;">e.g. <a href="' + b + '/change/'
+            + str(e["id"]) + '" style="color:' + _ACCENT + ';text-decoration:none;">'
+            + _esc(e["title"]) + '</a></div></td></tr>')
+    more_se = len(se) - SE_TOP
+    se_block = _block(
+        "ES-wide edits", rows_se,
+        ("{:,} more ES-wide edit{}".format(more_se, "" if more_se == 1 else "s")
+         if more_se > 0 else ""), dash)
+    # ES-wide first: one line each, the week's shape at a glance; then the
+    # pages that changed on their own
+    big = se_block + pc_block
 
     # No amber strip: the Not-live tile carries the health signal now, and
     # the owner asked the highlighted line to go.
@@ -960,9 +1044,9 @@ def render_report(d, base_url, when_label):
 '<div class="report-summary" style="background:#ffffff;">' + stats + '</div>'
 '</td></tr>'
 
++ big
 + chart
 + newcall
-+ big
 + health
 
 + '<tr><td align="center" style="padding:24px 28px 10px;">'

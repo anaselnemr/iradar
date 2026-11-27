@@ -1044,3 +1044,57 @@ def test_partner_tags_new_on_one_side_are_unread_but_a_tag_change_flags():
     # both sides carry tags and they differ: Partner solutions (~1)
     det = cmp.library_diff_detail(_snap_parts([t1]), _snap_parts([t2]))
     assert det["partners"]["changed"][0]["fields"][0][0] == "tags"
+
+
+# ---------------------------------------------------------------- edits.py
+def _chg(i, text=1, summary="page text"):
+    return {"id": i, "url_id": i, "summary": summary, "text_changed": text,
+            "images_changed": 0, "images_added": 0, "images_removed": 0,
+            "visual_changed": 0, "title": "Page %d" % i}
+
+
+def test_one_shared_edit_on_many_pages_is_one_site_wide_edit():
+    import edits
+    old = _snap(["Partners", "Electric vehicles", "Renewables"])
+    new = _snap(["Partners", "Renewables"])
+    own = _snap(["Partners", "Renewables", "A new paragraph"])
+    rows, fl = [], []
+    for i in range(30):
+        rows.append(_chg(i))
+        # page 0 also carries something of its own
+        fl.append(edits.facts(old, own if i == 0 else new, rows[-1], labels={}))
+    g = edits.group(rows, fl)
+    assert len(g["edits"]) == 1 and g["edits"][0]["pages"] == 30, g["edits"]
+    assert g["edits"][0]["labels"] == ["“Electric vehicles” removed"]
+    # the example is a page with nothing else on it
+    assert g["edits"][0]["id"] != 0
+    # only page 0 is a page change, and it lists only its OWN fact
+    assert [p["change"]["id"] for p in g["page_changes"]] == [0]
+    assert g["page_changes"][0]["facts"] == ["“A new paragraph” added"]
+    assert g["covered"] == 29 and g["shared_pages"] == 30
+
+
+def test_the_same_fact_on_few_pages_stays_page_changes():
+    import edits
+    old, new = _snap(["a", "b"]), _snap(["a"])
+    rows = [_chg(i) for i in range(edits.SHARED_MIN - 1)]
+    g = edits.group(rows, [edits.facts(old, new, r, labels={}) for r in rows])
+    assert g["edits"] == [] and len(g["page_changes"]) == edits.SHARED_MIN - 1
+
+
+def test_facts_that_land_on_the_same_pages_are_one_edit():
+    import edits
+    old = _snap(["x", "Electric vehicles", "Enabling technologies"])
+    new = _snap(["x"])
+    rows = [_chg(i) for i in range(20)]
+    g = edits.group(rows, [edits.facts(old, new, r, labels={}) for r in rows])
+    assert len(g["edits"]) == 1 and len(g["edits"][0]["labels"]) == 2, g["edits"]
+
+
+def test_image_and_layout_facts_never_group():
+    import edits
+    old, new = _snap(["x"]), _snap(["x"])
+    rows = [dict(_chg(i, text=0, summary="images (+1/-0)"), images_changed=1,
+                 images_added=1) for i in range(20)]
+    g = edits.group(rows, [edits.facts(old, new, r, labels={}) for r in rows])
+    assert g["edits"] == [] and len(g["page_changes"]) == 20
