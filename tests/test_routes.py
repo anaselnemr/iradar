@@ -152,6 +152,7 @@ def test_updated_filter_lists_es_wide_edits_first_and_approves_each_at_once():
         assert 'class="urlcell"' in rows_html and 'class="rowsel"' not in rows_html
         assert "/part/E1" in rows_html and "/part/E0" not in rows_html
         assert "Approve all %d" % n in es
+        assert 'class="esw-more"' not in es, "a short list is not folded"
         # the table keeps the two pages with edits of their own, drops the rest
         rows = table.split("</table>")[0]
         assert rows.count('class="rowsel"') == 2, rows.count('class="rowsel"')

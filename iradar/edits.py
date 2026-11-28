@@ -28,6 +28,7 @@ not accepted is approved outright. A page that also carries edits of its own
 stays open with just those.
 """
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -41,6 +42,16 @@ _LINE_MAX = 90       # a fact quotes at most this much of a line or title
 def _q(s, n=_LINE_MAX):
     s = " ".join(str(s or "").split())
     return "“" + (s if len(s) <= n else s[:n - 1].rstrip() + "…") + "”"
+
+
+_SINGLE_Q = re.compile(r"(?<!\w)'([^'\n]+?)'(?!\w)")
+
+
+def curly(s):
+    """'single-quoted' names (the detector's summary words) in the same
+    “curly double quotes” every other fact uses. An apostrophe inside a word
+    (Infineon's) is left alone."""
+    return _SINGLE_Q.sub("“\\1”", str(s or ""))
 
 
 def _labels():
@@ -116,7 +127,7 @@ def facts(old_dir, new_dir, change, settings=None, labels=None):
         low = p.lower()
         if p and (low.endswith((" added", " removed", " emptied", " filled"))
                   and "(" not in p):
-            out.append(("s|" + low, p[0].upper() + p[1:]))
+            out.append(("s|" + low, curly(p[0].upper() + p[1:])))
     # images and layout are judged per page: never grouped
     uid = change["url_id"]
     if change["images_changed"]:
@@ -169,12 +180,17 @@ def group(changes, fact_lists, shared_min=SHARED_MIN):
       page_changes: [{"change": row, "facts": [labels of its OWN facts]}]
       covered: pages whose every fact is an ES-wide edit
     """
+    # facts that differ only in capitals ("NEW" added / "New" added) are one
+    # edit: they are counted, grouped and approved together under one fold
     pages_of = {}
     label_of = {}
+    real_keys = {}       # fold -> the exact keys it stands for
     for i, fl in enumerate(fact_lists):
         for k, l in fl:
-            pages_of.setdefault(k, set()).add(i)
-            label_of.setdefault(k, l)
+            f = k.casefold()
+            pages_of.setdefault(f, set()).add(i)
+            label_of.setdefault(f, l)
+            real_keys.setdefault(f, set()).add(k)
     shared = sorted((k for k, ps in pages_of.items()
                      if len(ps) >= shared_min and k[:2] not in ("i|", "v|", "x|")),
                     key=lambda k: (-len(pages_of[k]), k))
@@ -196,7 +212,7 @@ def group(changes, fact_lists, shared_min=SHARED_MIN):
         ex = min(ps, key=lambda i: (len(fact_lists[i]), i))
         c = changes[ex]
         edits.append({"labels": [label_of[k] for k in keys], "pages": len(ps),
-                      "fact_keys": list(keys),
+                      "fact_keys": sorted(r for k in keys for r in real_keys[k]),
                       "id": c["id"], "title": _title(c),
                       "changes": sorted((changes[i] for i in ps),
                                         key=lambda r: _title(r).lower())})
@@ -204,7 +220,7 @@ def group(changes, fact_lists, shared_min=SHARED_MIN):
     covered_ids = []
     shared_pages = 0
     for i, fl in enumerate(fact_lists):
-        own = [l for k, l in fl if k not in shared_set]
+        own = [l for k, l in fl if k.casefold() not in shared_set]
         if len(own) < len(fl):
             shared_pages += 1
         if own:

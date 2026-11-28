@@ -808,7 +808,18 @@
     .esw-rows { margin:2px 0 14px; }
     .esw-rows .muted { padding:8px 6px; }
     .esw-ok { position:absolute; top:0; right:0; margin:0; padding:7px 6px 0 0; }
-    .esw-ok button { min-width:118px; white-space:nowrap; }
+    /* quiet until wanted: 37 solid buttons were the loudest thing on the page */
+    .esw-ok button { min-width:118px; white-space:nowrap; background:transparent;
+                     color:var(--accent); font-weight:500;
+                     border:1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+    .esw-ok button:hover, .esw-ok button:focus-visible { background:var(--btn);
+                     color:var(--btn-ink); border-color:var(--btn); filter:none; }
+    /* the first ten, the rest one click away */
+    .esw-list.folded .esw-row:nth-child(n+11) { display:none; }
+    .esw-more { display:block; width:100%; margin:0; padding:8px 6px; border-radius:0;
+                background:transparent; color:var(--accent); font-size:13px;
+                font-weight:500; text-align:left; border-bottom:1px solid var(--line); }
+    .esw-more:hover { background:var(--hover); filter:none; }
     @media (max-width:640px) {
       .esw-row details > summary { grid-template-columns:48px minmax(0,1fr) 14px; gap:8px;
                                    padding-right:6px; }
@@ -817,7 +828,8 @@
   </style>
   <section class="esw" id="es-wide">
     <h3>ES-wide changes <b>{{ '{:,}'.format(es_list|length) }}</b></h3>
-    <div class="esw-list">
+    {% set esw_fold = es_list|length > 12 %}
+    <div class="esw-list{{ ' folded' if esw_fold }}" id="esw-list">
       {% for e in es_list %}
       <div class="esw-row">
         <details>
@@ -845,8 +857,19 @@
       </div>
       {% endfor %}
     </div>
+    {% if esw_fold %}<button type="button" class="esw-more" id="esw-more"
+      data-all="Show all {{ es_list|length }}" data-less="Show the top 10">Show all {{ es_list|length }}</button>{% endif %}
   </section>
   <script>
+  (function () {
+    var b = document.getElementById('esw-more'), l = document.getElementById('esw-list');
+    if (!b || !l) return;
+    b.addEventListener('click', function () {
+      var folded = l.classList.toggle('folded');
+      b.textContent = folded ? b.dataset.all : b.dataset.less;
+      if (folded) l.scrollIntoView({block: 'nearest'});
+    });
+  })();
   // an edit's pages load when it is first opened: all of them drawn up front
   // would be thousands of rows nobody looks at
   document.querySelectorAll('.esw-row details').forEach(function (d) {

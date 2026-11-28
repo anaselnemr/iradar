@@ -932,7 +932,8 @@ def render_report(d, base_url, when_label):
     newcall = ""
 
     def _facts_line(labels, keep=2):
-        s = " \u00b7 ".join(labels[:keep])
+        import edits as _edits
+        s = " \u00b7 ".join(_edits.curly(l) for l in labels[:keep])
         if len(labels) > keep:
             s += " \u00b7 and %d more" % (len(labels) - keep)
         return s

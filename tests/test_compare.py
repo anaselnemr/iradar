@@ -1098,3 +1098,22 @@ def test_image_and_layout_facts_never_group():
                  images_added=1) for i in range(20)]
     g = edits.group(rows, [edits.facts(old, new, r, labels={}) for r in rows])
     assert g["edits"] == [] and len(g["page_changes"]) == 20
+
+
+def test_facts_differing_only_in_capitals_are_one_edit():
+    import edits
+    # "NEW" added on some pages and "New" added on others is one badge
+    rows = [_chg(i) for i in range(8)]
+    fl = ([[("t+|NEW", "“NEW” added")]] * 4
+          + [[("t+|New", "“New” added")]] * 4)
+    g = edits.group(rows, fl)
+    assert len(g["edits"]) == 1 and g["edits"][0]["pages"] == 8
+    assert g["edits"][0]["fact_keys"] == ["t+|NEW", "t+|New"]
+    assert g["page_changes"] == []
+
+
+def test_single_quoted_names_read_in_the_same_quotes_as_every_fact():
+    import edits
+    assert edits.curly("Section 'design resources' removed") == \
+        "Section “design resources” removed"
+    assert edits.curly("Infineon's tools") == "Infineon's tools"

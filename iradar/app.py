@@ -489,7 +489,8 @@ def edit_label_filter(s):
     section it sits in (muted), what changed (text), and what happened to
     it (a coloured word: added green, removed red, changed orange)."""
     from markupsafe import Markup, escape
-    s = str(s or "")
+    import edits as _ed
+    s = _ed.curly(s)     # labels stored before quotes were made one style
     m = _EDIT_VERB.match(s)
     body, verb, tail = (m.group(1), m.group(2), m.group(3) or "") if m else (s, "", "")
     sec = ""
