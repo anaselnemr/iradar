@@ -550,6 +550,60 @@ SHOT_REV = 8
 SHOT_SCALE = 0.5
 SHOT_COLORS = 256          # 0 = keep full colour
 
+# WHERE each piece of text sits in the screenshot, so a change can say which
+# box on the picture is which update ("1 - 'Smart TV' added" pinned on the
+# grid cell it arrived in). Recorded in the same instant as the screenshot,
+# from the same layout, in page CSS pixels; the change page divides by the
+# page size it also records, so the picture's scale never matters.
+#
+# One entry per element that owns a single line of visible text (the deepest
+# element whose text has no line break), plus the section headings, so a pin
+# can also say which section it is in. Header, nav and footer chrome outside
+# <main> are left out: the mega-menu is not tracked text, and it would match
+# every product name on the site. Stored gzipped beside the screenshot (~10-20 KB).
+TEXT_POS_MAX = 6000
+TEXT_POS_JS = r"""
+(max) => {
+  const out = [], heads = [], seen = new Set();
+  // site chrome = header / nav / footer OUTSIDE <main>: Infineon builds
+  // content grids ("Browse by category") as <nav> inside the page body
+  const chrome = el => !!el.closest('header, nav, footer, [role="navigation"]')
+                       && !el.closest('main');
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const sy = window.scrollY;
+  const box = r => [Math.round(r.left), Math.round(r.top + sy),
+                    Math.round(r.width), Math.round(r.height)];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode()) && out.length < max) {
+    if (!n.nodeValue || !n.nodeValue.trim()) continue;
+    let el = n.parentElement;
+    if (!el || seen.has(el) || chrome(el)) continue;
+    // climb to the element that owns the whole line ("Smart TV" inside a
+    // <span> inside the <a>): the line text.txt holds is the larger one
+    while (el.parentElement && el.parentElement !== document.body) {
+      const p = el.parentElement, pt = p.innerText || '';
+      if (pt.indexOf('\n') >= 0 || pt.length > 300) break;
+      el = p;
+    }
+    if (seen.has(el)) continue;
+    seen.add(el);
+    const t = norm(el.innerText);
+    if (!t || t.length > 300) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    if (el.checkVisibility && !el.checkVisibility({visibilityProperty: true})) continue;
+    out.push([t.slice(0, 160)].concat(box(r)));
+  }
+  document.querySelectorAll('h1, h2, h3').forEach(h => {
+    if (chrome(h)) return;
+    const r = h.getBoundingClientRect(), t = norm(h.innerText);
+    if (t && t.length < 80 && r.height >= 2) heads.push([t, h.tagName[1] | 0, Math.round(r.top + sy)]);
+  });
+  return {e: out, h: heads};
+}
+"""
+
 # Where the live feeds sit on the page - recorded right before the screenshot
 # (layout is final by then) so the compare can disregard exactly those areas.
 FEED_RECTS_JS = r"""
@@ -2930,11 +2984,18 @@ async def capture_one(browser, url, out_dir):
         # Clip to the viewport width: a wide element (products table ~2500px)
         # otherwise makes the full-page image as wide as itself, leaving the
         # page marooned in white. Height = the real document height.
+        text_pos = None
+        try:
+            text_pos = await page.evaluate(TEXT_POS_JS, TEXT_POS_MAX)
+        except Exception:
+            text_pos = None
         try:
             dims = await page.evaluate(
                 "() => ({w: document.documentElement.clientWidth,"
                 " h: Math.max(document.documentElement.scrollHeight,"
                 " document.body ? document.body.scrollHeight : 0)})")
+            if text_pos:
+                text_pos["pw"], text_pos["ph"] = dims["w"], min(dims["h"], 30000)
             await page.screenshot(
                 path=str(out_dir / "shot.png"), full_page=True,
                 clip={"x": 0, "y": 0, "width": dims["w"],
@@ -3316,6 +3377,14 @@ async def capture_one(browser, url, out_dir):
             "shot_scale": SHOT_SCALE,
             "shot_ignore": shot_ignore,
         }, indent=1), encoding="utf-8")
+        if text_pos and text_pos.get("e") and text_pos.get("pw"):
+            try:
+                import gzip
+                with gzip.open(out_dir / "textpos.json.gz", "wt", encoding="utf-8") as f:
+                    json.dump(text_pos, f, ensure_ascii=False, separators=(",", ":"))
+            except Exception as exc:
+                if INJECT_JS:
+                    print(f"  [textpos] skipped: {exc}")
 
         result.update(status="ok", title=title,
                       text_lines=text.count("\n") + 1 if text else 0,
